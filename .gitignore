@@ -14,3 +14,29 @@ android/*.keystore
 *.jks
 *.keystore
 web/maps-config.js
+
+
+# Flutter and Dart generated files
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+
+# Android generated files
+android/.gradle/
+android/app/build/
+
+# iOS generated files
+ios/Flutter/ephemeral/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+ios/Pods/
+
+# IDE temporary files
+.idea/workspace.xml
+
+# Environment secrets
+.env
+.env.*
+!.env.example
