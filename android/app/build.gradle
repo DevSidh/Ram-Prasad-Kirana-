@@ -1,0 +1,101 @@
+
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'dev.flutter.flutter-gradle-plugin'
+}
+
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader ->
+        localProperties.load(reader)
+    }
+}
+
+def flutterVersionCode =
+        localProperties.getProperty('flutter.versionCode') ?: '1'
+
+def flutterVersionName =
+        localProperties.getProperty('flutter.versionName') ?: '1.0.0'
+
+def signingProperties = new Properties()
+def signingPropertiesFile = rootProject.file('key.properties')
+
+if (signingPropertiesFile.exists()) {
+    signingPropertiesFile.withReader('UTF-8') { reader ->
+        signingProperties.load(reader)
+    }
+}
+
+android {
+    namespace "com.freshharvest.grocery_app"
+    compileSdkVersion 36
+    ndkVersion flutter.ndkVersion
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }
+
+    defaultConfig {
+        applicationId "com.freshharvest.grocery_app"
+        minSdkVersion 26
+        targetSdkVersion 36
+        versionCode flutterVersionCode.toInteger()
+        versionName flutterVersionName
+        multiDexEnabled true
+
+        def mapsApiKey = localProperties.getProperty(
+                'googleMapsApiKey',
+                localProperties.getProperty(
+                    'MAPS_API_KEY',
+                    System.getenv('MAPS_API_KEY') ?: ''
+                )
+        )
+        manifestPlaceholders.put('MAPS_API_KEY', mapsApiKey)
+    }
+
+    signingConfigs {
+        release {
+            def keyStorePath = signingProperties.getProperty('storeFile')
+
+            if (keyStorePath) {
+                storeFile file(keyStorePath)
+            }
+
+            storePassword signingProperties.getProperty('storePassword')
+            keyAlias signingProperties.getProperty('keyAlias')
+            keyPassword signingProperties.getProperty('keyPassword')
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled true
+            shrinkResources true
+
+            proguardFiles getDefaultProguardFile(
+                'proguard-android-optimize.txt'
+            ), 'proguard-rules.pro'
+        }
+    }
+}
+
+flutter {
+    source '../..'
+}
+
+dependencies {
+    implementation "androidx.multidex:multidex:2.0.1"
+}

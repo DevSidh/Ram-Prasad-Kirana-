@@ -1,0 +1,95 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+
+import 'package:freshharvest_grocery/models/address.dart';
+import 'package:freshharvest_grocery/models/order.dart';
+import 'package:freshharvest_grocery/providers/order_provider.dart';
+import 'package:freshharvest_grocery/screens/order/order_tracking_screen.dart';
+import 'package:freshharvest_grocery/services/api_service.dart';
+
+class _LiveOrderApi extends ApiService {
+  String status = 'PLACED';
+
+  @override
+  Future<dynamic> get(
+    String endpoint, {
+    Map<String, String>? queryParams,
+  }) async {
+    return {
+      'order': {
+        'id': 'order-1',
+        'orderNumber': 'FH-1',
+        'items': <dynamic>[],
+        'address': <String, dynamic>{},
+        'status': status,
+        'paymentMethod': 'COD',
+        'paymentStatus': 'PENDING',
+        'subtotal': 100,
+        'deliveryFee': 50,
+        'discount': 0,
+        'tip': 0,
+        'total': 150,
+        'createdAt': '2026-10-11T00:00:00.000Z',
+      },
+    };
+  }
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('tracking refreshes order milestones as admin status changes',
+      (tester) async {
+    final api = _LiveOrderApi();
+    final orders = OrderProvider(apiService: api);
+    addTearDown(orders.dispose);
+    final order = Order(
+      id: 'order-1',
+      orderNumber: 'FH-1',
+      items: const [],
+      address: Address(
+        id: 'address-1',
+        title: 'Home',
+        fullName: 'Customer',
+        phone: '',
+        city: 'Janakpur',
+        street: 'Main Road',
+      ),
+      status: 'PLACED',
+      paymentMethod: 'COD',
+      paymentStatus: 'PENDING',
+      subtotal: 100,
+      total: 150,
+      createdAt: '2026-10-11T00:00:00.000Z',
+    );
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<OrderProvider>.value(
+        value: orders,
+        child: MaterialApp(home: OrderTrackingScreen(order: order)),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.byIcon(Icons.check), findsOneWidget);
+
+    api.status = 'CONFIRMED';
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pump();
+    expect(find.byIcon(Icons.check), findsNWidgets(2));
+    expect(find.text('Confirmed'), findsNWidgets(2));
+
+    api.status = 'PROCESSING';
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pump();
+    expect(find.byIcon(Icons.check), findsNWidgets(3));
+
+    api.status = 'OUT_FOR_DELIVERY';
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pump();
+    expect(find.byIcon(Icons.check), findsNWidgets(5));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+}

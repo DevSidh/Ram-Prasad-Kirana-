@@ -1,0 +1,44 @@
+{
+  "name": "freshharvest-backend",
+  "version": "1.0.0",
+  "description": "Production REST API for FreshHarvest Grocery & Delivery Mobile Application",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "prisma:migrate": "prisma migrate dev",
+    "admin:create": "tsx src/create-admin.ts",
+    "categories:seed": "tsx src/seed-categories.ts",
+    "prisma:seed": "tsx prisma/seed.ts",
+    "test": "tsx tests/concurrency.test.ts && tsx tests/admin-auth.test.ts && tsx tests/admin-login.test.ts && tsx tests/inventory-set-stock.test.ts && tsx tests/password-reset.test.ts && tsx tests/delivery-assignments.test.ts && tsx tests/delivery-cash-handover.test.ts && tsx tests/order-payment-method.test.ts && tsx tests/user-identity.test.ts && tsx tests/image-upload-storage.test.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.10.2",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.2.0",
+    "firebase-admin": "^14.5.0",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.4.0",
+    "nodemailer": "^10.0.16",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/multer": "^2.3.0",
+    "@types/node": "^20.11.24",
+    "@types/nodemailer": "^8.0.2",
+    "prisma": "^5.10.2",
+    "tsx": "^4.7.1",
+    "typescript": "^5.3.3"
+  }
+}

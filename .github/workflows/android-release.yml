@@ -1,0 +1,88 @@
+name: Android APK Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Validate release configuration
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$API_BASE_URL" == https://* ]] || { echo "::error::Set API_BASE_URL to the production HTTPS API URL."; exit 1; }
+          [[ -n "$ANDROID_KEYSTORE_BASE64" ]] || { echo "::error::Set the ANDROID_KEYSTORE_BASE64 secret."; exit 1; }
+          [[ -n "$ANDROID_KEYSTORE_PASSWORD" ]] || { echo "::error::Set the ANDROID_KEYSTORE_PASSWORD secret."; exit 1; }
+          [[ -n "$ANDROID_KEY_ALIAS" ]] || { echo "::error::Set the ANDROID_KEY_ALIAS secret."; exit 1; }
+          [[ -n "$ANDROID_KEY_PASSWORD" ]] || { echo "::error::Set the ANDROID_KEY_PASSWORD secret."; exit 1; }
+          [[ -n "$MAPS_API_KEY" ]] || { echo "::error::Set a restricted Android MAPS_API_KEY secret."; exit 1; }
+
+      - name: Configure Android release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release-keystore.jks
+          cat > android/key.properties <<EOF
+          storeFile=release-keystore.jks
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=$ANDROID_KEY_PASSWORD
+          EOF
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Build signed APK
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          flutter build apk --release \
+            --build-name="$VERSION" \
+            --build-number="$GITHUB_RUN_NUMBER" \
+            --dart-define=API_BASE_URL="$API_BASE_URL" \
+            --dart-define=GOOGLE_MAPS_CONFIGURED=true
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            build/app/outputs/flutter-apk/app-release.apk \
+            --title "Ram Prasad General Store ${GITHUB_REF_NAME#v}" \
+            --generate-notes

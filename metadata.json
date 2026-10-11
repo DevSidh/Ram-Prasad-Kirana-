@@ -1,0 +1,6 @@
+{
+  "name": "Ram Prasad General Store",
+  "description": "Comprehensive General Store mobile & web app for everyday household, stationery, personal care, electronics, and daily essentials delivery.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,177 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Flutter tests",
+			"type": "shell",
+			"command": "flutter test test/unit/cart_test.dart test/unit/inventory_test.dart",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Backend concurrency test",
+			"type": "shell",
+			"command": "cd backend && npm test",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Backend concurrency task 2",
+			"type": "shell",
+			"command": "Set-Location 'e:\\freshharvest-groceries-oct-7-2026-7-08-39-pm\\backend'; npm test",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Fix ApiService file",
+			"type": "shell",
+			"command": "python -c \"from pathlib import Path; p = Path(r'e:\\freshharvest-groceries-oct-7-2026-7-08-39-pm\\lib\\services\\api_service.dart'); p.write_text('''import \\'dart:convert\\';\\nimport \\'package:http/http.dart\\' as http;\\n\\nimport \\'../core/constants.dart\\';\\n\\nclass ApiService {\\n  final String baseUrl;\\n  String? _authToken;\\n\\n  ApiService({this.baseUrl = AppConstants.apiBaseUrl});\\n\\n  void setAuthToken(String token) {\\n    _authToken = token;\\n  }\\n\\n  void clearAuthToken() {\\n    _authToken = null;\\n  }\\n\\n  Map<String, String> _headers() {\\n    final headers = {\\n      \\'Content-Type\\': \\'application/json\\',\\n      \\'Accept\\': \\'application/json\\',\\n    };\\n\\n    if (_authToken != null && _authToken!.isNotEmpty) {\\n      headers[\\'Authorization\\'] = \\'Bearer \\' + _authToken!;\\n    }\\n\\n    return headers;\\n  }\\n\\n  Future<dynamic> get(String endpoint, {Map<String, String>? queryParams}) async {\\n    try {\\n      var uri = Uri.parse(\\'$baseUrl$endpoint\\');\\n      if (queryParams != null) {\\n        uri = uri.replace(queryParameters: queryParams);\\n      }\\n\\n      final response = await http\\n          .get(uri, headers: _headers())\\n          .timeout(const Duration(seconds: 10));\\n\\n      return _processResponse(response);\\n    } catch (e) {\\n      throw Exception(\\'Network connection error: \\\\$e\\');\\n    }\\n  }\\n\\n  Future<dynamic> post(String endpoint, Map<String, dynamic> body) async {\\n    try {\\n      final uri = Uri.parse(\\'$baseUrl$endpoint\\');\\n      final response = await http\\n          .post(uri, headers: _headers(), body: jsonEncode(body))\\n          .timeout(const Duration(seconds: 15));\\n\\n      return _processResponse(response);\\n    } catch (e) {\\n      throw Exception(\\'Network connection error: \\\\$e\\');\\n    }\\n  }\\n\\n  dynamic _processResponse(http.Response response) {\\n    if (response.statusCode >= 200 && response.statusCode < 300) {\\n      final responseBody = response.body.trim();\\n      if (responseBody.isEmpty) {\\n        return null;\\n      }\\n      return jsonDecode(responseBody);\\n    }\\n\\n    try {\\n      final errorJson = jsonDecode(response.body);\\n      throw Exception(\\n        errorJson[\\'error\\'] ?? errorJson[\\'message\\'] ?? \\'Server error \\\\${response.statusCode}\\',\\n      );\\n    } catch (_) {\\n      throw Exception(\\'Server error with status code: \\\\$\\{response.statusCode\\}\\');\\n    }\\n  }\\n}\\n''', encoding='utf-8')\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Fix ApiService and assets",
+			"type": "shell",
+			"command": "@'\nfrom pathlib import Path\nroot = Path(r\"e:\\freshharvest-groceries-oct-7-2026-7-08-39-pm\")\n(root / \"assets\" / \"images\").mkdir(parents=True, exist_ok=True)\n(root / \"assets\" / \"icons\").mkdir(parents=True, exist_ok=True)\ncontent = \"\"\"import 'dart:convert';\nimport 'package:http/http.dart' as http;\n\nimport '../core/constants.dart';\n\nclass ApiService {\n  final String baseUrl;\n  String? _authToken;\n\n  ApiService({this.baseUrl = AppConstants.apiBaseUrl});\n\n  void setAuthToken(String token) {\n    _authToken = token;\n  }\n\n  void clearAuthToken() {\n    _authToken = null;\n  }\n\n  Map<String, String> _headers() {\n    final headers = {\n      'Content-Type': 'application/json',\n      'Accept': 'application/json',\n    };\n\n    if (_authToken != null && _authToken!.isNotEmpty) {\n      headers['Authorization'] = 'Bearer ' + _authToken!;\n    }\n\n    return headers;\n  }\n\n  Future<dynamic> get(String endpoint, {Map<String, String>? queryParams}) async {\n    try {\n      var uri = Uri.parse('$baseUrl$endpoint');\n      if (queryParams != null) {\n        uri = uri.replace(queryParameters: queryParams);\n      }\n\n      final response = await http\n          .get(uri, headers: _headers())\n          .timeout(const Duration(seconds: 10));\n\n      return _processResponse(response);\n    } catch (e) {\n      throw Exception('Network connection error: $e');\n    }\n  }\n\n  Future<dynamic> post(String endpoint, Map<String, dynamic> body) async {\n    try {\n      final uri = Uri.parse('$baseUrl$endpoint');\n      final response = await http\n          .post(uri, headers: _headers(), body: jsonEncode(body))\n          .timeout(const Duration(seconds: 15));\n\n      return _processResponse(response);\n    } catch (e) {\n      throw Exception('Network connection error: $e');\n    }\n  }\n\n  dynamic _processResponse(http.Response response) {\n    if (response.statusCode >= 200 && response.statusCode < 300) {\n      final responseBody = response.body.trim();\n      if (responseBody.isEmpty) {\n        return null;\n      }\n      return jsonDecode(responseBody);\n    }\n\n    try {\n      final errorJson = jsonDecode(response.body);\n      throw Exception(\n        errorJson['error'] ?? errorJson['message'] ?? 'Server error ${response.statusCode}',\n      );\n    } catch (_) {\n      throw Exception('Server error with status code: ${response.statusCode}');\n    }\n  }\n}\n\"\"\"\n(root / 'lib' / 'services' / 'api_service.dart').write_text(content, encoding='utf-8')\n'@ | python -",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Check python command",
+			"type": "shell",
+			"command": "python -c \"print('hello')\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Check py command",
+			"type": "shell",
+			"command": "py -c \"print('hello')\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Check node command",
+			"type": "shell",
+			"command": "node -e \"console.log('hello')\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Check dart command",
+			"type": "shell",
+			"command": "dart --version",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Rewrite api service with Dart script",
+			"type": "shell",
+			"command": "$script = @'\nimport 'dart:io';\n\nvoid main() {\n  final path = r'e:\\freshharvest-groceries-oct-7-2026-7-08-39-pm\\lib\\services\\api_service.dart';\n  final content = '''import 'dart:convert';\nimport 'package:http/http.dart' as http;\n\nimport '../core/constants.dart';\n\nclass ApiService {\n  final String baseUrl;\n  String? _authToken;\n\n  ApiService({this.baseUrl = AppConstants.apiBaseUrl});\n\n  void setAuthToken(String token) {\n    _authToken = token;\n  }\n\n  void clearAuthToken() {\n    _authToken = null;\n  }\n\n  Map<String, String> _headers() {\n    final headers = {\n      'Content-Type': 'application/json',\n      'Accept': 'application/json',\n    };\n\n    if (_authToken != null && _authToken!.isNotEmpty) {\n      headers['Authorization'] = 'Bearer ' + _authToken!;\n    }\n\n    return headers;\n  }\n\n  Future<dynamic> get(String endpoint, {Map<String, String>? queryParams}) async {\n    try {\n      var uri = Uri.parse('$baseUrl$endpoint');\n      if (queryParams != null) {\n        uri = uri.replace(queryParameters: queryParams);\n      }\n\n      final response = await http\n          .get(uri, headers: _headers())\n          .timeout(const Duration(seconds: 10));\n\n      return _processResponse(response);\n    } catch (e) {\n      throw Exception('Network connection error: $e');\n    }\n  }\n\n  Future<dynamic> post(String endpoint, Map<String, dynamic> body) async {\n    try {\n      final uri = Uri.parse('$baseUrl$endpoint');\n      final response = await http\n          .post(uri, headers: _headers(), body: jsonEncode(body))\n          .timeout(const Duration(seconds: 15));\n\n      return _processResponse(response);\n    } catch (e) {\n      throw Exception('Network connection error: $e');\n    }\n  }\n\n  dynamic _processResponse(http.Response response) {\n    if (response.statusCode >= 200 && response.statusCode < 300) {\n      final responseBody = response.body.trim();\n      if (responseBody.isEmpty) {\n        return null;\n      }\n      return jsonDecode(responseBody);\n    }\n\n    try {\n      final errorJson = jsonDecode(response.body);\n      throw Exception(\n        errorJson['error'] ?? errorJson['message'] ?? 'Server error ${response.statusCode}',\n      );\n    } catch (_) {\n      throw Exception('Server error with status code: ${response.statusCode}');\n    }\n  }\n}\n''';\n  File(path).writeAsStringSync(content, flush: true);\n}\n'@;\nSet-Content -Path 'C:\\temp\\fix_api_service.dart' -Value $script -Encoding UTF8;\ndart run 'C:\\temp\\fix_api_service.dart'",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Dart write test",
+			"type": "shell",
+			"command": "Set-Content -Path 'C:\\temp\\writetest.dart' -Value @'\nimport 'dart:io';\nvoid main() {\n  File(r'C:\\temp\\out.txt').writeAsStringSync('works\\n');\n}\n'@ -Encoding UTF8;\ndart run 'C:\\temp\\writetest.dart';\nif (Test-Path 'C:\\temp\\out.txt') { Get-Content 'C:\\temp\\out.txt' }",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Dart write test with temp dir",
+			"type": "shell",
+			"command": "New-Item -ItemType Directory -Path 'C:\\temp' -Force | Out-Null;\nSet-Content -Path 'C:\\temp\\writetest.dart' -Value @'\nimport 'dart:io';\nvoid main() {\n  File(r'C:\\temp\\out.txt').writeAsStringSync('works\\n');\n}\n'@ -Encoding UTF8;\ndart run 'C:\\temp\\writetest.dart';\nif (Test-Path 'C:\\temp\\out.txt') { Get-Content 'C:\\temp\\out.txt' }",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Fix ApiService without corruption",
+			"type": "shell",
+			"command": "New-Item -ItemType Directory -Path 'C:\\temp' -Force | Out-Null;\nSet-Content -Path 'C:\\temp\\fix_api_service.dart' -Value @'\nimport 'dart:io';\n\nvoid main() {\n  final path = r'e:\\freshharvest-groceries-oct-7-2026-7-08-39-pm\\lib\\services\\api_service.dart';\n  final content = '''import 'dart:convert';\nimport 'package:http/http.dart' as http;\n\nimport '../core/constants.dart';\n\nclass ApiService {\n  final String baseUrl;\n  String? _authToken;\n\n  ApiService({this.baseUrl = AppConstants.apiBaseUrl});\n\n  void setAuthToken(String token) {\n    _authToken = token;\n  }\n\n  void clearAuthToken() {\n    _authToken = null;\n  }\n\n  Map<String, String> _headers() {\n    final headers = {\n      'Content-Type': 'application/json',\n      'Accept': 'application/json',\n    };\n\n    if (_authToken != null && _authToken!.isNotEmpty) {\n      headers['Authorization'] = 'Bearer ' + _authToken!;\n    }\n\n    return headers;\n  }\n\n  Future<dynamic> get(String endpoint, {Map<String, String>? queryParams}) async {\n    try {\n      var uri = Uri.parse('$baseUrl$endpoint');\n      if (queryParams != null) {\n        uri = uri.replace(queryParameters: queryParams);\n      }\n\n      final response = await http\n          .get(uri, headers: _headers())\n          .timeout(const Duration(seconds: 10));\n\n      return _processResponse(response);\n    } catch (e) {\n      throw Exception('Network connection error: $e');\n    }\n  }\n\n  Future<dynamic> post(String endpoint, Map<String, dynamic> body) async {\n    try {\n      final uri = Uri.parse('$baseUrl$endpoint');\n      final response = await http\n          .post(uri, headers: _headers(), body: jsonEncode(body))\n          .timeout(const Duration(seconds: 15));\n\n      return _processResponse(response);\n    } catch (e) {\n      throw Exception('Network connection error: $e');\n    }\n  }\n\n  dynamic _processResponse(http.Response response) {\n    if (response.statusCode >= 200 && response.statusCode < 300) {\n      final responseBody = response.body.trim();\n      if (responseBody.isEmpty) {\n        return null;\n      }\n      return jsonDecode(responseBody);\n    }\n\n    try {\n      final errorJson = jsonDecode(response.body);\n      throw Exception(\n        errorJson['error'] ?? errorJson['message'] ?? 'Server error ${response.statusCode}',\n      );\n    } catch (_) {\n      throw Exception('Server error with status code: ${response.statusCode}');\n    }\n  }\n}\n''';\n  File(path).writeAsStringSync(content, flush: true);\n}\n'@ -Encoding UTF8;\ndart run 'C:\\temp\\fix_api_service.dart'",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Execute fix script",
+			"type": "shell",
+			"command": "dart run 'C:\\temp\\fix_api_service.dart'",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Run Ram Prasad Store in Chrome",
+			"type": "shell",
+			"command": "D:\\flutter\\bin\\flutter.bat",
+			"args": [
+				"run",
+				"-d",
+				"chrome",
+				"--web-hostname",
+				"127.0.0.1",
+				"--web-port",
+				"5372"
+			],
+			"isBackground": true,
+			"problemMatcher": [
+				"$dart-flutter"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Run Ram Prasad Store API",
+			"type": "shell",
+			"command": "npm.cmd",
+			"args": [
+				"--prefix",
+				"backend",
+				"run",
+				"dev"
+			],
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Run Store App with Admin Access",
+			"type": "shell",
+			"command": "D:\\flutter\\bin\\flutter.bat",
+			"args": [
+				"run",
+				"-d",
+				"chrome",
+				"--web-hostname",
+				"127.0.0.1",
+				"--web-port",
+				"5372"
+			],
+			"isBackground": true,
+			"problemMatcher": [
+				"$dart-flutter"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Run API with Admin Username",
+			"type": "shell",
+			"command": "powershell.exe",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"$env:ADMIN_USERNAME='ramprasad_store'; $env:ADMIN_EMAIL='ramprasad_store@admin.local'; npm.cmd --prefix backend run dev"
+			],
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}

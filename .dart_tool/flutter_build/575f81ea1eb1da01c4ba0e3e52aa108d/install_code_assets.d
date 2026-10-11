@@ -1,0 +1,1 @@
+ E:\\freshharvest-groceries-oct-7-2026-7-08-39-pm\\.dart_tool\\flutter_build\\575f81ea1eb1da01c4ba0e3e52aa108d\\native_assets.json: 
