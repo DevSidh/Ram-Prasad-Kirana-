@@ -441,7 +441,11 @@ app.post('/api/v1/auth/login', async (req: Request, res: Response) => {
 
       adminIdentifierUsed = true;
       const admins = await prisma.user.findMany({
-        where: { role: 'ADMIN', isActive: true },
+        where: {
+          role: 'ADMIN',
+          isActive: true,
+          ...(ADMIN_EMAIL ? { email: ADMIN_EMAIL } : {}),
+        },
         select: loginUserSelect,
       });
       user = await findAdminByPassword(admins, password, bcrypt.compare);
