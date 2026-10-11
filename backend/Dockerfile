@@ -26,6 +26,7 @@ RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY prisma ./prisma
+COPY catalog-uploads ./catalog-uploads
 ENV UPLOADS_DIRECTORY=/app/uploads
 RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
 VOLUME ["/app/uploads"]

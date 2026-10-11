@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { rateLimit } from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import path from 'node:path';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { createAuthMiddleware } from './middleware/auth.js';
@@ -72,6 +73,10 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '100kb' }));
 app.use('/uploads', express.static(getUploadsDirectory(), {
+  maxAge: '1d',
+  immutable: true,
+}));
+app.use('/uploads', express.static(path.join(process.cwd(), 'catalog-uploads'), {
   maxAge: '1d',
   immutable: true,
   fallthrough: false,
