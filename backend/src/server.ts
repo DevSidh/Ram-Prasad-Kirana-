@@ -775,6 +775,9 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
         throw error;
       }
       return created.id;
+    }, {
+      maxWait: 10_000,
+      timeout: 20_000,
     });
     const created = await prisma.order.findUnique({
       where: { id: createdOrderId },
