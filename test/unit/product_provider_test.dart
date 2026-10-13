@@ -168,6 +168,42 @@ void main() {
     provider.dispose();
   });
 
+  test('best sellers show the catalog and cheap shows carousel products',
+      () async {
+    final provider = ProductProvider(apiService: _CatalogApi());
+    await provider.loadCatalog();
+    await provider.toggleWishlist('rice');
+    await provider.toggleWishlist('greens');
+
+    provider.setHomeFilters(
+      savedOnly: true,
+      bestSellersOnly: false,
+      cheapOnly: false,
+    );
+    expect(provider.products.map((product) => product.id), ['rice', 'greens']);
+
+    provider.setHomeFilters(
+      savedOnly: false,
+      bestSellersOnly: true,
+      cheapOnly: false,
+    );
+    expect(
+      provider.products.map((product) => product.id),
+      ['rice', 'greens', 'lentils', 'premium'],
+    );
+
+    provider.setHomeFilters(
+      savedOnly: false,
+      bestSellersOnly: false,
+      cheapOnly: true,
+    );
+    expect(
+      provider.products.map((product) => product.id),
+      ['greens', 'rice'],
+    );
+    provider.dispose();
+  });
+
   test('catalog refresh picks up admin changes without replacing cached items',
       () async {
     final api = _CatalogApi();
@@ -193,7 +229,8 @@ void main() {
     final api = _CatalogApi();
     final provider = ProductProvider(apiService: api);
     await provider.loadCatalog();
-    final originalIds = provider.allProducts.map((product) => product.id).toList();
+    final originalIds =
+        provider.allProducts.map((product) => product.id).toList();
 
     api.failProductRequests = true;
     await provider.loadCatalog();
@@ -227,8 +264,7 @@ void main() {
     offlineProvider.dispose();
   });
 
-  test('cheap catalog sorting includes products created by admin',
-      () async {
+  test('cheap catalog sorting includes products created by admin', () async {
     final api = _CatalogApi()..version = 1;
     final provider = ProductProvider(apiService: api);
     await provider.loadCatalog();
@@ -239,8 +275,8 @@ void main() {
       ..setSortBy('price_asc');
 
     expect(provider.products.first.id, 'greens');
-    expect(provider.products.map((product) => product.id),
-        contains('seasonal'));
+    expect(
+        provider.products.map((product) => product.id), contains('seasonal'));
     provider.dispose();
   });
 

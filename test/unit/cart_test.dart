@@ -41,9 +41,9 @@ void main() {
       expect(cart.subtotal, 1500.0);
     });
 
-    test('Totals use full item prices with no coupon discount', () {
+    test('Totals include only item prices and delivery fee', () {
       cart.addItem(sampleApple, 3); // 3 * 300 = 900
-      expect(cart.grandTotal, 900.0 + cart.tip + cart.deliveryFee);
+      expect(cart.grandTotal, 900.0 + cart.deliveryFee);
     });
 
     test('Removing item clears item from cart', () {

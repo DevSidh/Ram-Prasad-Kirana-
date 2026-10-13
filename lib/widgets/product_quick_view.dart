@@ -25,8 +25,8 @@ Future<void> showProductQuickView(
     backgroundColor: Colors.transparent,
     barrierColor: const Color(0xB3133025),
     sheetAnimationStyle: const AnimationStyle(
-      duration: Duration(milliseconds: 380),
-      reverseDuration: Duration(milliseconds: 320),
+      duration: Duration(milliseconds: 240),
+      reverseDuration: Duration(milliseconds: 240),
     ),
     builder: (sheetContext) {
       final cartProvider = context.read<CartProvider>();
@@ -87,7 +87,7 @@ Future<void> showProductQuickView(
                                 product.categoryName ??
                                     product.brand ??
                                     'Store pick',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: AppConstants.primaryDark,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
@@ -103,7 +103,7 @@ Future<void> showProductQuickView(
                             const SizedBox(width: 3),
                             Text(
                               '${product.rating.toStringAsFixed(1)}  ·  ${product.reviewCount} reviews',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: AppConstants.textMuted,
                                 fontSize: 11,
                               ),
@@ -113,7 +113,7 @@ Future<void> showProductQuickView(
                         const SizedBox(height: 7),
                         Text(
                           product.name,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: AppConstants.textDark,
                             fontSize: 21,
                             fontWeight: FontWeight.w800,
@@ -122,7 +122,7 @@ Future<void> showProductQuickView(
                         const SizedBox(height: 4),
                         Text(
                           product.weight,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: AppConstants.textMuted,
                             fontSize: 13,
                           ),
@@ -133,7 +133,7 @@ Future<void> showProductQuickView(
                             product.description,
                             maxLines: 3,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: AppConstants.textMuted,
                               fontSize: 13,
                               height: 1.45,
@@ -146,7 +146,7 @@ Future<void> showProductQuickView(
                             Expanded(
                               child: Text(
                                 '${AppConstants.currencySymbol}${product.price.toStringAsFixed(0)}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: AppConstants.primaryDark,
                                   fontSize: 22,
                                   fontWeight: FontWeight.w800,
@@ -192,7 +192,8 @@ Future<void> showProductQuickView(
                                             .currentContext
                                             ?.findRenderObject();
                                         final sourceRect =
-                                            imageBox is RenderBox && imageBox.hasSize
+                                            imageBox is RenderBox &&
+                                                    imageBox.hasSize
                                                 ? imageBox.localToGlobal(
                                                       Offset.zero,
                                                     ) &

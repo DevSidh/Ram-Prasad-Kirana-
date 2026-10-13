@@ -336,7 +336,7 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(titles[_selectedIndex]),
-            const Text(
+            Text(
               'DELIVERY TEAM',
               style: TextStyle(
                 fontSize: 10,
@@ -546,7 +546,7 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen> {
             style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             'Only deliveries assigned to your account are shown.',
             style: TextStyle(color: AppConstants.textMuted),
           ),
@@ -597,7 +597,7 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen> {
     return ListView(
       padding: const EdgeInsets.all(18),
       children: [
-        const CircleAvatar(
+        CircleAvatar(
           radius: 36,
           backgroundColor: AppConstants.primaryLight,
           child: Icon(
@@ -615,14 +615,14 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen> {
         Text(
           profile?.email ?? '',
           textAlign: TextAlign.center,
-          style: const TextStyle(color: AppConstants.textMuted),
+          style: TextStyle(color: AppConstants.textMuted),
         ),
         if (profile?.phone.isNotEmpty == true) ...[
           const SizedBox(height: 4),
           Text(
             profile!.phone,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: AppConstants.textMuted),
+            style: TextStyle(color: AppConstants.textMuted),
           ),
         ],
         const SizedBox(height: 22),
@@ -788,7 +788,7 @@ class _MetricCard extends StatelessWidget {
           Text(
             label,
             maxLines: 2,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
               color: AppConstants.textMuted,
               height: 1.2,
@@ -854,7 +854,7 @@ class _CashHandoverDueCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.storefront_outlined,
+          Icon(Icons.storefront_outlined,
               color: AppConstants.primaryDark),
           const SizedBox(width: 11),
           const Expanded(
@@ -865,7 +865,7 @@ class _CashHandoverDueCard extends StatelessWidget {
           ),
           Text(
             'Rs. ${amount.toStringAsFixed(0)}',
-            style: const TextStyle(
+            style: TextStyle(
               color: AppConstants.primaryDark,
               fontSize: 17,
               fontWeight: FontWeight.w900,
@@ -913,7 +913,7 @@ class _AssignmentCard extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        side: const BorderSide(color: AppConstants.borderLight),
+        side: BorderSide(color: AppConstants.borderLight),
       ),
       child: Padding(
         padding: const EdgeInsets.all(15),
@@ -940,7 +940,7 @@ class _AssignmentCard extends StatelessWidget {
                   ),
                   child: Text(
                     _statusLabel,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 9,
                       fontWeight: FontWeight.w800,
                       color: AppConstants.primaryDark,
@@ -959,7 +959,7 @@ class _AssignmentCard extends StatelessWidget {
               order.address.isEmpty
                   ? 'No delivery address saved'
                   : order.address,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
                 color: AppConstants.textMuted,
                 height: 1.35,
@@ -1010,7 +1010,7 @@ class _AssignmentCard extends StatelessWidget {
                       ),
                       Text(
                         '× ${item.quantity}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AppConstants.textMuted,
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -1060,7 +1060,7 @@ class _AssignmentCard extends StatelessWidget {
                 assignment.cashHandedOverAt == null
                     ? 'Cash handover to store is still pending.'
                     : 'Store recorded this cash as received.',
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppConstants.textMuted,
                   fontSize: 11,
                 ),
@@ -1203,7 +1203,7 @@ class _EmptyDeliveries extends StatelessWidget {
           Text(
             message,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: AppConstants.textMuted),
+            style: TextStyle(color: AppConstants.textMuted),
           ),
         ],
       ),

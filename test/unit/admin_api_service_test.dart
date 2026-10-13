@@ -10,6 +10,9 @@ class _AdminApi extends ApiService {
   String? requestedOrdersStatus;
   String? uploadedFileName;
   Uint8List? uploadedBytes;
+  String? uploadedEndpoint;
+  String? uploadedMethod;
+  Map<String, String>? uploadedFields;
   Map<String, dynamic>? postedDeliveryPerson;
 
   @override
@@ -139,10 +142,22 @@ class _AdminApi extends ApiService {
     required String fieldName,
     required Uint8List bytes,
     required String fileName,
+    Map<String, String> fields = const {},
+    String method = 'POST',
   }) async {
+    uploadedEndpoint = endpoint;
+    uploadedMethod = method;
+    uploadedFields = fields;
     uploadedFileName = fileName;
     uploadedBytes = bytes;
-    return {'url': '/uploads/products/$fileName'};
+    if (endpoint == '/admin/uploads/images') {
+      return {'url': '/uploads/products/$fileName'};
+    }
+    return {
+      'product': {
+        'imageUrl': '/api/v1/products/product-1/image',
+      },
+    };
   }
 }
 
@@ -164,20 +179,29 @@ void main() {
 
     await adminApi.updateProductSku('product-1', 'pantry-masoor-dal-1kg');
     await adminApi.updateProductFeatured('product-2', true);
-    await adminApi.updateProductImage(
+    final savedImageUrl = await adminApi.updateProductImage(
       'product-1',
-      'https://store.example/uploads/rice.png',
+      Uint8List.fromList([1, 2, 3]),
+      'rice.png',
     );
 
-    expect(api.patches, hasLength(3));
+    expect(api.patches, hasLength(2));
     expect(api.patches[0].$1, '/admin/products/product-1');
     expect(api.patches[0].$2, {'sku': 'pantry-masoor-dal-1kg'});
     expect(api.patches[1].$1, '/admin/products/product-2');
     expect(api.patches[1].$2, {'isFeatured': true});
-    expect(api.patches[2].$1, '/admin/products/product-1');
-    expect(api.patches[2].$2, {
-      'imageUrl': 'https://store.example/uploads/rice.png',
+    expect(api.uploadedEndpoint, '/admin/products/product-1');
+    expect(api.uploadedMethod, 'PATCH');
+    expect(api.uploadedFileName, 'rice.png');
+    expect(api.uploadedFields, {
+      'product': '{"imageUrl":null}',
     });
+    expect(
+      savedImageUrl,
+      Uri.parse(api.baseUrl)
+          .resolve('/api/v1/products/product-1/image')
+          .toString(),
+    );
   });
 
   test('loads admin order details and filters by status', () async {

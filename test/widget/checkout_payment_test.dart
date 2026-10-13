@@ -9,6 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:freshharvest_grocery/providers/cart_provider.dart';
 import 'package:freshharvest_grocery/providers/order_provider.dart';
+import 'package:freshharvest_grocery/providers/theme_provider.dart';
+import 'package:freshharvest_grocery/core/constants.dart';
 import 'package:freshharvest_grocery/screens/checkout/checkout_screen.dart';
 import 'package:freshharvest_grocery/services/api_service.dart';
 
@@ -18,11 +20,15 @@ void main() {
   testWidgets('checkout only offers the supported COD payment method',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
+    AppConstants.setDarkTheme(true);
+    addTearDown(() => AppConstants.setDarkTheme(true));
     tester.view.physicalSize = const Size(400, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
+    final themeProvider = ThemeProvider();
+    addTearDown(themeProvider.dispose);
     final apiService = ApiService(
       client: MockClient((request) async {
         expect(request.url.path, endsWith('/account/addresses'));
@@ -55,11 +61,27 @@ void main() {
           ChangeNotifierProvider(
             create: (_) => OrderProvider(apiService: apiService),
           ),
+          ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider),
         ],
         child: const MaterialApp(home: CheckoutScreen()),
       ),
     );
     await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<Text>(find.text('Home')).style?.color,
+      AppConstants.textDark,
+    );
+    expect(
+      tester.widget<Text>(find.text('Customer · 9800000000')).style?.color,
+      AppConstants.textDark,
+    );
+    await themeProvider.setDarkMode(false);
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<Text>(find.text('Customer · 9800000000')).style?.color,
+      AppConstants.textDark,
+    );
 
     await tester.tap(find.text('Continue').first);
     await tester.pumpAndSettle();

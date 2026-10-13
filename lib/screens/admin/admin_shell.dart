@@ -102,7 +102,7 @@ class _AdminShellState extends State<AdminShell> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(_titles[_selectedIndex]),
-            const Text(
+            Text(
               'STORE ADMIN',
               style: TextStyle(
                 fontSize: 10,
@@ -135,13 +135,13 @@ class _AdminShellState extends State<AdminShell> {
                 selectedIndex: _selectedIndex,
                 onDestinationSelected: (index) =>
                     setState(() => _selectedIndex = index),
-                leading: const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 20, 12, 24),
+                leading: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 12, 24),
                   child: Row(
                     children: [
-                      Icon(Icons.storefront_rounded,
+                      const Icon(Icons.storefront_rounded,
                           color: AppConstants.primary),
-                      SizedBox(width: 10),
+                      const SizedBox(width: 10),
                       Text(
                         'STORE ADMIN',
                         style: TextStyle(
@@ -180,13 +180,13 @@ class _AdminShellState extends State<AdminShell> {
       child: SafeArea(
         child: Column(
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 18, 20, 20),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
               child: Row(
                 children: [
-                  Icon(Icons.storefront_rounded,
+                  const Icon(Icons.storefront_rounded,
                       color: AppConstants.primary, size: 24),
-                  SizedBox(width: 12),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -201,7 +201,7 @@ class _AdminShellState extends State<AdminShell> {
                             letterSpacing: 1,
                           ),
                         ),
-                        SizedBox(height: 3),
+                        const SizedBox(height: 3),
                         Text(
                           'Ram Prasad General Store',
                           maxLines: 1,

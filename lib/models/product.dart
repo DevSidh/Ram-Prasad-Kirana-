@@ -15,6 +15,9 @@ class Product {
   final bool isOrganic;
   final bool isFeatured;
   final bool isBestSeller;
+  final bool isWholesale;
+  final double? wholesalePrice;
+  final int wholesaleMinimumQuantity;
   final String description;
   final String? origin;
   final String imageUrl;
@@ -36,6 +39,9 @@ class Product {
     this.isOrganic = false,
     this.isFeatured = false,
     this.isBestSeller = false,
+    this.isWholesale = false,
+    this.wholesalePrice,
+    this.wholesaleMinimumQuantity = 1,
     required this.description,
     this.origin,
     required this.imageUrl,
@@ -52,13 +58,17 @@ class Product {
       price: (json['price'] as num?)?.toDouble() ?? 0.0,
       originalPrice: (json['originalPrice'] as num?)?.toDouble(),
       discountPercent: json['discountPercent'] ?? 0,
-      weight: json['weight'] ?? json['unit'] ?? '1 kg',
+      weight: json['unitLabel'] ?? json['weight'] ?? json['unit'] ?? '1 pc',
       stock: json['stock'] ?? 0,
       rating: (json['rating'] as num?)?.toDouble() ?? 5.0,
       reviewCount: json['reviewCount'] ?? 0,
       isOrganic: json['isOrganic'] ?? false,
       isFeatured: json['isFeatured'] ?? false,
       isBestSeller: json['isBestSeller'] ?? false,
+      isWholesale: json['isWholesale'] ?? false,
+      wholesalePrice: (json['wholesalePrice'] as num?)?.toDouble(),
+      wholesaleMinimumQuantity:
+          (json['wholesaleMinimumQuantity'] as num?)?.toInt() ?? 1,
       description: json['description'] ?? '',
       origin: json['origin'],
       imageUrl: json['imageUrl'] ?? json['image'] ?? '',
@@ -83,6 +93,9 @@ class Product {
       'isOrganic': isOrganic,
       'isFeatured': isFeatured,
       'isBestSeller': isBestSeller,
+      'isWholesale': isWholesale,
+      'wholesalePrice': wholesalePrice,
+      'wholesaleMinimumQuantity': wholesaleMinimumQuantity,
       'description': description,
       'origin': origin,
       'imageUrl': imageUrl,
@@ -107,6 +120,9 @@ class Product {
       isOrganic: isOrganic,
       isFeatured: isFeatured ?? this.isFeatured,
       isBestSeller: isBestSeller,
+      isWholesale: isWholesale,
+      wholesalePrice: wholesalePrice,
+      wholesaleMinimumQuantity: wholesaleMinimumQuantity,
       description: description,
       origin: origin,
       imageUrl: imageUrl ?? this.imageUrl,

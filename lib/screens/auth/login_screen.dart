@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../services/secure_login_service.dart';
 import '../../core/constants.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/theme_provider.dart';
 import '../../widgets/custom_button.dart';
 import '../../widgets/auth_surface.dart';
 import 'register_screen.dart';
@@ -210,9 +211,24 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _setTheme(bool isDark) async {
+    final themeProvider = Provider.of<ThemeProvider?>(context, listen: false);
+    if (themeProvider == null) return;
+    try {
+      await themeProvider.setDarkMode(isDark);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save appearance preference: $error')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (!widget.isAdminLogin) AppConstants.setThemeOverride(null);
     final authProvider = Provider.of<AuthProvider>(context);
+    final compactThemeControl = MediaQuery.sizeOf(context).width <= 400;
 
     return Scaffold(
       body: SafeArea(
@@ -222,7 +238,28 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (!compactThemeControl) ...[
+                        Text(
+                          'APPEARANCE',
+                          style: TextStyle(
+                            color: AppConstants.textMuted,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                      ],
+                      _buildThemeSelector(context),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
                 Container(
                   width: 54,
                   height: 54,
@@ -236,7 +273,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 24),
                 Text(
                   widget.isAdminLogin ? 'Admin sign in' : 'Welcome Back',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 26,
                     fontWeight: FontWeight.bold,
                     color: AppConstants.textDark,
@@ -247,7 +284,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   widget.isAdminLogin
                       ? 'Sign in with your store administrator account.'
                       : 'Log in to order everyday essentials and groceries from Ram Prasad General Store.',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppConstants.textMuted,
                     fontSize: 13,
                   ),
@@ -350,11 +387,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  const Row(
+                  Row(
                     children: [
-                      Expanded(child: Divider()),
+                      const Expanded(child: Divider()),
                       Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: Text(
                           'STORE STAFF',
                           style: TextStyle(
@@ -365,7 +402,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                       ),
-                      Expanded(child: Divider()),
+                      const Expanded(child: Divider()),
                     ],
                   ),
                   Center(
@@ -430,6 +467,47 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildThemeSelector(BuildContext context) {
+    final themeProvider = Provider.of<ThemeProvider?>(context);
+    final isDark = themeProvider?.isDarkMode ?? AppConstants.isDarkTheme;
+    final compact = MediaQuery.sizeOf(context).width <= 400;
+    return Tooltip(
+      message: 'Choose light or dark appearance',
+      child: Semantics(
+        label: 'Choose light or dark appearance',
+        child: SegmentedButton<bool>(
+          showSelectedIcon: false,
+          segments: [
+            ButtonSegment<bool>(
+              value: false,
+              icon: const Icon(Icons.light_mode_outlined, size: 15),
+              label: compact ? null : const Text('Light'),
+            ),
+            ButtonSegment<bool>(
+              value: true,
+              icon: const Icon(Icons.dark_mode_outlined, size: 15),
+              label: compact ? null : const Text('Dark'),
+            ),
+          ],
+          selected: {isDark},
+          onSelectionChanged: themeProvider == null
+              ? null
+              : (selection) => _setTheme(selection.first),
+          style: ButtonStyle(
+            visualDensity: VisualDensity.compact,
+            textStyle: const WidgetStatePropertyAll(
+              TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+            ),
+            padding: WidgetStatePropertyAll(
+              EdgeInsets.symmetric(horizontal: compact ? 5 : 8),
+            ),
+            minimumSize: WidgetStatePropertyAll(Size(compact ? 40 : 44, 40)),
           ),
         ),
       ),

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/constants.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/theme_provider.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -58,6 +59,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final email = context.watch<AuthProvider>().currentUser?.email ?? '';
+    context.watch<ThemeProvider?>();
     return Scaffold(
       appBar: AppBar(title: const Text('Edit profile')),
       body: SafeArea(
@@ -74,7 +76,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     style: TextStyle(fontSize: 23, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
+                  Text(
                     'Update the details the store uses to prepare your orders.',
                     style: TextStyle(
                       color: AppConstants.textMuted,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/theme_provider.dart';
 import '../../widgets/custom_button.dart';
 import '../../widgets/auth_surface.dart';
 import '../../navigation/app_shell_route.dart';
@@ -56,6 +57,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
+    context.watch<ThemeProvider?>();
 
     return Scaffold(
       appBar: AppBar(
@@ -70,7 +72,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Join Ram Prasad General Store',
                   style: TextStyle(
                       fontSize: 22,
@@ -78,7 +80,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       color: AppConstants.textDark),
                 ),
                 const SizedBox(height: 6),
-                const Text(
+                Text(
                   'Fresh groceries and daily essentials for your neighborhood.',
                   style: TextStyle(color: AppConstants.textMuted, fontSize: 13),
                 ),

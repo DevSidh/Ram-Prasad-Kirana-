@@ -23,6 +23,8 @@ class ProductProvider extends ChangeNotifier {
   double _minimumRating = 0;
   bool _organicOnly = false;
   bool _favoritesOnly = false;
+  bool _homeBestSellersOnly = false;
+  bool _homeCheapOnly = false;
   final List<String> _wishlistIds = [];
   int _wishlistRevision = 0;
   bool _disposed = false;
@@ -35,6 +37,8 @@ class ProductProvider extends ChangeNotifier {
   }
 
   List<Product> get products => _getFilteredProducts();
+  List<Product> get homeProducts =>
+      _getFilteredProducts(ignoreSelectedCategory: true);
   List<Product> get featuredProducts =>
       _products.where((product) => product.isFeatured).toList();
   List<Product> get favoriteProducts =>
@@ -53,6 +57,8 @@ class ProductProvider extends ChangeNotifier {
   double get minimumRating => _minimumRating;
   bool get organicOnly => _organicOnly;
   bool get favoritesOnly => _favoritesOnly;
+  bool get homeBestSellersOnly => _homeBestSellersOnly;
+  bool get homeCheapOnly => _homeCheapOnly;
   int get favoriteCount => _wishlistIds.length;
   List<String> get wishlistIds => List.unmodifiable(_wishlistIds);
   ApiService get apiService => _apiService;
@@ -218,7 +224,8 @@ class ProductProvider extends ChangeNotifier {
           .toList(growable: false);
       notifyListeners();
     } catch (error, stackTrace) {
-      debugPrint('Unable to restore cached product catalog: $error\n$stackTrace');
+      debugPrint(
+          'Unable to restore cached product catalog: $error\n$stackTrace');
     }
   }
 
@@ -229,7 +236,8 @@ class ProductProvider extends ChangeNotifier {
         _catalogCacheKey,
         jsonEncode({
           'products': _products.map((product) => product.toJson()).toList(),
-          'categories': _categories.map((category) => category.toJson()).toList(),
+          'categories':
+              _categories.map((category) => category.toJson()).toList(),
         }),
       );
     } catch (error, stackTrace) {
@@ -272,6 +280,8 @@ class ProductProvider extends ChangeNotifier {
     _minimumRating = 0;
     _organicOnly = false;
     _favoritesOnly = false;
+    _homeBestSellersOnly = false;
+    _homeCheapOnly = false;
     notifyListeners();
   }
 
@@ -282,6 +292,17 @@ class ProductProvider extends ChangeNotifier {
 
   void setSortBy(String sort) {
     _sortBy = sort;
+    notifyListeners();
+  }
+
+  void setHomeFilters({
+    required bool savedOnly,
+    required bool bestSellersOnly,
+    required bool cheapOnly,
+  }) {
+    _favoritesOnly = savedOnly;
+    _homeBestSellersOnly = bestSellersOnly;
+    _homeCheapOnly = cheapOnly;
     notifyListeners();
   }
 
@@ -347,6 +368,8 @@ class ProductProvider extends ChangeNotifier {
     _minimumRating = 0;
     _organicOnly = false;
     _favoritesOnly = false;
+    _homeBestSellersOnly = false;
+    _homeCheapOnly = false;
     _selectedCategorySlug = 'all';
     notifyListeners();
   }
@@ -357,7 +380,10 @@ class ProductProvider extends ChangeNotifier {
     super.dispose();
   }
 
-  List<Product> _getFilteredProducts({bool onlyFavorites = false}) {
+  List<Product> _getFilteredProducts({
+    bool onlyFavorites = false,
+    bool ignoreSelectedCategory = false,
+  }) {
     var result = List<Product>.from(_products);
 
     if (_searchQuery.trim().isNotEmpty) {
@@ -374,7 +400,7 @@ class ProductProvider extends ChangeNotifier {
           .toList();
     }
 
-    if (_selectedCategorySlug != 'all') {
+    if (!ignoreSelectedCategory && _selectedCategorySlug != 'all') {
       result = result
           .where((product) => product.categorySlug == _selectedCategorySlug)
           .toList();
@@ -389,13 +415,17 @@ class ProductProvider extends ChangeNotifier {
       result = result.where((product) => product.isOrganic).toList();
     }
 
+    if (_homeCheapOnly) {
+      result = result.where((product) => product.isFeatured).toList();
+    }
+
     if (_maxPrice.isFinite) {
       result = result.where((product) => product.price <= _maxPrice).toList();
     }
     result =
         result.where((product) => product.rating >= _minimumRating).toList();
 
-    if (_sortBy == 'price_asc') {
+    if (_homeCheapOnly || _sortBy == 'price_asc') {
       result.sort((a, b) => a.price.compareTo(b.price));
     } else if (_sortBy == 'price_desc') {
       result.sort((a, b) => b.price.compareTo(a.price));

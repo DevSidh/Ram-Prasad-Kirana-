@@ -8,6 +8,8 @@ import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/product_provider.dart';
+import '../../providers/theme_provider.dart';
+import '../../providers/language_provider.dart';
 import '../product/product_list_screen.dart';
 import '../order/my_orders_screen.dart';
 import '../auth/login_screen.dart';
@@ -65,10 +67,65 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _setTheme(bool isDark) async {
+    try {
+      await context.read<ThemeProvider>().setDarkMode(isDark);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save appearance preference: $error')),
+      );
+    }
+  }
+
+  Future<void> _chooseLanguage() async {
+    final languageProvider = context.read<AppLanguageProvider>();
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: Text(context.tr('Choose language')),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, 'en'),
+            child: Row(
+              children: [
+                const Expanded(child: Text('English')),
+                if (languageProvider.languageCode == 'en')
+                  const Icon(Icons.check, color: AppConstants.primary),
+              ],
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, 'ne'),
+            child: Row(
+              children: [
+                const Expanded(child: Text('नेपाली')),
+                if (languageProvider.languageCode == 'ne')
+                  const Icon(Icons.check, color: AppConstants.primary),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (selected == null || !mounted) return;
+    try {
+      await languageProvider.setLanguage(selected);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save language preference: $error')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthProvider>(context);
     final products = context.read<ProductProvider>();
+    final themeProvider = context.watch<ThemeProvider?>();
+    final languageProvider = context.watch<AppLanguageProvider?>();
+    final isDark = themeProvider?.isDarkMode ?? AppConstants.isDarkTheme;
     final user = auth.currentUser;
 
     return Scaffold(
@@ -76,33 +133,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
       body: SafeArea(
         child: Stack(
           children: [
-            const Positioned.fill(
+            Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Color(0xFFE7F5EC),
+                      isDark
+                          ? const Color(0xFF0D1B13)
+                          : const Color(0xFFDDF5E4),
                       AppConstants.backgroundLight,
-                      Color(0xFFF8F7F1),
+                      isDark
+                          ? const Color(0xFF080A09)
+                          : const Color(0xFFF4FAF5),
                     ],
-                    stops: [0, 0.38, 1],
+                    stops: const [0, 0.38, 1],
                   ),
                 ),
               ),
             ),
             Positioned(
-              top: -100,
-              right: -110,
+              top: -115,
+              left: -135,
               child: IgnorePointer(
                 child: Container(
-                  width: 300,
-                  height: 300,
-                  decoration: const BoxDecoration(
+                  width: 390,
+                  height: 420,
+                  decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: RadialGradient(
-                      colors: [Color(0x558BD6A9), Color(0x008BD6A9)],
+                      colors: isDark
+                          ? const [Color(0x661DB954), Color(0x001DB954)]
+                          : const [Color(0x6676D99A), Color(0x0076D99A)],
                     ),
                   ),
                 ),
@@ -121,7 +184,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ClipRRect(
                       borderRadius: BorderRadius.circular(26),
                       child: BackdropFilter(
-                        filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                        filter: ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
                         child: Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(20),
@@ -129,21 +192,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             gradient: LinearGradient(
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
-                              colors: [
-                                Colors.white.withValues(alpha: 0.82),
-                                const Color(0xFFDDF2E4).withValues(alpha: 0.76),
-                              ],
+                              colors: isDark
+                                  ? [
+                                      const Color(0xD9222925),
+                                      const Color(0xC91A201D),
+                                    ]
+                                  : [
+                                      Colors.white.withValues(alpha: 0.74),
+                                      const Color(0xFFE8F8EC)
+                                          .withValues(alpha: 0.68),
+                                    ],
                             ),
                             borderRadius: BorderRadius.circular(26),
                             border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.92),
+                              color: isDark
+                                  ? AppConstants.borderLight
+                                      .withValues(alpha: 0.72)
+                                  : Colors.white.withValues(alpha: 0.78),
                               width: 1.2,
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: AppConstants.primaryDark
-                                    .withValues(alpha: 0.1),
-                                blurRadius: 28,
+                                color: AppConstants.primary
+                                    .withValues(alpha: isDark ? 0.13 : 0.1),
+                                blurRadius: 32,
                                 offset: const Offset(0, 12),
                               ),
                             ],
@@ -162,12 +234,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     ),
                                   ),
                                   const SizedBox(width: 7),
-                                  const Expanded(
+                                  Expanded(
                                     child: FittedBox(
                                       fit: BoxFit.scaleDown,
                                       alignment: Alignment.centerLeft,
                                       child: Text(
-                                        'YOUR STORE ACCOUNT',
+                                        context.tr('YOUR STORE ACCOUNT'),
                                         style: TextStyle(
                                           color: AppConstants.primaryDark,
                                           fontSize: 10,
@@ -206,8 +278,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                               : user?.avatarUrl != null
                                                   ? ClipOval(
                                                       child: CachedNetworkImage(
+                                                        key: ValueKey(
+                                                          user!.avatarUrl,
+                                                        ),
                                                         imageUrl:
-                                                            user!.avatarUrl!,
+                                                            user.avatarUrl!,
+                                                        httpHeaders: {
+                                                          if (auth.authToken !=
+                                                              null)
+                                                            'Authorization':
+                                                                'Bearer ${auth.authToken}',
+                                                        },
                                                         width: 68,
                                                         height: 68,
                                                         fit: BoxFit.cover,
@@ -239,7 +320,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                               child: const Icon(
                                                 Icons.camera_alt_outlined,
                                                 size: 14,
-                                                color: Colors.white,
+                                                color: AppConstants
+                                                    .primaryForeground,
                                               ),
                                             ),
                                           ),
@@ -256,7 +338,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                           user?.fullName ?? 'Guest Customer',
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontWeight: FontWeight.w800,
                                             fontSize: 19,
                                             color: AppConstants.textDark,
@@ -267,7 +349,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                           user?.email ?? 'customer@example.com',
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             color: AppConstants.textMuted,
                                             fontSize: 12,
                                           ),
@@ -285,8 +367,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       ),
                                     ),
                                     style: IconButton.styleFrom(
-                                      backgroundColor:
-                                          Colors.white.withValues(alpha: 0.68),
+                                      backgroundColor: AppConstants.surfaceLight
+                                          .withValues(alpha: 0.78),
                                       foregroundColor: AppConstants.primaryDark,
                                     ),
                                     icon: const Icon(Icons.edit_outlined),
@@ -298,7 +380,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 children: [
                                   _ProfileQuickAction(
                                     icon: Icons.receipt_long_outlined,
-                                    label: 'Orders',
+                                    label: context.tr('Orders'),
                                     onTap: () => Navigator.push(
                                       context,
                                       MaterialPageRoute(
@@ -309,7 +391,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   const SizedBox(width: 10),
                                   _ProfileQuickAction(
                                     icon: Icons.location_on_outlined,
-                                    label: 'Addresses',
+                                    label: context.tr('Addresses'),
                                     onTap: () => Navigator.push(
                                       context,
                                       MaterialPageRoute(
@@ -321,7 +403,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   const SizedBox(width: 10),
                                   _ProfileQuickAction(
                                     icon: Icons.favorite_border,
-                                    label: 'Saved items',
+                                    label: context.tr('Saved items'),
                                     onTap: () {
                                       products.resetCatalogFilters();
                                       Navigator.push(
@@ -347,11 +429,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                     // Options List
                     Material(
-                      color: Colors.white.withValues(alpha: 0.78),
+                      color: AppConstants.glassSurfaceFor(isDark),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20),
                         side: BorderSide(
-                          color: Colors.white.withValues(alpha: 0.92),
+                          color: AppConstants.glassBorderFor(isDark),
                         ),
                       ),
                       elevation: 1,
@@ -360,11 +442,67 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       clipBehavior: Clip.antiAlias,
                       child: Column(
                         children: [
+                          SwitchListTile.adaptive(
+                            secondary: Icon(
+                              isDark
+                                  ? Icons.dark_mode_outlined
+                                  : Icons.light_mode_outlined,
+                              color: AppConstants.primary,
+                            ),
+                            title: Text(
+                              context.tr('Dark appearance'),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              context.tr(
+                                isDark ? 'Dark mode is on' : 'Light mode is on',
+                              ),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppConstants.textMuted,
+                              ),
+                            ),
+                            value: isDark,
+                            onChanged: themeProvider == null ? null : _setTheme,
+                          ),
+                          const Divider(height: 1),
+                          ListTile(
+                            leading: const Icon(
+                              Icons.translate_outlined,
+                              color: AppConstants.primary,
+                            ),
+                            title: Text(
+                              context.tr('Language'),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              context.tr(
+                                languageProvider?.languageCode == 'ne'
+                                    ? 'Nepali'
+                                    : 'English',
+                              ),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppConstants.textMuted,
+                              ),
+                            ),
+                            trailing: const Icon(Icons.chevron_right, size: 20),
+                            onTap: languageProvider == null
+                                ? null
+                                : _chooseLanguage,
+                          ),
+                          const Divider(height: 1),
                           ListTile(
                             leading: const Icon(Icons.payment_outlined,
                                 color: AppConstants.primary),
-                            title: const Text('Payment Methods',
-                                style: TextStyle(
+                            title: Text(context.tr('Payment Methods'),
+                                style: const TextStyle(
                                     fontSize: 13, fontWeight: FontWeight.w600)),
                             trailing: const Icon(Icons.chevron_right, size: 20),
                             onTap: () => Navigator.push(
@@ -380,9 +518,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               Icons.notifications_active_outlined,
                               color: AppConstants.primary,
                             ),
-                            title: const Text(
-                              'Notifications',
-                              style: TextStyle(
+                            title: Text(
+                              context.tr('Notifications'),
+                              style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -400,8 +538,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             leading: const Icon(
                                 Icons.notifications_none_outlined,
                                 color: AppConstants.primary),
-                            title: const Text('Notification Preferences',
-                                style: TextStyle(
+                            title: Text(context.tr('Notification Preferences'),
+                                style: const TextStyle(
                                     fontSize: 13, fontWeight: FontWeight.w600)),
                             trailing: const Icon(Icons.chevron_right, size: 20),
                             onTap: () => Navigator.push(
@@ -418,15 +556,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               Icons.admin_panel_settings_outlined,
                               color: AppConstants.primary,
                             ),
-                            title: const Text(
-                              'Store administration',
-                              style: TextStyle(
+                            title: Text(
+                              context.tr('Store administration'),
+                              style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
                             subtitle:
-                                const Text('Sign in with an admin account'),
+                                Text(context.tr(
+                                  'Sign in with an admin account',
+                                )),
                             trailing: const Icon(Icons.chevron_right, size: 20),
                             onTap: () {
                               Navigator.push(
@@ -444,11 +584,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const SizedBox(height: 16),
 
                     Material(
-                      color: Colors.white.withValues(alpha: 0.78),
+                      color: AppConstants.glassSurfaceFor(isDark),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20),
                         side: BorderSide(
-                          color: Colors.white.withValues(alpha: 0.92),
+                          color: AppConstants.glassBorderFor(isDark),
                         ),
                       ),
                       elevation: 1,
@@ -458,10 +598,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       child: Column(
                         children: [
                           ListTile(
-                            leading: const Icon(Icons.help_outline,
+                            leading: Icon(Icons.help_outline,
                                 color: AppConstants.textMuted),
-                            title: const Text('Help & store information',
-                                style: TextStyle(
+                            title: Text(context.tr('Help & store information'),
+                                style: const TextStyle(
                                     fontSize: 13, fontWeight: FontWeight.w600)),
                             trailing: const Icon(Icons.chevron_right, size: 20),
                             onTap: () => Navigator.push(
@@ -473,10 +613,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           const Divider(height: 1),
                           ListTile(
-                            leading: const Icon(Icons.privacy_tip_outlined,
+                            leading: Icon(Icons.privacy_tip_outlined,
                                 color: AppConstants.textMuted),
-                            title: const Text('Privacy Policy',
-                                style: TextStyle(
+                            title: Text(context.tr('Privacy Policy'),
+                                style: const TextStyle(
                                     fontSize: 13, fontWeight: FontWeight.w600)),
                             trailing: const Icon(Icons.chevron_right, size: 20),
                             onTap: () => Navigator.push(
@@ -490,8 +630,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ListTile(
                             leading:
                                 const Icon(Icons.logout, color: Colors.red),
-                            title: const Text('Log Out',
-                                style: TextStyle(
+                            title: Text(context.tr('Log Out'),
+                                style: const TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
                                     color: Colors.red)),
@@ -525,7 +665,7 @@ Widget _avatarInitial(String? fullName) {
   return Center(
     child: Text(
       fullName != null && fullName.isNotEmpty ? fullName[0].toUpperCase() : 'U',
-      style: const TextStyle(
+      style: TextStyle(
         color: AppConstants.primaryDark,
         fontSize: 24,
         fontWeight: FontWeight.bold,
@@ -549,11 +689,11 @@ class _ProfileQuickAction extends StatelessWidget {
   Widget build(BuildContext context) {
     return Expanded(
       child: Material(
-        color: Colors.white.withValues(alpha: 0.62),
+        color: AppConstants.glassSurfaceFor(AppConstants.isDarkTheme),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
           side: BorderSide(
-            color: Colors.white.withValues(alpha: 0.86),
+            color: AppConstants.glassBorderFor(AppConstants.isDarkTheme),
           ),
         ),
         child: InkWell(
@@ -571,7 +711,7 @@ class _ProfileQuickAction extends StatelessWidget {
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppConstants.textDark,
                     fontSize: 11,
                     fontWeight: FontWeight.w600,

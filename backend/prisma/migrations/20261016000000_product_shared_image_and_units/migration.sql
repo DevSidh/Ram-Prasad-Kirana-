@@ -1,0 +1,3 @@
+ALTER TABLE "Product" ADD COLUMN "imageData" BYTES;
+ALTER TABLE "Product" ADD COLUMN "imageMimeType" STRING;
+ALTER TABLE "Product" ADD COLUMN "unitLabel" STRING NOT NULL DEFAULT '1 pc';

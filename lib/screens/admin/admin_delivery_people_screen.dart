@@ -258,16 +258,16 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
         children: [
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    const Text(
                       'Delivery team',
                       style:
                           TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
                     ),
-                    SizedBox(height: 4),
+                    const SizedBox(height: 4),
                     Text(
                       'Create staff accounts and check who is on duty.',
                       style: TextStyle(color: AppConstants.textMuted),
@@ -337,7 +337,7 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 4),
-        const Text(
+        Text(
           'Review orders, customer details and rider progress. Assign ready orders to an on-duty rider.',
           style: TextStyle(color: AppConstants.textMuted, height: 1.4),
         ),
@@ -386,8 +386,8 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
             child: Center(child: CircularProgressIndicator()),
           )
         else if (orders.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 18),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 18),
             child: Text(
               'No orders match this delivery view.',
               style: TextStyle(color: AppConstants.textMuted),
@@ -502,7 +502,7 @@ class _DeliveryOrderAdminCard extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(15),
-        side: const BorderSide(color: AppConstants.borderLight),
+        side: BorderSide(color: AppConstants.borderLight),
       ),
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 3),
@@ -518,7 +518,7 @@ class _DeliveryOrderAdminCard extends StatelessWidget {
           child: Text(
             '$deliveryStatus · ${order.status.replaceAll('_', ' ')} · '
             'Rs. ${order.total.toStringAsFixed(0)}',
-            style: const TextStyle(
+            style: TextStyle(
               color: AppConstants.textMuted,
               fontSize: 11,
             ),
@@ -591,7 +591,7 @@ class _DeliveryOrderAdminCard extends StatelessWidget {
                     entry['status']?.toString().replaceAll('_', ' '),
                     entry['note']?.toString(),
                   ].whereType<String>().where((value) => value.isNotEmpty).join(' · '),
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppConstants.textMuted,
                     fontSize: 11,
                   ),
@@ -663,7 +663,7 @@ class _AdminDeliveryDetail extends StatelessWidget {
             width: 82,
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppConstants.textMuted,
                 fontSize: 11,
               ),
@@ -700,7 +700,7 @@ class _CashHandoverSection extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: AppConstants.borderLight),
+        side: BorderSide(color: AppConstants.borderLight),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -724,7 +724,7 @@ class _CashHandoverSection extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 4),
-            const Text(
+            Text(
               'Confirm only after the delivery staff hands the collected cash to the store.',
               style: TextStyle(
                 color: AppConstants.textMuted,
@@ -743,8 +743,8 @@ class _CashHandoverSection extends StatelessWidget {
                 ),
               )
             else if (deliveries.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(top: 12),
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
                 child: Text(
                   'No customer cash is waiting for store handover.',
                   style: TextStyle(color: AppConstants.textMuted, fontSize: 12),
@@ -768,7 +768,7 @@ class _CashHandoverSection extends StatelessWidget {
                             '${delivery.deliveryPersonName} · Rs. ${delivery.cashCollected.toStringAsFixed(2)}',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: AppConstants.textMuted,
                               fontSize: 12,
                             ),
@@ -816,7 +816,7 @@ class _DeliveryPersonCard extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: AppConstants.borderLight),
+        side: BorderSide(color: AppConstants.borderLight),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -849,7 +849,7 @@ class _DeliveryPersonCard extends StatelessWidget {
                         : '${person.phone} · ${person.email}',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AppConstants.textMuted,
                       fontSize: 11,
                     ),
@@ -1032,12 +1032,12 @@ class _SalaryNotice extends StatelessWidget {
         color: AppConstants.primaryLight,
         borderRadius: BorderRadius.circular(14),
       ),
-      child: const Row(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(Icons.info_outline_rounded, color: AppConstants.primaryDark),
-          SizedBox(width: 10),
-          Expanded(
+          const SizedBox(width: 10),
+          const Expanded(
             child: Text(
               'Delivery staff are monthly salaried. No per-order wages or incentive amounts are configured here.',
               style: TextStyle(fontSize: 12, height: 1.35),
@@ -1054,17 +1054,17 @@ class _EmptyRiders extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.all(36),
+    return Padding(
+      padding: const EdgeInsets.all(36),
       child: Column(
         children: [
-          Icon(Icons.people_outline_rounded, size: 42, color: AppConstants.primary),
-          SizedBox(height: 10),
-          Text(
+          const Icon(Icons.people_outline_rounded, size: 42, color: AppConstants.primary),
+          const SizedBox(height: 10),
+          const Text(
             'No delivery staff yet',
             style: TextStyle(fontWeight: FontWeight.w800),
           ),
-          SizedBox(height: 4),
+          const SizedBox(height: 4),
           Text(
             'Add a staff account to start assigning prepared orders.',
             textAlign: TextAlign.center,

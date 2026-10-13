@@ -10,6 +10,7 @@ class AuthSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return LayoutBuilder(
       builder: (context, constraints) {
         final isCompact = constraints.maxWidth < 360;
@@ -33,7 +34,7 @@ class AuthSurface extends StatelessWidget {
                 left: -120,
                 child: _BackdropGlow(
                   size: 340,
-                  color: const Color(0xFFE0B25F).withValues(alpha: 0.22),
+                  color: AppConstants.primary.withValues(alpha: 0.18),
                 ),
               ),
               Center(
@@ -45,8 +46,10 @@ class AuthSurface extends StatelessWidget {
                       padding: EdgeInsets.all(panelPadding),
                       borderRadius:
                           const BorderRadius.all(Radius.circular(28)),
-                      tint: Colors.white,
-                      opacity: 0.79,
+                      tint: isDark
+                          ? const Color(0xFF111714)
+                          : const Color(0xFFF8FCF8),
+                      opacity: isDark ? 0.96 : 0.97,
                       blur: 24,
                       child: child,
                     ),

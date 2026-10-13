@@ -30,27 +30,41 @@ export const receiveSingleImage: RequestHandler = (req, res, next) => {
   });
 };
 
-export async function saveUploadedImage(buffer: Buffer): Promise<string | null> {
-  let extension: string | null = null;
+export function getImageMimeType(buffer: Buffer): string | null {
   if (
     buffer.length >= 8 &&
     buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
   ) {
-    extension = '.png';
-  } else if (
+    return 'image/png';
+  }
+  if (
     buffer.length >= 3 &&
     buffer[0] === 0xff &&
     buffer[1] === 0xd8 &&
     buffer[2] === 0xff
   ) {
-    extension = '.jpg';
-  } else if (
+    return 'image/jpeg';
+  }
+  if (
     buffer.length >= 12 &&
     buffer.toString('ascii', 0, 4) === 'RIFF' &&
     buffer.toString('ascii', 8, 12) === 'WEBP'
   ) {
-    extension = '.webp';
+    return 'image/webp';
   }
+
+  return null;
+}
+
+export async function saveUploadedImage(buffer: Buffer): Promise<string | null> {
+  const mimeType = getImageMimeType(buffer);
+  const extension = mimeType === 'image/png'
+    ? '.png'
+    : mimeType === 'image/jpeg'
+      ? '.jpg'
+      : mimeType === 'image/webp'
+        ? '.webp'
+        : null;
   if (!extension) return null;
 
   const filename = `${randomUUID()}${extension}`;

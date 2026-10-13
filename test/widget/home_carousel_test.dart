@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:freshharvest_grocery/core/constants.dart';
 import 'package:freshharvest_grocery/providers/auth_provider.dart';
 import 'package:freshharvest_grocery/providers/cart_provider.dart';
 import 'package:freshharvest_grocery/providers/product_provider.dart';
@@ -33,6 +34,7 @@ class _CarouselApi extends ApiService {
           'categoryName': 'Fresh',
           'categorySlug': 'fresh',
           'price': 220,
+          'originalPrice': 250,
           'weight': '1 kg',
           'stock': 10,
           'description': 'Crisp red apples.',
@@ -84,6 +86,8 @@ void main() {
     final products = ProductProvider(apiService: api);
     final cart = CartProvider();
     final cartTargetKey = GlobalKey();
+    final homeActive = ValueNotifier(true);
+    addTearDown(homeActive.dispose);
     await products.loadCatalog();
     products.setCatalogFilters(categorySlug: 'not-on-home');
     addTearDown(products.dispose);
@@ -98,17 +102,24 @@ void main() {
           ChangeNotifierProvider<ProductProvider>.value(value: products),
           ChangeNotifierProvider<CartProvider>.value(value: cart),
         ],
-        child: CartFlightTarget(
-          targetKey: cartTargetKey,
-          child: MaterialApp(
-            home: Scaffold(
-              body: const HomeScreen(),
-              bottomNavigationBar: SizedBox(
-                key: cartTargetKey,
-                height: 48,
-                child: const Icon(Icons.shopping_cart_outlined),
+        child: ValueListenableBuilder<bool>(
+          valueListenable: homeActive,
+          child: CartFlightTarget(
+            targetKey: cartTargetKey,
+            child: MaterialApp(
+              home: Scaffold(
+                body: const HomeScreen(),
+                bottomNavigationBar: SizedBox(
+                  key: cartTargetKey,
+                  height: 48,
+                  child: const Icon(Icons.shopping_cart_outlined),
+                ),
               ),
             ),
+          ),
+          builder: (context, isActive, child) => TickerMode(
+            enabled: isActive,
+            child: child!,
           ),
         ),
       ),
@@ -118,15 +129,46 @@ void main() {
 
     expect(find.text('Shop by categories'), findsOneWidget);
     expect(find.text('Cheap'), findsOneWidget);
+    expect(find.text('Everyday rice'), findsNothing);
+    expect(find.byType(SliverGrid), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(
+            find.descendant(
+              of: find.byType(PageView),
+              matching: find.text('${AppConstants.currencySymbol}250'),
+            ),
+          )
+          .style
+          ?.decoration,
+      TextDecoration.lineThrough,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(PageView),
+        matching: find.text('${AppConstants.currencySymbol}220'),
+      ),
+      findsOneWidget,
+    );
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -700));
+    await tester.pumpAndSettle();
     expect(find.text('Everyday rice'), findsOneWidget);
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, 700));
+    await tester.pumpAndSettle();
+
     final pageController =
         tester.widget<PageView>(find.byType(PageView)).controller!;
     expect(find.byTooltip('Next featured product'), findsOneWidget);
     expect(pageController.page, 0);
 
-    await tester.pump(const Duration(seconds: 3));
+    homeActive.value = false;
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 5));
     expect(pageController.page, 0);
-    await tester.pump(const Duration(milliseconds: 700));
+
+    homeActive.value = true;
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 4));
     await tester.pump(const Duration(milliseconds: 350));
     expect(pageController.page, 1);
 

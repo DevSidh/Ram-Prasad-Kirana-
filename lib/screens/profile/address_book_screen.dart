@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/constants.dart';
 import '../../models/address.dart';
+import '../../providers/theme_provider.dart';
 import '../../services/address_service.dart';
 import '../../services/api_service.dart';
 import 'address_map_picker.dart';
@@ -119,6 +120,7 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ThemeProvider?>();
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.selectionMode
@@ -199,13 +201,13 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
                                           Text(address.fullName),
                                           Text(
                                             '${address.street}, ${address.city}, ${address.province}',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               color: AppConstants.textMuted,
                                             ),
                                           ),
                                           Text(
                                             address.phone,
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               color: AppConstants.textMuted,
                                             ),
                                           ),
@@ -327,6 +329,7 @@ class _AddressFormDialogState extends State<_AddressFormDialog> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ThemeProvider?>();
     return AlertDialog(
       title: Text(
           widget.address == null ? 'Add delivery address' : 'Edit address'),
@@ -347,7 +350,7 @@ class _AddressFormDialogState extends State<_AddressFormDialog> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                const Text(
+                Text(
                   'You can save this address without using the map.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
@@ -361,7 +364,7 @@ class _AddressFormDialogState extends State<_AddressFormDialog> {
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Text(
                       'Map pin selected (${_latitude!.toStringAsFixed(5)}, ${_longitude!.toStringAsFixed(5)})',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppConstants.primaryDark,
                         fontSize: 12,
                       ),
@@ -458,7 +461,7 @@ class _DefaultBadge extends StatelessWidget {
           color: AppConstants.primaryLight,
           borderRadius: BorderRadius.circular(20),
         ),
-        child: const Text(
+        child: Text(
           'DEFAULT',
           style: TextStyle(
             color: AppConstants.primaryDark,
@@ -488,7 +491,7 @@ class _AddressEmpty extends StatelessWidget {
               const Text('No delivery addresses yet',
                   style: TextStyle(fontWeight: FontWeight.w700)),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 'Save an address for a quicker checkout.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppConstants.textMuted),

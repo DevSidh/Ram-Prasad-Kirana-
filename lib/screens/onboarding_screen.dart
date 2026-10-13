@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants.dart';
+import '../providers/theme_provider.dart';
 import 'auth/login_screen.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -17,17 +19,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final List<Map<String, String>> _pages = [
     {
       'title': 'All Daily Needs Under One Roof',
-      'subtitle': 'Food rations, school stationery, household cleaners, personal care, batteries, and hardware accessories.',
+      'subtitle':
+          'Food rations, school stationery, household cleaners, personal care, batteries, and hardware accessories.',
       'icon': 'storefront',
     },
     {
       'title': 'Flexible Packs & Honest Prices',
-      'subtitle': 'Choose piece, pack, or bulk units with verified brand warranty and easy payment via COD, Khalti or eSewa.',
+      'subtitle':
+          'Choose piece, pack, or bulk units with verified brand warranty and easy payment via COD, Khalti or eSewa.',
       'icon': 'shopping_basket',
     },
     {
       'title': 'Express 45-Min Neighborhood Delivery',
-      'subtitle': 'Swift neighborhood courier dispatch directly to your home or office with live doorstep status tracking.',
+      'subtitle':
+          'Swift neighborhood courier dispatch directly to your home or office with live doorstep status tracking.',
       'icon': 'electric_moped',
     },
   ];
@@ -44,15 +49,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ThemeProvider?>();
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppConstants.backgroundLight,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: AppConstants.backgroundLight,
         actions: [
           if (_currentIndex < _pages.length - 1)
             TextButton(
               onPressed: _completeOnboarding,
-              child: const Text('Skip', style: TextStyle(color: AppConstants.textMuted)),
+              child: Text('Skip',
+                  style: TextStyle(color: AppConstants.textMuted)),
             ),
         ],
       ),
@@ -74,7 +81,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         Container(
                           width: 140,
                           height: 140,
-                          decoration: const BoxDecoration(
+                          decoration: BoxDecoration(
                             color: AppConstants.primaryLight,
                             shape: BoxShape.circle,
                           ),
@@ -92,7 +99,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         Text(
                           page['title']!,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
                             color: AppConstants.textDark,
@@ -102,7 +109,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         Text(
                           page['subtitle']!,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 14,
                             color: AppConstants.textMuted,
                             height: 1.4,
@@ -129,7 +136,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         width: _currentIndex == index ? 24 : 8,
                         height: 8,
                         decoration: BoxDecoration(
-                          color: _currentIndex == index ? AppConstants.primary : Colors.grey.shade300,
+                          color: _currentIndex == index
+                              ? AppConstants.primary
+                              : AppConstants.borderLight,
                           borderRadius: BorderRadius.circular(4),
                         ),
                       ),
@@ -152,11 +161,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppConstants.primary,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                       child: Text(
-                        _currentIndex == _pages.length - 1 ? 'Get Started' : 'Next',
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                        _currentIndex == _pages.length - 1
+                            ? 'Get Started'
+                            : 'Next',
+                        style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: AppConstants.primaryForeground),
                       ),
                     ),
                   ),

@@ -1,9 +1,10 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../models/product.dart';
 import '../../providers/cart_provider.dart';
 import '../../providers/product_provider.dart';
+import '../../providers/theme_provider.dart';
 import '../../widgets/product_thumbnail.dart';
 import '../checkout/checkout_screen.dart';
 
@@ -23,12 +24,13 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   Widget build(BuildContext context) {
     final cartProvider = Provider.of<CartProvider>(context);
     final productProvider = Provider.of<ProductProvider>(context);
+    context.watch<ThemeProvider?>();
     final isWishlisted = productProvider.isWishlisted(widget.product.id);
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppConstants.backgroundLight,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: AppConstants.backgroundLight,
         actions: [
           IconButton(
             icon: Icon(
@@ -51,7 +53,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
             Container(
               height: 280,
               width: double.infinity,
-              color: Colors.grey.shade50,
+              color: AppConstants.surfaceLight,
               child: ProductThumbnail(
                 imageUrl: widget.product.imageUrl,
                 size: 280,
@@ -85,7 +87,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                         Text(
                           widget.product.origin!,
                           style: TextStyle(
-                              color: Colors.grey.shade500, fontSize: 11),
+                              color: AppConstants.textMuted, fontSize: 11),
                         ),
                     ],
                   ),
@@ -94,7 +96,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   // Product Title
                   Text(
                     widget.product.name,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
                       color: AppConstants.textDark,
@@ -116,7 +118,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                       Text(
                         ' (${widget.product.reviewCount} customer reviews)',
                         style: TextStyle(
-                            color: Colors.grey.shade500, fontSize: 12),
+                            color: AppConstants.textMuted, fontSize: 12),
                       ),
                     ],
                   ),
@@ -137,7 +139,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                           children: [
                             Text(
                               '${AppConstants.currencySymbol}${widget.product.price.toInt()}',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 22,
                                 fontWeight: FontWeight.bold,
                                 color: AppConstants.textDark,
@@ -146,14 +148,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                             Text(
                               'Standard packaging: ${widget.product.weight}',
                               style: TextStyle(
-                                  color: Colors.grey.shade600, fontSize: 12),
+                                  color: AppConstants.textMuted, fontSize: 12),
                             ),
                           ],
                         ),
                         // Quantity selector
                         Container(
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: AppConstants.surfaceLight,
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(color: AppConstants.borderLight),
                           ),
@@ -196,7 +198,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   Text(
                     widget.product.description,
                     style: TextStyle(
-                        color: Colors.grey.shade700, fontSize: 13, height: 1.5),
+                        color: AppConstants.textMuted,
+                        fontSize: 13,
+                        height: 1.5),
                   ),
                   const SizedBox(height: 24),
 
@@ -207,11 +211,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                       color: AppConstants.primaryLight.withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Row(
+                    child: Row(
                       children: [
-                        Icon(Icons.ac_unit,
+                        const Icon(Icons.ac_unit,
                             color: AppConstants.primary, size: 20),
-                        SizedBox(width: 10),
+                        const SizedBox(width: 10),
                         Expanded(
                           child: Text(
                             'Cold-chain insulated tote packing guarantee with express 45-min delivery.',
@@ -234,7 +238,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       bottomNavigationBar: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppConstants.surfaceLight,
           boxShadow: [
             BoxShadow(
                 color: Colors.black.withValues(alpha: 0.05),
@@ -289,7 +293,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   ),
                   child: const Text('Buy Now',
                       style: TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.bold)),
+                          color: AppConstants.primaryForeground,
+                          fontWeight: FontWeight.bold)),
                 ),
               ),
             ),

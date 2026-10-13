@@ -84,15 +84,15 @@ class ApiService {
     required String fieldName,
     required Uint8List bytes,
     required String fileName,
+    Map<String, String> fields = const {},
+    String method = 'POST',
   }) async {
     try {
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$baseUrl$endpoint'),
-      );
+      final request = http.MultipartRequest(method, Uri.parse('$baseUrl$endpoint'));
       if (_authToken != null && _authToken!.isNotEmpty) {
         request.headers['Authorization'] = 'Bearer $_authToken';
       }
+      request.fields.addAll(fields);
       request.files.add(http.MultipartFile.fromBytes(
         fieldName,
         bytes,

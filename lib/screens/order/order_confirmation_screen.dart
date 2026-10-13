@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/constants.dart';
 import '../../models/cart_item.dart';
 import '../../models/order.dart';
 import '../../navigation/main_bottom_nav.dart';
+import '../../providers/theme_provider.dart';
 import '../../widgets/product_thumbnail.dart';
 import 'order_tracking_screen.dart';
 
@@ -14,29 +16,19 @@ class OrderConfirmationScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ThemeProvider?>();
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppConstants.backgroundLight,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             children: [
               const SizedBox(height: 18),
-              Container(
-                width: 90,
-                height: 90,
-                decoration: const BoxDecoration(
-                  color: AppConstants.primaryLight,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.check,
-                  color: AppConstants.primary,
-                  size: 48,
-                ),
-              ),
+              _SuccessMedallion(reduceMotion: reduceMotion),
               const SizedBox(height: 24),
-              const Text(
+              Text(
                 'Order placed',
                 style: TextStyle(
                   fontSize: 24,
@@ -48,7 +40,7 @@ class OrderConfirmationScreen extends StatelessWidget {
               Text(
                 'Order #${order.orderNumber} has been sent to the store. The store will confirm preparation and delivery timing.',
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppConstants.textMuted,
                   fontSize: 13,
                   height: 1.4,
@@ -67,7 +59,7 @@ class OrderConfirmationScreen extends StatelessWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
+                        Text(
                           'Order total',
                           style: TextStyle(
                             color: AppConstants.textMuted,
@@ -87,7 +79,7 @@ class OrderConfirmationScreen extends StatelessWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
+                        Text(
                           'Payment method',
                           style: TextStyle(
                             color: AppConstants.textMuted,
@@ -141,11 +133,14 @@ class OrderConfirmationScreen extends StatelessWidget {
                       ),
                     );
                   },
-                  icon: const Icon(Icons.radar, color: Colors.white),
+                  icon: const Icon(
+                    Icons.radar,
+                    color: AppConstants.primaryForeground,
+                  ),
                   label: const Text(
                     'Track order',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: AppConstants.primaryForeground,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -188,6 +183,105 @@ class OrderConfirmationScreen extends StatelessWidget {
   }
 }
 
+class _SuccessMedallion extends StatefulWidget {
+  final bool reduceMotion;
+
+  const _SuccessMedallion({required this.reduceMotion});
+
+  @override
+  State<_SuccessMedallion> createState() => _SuccessMedallionState();
+}
+
+class _SuccessMedallionState extends State<_SuccessMedallion>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: widget.reduceMotion
+        ? Duration.zero
+        : const Duration(milliseconds: 1050),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final progress = Curves.easeOutCubic.transform(_controller.value);
+        final scale = widget.reduceMotion
+            ? 1.0
+            : Curves.elasticOut.transform(_controller.value);
+        return Transform.scale(
+          scale: scale,
+          child: CustomPaint(
+            painter: _SuccessRingPainter(progress: progress),
+            child: Container(
+              width: 90,
+              height: 90,
+              margin: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: AppConstants.primaryLight,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: AppConstants.primary.withValues(
+                      alpha: .12 * (1 - progress),
+                    ),
+                    blurRadius: 22,
+                    spreadRadius: 4 * (1 - progress),
+                  ),
+                ],
+              ),
+              child: Opacity(
+                opacity: (progress * 1.5).clamp(0.0, 1.0),
+                child: const Icon(
+                  Icons.check_rounded,
+                  color: AppConstants.primary,
+                  size: 48,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SuccessRingPainter extends CustomPainter {
+  final double progress;
+
+  const _SuccessRingPainter({required this.progress});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = AppConstants.primary.withValues(alpha: .42 * (1 - progress))
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5 * (1 - progress) + .5;
+    canvas.drawCircle(
+      size.center(Offset.zero),
+      43 + 20 * progress,
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _SuccessRingPainter oldDelegate) =>
+      oldDelegate.progress != progress;
+}
+
 class _OrderItemRow extends StatelessWidget {
   final CartItem item;
   final bool showDivider;
@@ -213,7 +307,7 @@ class _OrderItemRow extends StatelessWidget {
                 '${item.product.name} × ${item.quantity}',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppConstants.textDark,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -223,7 +317,7 @@ class _OrderItemRow extends StatelessWidget {
             const SizedBox(width: 8),
             Text(
               '${AppConstants.currencySymbol}${item.totalPrice.toInt()}',
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppConstants.textDark,
                 fontSize: 13,
                 fontWeight: FontWeight.w700,

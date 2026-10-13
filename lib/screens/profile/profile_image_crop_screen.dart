@@ -3,8 +3,10 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/constants.dart';
+import '../../providers/theme_provider.dart';
 
 class ProfileImageCropScreen extends StatefulWidget {
   final Uint8List imageBytes;
@@ -63,6 +65,7 @@ class _ProfileImageCropScreenState extends State<ProfileImageCropScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ThemeProvider?>();
     final side =
         (MediaQuery.sizeOf(context).width - 48).clamp(220.0, 320.0).toDouble();
 
@@ -111,9 +114,9 @@ class _ProfileImageCropScreenState extends State<ProfileImageCropScreen> {
                               child: Image.memory(
                                 widget.imageBytes,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => const ColoredBox(
+                                errorBuilder: (_, __, ___) => ColoredBox(
                                   color: AppConstants.primaryLight,
-                                  child: Icon(
+                                  child: const Icon(
                                     Icons.broken_image_outlined,
                                     color: AppConstants.primary,
                                     size: 48,
@@ -133,7 +136,7 @@ class _ProfileImageCropScreenState extends State<ProfileImageCropScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                const Text(
+                Text(
                   'Pinch to zoom and drag to frame your photo.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: AppConstants.textMuted),

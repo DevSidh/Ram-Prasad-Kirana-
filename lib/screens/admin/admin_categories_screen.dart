@@ -109,12 +109,12 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
         children: [
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Organize the shelves', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800)),
-                    SizedBox(height: 4),
+                    const Text('Organize the shelves', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 4),
                     Text('Categories are shared with your store catalog.', style: TextStyle(color: AppConstants.textMuted, fontSize: 12)),
                   ],
                 ),
@@ -295,7 +295,7 @@ class _CategoryCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.fromLTRB(14, 13, 8, 13),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppConstants.surfaceLight,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppConstants.borderLight),
       ),
@@ -320,10 +320,10 @@ class _CategoryCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 3),
-                Text(category.slug, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppConstants.textMuted, fontSize: 12)),
+                Text(category.slug, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: AppConstants.textMuted, fontSize: 12)),
                 if (category.description?.isNotEmpty == true) ...[
                   const SizedBox(height: 3),
-                  Text(category.description!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppConstants.textMuted, fontSize: 11)),
+                  Text(category.description!, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: AppConstants.textMuted, fontSize: 11)),
                 ],
               ],
             ),
@@ -377,14 +377,14 @@ class _EmptyCategories extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.all(28),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: AppConstants.borderLight)),
+        decoration: BoxDecoration(color: AppConstants.surfaceLight, borderRadius: BorderRadius.circular(18), border: Border.all(color: AppConstants.borderLight)),
         child: Column(
           children: [
-            const Icon(Icons.category_outlined, size: 34, color: AppConstants.textMuted),
+            Icon(Icons.category_outlined, size: 34, color: AppConstants.textMuted),
             const SizedBox(height: 10),
             const Text('No categories yet', style: TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 5),
-            const Text('Create your first category to group store products.', textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: AppConstants.textMuted)),
+            Text('Create your first category to group store products.', textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: AppConstants.textMuted)),
             const SizedBox(height: 14),
             FilledButton.icon(
               onPressed: onAdd,
@@ -409,11 +409,11 @@ class _LoadError extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.cloud_off_outlined, size: 40, color: AppConstants.textMuted),
+              Icon(Icons.cloud_off_outlined, size: 40, color: AppConstants.textMuted),
               const SizedBox(height: 12),
               const Text('Categories unavailable', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
               const SizedBox(height: 6),
-              Text(message, textAlign: TextAlign.center, style: const TextStyle(color: AppConstants.textMuted)),
+              Text(message, textAlign: TextAlign.center, style: TextStyle(color: AppConstants.textMuted)),
               const SizedBox(height: 16),
               FilledButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: const Text('Try again')),
             ],

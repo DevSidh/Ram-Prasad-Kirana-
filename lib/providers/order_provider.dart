@@ -69,7 +69,6 @@ class OrderProvider extends ChangeNotifier {
     required Address address,
     required String paymentMethod,
     required String idempotencyKey,
-    required double tip,
   }) async {
     _isLoading = true;
     notifyListeners();
@@ -80,11 +79,11 @@ class OrderProvider extends ChangeNotifier {
             .map((item) => {
                   'productId': item.product.id,
                   'quantity': item.quantity,
+                  'isWholesale': item.isWholesale,
                 })
             .toList(),
         'addressId': address.id,
         'paymentMethod': paymentMethod,
-        'tip': tip,
         'idempotencyKey': idempotencyKey,
       });
       if (response is! Map<String, dynamic> ||
@@ -118,14 +117,14 @@ class OrderProvider extends ChangeNotifier {
               .map(Order.fromJson),
         );
       if (_activeOrder != null) {
-          final activeId = _activeOrder!.id;
-          for (final order in _orders) {
-            if (order.id == activeId) {
-              _activeOrder = order;
-              break;
-            }
+        final activeId = _activeOrder!.id;
+        for (final order in _orders) {
+          if (order.id == activeId) {
+            _activeOrder = order;
+            break;
           }
         }
+      }
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -164,7 +163,8 @@ class OrderProvider extends ChangeNotifier {
   }
 
   Future<bool> cancelOrder(String orderId) async {
-    final response = await _apiService.post('/orders/$orderId/cancel', const {});
+    final response =
+        await _apiService.post('/orders/$orderId/cancel', const {});
     if (response is! Map<String, dynamic> ||
         response['order'] is! Map<String, dynamic>) {
       throw StateError('The server returned an invalid cancellation response.');

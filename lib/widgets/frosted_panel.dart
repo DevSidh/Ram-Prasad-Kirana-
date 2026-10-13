@@ -22,29 +22,38 @@ class FrostedPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final panel = Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: tint.withValues(alpha: opacity),
+        borderRadius: borderRadius,
+        border: Border.all(
+          color: Colors.white.withValues(alpha: isDark ? 0.12 : 0.72),
+          width: isDark ? 1 : 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF123E2E).withValues(alpha: 0.1),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: child,
+    );
+    if (blur <= 0) {
+      return ClipRRect(
+        borderRadius: borderRadius,
+        child: panel,
+      );
+    }
+
     return ClipRRect(
       borderRadius: borderRadius,
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-        child: Container(
-          padding: padding,
-          decoration: BoxDecoration(
-            color: tint.withValues(alpha: opacity),
-            borderRadius: borderRadius,
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.72),
-              width: 1.2,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF123E2E).withValues(alpha: 0.1),
-                blurRadius: 22,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: child,
-        ),
+        child: panel,
       ),
     );
   }

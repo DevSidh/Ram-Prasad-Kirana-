@@ -20,6 +20,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   User? get currentUser => _currentUser;
+  String? get authToken => _token;
   bool get isAuthenticated => _token != null;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
@@ -32,7 +33,10 @@ class AuthProvider extends ChangeNotifier {
     if (savedToken != null && savedUserJson != null) {
       _token = savedToken;
       _apiService.setAuthToken(savedToken);
-      _currentUser = User.fromJson(jsonDecode(savedUserJson));
+      final savedUser = User.fromJson(jsonDecode(savedUserJson));
+      _currentUser = savedUser.copyWith(
+        avatarUrl: _resolveAvatarUrl(savedUser.avatarUrl),
+      );
       notifyListeners();
     }
   }
@@ -48,10 +52,7 @@ class AuthProvider extends ChangeNotifier {
 
     try {
       final response = await _apiService.post('/auth/login', {
-        if (isAdminLogin)
-          'username': email.trim()
-        else
-          'email': email.trim(),
+        if (isAdminLogin) 'username': email.trim() else 'email': email.trim(),
         'password': password,
       });
 
@@ -68,7 +69,7 @@ class AuthProvider extends ChangeNotifier {
         email: userData['email'] as String? ?? email,
         fullName: userData['fullName'] as String? ?? 'Customer',
         phone: userData['phone'] as String? ?? '',
-        avatarUrl: userData['avatarUrl'] as String?,
+        avatarUrl: _resolveAvatarUrl(userData['avatarUrl']),
         role: (userData['role'] as String? ?? 'CUSTOMER').toUpperCase(),
       );
 
@@ -116,7 +117,7 @@ class AuthProvider extends ChangeNotifier {
         email: userData['email'] as String? ?? email,
         fullName: userData['fullName'] as String? ?? fullName,
         phone: userData['phone'] as String? ?? phone,
-        avatarUrl: userData['avatarUrl'] as String?,
+        avatarUrl: _resolveAvatarUrl(userData['avatarUrl']),
         role: (userData['role'] as String? ?? 'CUSTOMER').toUpperCase(),
       );
 
@@ -165,7 +166,7 @@ class AuthProvider extends ChangeNotifier {
       throw StateError('Your sign-in session is no longer available.');
     }
     _currentUser = user.copyWith(
-      avatarUrl: user.avatarUrl ?? current.avatarUrl,
+      avatarUrl: _resolveAvatarUrl(user.avatarUrl) ?? current.avatarUrl,
     );
     final preferences = await SharedPreferences.getInstance();
     await preferences.setString(
@@ -191,12 +192,32 @@ class AuthProvider extends ChangeNotifier {
       throw StateError('Your profile photo could not be updated.');
     }
     final updated = user.copyWith(
-      avatarUrl: Uri.parse(_apiService.baseUrl).resolve(avatarUrl).toString(),
+      avatarUrl: _resolveAvatarUrl(avatarUrl),
     );
     _currentUser = updated;
     final preferences = await SharedPreferences.getInstance();
     await preferences.setString(
         AppConstants.keyUser, jsonEncode(updated.toJson()));
     notifyListeners();
+  }
+
+  String? _resolveAvatarUrl(Object? value) {
+    if (value is! String || value.isEmpty) return null;
+    final uri = Uri.tryParse(value);
+    if (uri == null) return null;
+    if (uri.hasScheme) return uri.toString();
+    if (value.startsWith('/account/')) {
+      final baseUri = Uri.parse(_apiService.baseUrl);
+      final basePath = baseUri.path.endsWith('/')
+          ? baseUri.path.substring(0, baseUri.path.length - 1)
+          : baseUri.path;
+      return baseUri
+          .replace(
+            path: '$basePath${uri.path}',
+            query: uri.hasQuery ? uri.query : null,
+          )
+          .toString();
+    }
+    return Uri.parse(_apiService.baseUrl).resolve(value).toString();
   }
 }

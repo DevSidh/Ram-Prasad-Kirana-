@@ -1,7 +1,7 @@
 import { Router, type RequestHandler, type Response } from 'express';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { z } from 'zod';
-import { receiveSingleImage, saveUploadedImage } from '../services/image-upload.js';
+import { getImageMimeType, receiveSingleImage } from '../services/image-upload.js';
 import { isPushConfigured } from '../services/push-notifications.js';
 import { identityAlreadyInUse, normalizePhone } from '../services/user-identity.js';
 
@@ -127,6 +127,35 @@ export function createAccountRouter(
     }
   });
 
+  router.delete('/notifications', async (_req, res) => {
+    const userId = authenticatedUserId(res);
+    if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
+    try {
+      await prisma.notification.deleteMany({ where: { userId } });
+      return res.sendStatus(204);
+    } catch (error) {
+      console.error('Notification clear-all failed:', error);
+      return res.status(500).json({ error: 'Unable to delete your notifications.' });
+    }
+  });
+
+  router.delete('/notifications/:id', async (req, res) => {
+    const userId = authenticatedUserId(res);
+    if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
+    try {
+      const deleted = await prisma.notification.deleteMany({
+        where: { id: req.params.id, userId },
+      });
+      if (deleted.count !== 1) {
+        return res.status(404).json({ error: 'Notification not found.' });
+      }
+      return res.sendStatus(204);
+    } catch (error) {
+      console.error('Notification deletion failed:', error);
+      return res.status(500).json({ error: 'Unable to delete this notification.' });
+    }
+  });
+
   router.post('/notifications/device-token', async (req, res) => {
     const userId = authenticatedUserId(res);
     if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
@@ -216,19 +245,49 @@ export function createAccountRouter(
     }
   });
 
+  router.get('/profile/avatar/:userId', async (req, res) => {
+    const userId = authenticatedUserId(res);
+    if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
+    if (req.params.userId !== userId) {
+      return res.status(403).json({ error: 'You cannot view this profile photo.' });
+    }
+
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { avatarData: true, avatarMimeType: true },
+      });
+      if (!user?.avatarData || !user.avatarMimeType) {
+        return res.status(404).json({ error: 'Profile photo not found.' });
+      }
+      res.setHeader('Content-Type', user.avatarMimeType);
+      res.setHeader('Cache-Control', 'private, max-age=86400');
+      return res.send(Buffer.from(user.avatarData));
+    } catch (error) {
+      console.error('Profile image retrieval failed:', error);
+      return res.status(500).json({ error: 'Unable to load your profile photo.' });
+    }
+  });
+
   router.post('/profile/avatar', receiveSingleImage, async (req, res) => {
     const userId = authenticatedUserId(res);
     if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
     if (!req.file) return res.status(400).json({ error: 'Choose an image to upload.' });
 
     try {
-      const avatarUrl = await saveUploadedImage(req.file.buffer);
-      if (!avatarUrl) {
+      const avatarMimeType = getImageMimeType(req.file.buffer);
+      if (!avatarMimeType) {
         return res.status(400).json({ error: 'Use a valid JPEG, PNG, or WebP image.' });
       }
+      const avatarUrl =
+        `/account/profile/avatar/${userId}?v=${Date.now()}`;
       const user = await prisma.user.update({
         where: { id: userId },
-        data: { avatarUrl },
+        data: {
+          avatarUrl,
+          avatarData: req.file.buffer,
+          avatarMimeType,
+        },
         select: {
           id: true,
           name: true,

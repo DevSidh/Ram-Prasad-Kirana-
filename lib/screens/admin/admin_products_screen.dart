@@ -147,7 +147,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                       _productPage == null
                           ? 'Manage products and stock.'
                           : '${_productPage!.pagination.total} products in the catalog',
-                      style: const TextStyle(
+                      style: TextStyle(
                           color: AppConstants.textMuted, fontSize: 12),
                     ),
                   ],
@@ -183,7 +183,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
             const _EmptyProducts()
           else
             ...products.map(
-              (product) =>               _ProductCard(
+              (product) => _ProductCard(
                 product: product,
                 onEdit: () => _editProduct(product),
                 onSetActive: () => _setActive(product, !product.isActive),
@@ -225,15 +225,26 @@ class _ProductFormDialog extends StatefulWidget {
 class _ProductFormDialogState extends State<_ProductFormDialog> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
+  late final TextEditingController _brandController;
   late final TextEditingController _skuController;
   late final TextEditingController _priceController;
+  late final TextEditingController _originalPriceController;
   late final TextEditingController _stockController;
+  late final TextEditingController _descriptionController;
+  late final TextEditingController _originController;
+  late final TextEditingController _unitAmountController;
+  late final TextEditingController _wholesalePriceController;
+  late final TextEditingController _wholesaleMinimumController;
   Uint8List? _pickedImageBytes;
   String? _pickedImageName;
   bool _removeCurrentImage = false;
+  bool _isWholesale = false;
   String? _categoryId;
+  String _unitType = 'pack';
   bool _saving = false;
   String? _error;
+  String _weightUnit = 'g';
+  String _volumeUnit = 'ml';
 
   List<AdminCategory> get _availableCategories {
     final active =
@@ -249,25 +260,86 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
     return active;
   }
 
+  String get _selectedUnitSuffix {
+    if (_isBiscuitOrCookie) {
+      return _unitType == 'count' ? 'pcs' : 'pack';
+    }
+    return switch (_unitType) {
+      'weight' => _weightUnit,
+      'volume' => _volumeUnit,
+      'count' => 'pcs',
+      _ => 'pack',
+    };
+  }
+
+  bool get _isBiscuitOrCookie {
+    final matchingCategories = _availableCategories
+        .where((item) => item.id == _categoryId)
+        .map((item) => item.name)
+        .toList(growable: false);
+    final category = matchingCategories.isEmpty
+        ? ''
+        : matchingCategories.first.toLowerCase();
+    final name = _nameController.text.toLowerCase();
+    return RegExp(r'\b(biscuit|biscuits|cookie|cookies)\b')
+        .hasMatch('$name $category');
+  }
+
   @override
   void initState() {
     super.initState();
     final product = widget.product;
     _nameController = TextEditingController(text: product?.name ?? '');
+    _brandController = TextEditingController(text: product?.brand ?? '');
     _skuController = TextEditingController(text: product?.sku ?? '');
     _priceController = TextEditingController(
         text: product?.price == null ? '' : product!.price.toStringAsFixed(2));
+    _originalPriceController = TextEditingController(
+      text: product?.originalPrice?.toStringAsFixed(2) ?? '',
+    );
     _stockController =
         TextEditingController(text: product?.stock.toString() ?? '0');
+    _descriptionController =
+        TextEditingController(text: product?.description ?? '');
+    _originController = TextEditingController(text: product?.origin ?? '');
+    final unitParts =
+        RegExp(r'^([\d.]+)\s*(.*)$').firstMatch(product?.unitLabel ?? '');
+    _unitAmountController = TextEditingController(
+      text: unitParts?.group(1) ?? '1',
+    );
+    _wholesalePriceController = TextEditingController(
+      text: product?.wholesalePrice?.toStringAsFixed(2) ?? '',
+    );
+    _wholesaleMinimumController = TextEditingController(
+      text: product?.wholesaleMinimumQuantity.toString() ?? '1',
+    );
+    _isWholesale = product?.isWholesale ?? false;
+    final savedUnit = unitParts?.group(2)?.toLowerCase();
+    _unitType = switch (savedUnit) {
+      'kg' || 'g' => 'weight',
+      'l' || 'ml' => 'volume',
+      'pc' || 'pcs' => 'count',
+      'pack' => 'pack',
+      _ => 'pack',
+    };
+    if (savedUnit == 'kg' || savedUnit == 'g') _weightUnit = savedUnit!;
+    if (savedUnit == 'l' || savedUnit == 'ml') _volumeUnit = savedUnit!;
     _categoryId = product?.categoryId;
   }
 
   @override
   void dispose() {
     _nameController.dispose();
+    _brandController.dispose();
     _skuController.dispose();
     _priceController.dispose();
+    _originalPriceController.dispose();
     _stockController.dispose();
+    _descriptionController.dispose();
+    _originController.dispose();
+    _unitAmountController.dispose();
+    _wholesalePriceController.dispose();
+    _wholesaleMinimumController.dispose();
     super.dispose();
   }
 
@@ -279,8 +351,8 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
     });
 
     final name = _nameController.text.trim();
-    final category = _availableCategories
-        .firstWhere((item) => item.id == _categoryId);
+    final category =
+        _availableCategories.firstWhere((item) => item.id == _categoryId);
     final enteredSku = _skuController.text.trim().toUpperCase();
     final sku = enteredSku.isEmpty
         ? generateStoreSku(
@@ -298,19 +370,43 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
       'sku': sku,
       'categoryId': _categoryId,
       'imageUrl': _removeCurrentImage ? null : widget.product?.imageUrl,
+      'brand': _brandController.text.trim().isEmpty
+          ? null
+          : _brandController.text.trim(),
       'price': double.parse(_priceController.text.trim()),
+      'originalPrice': double.tryParse(_originalPriceController.text.trim()),
+      'isWholesale': _isWholesale,
+      'wholesalePrice': _isWholesale
+          ? double.tryParse(_wholesalePriceController.text.trim())
+          : null,
+      'wholesaleMinimumQuantity':
+          int.tryParse(_wholesaleMinimumController.text.trim()) ?? 1,
+      'description': _descriptionController.text.trim().isEmpty
+          ? null
+          : _descriptionController.text.trim(),
+      'origin': _originController.text.trim().isEmpty
+          ? null
+          : _originController.text.trim(),
+      'unitLabel': '${_unitAmountController.text.trim()} $_selectedUnitSuffix',
     };
     final stock = int.parse(_stockController.text.trim());
 
     try {
-      if (_pickedImageBytes case final bytes?) {
-        data['imageUrl'] =
-            await widget.api.uploadProductImage(bytes, _pickedImageName!);
-      }
       if (widget.product == null) {
-        await widget.api.createProduct(data, stock);
+        await widget.api.createProduct(
+          data,
+          stock,
+          imageBytes: _pickedImageBytes,
+          imageName: _pickedImageName,
+        );
       } else {
-        await widget.api.updateProduct(widget.product!.id, data, stock);
+        await widget.api.updateProduct(
+          widget.product!.id,
+          data,
+          stock,
+          imageBytes: _pickedImageBytes,
+          imageName: _pickedImageName,
+        );
       }
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
@@ -369,9 +465,16 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                   autofocus: true,
                   textCapitalization: TextCapitalization.words,
                   decoration: const InputDecoration(labelText: 'Product name'),
+                  onChanged: (_) => setState(() {}),
                   validator: (value) => value == null || value.trim().isEmpty
                       ? 'Enter a product name'
                       : null,
+                ),
+                const SizedBox(height: 11),
+                TextFormField(
+                  controller: _brandController,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(labelText: 'Brand name'),
                 ),
                 const SizedBox(height: 11),
                 TextFormField(
@@ -413,6 +516,92 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                   onChanged: (value) => setState(() => _categoryId = value),
                   validator: (value) =>
                       value == null ? 'Choose a category' : null,
+                ),
+                const SizedBox(height: 11),
+                if (_isBiscuitOrCookie)
+                  Text(
+                    'Biscuits and cookies are sold by pack or piece, not by weight or volume.',
+                    style: TextStyle(
+                      color: AppConstants.textMuted,
+                      fontSize: 12,
+                    ),
+                  )
+                else
+                  DropdownButtonFormField<String>(
+                    initialValue: _unitType,
+                    decoration: const InputDecoration(labelText: 'Sold by'),
+                    items: const [
+                      DropdownMenuItem(value: 'weight', child: Text('Weight')),
+                      DropdownMenuItem(value: 'volume', child: Text('Volume')),
+                      DropdownMenuItem(value: 'count', child: Text('Pieces')),
+                      DropdownMenuItem(value: 'pack', child: Text('Pack')),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _unitType = value ?? _unitType),
+                  ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: TextFormField(
+                        controller: _unitAmountController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Pack/quantity size',
+                          hintText: 'e.g. 500',
+                        ),
+                        validator: (value) {
+                          final amount = double.tryParse(value?.trim() ?? '');
+                          if (amount == null ||
+                              !amount.isFinite ||
+                              amount <= 0) {
+                            return 'Enter a quantity above 0';
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        key: ValueKey(
+                          '${_unitType}_${_isBiscuitOrCookie ? 'biscuit' : 'other'}',
+                        ),
+                        initialValue: _selectedUnitSuffix,
+                        decoration: const InputDecoration(labelText: 'Unit'),
+                        items: (_isBiscuitOrCookie
+                                ? const ['pack', 'pcs']
+                                : switch (_unitType) {
+                                    'weight' => const ['g', 'kg'],
+                                    'volume' => const ['ml', 'l'],
+                                    'count' => const ['pcs'],
+                                    _ => const ['pack'],
+                                  })
+                            .map((unit) => DropdownMenuItem(
+                                  value: unit,
+                                  child: Text(unit),
+                                ))
+                            .toList(),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setState(() {
+                            if (value == 'g' || value == 'kg') {
+                              _unitType = 'weight';
+                              _weightUnit = value;
+                            } else if (value == 'ml' || value == 'l') {
+                              _unitType = 'volume';
+                              _volumeUnit = value;
+                            } else {
+                              _unitType = value == 'pcs' ? 'count' : 'pack';
+                            }
+                          });
+                        },
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 11),
                 Align(
@@ -511,8 +700,101 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 11),
+                TextFormField(
+                  controller: _originalPriceController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Original price (optional)',
+                    helperText: 'Enter this only when offering a discount.',
+                  ),
+                  validator: (value) {
+                    final text = value?.trim() ?? '';
+                    if (text.isEmpty) return null;
+                    final original = double.tryParse(text);
+                    final price = double.tryParse(_priceController.text.trim());
+                    if (original == null ||
+                        !original.isFinite ||
+                        original <= (price ?? 0)) {
+                      return 'Original price must be higher than sale price';
+                    }
+                    return null;
+                  },
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Offer this product wholesale'),
+                  subtitle: const Text(
+                    'Show it in Wholesale with its own bulk price and minimum quantity.',
+                  ),
+                  value: _isWholesale,
+                  onChanged: _saving
+                      ? null
+                      : (value) => setState(() => _isWholesale = value),
+                ),
+                if (_isWholesale) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _wholesalePriceController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Bulk price (Rs.)',
+                          ),
+                          validator: (value) {
+                            final price = double.tryParse(value?.trim() ?? '');
+                            if (price == null ||
+                                !price.isFinite ||
+                                price <= 0) {
+                              return 'Enter a bulk price above 0';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _wholesaleMinimumController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'Minimum quantity',
+                          ),
+                          validator: (value) {
+                            final quantity = int.tryParse(value?.trim() ?? '');
+                            if (quantity == null ||
+                                quantity < 1 ||
+                                quantity > 10000) {
+                              return 'Enter a quantity from 1 to 10,000';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 11),
+                TextFormField(
+                  controller: _descriptionController,
+                  minLines: 2,
+                  maxLines: 4,
+                  decoration:
+                      const InputDecoration(labelText: 'Product description'),
+                ),
+                const SizedBox(height: 11),
+                TextFormField(
+                  controller: _originController,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                      labelText: 'Country/region of origin'),
+                ),
                 const SizedBox(height: 8),
-                const Align(
+                Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
                     'Low-stock threshold is not present in the current inventory schema.',
@@ -564,7 +846,7 @@ class _ProductCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppConstants.surfaceLight,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppConstants.borderLight),
       ),
@@ -595,9 +877,20 @@ class _ProductCard extends StatelessWidget {
                       : '${product.categoryName} · ${product.sku}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontSize: 11, color: AppConstants.textMuted),
+                  style: TextStyle(fontSize: 11, color: AppConstants.textMuted),
                 ),
+                if (product.brand?.isNotEmpty == true) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    product.brand!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppConstants.textMuted,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 6),
                 Row(
                   children: [
@@ -605,9 +898,21 @@ class _ProductCard extends StatelessWidget {
                         '${AppConstants.currencySymbol}${product.price.toStringAsFixed(2)}',
                         style: const TextStyle(
                             fontWeight: FontWeight.w800, fontSize: 13)),
+                    if (product.originalPrice != null &&
+                        product.originalPrice! > product.price) ...[
+                      const SizedBox(width: 7),
+                      Text(
+                        '${AppConstants.currencySymbol}${product.originalPrice!.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppConstants.textMuted,
+                          decoration: TextDecoration.lineThrough,
+                        ),
+                      ),
+                    ],
                     const SizedBox(width: 10),
-                    Text('Stock ${product.stock}',
-                        style: const TextStyle(
+                    Text('${product.unitLabel} · stock ${product.stock}',
+                        style: TextStyle(
                             fontSize: 11, color: AppConstants.textMuted)),
                   ],
                 ),
@@ -666,7 +971,7 @@ class _ProductImage extends StatelessWidget {
             ? const Icon(Icons.inventory_2_outlined,
                 color: AppConstants.primary)
             : Image.network(
-                imageUrl,
+                optimizedProductImageUrl(imageUrl),
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => const Icon(
                     Icons.broken_image_outlined,
@@ -720,7 +1025,7 @@ class _PaginationBar extends StatelessWidget {
             icon: const Icon(Icons.chevron_left),
           ),
           Text('${pagination.page} of $pages',
-              style: const TextStyle(color: AppConstants.textMuted)),
+              style: TextStyle(color: AppConstants.textMuted)),
           IconButton(
             tooltip: 'Next page',
             onPressed: pagination.page < pages
@@ -747,7 +1052,7 @@ class _ProductsError extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.cloud_off_outlined,
+              Icon(Icons.cloud_off_outlined,
                   size: 40, color: AppConstants.textMuted),
               const SizedBox(height: 12),
               const Text('Products unavailable',
@@ -755,7 +1060,7 @@ class _ProductsError extends StatelessWidget {
               const SizedBox(height: 6),
               Text(message,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: AppConstants.textMuted)),
+                  style: TextStyle(color: AppConstants.textMuted)),
               const SizedBox(height: 16),
               FilledButton.icon(
                   onPressed: onRetry,
@@ -774,17 +1079,17 @@ class _EmptyProducts extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.all(28),
         decoration: BoxDecoration(
-            color: Colors.white,
+            color: AppConstants.surfaceLight,
             borderRadius: BorderRadius.circular(18),
             border: Border.all(color: AppConstants.borderLight)),
-        child: const Column(
+        child: Column(
           children: [
             Icon(Icons.inventory_2_outlined,
                 size: 34, color: AppConstants.textMuted),
-            SizedBox(height: 10),
-            Text('No products found',
+            const SizedBox(height: 10),
+            const Text('No products found',
                 style: TextStyle(fontWeight: FontWeight.w700)),
-            SizedBox(height: 5),
+            const SizedBox(height: 5),
             Text('Products from your catalog will appear here.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 12, color: AppConstants.textMuted)),

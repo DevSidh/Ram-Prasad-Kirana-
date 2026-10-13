@@ -23,6 +23,22 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci --prefix backend
+
+      - name: Validate backend
+        run: |
+          npm --prefix backend run prisma:generate
+          npm --prefix backend run build
+          npm --prefix backend test
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -65,6 +81,11 @@ jobs:
       - name: Install Flutter dependencies
         run: flutter pub get
 
+      - name: Check Flutter code and tests
+        run: |
+          flutter analyze
+          flutter test
+
       - name: Build signed APK
         env:
           API_BASE_URL: ${{ vars.API_BASE_URL }}
@@ -78,11 +99,17 @@ jobs:
             --dart-define=API_BASE_URL="$API_BASE_URL" \
             --dart-define=GOOGLE_MAPS_CONFIGURED=true
 
+      - name: Name release APK
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            "build/app/outputs/flutter-apk/Ram-Prasad-General-Store-${VERSION}.apk"
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            build/app/outputs/flutter-apk/app-release.apk \
+            "build/app/outputs/flutter-apk/Ram-Prasad-General-Store-${GITHUB_REF_NAME#v}.apk" \
             --title "Ram Prasad General Store ${GITHUB_REF_NAME#v}" \
             --generate-notes

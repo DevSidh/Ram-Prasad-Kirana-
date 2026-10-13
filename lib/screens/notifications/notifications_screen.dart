@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../../core/constants.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/theme_provider.dart';
+import '../../providers/language_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/push_notification_service.dart';
 import '../auth/login_screen.dart';
@@ -19,8 +21,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   bool _loading = true;
   bool _pushAvailable = false;
   bool _pushBusy = false;
+  bool _clearingNotifications = false;
   String? _error;
   String? _loadedUserId;
+  final Set<String> _deletingNotificationIds = {};
+  int _loadRevision = 0;
+
+  String _translate(String text) =>
+      context.read<AppLanguageProvider?>()?.translate(text) ?? text;
 
   @override
   void didChangeDependencies() {
@@ -28,24 +36,34 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final userId = context.read<AuthProvider>().currentUser?.id;
     if (userId != _loadedUserId) {
       _loadedUserId = userId;
+      _loadRevision++;
+      _notifications = [];
+      _loading = userId != null;
+      _pushBusy = false;
+      _pushAvailable = false;
+      _clearingNotifications = false;
+      _error = null;
+      _deletingNotificationIds.clear();
       if (userId != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _loadNotifications();
+          if (mounted &&
+              context.read<AuthProvider>().currentUser?.id == userId) {
+            _loadNotifications();
+          }
         });
-      } else {
-        _notifications = [];
-        _loading = false;
       }
     }
   }
 
   Future<void> _loadNotifications() async {
-    final auth = context.read<AuthProvider>();
-    if (auth.currentUser == null) {
+    if (_clearingNotifications) return;
+    final userId = context.read<AuthProvider>().currentUser?.id;
+    if (userId == null) {
       if (mounted) setState(() => _loading = false);
       return;
     }
 
+    final revision = ++_loadRevision;
     setState(() {
       _loading = true;
       _error = null;
@@ -56,16 +74,29 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       if (response is! Map<String, dynamic> || response['data'] is! List) {
         throw StateError('The server returned invalid notification data.');
       }
-      if (!mounted) return;
+      if (!mounted ||
+          revision != _loadRevision ||
+          context.read<AuthProvider>().currentUser?.id != userId) {
+        return;
+      }
       setState(() {
         _notifications = (response['data'] as List)
             .whereType<Map<String, dynamic>>()
+            .where(
+              (item) => !_deletingNotificationIds.contains(
+                item['id']?.toString(),
+              ),
+            )
             .toList();
         _pushAvailable = response['pushAvailable'] == true;
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted ||
+          revision != _loadRevision ||
+          context.read<AuthProvider>().currentUser?.id != userId) {
+        return;
+      }
       setState(() {
         _error = error.toString().replaceFirst('Exception: ', '');
         _loading = false;
@@ -75,16 +106,21 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Future<void> _markAsRead(Map<String, dynamic> notification) async {
     final id = notification['id']?.toString();
-    if (id == null || notification['isRead'] == true) return;
+    final userId = context.read<AuthProvider>().currentUser?.id;
+    if (userId == null || id == null || notification['isRead'] == true) return;
 
     try {
       await context
           .read<ApiService>()
           .patch('/account/notifications/$id/read', const {});
-      if (!mounted) return;
+      if (!mounted || context.read<AuthProvider>().currentUser?.id != userId) {
+        return;
+      }
       setState(() => notification['isRead'] = true);
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || context.read<AuthProvider>().currentUser?.id != userId) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(error.toString().replaceFirst('Exception: ', '')),
@@ -93,12 +129,170 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
+  Future<void> _deleteNotification(Map<String, dynamic> notification) async {
+    final id = notification['id']?.toString();
+    final userId = context.read<AuthProvider>().currentUser?.id;
+    if (userId == null ||
+        id == null ||
+        id.isEmpty ||
+        _deletingNotificationIds.contains(id)) {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(context.tr('Delete notification?')),
+        content:
+            Text(context.tr('This notification will be permanently removed.')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(context.tr('Cancel')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: Text(context.tr('Delete')),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        confirmed != true ||
+        context.read<AuthProvider>().currentUser?.id != userId) {
+      return;
+    }
+
+    final originalIndex =
+        _notifications.indexWhere((item) => item['id']?.toString() == id);
+    setState(() {
+      _deletingNotificationIds.add(id);
+      _notifications.removeWhere((item) => item['id']?.toString() == id);
+    });
+    try {
+      await context
+          .read<ApiService>()
+          .delete('/account/notifications/${Uri.encodeComponent(id)}');
+      if (!mounted || context.read<AuthProvider>().currentUser?.id != userId) {
+        return;
+      }
+      setState(() {
+        _deletingNotificationIds.remove(id);
+        _loadRevision++;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_translate('Notification deleted.'))),
+      );
+    } catch (error) {
+      if (!mounted || context.read<AuthProvider>().currentUser?.id != userId) {
+        return;
+      }
+      setState(() {
+        _deletingNotificationIds.remove(id);
+        _loadRevision++;
+        if (originalIndex >= 0 &&
+            !_notifications.any((item) => item['id']?.toString() == id)) {
+          _notifications.insert(
+            originalIndex.clamp(0, _notifications.length),
+            notification,
+          );
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    }
+  }
+
+  Future<void> _deleteAllNotifications() async {
+    final userId = context.read<AuthProvider>().currentUser?.id;
+    if (userId == null ||
+        _notifications.isEmpty ||
+        _clearingNotifications ||
+        _deletingNotificationIds.isNotEmpty) {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(context.tr('Delete all notifications?')),
+        content: Text(context.tr(
+          'All notifications in your activity list will be permanently removed.',
+        )),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(context.tr('Cancel')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: Text(context.tr('Delete all')),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        confirmed != true ||
+        context.read<AuthProvider>().currentUser?.id != userId) {
+      return;
+    }
+
+    final previousNotifications = _notifications
+        .map((notification) => Map<String, dynamic>.from(notification))
+        .toList();
+    setState(() {
+      _clearingNotifications = true;
+      _notifications.clear();
+      _loadRevision++;
+    });
+    try {
+      await context.read<ApiService>().delete('/account/notifications');
+      if (!mounted || context.read<AuthProvider>().currentUser?.id != userId) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_translate('All notifications deleted.'))),
+      );
+    } catch (error) {
+      if (!mounted || context.read<AuthProvider>().currentUser?.id != userId) {
+        return;
+      }
+      setState(() {
+        _notifications
+          ..clear()
+          ..addAll(previousNotifications);
+        _loadRevision++;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    } finally {
+      if (mounted && context.read<AuthProvider>().currentUser?.id == userId) {
+        setState(() => _clearingNotifications = false);
+      }
+    }
+  }
+
   Future<void> _enablePush() async {
+    final userId = context.read<AuthProvider>().currentUser?.id;
+    if (userId == null) return;
     setState(() => _pushBusy = true);
     try {
       await PushNotificationService().enable(context.read<ApiService>());
+      if (!mounted || context.read<AuthProvider>().currentUser?.id != userId) {
+        return;
+      }
       await _loadNotifications();
-      if (!mounted) return;
+      if (!mounted || context.read<AuthProvider>().currentUser?.id != userId) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Push alerts enabled on this device.')),
       );
@@ -110,13 +304,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         ),
       );
     } finally {
-      if (mounted) setState(() => _pushBusy = false);
+      if (mounted && context.read<AuthProvider>().currentUser?.id == userId) {
+        setState(() => _pushBusy = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final signedIn = context.watch<AuthProvider>().currentUser != null;
+    context.watch<ThemeProvider?>();
     final unreadCount =
         _notifications.where((item) => item['isRead'] != true).length;
 
@@ -126,6 +323,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         title: const Text('Notifications'),
         backgroundColor: AppConstants.backgroundLight,
         actions: [
+          if (signedIn && _notifications.isNotEmpty)
+            IconButton(
+              tooltip: 'Delete all notifications',
+              onPressed:
+                  _clearingNotifications ? null : _deleteAllNotifications,
+              icon: _clearingNotifications
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.delete_sweep_outlined),
+            ),
           if (signedIn)
             IconButton(
               tooltip: 'Refresh notifications',
@@ -166,7 +376,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       ? ListView(
                           padding: const EdgeInsets.all(24),
                           children: [
-                            const Icon(Icons.cloud_off_outlined,
+                            Icon(Icons.cloud_off_outlined,
                                 size: 42, color: AppConstants.textMuted),
                             const SizedBox(height: 12),
                             Text(_error!, textAlign: TextAlign.center),
@@ -240,7 +450,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                               onEnable: _enablePush,
                             ),
                             const SizedBox(height: 22),
-                            const Text(
+                            Text(
                               'Recent activity',
                               style: TextStyle(
                                 color: AppConstants.textDark,
@@ -256,6 +466,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                 _NotificationTile(
                                   notification: notification,
                                   onTap: () => _markAsRead(notification),
+                                  isDeleting: _deletingNotificationIds
+                                      .contains(notification['id']?.toString()),
+                                  onDelete: () =>
+                                      _deleteNotification(notification),
                                 ),
                           ],
                         ),
@@ -282,9 +496,11 @@ class _PushPreferenceCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppConstants.glassSurfaceFor(AppConstants.isDarkTheme),
         borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: AppConstants.borderLight),
+        border: Border.all(
+          color: AppConstants.glassBorderFor(AppConstants.isDarkTheme),
+        ),
       ),
       child: Row(
         children: [
@@ -303,7 +519,7 @@ class _PushPreferenceCard extends StatelessWidget {
                   canEnable
                       ? 'Get delivery updates on this device.'
                       : 'Push setup is not configured yet. In-app updates remain available.',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppConstants.textMuted,
                     fontSize: 11,
                   ),
@@ -324,7 +540,7 @@ class _PushPreferenceCard extends StatelessWidget {
                   : const Text('Enable'),
             )
           else
-            const Icon(Icons.info_outline, color: AppConstants.textMuted),
+            Icon(Icons.info_outline, color: AppConstants.textMuted),
         ],
       ),
     );
@@ -335,10 +551,14 @@ class _NotificationTile extends StatelessWidget {
   const _NotificationTile({
     required this.notification,
     required this.onTap,
+    required this.onDelete,
+    required this.isDeleting,
   });
 
   final Map<String, dynamic> notification;
   final VoidCallback onTap;
+  final VoidCallback onDelete;
+  final bool isDeleting;
 
   @override
   Widget build(BuildContext context) {
@@ -349,7 +569,7 @@ class _NotificationTile extends StatelessWidget {
         : Icons.local_offer_outlined;
     final createdAt = DateTime.tryParse(
       notification['createdAt']?.toString() ?? '',
-    );
+    )?.toLocal();
     final dateLabel = createdAt == null
         ? ''
         : '${createdAt.month}/${createdAt.day} · ${createdAt.hour.toString().padLeft(2, '0')}:${createdAt.minute.toString().padLeft(2, '0')}';
@@ -357,10 +577,15 @@ class _NotificationTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 9),
       child: Material(
-        color: isRead ? Colors.white : const Color(0xFFEDF6EE),
-        borderRadius: BorderRadius.circular(17),
+        color: AppConstants.glassSurfaceFor(AppConstants.isDarkTheme),
+        shape: RoundedRectangleBorder(
+          side: BorderSide(
+            color: AppConstants.glassBorderFor(AppConstants.isDarkTheme),
+          ),
+          borderRadius: BorderRadius.circular(17),
+        ),
         child: InkWell(
-          onTap: onTap,
+          onTap: isDeleting ? null : onTap,
           borderRadius: BorderRadius.circular(17),
           child: Padding(
             padding: const EdgeInsets.all(15),
@@ -393,7 +618,7 @@ class _NotificationTile extends StatelessWidget {
                       const SizedBox(height: 4),
                       Text(
                         notification['body']?.toString() ?? '',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
                           height: 1.4,
                           color: AppConstants.textMuted,
@@ -403,7 +628,7 @@ class _NotificationTile extends StatelessWidget {
                         const SizedBox(height: 8),
                         Text(
                           dateLabel,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: AppConstants.textMuted,
                             fontSize: 10,
                           ),
@@ -412,16 +637,33 @@ class _NotificationTile extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (!isRead)
-                  Container(
-                    width: 8,
-                    height: 8,
-                    margin: const EdgeInsets.only(top: 6, left: 8),
-                    decoration: const BoxDecoration(
-                      color: AppConstants.primary,
-                      shape: BoxShape.circle,
+                Column(
+                  children: [
+                    IconButton(
+                      tooltip: 'Delete notification',
+                      onPressed: isDeleting ? null : onDelete,
+                      icon: isDeleting
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.delete_outline, size: 20),
                     ),
-                  ),
+                    if (!isRead)
+                      Container(
+                        width: 8,
+                        height: 8,
+                        margin: const EdgeInsets.only(top: 2),
+                        decoration: const BoxDecoration(
+                          color: AppConstants.primary,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -439,19 +681,22 @@ class _EmptyNotifications extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppConstants.glassSurfaceFor(AppConstants.isDarkTheme),
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: AppConstants.glassBorderFor(AppConstants.isDarkTheme),
+        ),
       ),
-      child: const Column(
+      child: Column(
         children: [
-          Icon(Icons.mark_email_read_outlined,
+          const Icon(Icons.mark_email_read_outlined,
               size: 40, color: AppConstants.primary),
-          SizedBox(height: 10),
-          Text(
+          const SizedBox(height: 10),
+          const Text(
             'Nothing new yet',
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
-          SizedBox(height: 4),
+          const SizedBox(height: 4),
           Text(
             'Your order and store updates will appear here.',
             textAlign: TextAlign.center,

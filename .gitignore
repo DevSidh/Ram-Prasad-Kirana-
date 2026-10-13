@@ -40,3 +40,5 @@ ios/Pods/
 .env
 .env.*
 !.env.example
+# Widget Preview related
+.widget_preview/

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import '../models/admin_models.dart';
@@ -212,7 +213,22 @@ class AdminApiService {
     }
   }
 
-  Future<void> createProduct(Map<String, dynamic> fields, int stock) async {
+  Future<void> createProduct(
+    Map<String, dynamic> fields,
+    int stock, {
+    Uint8List? imageBytes,
+    String? imageName,
+  }) async {
+    if (imageBytes != null && imageName != null) {
+      await _api.postFile(
+        '/admin/products',
+        fieldName: 'image',
+        bytes: imageBytes,
+        fileName: imageName,
+        fields: {'product': jsonEncode({...fields, 'stock': stock})},
+      );
+      return;
+    }
     await _api.post('/admin/products', {
       ...fields,
       'stock': stock,
@@ -222,8 +238,21 @@ class AdminApiService {
   Future<void> updateProduct(
     String id,
     Map<String, dynamic> fields,
-    int stock,
-  ) async {
+    int stock, {
+    Uint8List? imageBytes,
+    String? imageName,
+  }) async {
+    if (imageBytes != null && imageName != null) {
+      await _api.postFile(
+        '/admin/products/$id',
+        fieldName: 'image',
+        bytes: imageBytes,
+        fileName: imageName,
+        fields: {'product': jsonEncode({...fields, 'stock': stock})},
+        method: 'PATCH',
+      );
+      return;
+    }
     await _api.patch('/admin/products/$id', {
       ...fields,
       'stock': stock,
@@ -246,8 +275,38 @@ class AdminApiService {
     await _api.patch('/admin/products/$id', {'isFeatured': isFeatured});
   }
 
-  Future<void> updateProductImage(String id, String imageUrl) async {
-    await _api.patch('/admin/products/$id', {'imageUrl': imageUrl});
+  Future<void> updateProductPrices(
+    String id, {
+    required double price,
+    required double? originalPrice,
+  }) async {
+    await _api.patch('/admin/products/$id', {
+      'price': price,
+      'originalPrice': originalPrice,
+    });
+  }
+
+  Future<String> updateProductImage(
+    String id,
+    Uint8List bytes,
+    String fileName,
+  ) async {
+    final response = _asMap(await _api.postFile(
+      '/admin/products/$id',
+      fieldName: 'image',
+      bytes: bytes,
+      fileName: fileName,
+      fields: {'product': jsonEncode({'imageUrl': null})},
+      method: 'PATCH',
+    ));
+    final product = response['product'];
+    if (product is! Map<String, dynamic> ||
+        product['imageUrl'] is! String) {
+      throw Exception('The server did not return the saved product image.');
+    }
+    return Uri.parse(_api.baseUrl)
+        .resolve(product['imageUrl'] as String)
+        .toString();
   }
 
   Future<String> uploadProductImage(Uint8List bytes, String fileName) async {

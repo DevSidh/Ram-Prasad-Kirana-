@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../core/responsive_layout.dart';
 import '../../providers/product_provider.dart';
+import '../../providers/theme_provider.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/frosted_panel.dart';
 import '../../widgets/product_card.dart';
@@ -58,7 +59,7 @@ class ProductListScreen extends StatelessWidget {
                         children: [
                           Row(
                             children: [
-                              const Expanded(
+                              Expanded(
                                 child: Text(
                                   'Refine your basket',
                                   style: TextStyle(
@@ -75,7 +76,7 @@ class ProductListScreen extends StatelessWidget {
                               ),
                             ],
                           ),
-                          const Text(
+                          Text(
                             'DEPARTMENT',
                             style: TextStyle(
                               color: AppConstants.textMuted,
@@ -107,7 +108,7 @@ class ProductListScreen extends StatelessWidget {
                           const SizedBox(height: 20),
                           Row(
                             children: [
-                              const Expanded(
+                              Expanded(
                                 child: Text(
                                   'Maximum price',
                                   style: TextStyle(
@@ -120,7 +121,7 @@ class ProductListScreen extends StatelessWidget {
                                 hasMaximumPrice
                                     ? 'Rs. ${localMaxPrice.toInt()}'
                                     : 'Any price',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: AppConstants.primaryDark,
                                   fontWeight: FontWeight.w800,
                                 ),
@@ -150,7 +151,7 @@ class ProductListScreen extends StatelessWidget {
                             ],
                           ),
                           const SizedBox(height: 8),
-                          const Text(
+                          Text(
                             'CUSTOMER RATING',
                             style: TextStyle(
                               color: AppConstants.textMuted,
@@ -265,8 +266,8 @@ class ProductListScreen extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 8),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
                     'Sort the shelf',
                     style: TextStyle(
@@ -299,6 +300,7 @@ class ProductListScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ThemeProvider?>();
     final productProvider = context.watch<ProductProvider>();
     final products = favoritesOnly
         ? productProvider.favoriteProducts
@@ -357,14 +359,14 @@ class ProductListScreen extends StatelessWidget {
           : Column(
               children: [
                 if (productProvider.favoritesOnly)
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
                     child: Align(
                       alignment: Alignment.centerLeft,
                       child: Chip(
-                        avatar: Icon(Icons.favorite,
+                        avatar: const Icon(Icons.favorite,
                             color: AppConstants.primary, size: 16),
-                        label: Text('Saved items'),
+                        label: const Text('Saved items'),
                         backgroundColor: AppConstants.primaryLight,
                         side: BorderSide.none,
                       ),
@@ -416,12 +418,14 @@ class _FilterChip extends StatelessWidget {
       showCheckmark: false,
       onSelected: (_) => onSelected(),
       selectedColor: AppConstants.primary,
-      backgroundColor: Colors.white.withValues(alpha: 0.75),
+      backgroundColor: AppConstants.surfaceLight,
       side: BorderSide(
         color: selected ? AppConstants.primary : AppConstants.borderLight,
       ),
       labelStyle: TextStyle(
-        color: selected ? Colors.white : AppConstants.textDark,
+        color: selected
+            ? AppConstants.primaryForeground
+            : AppConstants.textDark,
         fontWeight: FontWeight.w600,
         fontSize: 12,
       ),

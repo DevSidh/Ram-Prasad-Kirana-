@@ -19,11 +19,13 @@ import { identityAlreadyInUse, normalizeEmail, normalizePhone } from './services
 import { findAdminByPassword } from './services/admin-login.js';
 import { orderInput } from './schemas/order.js';
 import { InventoryService } from './services/inventory.js';
+import { canCustomerCancelOrder } from './services/order-cancellation.js';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+app.set('trust proxy', process.env.RENDER === 'true' ? 1 : false);
 const AUTH_SECRET = process.env.AUTH_SECRET;
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME?.trim().toLowerCase();
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL?.trim().toLowerCase();
@@ -79,7 +81,7 @@ app.use('/uploads', express.static(getUploadsDirectory(), {
 app.use('/uploads', express.static(path.join(process.cwd(), 'catalog-uploads'), {
   maxAge: '1d',
   immutable: true,
-  fallthrough: false,
+  fallthrough: true,
 }));
 
 const authRateLimit = rateLimit({
@@ -257,7 +259,28 @@ function queueOrderNotification(
 }
 
 const orderInclude = {
-  items: { include: { product: { include: { category: true } } } },
+  items: {
+    include: {
+      product: {
+        select: {
+          id: true,
+          name: true,
+          brand: true,
+          categoryId: true,
+          price: true,
+          originalPrice: true,
+          rating: true,
+          reviewCount: true,
+          description: true,
+          imageUrl: true,
+          imageMimeType: true,
+          unitLabel: true,
+          updatedAt: true,
+          category: { select: { name: true, slug: true } },
+        },
+      },
+    },
+  },
   address: true,
 } satisfies Prisma.OrderInclude;
 
@@ -280,10 +303,13 @@ function orderResponse(order: OrderRecord) {
         originalPrice: item.product.originalPrice === null
           ? null
           : Number(item.product.originalPrice),
+        weight: item.product.unitLabel,
         rating: Number(item.product.rating),
         reviewCount: item.product.reviewCount,
         description: item.product.description ?? '',
-        imageUrl: item.product.imageUrl ?? '',
+        imageUrl: item.product.imageMimeType && item.product.imageUrl
+          ? `${item.product.imageUrl}?v=${item.product.updatedAt.getTime()}`
+          : item.product.imageUrl ?? '',
       },
     })),
     address: order.address
@@ -582,20 +608,56 @@ app.get('/api/v1/products', async (req: Request, res: Response) => {
               : { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
-        include: {
+        select: {
+          id: true,
+          sku: true,
+          name: true,
+          slug: true,
+          categoryId: true,
+          brand: true,
+          price: true,
+          originalPrice: true,
+          isWholesale: true,
+          wholesalePrice: true,
+          wholesaleMinimumQuantity: true,
+          rating: true,
+          reviewCount: true,
+          description: true,
+          origin: true,
+          imageUrl: true,
+          imageMimeType: true,
+          unitLabel: true,
+          isOrganic: true,
+          isFeatured: true,
+          isBestSeller: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
           category: { select: { name: true, slug: true } },
           inventory: { select: { totalStock: true, reservedStock: true } },
         },
       }),
     ]);
 
-    const data = products.map(({ category: productCategory, inventory, ...product }) => {
+    const data = products.map(({ category: productCategory, inventory, imageMimeType, ...product }) => {
       const price = Number(product.price);
+      const originalPrice = product.originalPrice === null
+        ? null
+        : Number(product.originalPrice);
       return {
         ...product,
         price,
-        originalPrice: null,
-        discountPercent: 0,
+        originalPrice,
+        wholesalePrice: product.wholesalePrice === null
+          ? null
+          : Number(product.wholesalePrice),
+        discountPercent: originalPrice !== null && originalPrice > price
+          ? Math.round(((originalPrice - price) / originalPrice) * 100)
+          : 0,
+        weight: product.unitLabel,
+        imageUrl: imageMimeType && product.imageUrl
+          ? `${product.imageUrl}?v=${product.updatedAt.getTime()}`
+          : product.imageUrl,
         rating: Number(product.rating),
         categoryName: productCategory.name,
         categorySlug: productCategory.slug,
@@ -613,6 +675,23 @@ app.get('/api/v1/products', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/v1/products/:id/image', async (req: Request, res: Response) => {
+  try {
+    const product = await prisma.product.findUnique({
+      where: { id: req.params.id },
+      select: { imageData: true, imageMimeType: true },
+    });
+    if (!product?.imageData || !product.imageMimeType) {
+      return res.status(404).json({ error: 'Product image not found.' });
+    }
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return res.type(product.imageMimeType).send(product.imageData);
+  } catch (error) {
+    console.error('Product image lookup failed:', error);
+    return res.status(500).json({ error: 'Unable to load this product image.' });
+  }
+});
+
 app.get('/api/v1/products/:id', async (req: Request, res: Response) => {
   try {
     const product = await prisma.product.findFirst({
@@ -621,21 +700,57 @@ app.get('/api/v1/products/:id', async (req: Request, res: Response) => {
         isActive: true,
         category: { isActive: true },
       },
-      include: {
+      select: {
+        id: true,
+        sku: true,
+        name: true,
+        slug: true,
+        categoryId: true,
+        brand: true,
+        price: true,
+        originalPrice: true,
+        isWholesale: true,
+        wholesalePrice: true,
+        wholesaleMinimumQuantity: true,
+        rating: true,
+        reviewCount: true,
+        description: true,
+        origin: true,
+        imageUrl: true,
+        imageMimeType: true,
+        unitLabel: true,
+        isOrganic: true,
+        isFeatured: true,
+        isBestSeller: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
         category: { select: { name: true, slug: true } },
         inventory: { select: { totalStock: true, reservedStock: true } },
       },
     });
     if (!product) return res.status(404).json({ error: 'Product not found' });
 
-    const { category: productCategory, inventory, ...fields } = product;
+    const { category: productCategory, inventory, imageMimeType, ...fields } = product;
     const price = Number(product.price);
+    const originalPrice = product.originalPrice === null
+      ? null
+      : Number(product.originalPrice);
     return res.json({
       data: {
         ...fields,
         price,
-        originalPrice: null,
-        discountPercent: 0,
+        originalPrice,
+        wholesalePrice: product.wholesalePrice === null
+          ? null
+          : Number(product.wholesalePrice),
+        discountPercent: originalPrice !== null && originalPrice > price
+          ? Math.round(((originalPrice - price) / originalPrice) * 100)
+          : 0,
+        weight: product.unitLabel,
+        imageUrl: imageMimeType && product.imageUrl
+          ? `${product.imageUrl}?v=${product.updatedAt.getTime()}`
+          : product.imageUrl,
         rating: Number(product.rating),
         categoryName: productCategory.name,
         categorySlug: productCategory.slug,
@@ -696,14 +811,32 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
       const subtotal = input.items.reduce((sum, item) => {
         const product = productsById.get(item.productId);
         if (!product) throw new OrderStockError(`This item is no longer available.`);
-        return sum + Number(product.price) * item.quantity;
+        if (item.isWholesale &&
+            (!product.isWholesale ||
+              product.wholesalePrice === null ||
+              item.quantity < product.wholesaleMinimumQuantity)) {
+          throw new OrderStockError(
+            `${product.name} does not meet the current wholesale price or minimum quantity.`,
+          );
+        }
+        const price = item.isWholesale
+          ? Number(product.wholesalePrice)
+          : Number(product.price);
+        return sum + price * item.quantity;
       }, 0);
 
+      const stockByProduct = new Map<string, number>();
       for (const item of input.items) {
-        const product = productsById.get(item.productId);
+        stockByProduct.set(
+          item.productId,
+          (stockByProduct.get(item.productId) ?? 0) + item.quantity,
+        );
+      }
+      for (const [productId, quantity] of stockByProduct) {
+        const product = productsById.get(productId);
         const inventory = product?.inventory;
         if (!product || !inventory ||
-            inventory.totalStock - inventory.reservedStock < item.quantity) {
+            inventory.totalStock - inventory.reservedStock < quantity) {
           throw new OrderStockError(
             `${product?.name ?? 'An item'} does not have enough stock.`,
           );
@@ -712,7 +845,7 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
 
       const discount = 0;
       const deliveryFee = subtotal >= 1000 ? 0 : 50;
-      const total = subtotal + deliveryFee + input.tip;
+      const total = subtotal + deliveryFee;
       const orderNumber = `FH-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
       const created = await transaction.order.create({
@@ -726,7 +859,7 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
           subtotal,
           deliveryFee,
           discount,
-          tip: input.tip,
+          tip: 0,
           total,
           idempotencyKey: input.idempotencyKey,
           shippingName: address.fullName,
@@ -743,11 +876,17 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
           items: {
             create: input.items.map((item) => {
               const product = productsById.get(item.productId)!;
-              const price = Number(product.price);
+              const price = item.isWholesale
+                ? Number(product.wholesalePrice)
+                : Number(product.price);
               return {
                 productId: product.id,
-                productName: product.name,
-                sku: product.sku,
+                productName: item.isWholesale
+                  ? `${product.name} (Wholesale)`
+                  : product.name,
+                sku: item.isWholesale
+                  ? `${product.sku}-WHOLESALE`
+                  : product.sku,
                 quantity: item.quantity,
                 price,
                 total: price * item.quantity,
@@ -760,12 +899,18 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
       try {
         await inventoryService.reserveStockForOrder(
           transaction,
-          input.items,
+          [...stockByProduct].map(([productId, quantity]) => ({
+            productId,
+            quantity,
+          })),
           created.id,
         );
         await inventoryService.commitReservedStock(
           transaction,
-          input.items,
+          [...stockByProduct].map(([productId, quantity]) => ({
+            productId,
+            quantity,
+          })),
           created.id,
         );
       } catch (error) {
@@ -845,17 +990,23 @@ app.post('/api/v1/orders/:id/cancel', authenticateToken, async (req: Request, re
     const result = await prisma.$transaction(async (transaction) => {
       const existing = await transaction.order.findFirst({
         where: { id: req.params.id, userId },
-        include: { items: true },
+        include: {
+          items: true,
+          delivery: { select: { status: true } },
+        },
       });
       if (!existing) return { kind: 'missing' as const };
-      if (existing.status !== 'PLACED' && existing.status !== 'CONFIRMED') {
+      if (!canCustomerCancelOrder(
+        existing.status,
+        existing.delivery?.status ?? null,
+      )) {
         return { kind: 'not-cancellable' as const };
       }
       const updated = await transaction.order.updateMany({
         where: {
           id: existing.id,
           userId,
-          status: { in: ['PLACED', 'CONFIRMED'] },
+          status: { in: ['PLACED', 'CONFIRMED', 'PROCESSING'] },
         },
         data: { status: 'CANCELLED', paymentStatus: 'CANCELLED' },
       });

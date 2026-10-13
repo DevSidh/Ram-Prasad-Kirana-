@@ -8,7 +8,27 @@ import 'package:http/testing.dart';
 import 'package:freshharvest_grocery/services/api_service.dart';
 
 void main() {
-  test('sends the bearer token with authenticated requests', () async {
+  test('authenticated requests send the session token as a bearer credential',
+      () async {
+    http.Request? capturedRequest;
+    final client = MockClient((request) async {
+      capturedRequest = request;
+      return http.Response(jsonEncode({'ok': true}), 200);
+    });
+    final api = ApiService(
+      baseUrl: 'https://store.example/api/v1',
+      client: client,
+    )..setAuthToken('session-token');
+
+    await api.get('/account/profile');
+
+    final authorization = capturedRequest?.headers['authorization'];
+    expect(authorization, startsWith('Bearer '));
+    expect(authorization, endsWith('session-token'));
+    client.close();
+  });
+
+  test('sends the session token as a bearer credential', () async {
     http.Request? capturedRequest;
     final client = MockClient((request) async {
       capturedRequest = request;

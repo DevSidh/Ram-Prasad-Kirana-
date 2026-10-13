@@ -111,6 +111,7 @@ class _AdminShowcaseScreenState extends State<AdminShowcaseScreen> {
       if (size == null) {
         throw Exception('Unable to read that image. Choose another file.');
       }
+
       if (size > 5 * 1024 * 1024) {
         throw Exception('Choose an image smaller than 5 MB.');
       }
@@ -121,8 +122,8 @@ class _AdminShowcaseScreenState extends State<AdminShowcaseScreen> {
       final Uint8List bytes = await file.readAsBytes();
       if (!mounted) return;
       setState(() => _savingId = product.id);
-      final imageUrl = await _adminApi.uploadProductImage(bytes, file.name);
-      await _adminApi.updateProductImage(product.id, imageUrl);
+      final imageUrl =
+          await _adminApi.updateProductImage(product.id, bytes, file.name);
       if (!mounted) return;
       widget.onProductImageChanged?.call(product.id, imageUrl);
       setState(() {
@@ -144,6 +145,117 @@ class _AdminShowcaseScreenState extends State<AdminShowcaseScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(_cleanError(error))),
       );
+    }
+  }
+
+  Future<void> _editCarouselPrices(AdminProduct product) async {
+    final priceController =
+        TextEditingController(text: product.price.toStringAsFixed(2));
+    final originalPriceController = TextEditingController(
+      text: product.originalPrice?.toStringAsFixed(2) ?? '',
+    );
+    final formKey = GlobalKey<FormState>();
+    try {
+      final values = await showDialog<(double, double?)>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text('Carousel prices · ${product.name}'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: priceController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'New price'),
+                  validator: (value) {
+                    final price = double.tryParse(value?.trim() ?? '');
+                    if (price == null || !price.isFinite || price <= 0) {
+                      return 'Enter a price above 0';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: originalPriceController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Before price (optional)',
+                    helperText: 'Must be higher than the new price.',
+                  ),
+                  validator: (value) {
+                    final text = value?.trim() ?? '';
+                    if (text.isEmpty) return null;
+                    final oldPrice = double.tryParse(text);
+                    final price = double.tryParse(priceController.text.trim());
+                    if (oldPrice == null ||
+                        !oldPrice.isFinite ||
+                        oldPrice <= (price ?? 0)) {
+                      return 'Before price must be higher than new price';
+                    }
+                    return null;
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (!formKey.currentState!.validate()) return;
+                Navigator.pop(
+                  dialogContext,
+                  (
+                    double.parse(priceController.text.trim()),
+                    double.tryParse(originalPriceController.text.trim()),
+                  ),
+                );
+              },
+              child: const Text('Save prices'),
+            ),
+          ],
+        ),
+      );
+      if (values == null) return;
+      setState(() => _savingId = product.id);
+      await _adminApi.updateProductPrices(
+        product.id,
+        price: values.$1,
+        originalPrice: values.$2,
+      );
+      if (!mounted) return;
+      setState(() {
+        _products = _products
+            .map((item) => item.id == product.id
+                ? item.copyWith(
+                    price: values.$1,
+                    originalPrice: values.$2,
+                    clearOriginalPrice: values.$2 == null,
+                  )
+                : item)
+            .toList();
+        _savingId = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${product.name} carousel prices updated')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _savingId = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_cleanError(error))),
+      );
+    } finally {
+      priceController.dispose();
+      originalPriceController.dispose();
     }
   }
 
@@ -169,7 +281,7 @@ class _AdminShowcaseScreenState extends State<AdminShowcaseScreen> {
             style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 5),
-          const Text(
+          Text(
             'Choose the products that rotate in the customer storefront. '
             'Images fill a fixed, responsive slide area, so source-image proportions do not resize the card. '
             'Changing a carousel image also updates that product image across the store.',
@@ -184,14 +296,14 @@ class _AdminShowcaseScreenState extends State<AdminShowcaseScreen> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.view_carousel_rounded,
+                Icon(Icons.view_carousel_rounded,
                     color: AppConstants.primaryDark),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     '$featuredCount ${featuredCount == 1 ? 'product' : 'products'} '
                     'currently featured • active products rotate automatically',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AppConstants.primaryDark,
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -218,6 +330,9 @@ class _AdminShowcaseScreenState extends State<AdminShowcaseScreen> {
               (product) => _ShowcaseProductTile(
                 product: product,
                 isSaving: _savingId == product.id,
+                onPricesChanged: product.isFeatured && _savingId == null
+                    ? () => _editCarouselPrices(product)
+                    : null,
                 onImageChanged: product.isFeatured && _savingId == null
                     ? () => _pickCarouselImage(product)
                     : null,
@@ -237,12 +352,14 @@ class _ShowcaseProductTile extends StatelessWidget {
   final AdminProduct product;
   final bool isSaving;
   final ValueChanged<bool>? onChanged;
+  final VoidCallback? onPricesChanged;
   final VoidCallback? onImageChanged;
 
   const _ShowcaseProductTile({
     required this.product,
     required this.isSaving,
     required this.onChanged,
+    required this.onPricesChanged,
     required this.onImageChanged,
   });
 
@@ -252,7 +369,7 @@ class _ShowcaseProductTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppConstants.surfaceLight,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppConstants.borderLight),
       ),
@@ -264,17 +381,17 @@ class _ShowcaseProductTile extends StatelessWidget {
               width: 76,
               height: 64,
               child: product.imageUrl == null || product.imageUrl!.isEmpty
-                  ? const ColoredBox(
+                  ? ColoredBox(
                       color: AppConstants.primaryLight,
-                      child: Icon(Icons.shopping_basket_outlined,
+                      child: const Icon(Icons.shopping_basket_outlined,
                           color: AppConstants.primary),
                     )
                   : Image.network(
                       optimizedProductImageUrl(product.imageUrl!),
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const ColoredBox(
+                      errorBuilder: (_, __, ___) => ColoredBox(
                         color: AppConstants.primaryLight,
-                        child: Icon(Icons.broken_image_outlined,
+                        child: const Icon(Icons.broken_image_outlined,
                             color: AppConstants.primary),
                       ),
                     ),
@@ -294,12 +411,25 @@ class _ShowcaseProductTile extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   '${product.categoryName} • Rs. ${product.price.toStringAsFixed(0)}'
+                  '${product.originalPrice != null && product.originalPrice! > product.price ? '  ·  Rs. ${product.originalPrice!.toStringAsFixed(0)} before' : ''}'
                   '${product.isActive ? '' : ' • Inactive'}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: AppConstants.textMuted, fontSize: 11),
                 ),
+                if (onPricesChanged != null)
+                  TextButton.icon(
+                    onPressed: isSaving ? null : onPricesChanged,
+                    icon: const Icon(Icons.edit_outlined, size: 15),
+                    label: const Text('Edit carousel prices'),
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(0, 28),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      alignment: Alignment.centerLeft,
+                    ),
+                  ),
                 if (onImageChanged != null) ...[
                   const SizedBox(height: 4),
                   TextButton.icon(
@@ -366,18 +496,18 @@ class _ShowcaseEmpty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 42),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 42),
       child: Column(
         children: [
           Icon(Icons.inventory_2_outlined,
               size: 42, color: AppConstants.textMuted),
-          SizedBox(height: 12),
-          Text(
+          const SizedBox(height: 12),
+          const Text(
             'No products to feature yet',
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
-          SizedBox(height: 5),
+          const SizedBox(height: 5),
           Text(
             'Add products in the Products section first.',
             style: TextStyle(color: AppConstants.textMuted, fontSize: 12),
@@ -402,7 +532,7 @@ class _ShowcaseError extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.cloud_off_outlined,
+            Icon(Icons.cloud_off_outlined,
                 size: 40, color: AppConstants.textMuted),
             const SizedBox(height: 12),
             Text(message, textAlign: TextAlign.center),

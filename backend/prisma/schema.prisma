@@ -13,6 +13,8 @@ model User {
   email                 String                  @unique
   phone                 String?                 @unique
   avatarUrl             String?
+  avatarData            Bytes?
+  avatarMimeType        String?
   passwordHash          String
   role                  UserRole                @default(CUSTOMER)
   isActive              Boolean                 @default(true)
@@ -98,6 +100,12 @@ model Product {
   description   String?
   origin        String?
   imageUrl      String?
+  imageData     Bytes?
+  imageMimeType String?
+  unitLabel     String           @default("1 pc")
+  isWholesale   Boolean          @default(false)
+  wholesalePrice Decimal?
+  wholesaleMinimumQuantity Int   @default(1)
   isOrganic     Boolean          @default(false)
   isFeatured    Boolean          @default(false)
   isBestSeller  Boolean          @default(false)

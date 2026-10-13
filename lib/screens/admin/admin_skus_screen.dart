@@ -135,7 +135,7 @@ class _AdminSkusScreenState extends State<AdminSkusScreen> {
           const SizedBox(height: 5),
           Text(
             '${_products.length} products • store SKUs are unique internal stock codes.',
-            style: const TextStyle(color: AppConstants.textMuted, fontSize: 12),
+            style: TextStyle(color: AppConstants.textMuted, fontSize: 12),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -157,7 +157,7 @@ class _AdminSkusScreenState extends State<AdminSkusScreen> {
               color: AppConstants.primaryLight,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Text(
+            child: Text(
               'SKUs are set by each store, not assigned globally. Use a clear '
               'category-product-variant code (for example, RPG-PUL-MASOOR-1KG). '
               'A globally standardized product code is a GTIN/barcode, not an SKU.',
@@ -217,7 +217,7 @@ class _SkuProductTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppConstants.surfaceLight,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppConstants.borderLight),
       ),
@@ -233,7 +233,7 @@ class _SkuProductTile extends StatelessWidget {
           const SizedBox(height: 3),
           Text(
             '${product.categoryName} • ${product.isActive ? 'Active' : 'Inactive'}',
-            style: const TextStyle(color: AppConstants.textMuted, fontSize: 11),
+            style: TextStyle(color: AppConstants.textMuted, fontSize: 11),
           ),
           const SizedBox(height: 10),
           Row(
@@ -296,18 +296,18 @@ class _SkuEmpty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 42),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 42),
       child: Column(
         children: [
           Icon(Icons.qr_code_2_rounded,
               size: 42, color: AppConstants.textMuted),
-          SizedBox(height: 12),
-          Text(
+          const SizedBox(height: 12),
+          const Text(
             'No products to update',
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
-          SizedBox(height: 5),
+          const SizedBox(height: 5),
           Text(
             'Add products in the Products section to manage their SKUs.',
             textAlign: TextAlign.center,
@@ -333,7 +333,7 @@ class _SkuError extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.cloud_off_outlined,
+            Icon(Icons.cloud_off_outlined,
                 size: 40, color: AppConstants.textMuted),
             const SizedBox(height: 12),
             Text(message, textAlign: TextAlign.center),

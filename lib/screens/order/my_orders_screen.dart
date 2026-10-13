@@ -1,7 +1,8 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../providers/order_provider.dart';
+import '../../providers/theme_provider.dart';
 import 'order_tracking_screen.dart';
 import '../../widgets/empty_state.dart';
 
@@ -40,6 +41,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
   @override
   Widget build(BuildContext context) {
     final orderProvider = Provider.of<OrderProvider>(context);
+    context.watch<ThemeProvider?>();
     final orders = orderProvider.orders;
 
     return DefaultTabController(
@@ -48,7 +50,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
         backgroundColor: AppConstants.backgroundLight,
         appBar: AppBar(
           title: const Text('My Grocery Orders'),
-          backgroundColor: Colors.white,
+          backgroundColor: AppConstants.backgroundLight,
           actions: [
             IconButton(
               tooltip: 'Refresh orders',
@@ -56,12 +58,12 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
               icon: const Icon(Icons.refresh),
             ),
           ],
-          bottom: const TabBar(
+          bottom: TabBar(
             isScrollable: true,
             labelColor: AppConstants.primary,
             unselectedLabelColor: AppConstants.textMuted,
             indicatorColor: AppConstants.primary,
-            tabs: [
+            tabs: const [
               Tab(text: 'All Orders'),
               Tab(text: 'Active'),
               Tab(text: 'Completed'),
@@ -123,7 +125,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
 
   Widget _buildOrdersList(BuildContext context, List<dynamic> list) {
     if (list.isEmpty) {
-      return const Center(
+      return Center(
         child: Text('No orders in this status',
             style: TextStyle(color: AppConstants.textMuted, fontSize: 13)),
       );
@@ -137,12 +139,13 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         final ord = list[index];
-        final canCancel = ord.status == 'PLACED' || ord.status == 'CONFIRMED';
+        final canCancel = const {'PLACED', 'CONFIRMED', 'PROCESSING'}
+            .contains(ord.status);
 
         return Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: AppConstants.surfaceLight,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: AppConstants.borderLight),
           ),
@@ -184,14 +187,14 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
               const SizedBox(height: 8),
               Text(
                 '${ord.items.length} items · ${AppConstants.currencySymbol}${ord.total.toInt()}',
-                style: const TextStyle(
+                style: TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
                     color: AppConstants.textDark),
               ),
               Text(
                 'To: ${ord.address.street}',
-                style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
+                style: TextStyle(color: AppConstants.textMuted, fontSize: 11),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -262,7 +265,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
                         style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white)),
+                            color: AppConstants.primaryForeground)),
                   ),
                 ],
               ),

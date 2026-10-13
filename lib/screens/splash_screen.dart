@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants.dart';
 import '../providers/auth_provider.dart';
+import '../providers/theme_provider.dart';
 import 'onboarding_screen.dart';
 import 'auth/login_screen.dart';
 import '../navigation/app_shell_route.dart';
@@ -16,7 +17,8 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
+class _SplashScreenState extends State<SplashScreen>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
   late Animation<double> _textRevealAnimation;
@@ -28,7 +30,8 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     );
-    _scaleAnimation = CurvedAnimation(parent: _controller, curve: Curves.easeOutBack);
+    _scaleAnimation =
+        CurvedAnimation(parent: _controller, curve: Curves.easeOutBack);
     _textRevealAnimation = CurvedAnimation(
       parent: _controller,
       curve: const Interval(0.22, 0.88, curve: Curves.easeOutCubic),
@@ -47,21 +50,22 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   }
 
   Future<void> _navigateNext() async {
-    await Future.wait([
-      Future.delayed(const Duration(milliseconds: 2000)),
-      Provider.of<AuthProvider>(context, listen: false).sessionReady,
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final results = await Future.wait<dynamic>([
+      authProvider.sessionReady,
+      SharedPreferences.getInstance(),
     ]);
     if (!mounted) return;
 
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    final onboardingSeen = prefs.getBool(AppConstants.keyOnboardingSeen) ?? false;
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final prefs = results[1] as SharedPreferences;
+    final onboardingSeen =
+        prefs.getBool(AppConstants.keyOnboardingSeen) ?? false;
 
     if (authProvider.isAuthenticated) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => appShellForUser(authProvider.currentUser)),
+        MaterialPageRoute(
+            builder: (_) => appShellForUser(authProvider.currentUser)),
       );
     } else if (!onboardingSeen) {
       Navigator.pushReplacement(
@@ -84,8 +88,20 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ThemeProvider?>();
+    final titleStyle = TextStyle(
+      color: AppConstants.textDark,
+      fontSize: 28,
+      fontWeight: FontWeight.bold,
+      letterSpacing: -0.5,
+    );
+    final taglineStyle = TextStyle(
+      color: AppConstants.textMuted,
+      fontSize: 13,
+      letterSpacing: 0.2,
+    );
     return Scaffold(
-      backgroundColor: AppConstants.primary,
+      backgroundColor: AppConstants.backgroundLight,
       body: Center(
         child: ScaleTransition(
           scale: _scaleAnimation,
@@ -96,7 +112,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                 width: 90,
                 height: 90,
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: AppConstants.surfaceLight,
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
                     BoxShadow(
@@ -133,29 +149,14 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                       ),
                     );
                   },
-                  child: const FittedBox(
+                  child: FittedBox(
                     fit: BoxFit.scaleDown,
-                    child: Text(
-                      AppConstants.appName,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
+                    child: Text(AppConstants.appName, style: titleStyle),
                   ),
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
-                AppConstants.appTagline,
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 13,
-                  letterSpacing: 0.2,
-                ),
-              ),
+              Text(AppConstants.appTagline, style: taglineStyle),
             ],
           ),
         ),

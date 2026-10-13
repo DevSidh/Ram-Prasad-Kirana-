@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../core/responsive_layout.dart';
 import '../../providers/product_provider.dart';
+import '../../providers/theme_provider.dart';
 import '../category/categories_screen.dart';
 import '../../widgets/product_card.dart';
 
@@ -12,6 +13,7 @@ class WishlistScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ThemeProvider?>();
     final products = context.watch<ProductProvider>().wishlistProducts;
 
     return Scaffold(
@@ -33,7 +35,7 @@ class WishlistScreen extends StatelessWidget {
                       size: 48,
                     ),
                     const SizedBox(height: 12),
-                    const Text(
+                    Text(
                       'Save the things you love',
                       style: TextStyle(
                         color: AppConstants.textDark,
@@ -42,7 +44,7 @@ class WishlistScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    const Text(
+                    Text(
                       'Tap the heart on any product to keep it here.',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: AppConstants.textMuted),

@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../providers/order_provider.dart';
@@ -15,7 +15,7 @@ class DeliveryHomeScreen extends StatelessWidget {
       backgroundColor: AppConstants.backgroundLight,
       appBar: AppBar(
         title: const Text('Courier Dispatch Console'),
-        backgroundColor: Colors.white,
+        backgroundColor: AppConstants.backgroundLight,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -61,14 +61,14 @@ class DeliveryHomeScreen extends StatelessWidget {
 
             Text(
               'Active Delivery Tasks (${activeDeliveries.length})',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppConstants.textDark),
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppConstants.textDark),
             ),
             const SizedBox(height: 12),
 
             if (activeDeliveries.isEmpty)
-              const Center(
+              Center(
                 child: Padding(
-                  padding: EdgeInsets.all(40),
+                  padding: const EdgeInsets.all(40),
                   child: Text('No pending deliveries assigned.', style: TextStyle(color: AppConstants.textMuted)),
                 ),
               )
@@ -105,7 +105,7 @@ class DeliveryHomeScreen extends StatelessWidget {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('Collect on Doorstep:', style: TextStyle(fontSize: 11, color: AppConstants.textMuted)),
+                            Text('Collect on Doorstep:', style: TextStyle(fontSize: 11, color: AppConstants.textMuted)),
                             Text(
                               ord.paymentMethod == 'COD' ? 'Rs. ${ord.total.toInt()} (CASH)' : 'Prepaid Online',
                               style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),

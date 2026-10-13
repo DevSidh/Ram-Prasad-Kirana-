@@ -4,12 +4,12 @@ import '../models/cart_item.dart';
 
 class CartProvider extends ChangeNotifier {
   final Map<String, CartItem> _items = {};
-  double _tip = 40.0;
 
   Map<String, CartItem> get items => {..._items};
+  CartItem? itemForProduct(String productId) => _items[productId];
   List<CartItem> get itemList => _items.values.toList();
-  int get itemCount => _items.values.fold(0, (sum, item) => sum + item.quantity);
-  double get tip => _tip;
+  int get itemCount =>
+      _items.values.fold(0, (sum, item) => sum + item.quantity);
 
   double get subtotal =>
       _items.values.fold(0.0, (sum, item) => sum + item.totalPrice);
@@ -18,39 +18,77 @@ class CartProvider extends ChangeNotifier {
 
   double get grandTotal {
     if (_items.isEmpty) return 0.0;
-    return subtotal + deliveryFee + _tip;
+    return subtotal + deliveryFee;
   }
 
-  void addItem(Product product, [int quantity = 1]) {
-    if (_items.containsKey(product.id)) {
-      final current = _items[product.id]!;
-      final newQty = (current.quantity + quantity).clamp(1, product.stock);
-      _items[product.id] = CartItem(product: product, quantity: newQty);
-    } else {
-      _items[product.id] = CartItem(
+  String _itemKey(String productId, bool isWholesale) =>
+      isWholesale ? '$productId:wholesale' : productId;
+
+  void addItem(
+    Product product, [
+    int quantity = 1,
+    bool isWholesale = false,
+  ]) {
+    if (isWholesale &&
+        (!product.isWholesale || product.wholesalePrice == null)) {
+      throw StateError('Wholesale pricing is not available for this product.');
+    }
+    final key = _itemKey(product.id, isWholesale);
+    if (_items.containsKey(key)) {
+      final current = _items[key]!;
+      final minimumQuantity =
+          isWholesale ? product.wholesaleMinimumQuantity : 1;
+      if (product.stock < minimumQuantity) {
+        throw StateError(
+            'There is not enough stock for the wholesale minimum.');
+      }
+      final newQty =
+          (current.quantity + quantity).clamp(minimumQuantity, product.stock);
+      _items[key] = CartItem(
         product: product,
-        quantity: quantity.clamp(1, product.stock),
+        quantity: newQty,
+        isWholesale: isWholesale,
+      );
+    } else {
+      final minimumQuantity =
+          isWholesale ? product.wholesaleMinimumQuantity : 1;
+      if (product.stock < minimumQuantity) {
+        throw StateError(
+            'There is not enough stock for the wholesale minimum.');
+      }
+      _items[key] = CartItem(
+        product: product,
+        quantity: quantity.clamp(minimumQuantity, product.stock),
+        isWholesale: isWholesale,
       );
     }
     notifyListeners();
   }
 
-  void updateQuantity(String productId, int quantity) {
-    if (!_items.containsKey(productId)) return;
+  void updateQuantity(
+    String productId,
+    int quantity, {
+    bool isWholesale = false,
+  }) {
+    final key = _itemKey(productId, isWholesale);
+    if (!_items.containsKey(key)) return;
     if (quantity <= 0) {
-      removeItem(productId);
+      removeItem(productId, isWholesale: isWholesale);
       return;
     }
-    final item = _items[productId]!;
-    _items[productId] = CartItem(
+    final item = _items[key]!;
+    final minimumQuantity =
+        isWholesale ? item.product.wholesaleMinimumQuantity : 1;
+    _items[key] = CartItem(
       product: item.product,
-      quantity: quantity.clamp(1, item.product.stock),
+      quantity: quantity.clamp(minimumQuantity, item.product.stock),
+      isWholesale: isWholesale,
     );
     notifyListeners();
   }
 
-  void removeItem(String productId) {
-    _items.remove(productId);
+  void removeItem(String productId, {bool isWholesale = false}) {
+    _items.remove(_itemKey(productId, isWholesale));
     notifyListeners();
   }
 
@@ -58,10 +96,4 @@ class CartProvider extends ChangeNotifier {
     _items.clear();
     notifyListeners();
   }
-
-  void setTip(double amount) {
-    _tip = amount;
-    notifyListeners();
-  }
-
 }

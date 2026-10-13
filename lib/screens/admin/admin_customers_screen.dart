@@ -72,7 +72,7 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             'Customer contact details, saved addresses and recent orders.',
             style: TextStyle(color: AppConstants.textMuted),
           ),
@@ -163,7 +163,7 @@ class _CustomerCard extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: AppConstants.borderLight),
+        side: BorderSide(color: AppConstants.borderLight),
       ),
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
@@ -172,7 +172,7 @@ class _CustomerCard extends StatelessWidget {
           backgroundColor: AppConstants.primaryLight,
           child: Text(
             customer.name.isEmpty ? '?' : customer.name[0].toUpperCase(),
-            style: const TextStyle(
+            style: TextStyle(
               color: AppConstants.primaryDark,
               fontWeight: FontWeight.w800,
             ),
@@ -284,7 +284,7 @@ class _CustomerField extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppConstants.textMuted,
                 fontSize: 12,
               ),
@@ -320,16 +320,16 @@ class _EmptyCustomers extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 44),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 44),
       child: Column(
         children: [
-          Icon(Icons.people_outline_rounded,
+          const Icon(Icons.people_outline_rounded,
               size: 42, color: AppConstants.primary),
-          SizedBox(height: 12),
-          Text('No customers found',
+          const SizedBox(height: 12),
+          const Text('No customers found',
               style: TextStyle(fontWeight: FontWeight.w800)),
-          SizedBox(height: 4),
+          const SizedBox(height: 4),
           Text(
             'Registered customers will appear here.',
             style: TextStyle(color: AppConstants.textMuted),

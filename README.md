@@ -49,19 +49,24 @@ flutter run
 
 Start the backend in a separate terminal before signing in: `npm.cmd --prefix backend run dev` on Windows (or `cd backend && npm run dev` elsewhere). The web app and iOS simulator use `localhost`; the Android emulator uses `10.0.2.2` to reach the development computer. For a physical phone, use the computer's reachable LAN IP or deployed HTTPS API URL, for example `flutter run --dart-define=API_BASE_URL=http://192.168.1.20:4000/api/v1`. Keep the phone and computer on the same network and allow the backend port through the computer firewall. Login errors now identify the API URL if the server cannot be reached.
 
-Saving a delivery address does not require a Maps API key; customers can enter address details manually. Android and iOS use the native Google Maps SDK; Chrome uses the Maps JavaScript API and needs its own key. For Android, add `googleMapsApiKey=YOUR_RESTRICTED_KEY` to `android/local.properties` (the build also accepts `MAPS_API_KEY`) and restrict it to package `com.freshharvest.grocery_app` plus the signing certificate SHA-1. For iOS, set `GOOGLE_MAPS_API_KEY` in the Runner target's Xcode build settings and restrict it to the iOS bundle ID. For Chrome, copy `web/maps-config.example.js` to `web/maps-config.js`, set a separate key with Maps JavaScript API enabled, and restrict it to your site's HTTP referrers. Run/build web with `--dart-define=GOOGLE_MAPS_CONFIGURED=true` after setting that key. Never commit keys. The picker shows manual-entry guidance by default on web until configured; an invalid or incorrectly restricted key can still leave the map blank.
+Saving a delivery address does not require a Maps API key; customers can enter address details manually. Android and iOS use the native Google Maps SDK; Chrome uses the Maps JavaScript API and needs its own key. For Android, add `googleMapsApiKey=YOUR_RESTRICTED_KEY` to `android/local.properties` (the build also accepts `MAPS_API_KEY`) and restrict it to package `com.freshharvest.grocery_app` plus the signing certificate SHA-1. For iOS, set `GOOGLE_MAPS_API_KEY` in the Runner target's Xcode build settings and restrict it to the iOS bundle ID. For Chrome, copy `web/maps-config.example.js` to `web/maps-config.js`, set a separate key with Maps JavaScript API enabled, and restrict it to your site's HTTP referrers. The web picker is enabled by default; `--dart-define=GOOGLE_MAPS_CONFIGURED=false` can disable it explicitly. Never commit keys. Without a valid key enabled for the platform, the map tiles cannot load; manual address entry remains available.
 
-### 3. Build Production Android APK (Standalone Installable App)
-```bash
-flutter build apk --release
-```
-*Output APK located at:* `build/app/outputs/flutter-apk/app-release.apk`
+### 3. Build a Production Android APK or App Bundle
 
-### 4. Build Android App Bundle (Google Play Store AAB)
-```bash
-flutter build appbundle --release
+Release builds must embed the deployed backend's HTTPS API URL. Do not build
+with bare `flutter build apk --release` or `flutter build appbundle --release`.
+On Windows, use the release script after configuring Android signing:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-android-release.ps1 -ApiBaseUrl "https://YOUR-DEPLOYED-API-HOST/api/v1" -Artifact apk
 ```
-*Output AAB located at:* `build/app/outputs/bundle/release/app-release.aab`
+
+Use `-Artifact appbundle` for a Google Play Store AAB. Flutter uses the
+`version` in `pubspec.yaml` as the Android version name and build number. Name
+shared APKs with the store name and version, for example
+`Ram-Prasad-General-Store-v2.0.4.apk`. The APK is written to
+`build/app/outputs/flutter-apk/app-release.apk`; the AAB is written to
+`build/app/outputs/bundle/release/app-release.aab`.
 
 ### Publish a Signed Android APK on GitHub
 
@@ -105,11 +110,11 @@ cd backend
 npm install
 ```
 
-The existing CockroachDB schema is already synchronized. Do not run `prisma migrate dev`, `prisma db push`, or a database reset as part of routine startup. Product discount metadata is retained for future use but is currently inactive; customer pricing uses the product price only, and checkout does not accept coupons.
+Do not run `prisma migrate dev`, `prisma db push`, or a database reset as part of routine startup. Product sale prices use `price`, with `originalPrice` shown as the crossed-out former price; checkout does not accept coupons. Product units are stored with the catalog record.
 
 For email one-time-code password resets, also configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` in the backend's local environment. Use an app password for the sending mailbox; do not commit it. The reset code expires after 10 minutes and is limited to five verification attempts.
 
-Admin product images can be uploaded as JPEG, PNG, or WebP up to 5 MB. The API stores uploads in `backend/uploads` by default and accepts `UPLOADS_DIRECTORY` to choose a persistent mount path. In Docker, mount a named volume at `/app/uploads` (for example, `docker run -v freshharvest-uploads:/app/uploads ...`) or configure your hosting platform's persistent disk at that path. The image declares `/app/uploads` as a volume, but the deployment platform must retain/mount that volume across releases; otherwise uploaded images can still be lost when a container is replaced. The bundled `backend/catalog-uploads` directory contains fallback copies for the original product thumbnails, so those URLs continue to work if their old upload files are missing.
+New product images uploaded from the admin product editor or showcase are validated JPEG, PNG, or WebP files (up to 5 MB) and stored in the database so every device receives the same image. Older product image URLs and bundled fallback thumbnails remain supported when their referenced files still exist. Files previously written to Render's ephemeral filesystem cannot be restored after they disappear; re-upload those images through the admin product editor. The legacy generic image-upload endpoint still writes to `backend/uploads` by default and accepts `UPLOADS_DIRECTORY`; deployments using that endpoint must mount persistent storage there.
 
 Delivery addresses, profile photos, order history, cancellations, and in-app notifications are tied to the signed-in account. Customers can crop a square profile photo in the app before uploading it as a PNG; uploaded images must be JPEG, PNG, or WebP and are limited to 5 MB. Checkout does not store payment credentials; only Cash on Delivery is currently available. The store confirms delivery timing after checkout; a specific delivery window is not booked.
 
@@ -117,7 +122,7 @@ Customer and delivery-account email addresses are stored lowercase, and phone nu
 
 Push notifications require Firebase app settings at build time and platform setup (including Android/iOS app registration and APNs for iOS). Pass the client values with `--dart-define` at build/run time: `FIREBASE_API_KEY`, `FIREBASE_APP_ID`, `FIREBASE_MESSAGING_SENDER_ID`, `FIREBASE_PROJECT_ID`, plus the applicable optional values `FIREBASE_AUTH_DOMAIN`, `FIREBASE_STORAGE_BUCKET`, `FIREBASE_IOS_BUNDLE_ID`, and `FIREBASE_WEB_VAPID_KEY`. Configure the server's Firebase service-account JSON only in the backend's private environment as `FIREBASE_SERVICE_ACCOUNT_JSON`; do not place service-account secrets in the Flutter app or commit them. In-app order and delivery-assignment notifications work without Firebase; configured delivery push alerts contain only order/delivery identifiers, while customer contact, location, and payment details remain available through the authenticated delivery API.
 
-The profile-photo and device-token migrations have been deployed to the configured database after backup confirmation. For another environment, apply them only after a verified database backup; CockroachDB clusters with schema-locked tables may need those locks temporarily disabled during migration, then restored. Do not run `prisma migrate dev` or reset the database in production.
+The profile-photo and device-token migrations have been deployed to the configured database after backup confirmation. The pending `20261016000000_product_shared_image_and_units` migration adds database-backed product images and the product unit label. Apply pending migrations as a release step after a verified database backup and before deploying the backend version that uses these fields. For another environment, follow the same backup-first process; CockroachDB clusters with schema-locked tables may need those locks temporarily disabled during migration, then restored. Do not run `prisma migrate dev` or reset the database in production.
 
 ### 2. Create the Store Admin Account
 

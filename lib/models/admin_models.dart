@@ -32,7 +32,15 @@ class AdminProduct {
   final String categoryId;
   final String categoryName;
   final String? imageUrl;
+  final String? brand;
+  final String? description;
+  final String? origin;
+  final String unitLabel;
   final double price;
+  final double? originalPrice;
+  final bool isWholesale;
+  final double? wholesalePrice;
+  final int wholesaleMinimumQuantity;
   final int stock;
   final bool isActive;
   final bool isFeatured;
@@ -45,7 +53,15 @@ class AdminProduct {
     required this.categoryId,
     required this.categoryName,
     required this.imageUrl,
+    this.brand,
+    this.description,
+    this.origin,
+    this.unitLabel = '1 pc',
     required this.price,
+    this.originalPrice,
+    this.isWholesale = false,
+    this.wholesalePrice,
+    this.wholesaleMinimumQuantity = 1,
     required this.stock,
     required this.isActive,
     required this.isFeatured,
@@ -69,7 +85,22 @@ class AdminProduct {
       categoryName:
           category is Map<String, dynamic> ? category['name']?.toString() ?? '' : '',
       imageUrl: json['imageUrl']?.toString(),
+      brand: json['brand']?.toString(),
+      description: json['description']?.toString(),
+      origin: json['origin']?.toString(),
+      unitLabel: json['unitLabel']?.toString() ??
+          json['weight']?.toString() ??
+          '1 pc',
       price: _asDouble(json['price']),
+      originalPrice: json['originalPrice'] == null
+          ? null
+          : _asDouble(json['originalPrice']),
+      isWholesale: json['isWholesale'] as bool? ?? false,
+      wholesalePrice: json['wholesalePrice'] == null
+          ? null
+          : _asDouble(json['wholesalePrice']),
+      wholesaleMinimumQuantity:
+          _asInt(json['wholesaleMinimumQuantity'] ?? 1),
       stock: _asInt(stockValue),
       isActive: json['isActive'] as bool? ?? true,
       isFeatured: json['isFeatured'] as bool? ?? false,
@@ -80,6 +111,9 @@ class AdminProduct {
     String? sku,
     bool? isFeatured,
     String? imageUrl,
+    double? price,
+    double? originalPrice,
+    bool clearOriginalPrice = false,
   }) {
     return AdminProduct(
       id: id,
@@ -89,7 +123,16 @@ class AdminProduct {
       categoryId: categoryId,
       categoryName: categoryName,
       imageUrl: imageUrl ?? this.imageUrl,
-      price: price,
+      brand: brand,
+      description: description,
+      origin: origin,
+      unitLabel: unitLabel,
+      price: price ?? this.price,
+      originalPrice:
+          clearOriginalPrice ? null : originalPrice ?? this.originalPrice,
+      isWholesale: isWholesale,
+      wholesalePrice: wholesalePrice,
+      wholesaleMinimumQuantity: wholesaleMinimumQuantity,
       stock: stock,
       isActive: isActive,
       isFeatured: isFeatured ?? this.isFeatured,

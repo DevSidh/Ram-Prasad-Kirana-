@@ -1,10 +1,18 @@
-import { Router, type RequestHandler, type Response } from 'express';
+import { Router, type Request, type RequestHandler, type Response } from 'express';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { sendAdminError } from '../middleware/auth.js';
 import { InventoryAdjustmentError, InventoryService } from '../services/inventory.js';
-import { receiveSingleImage, saveUploadedImage } from '../services/image-upload.js';
+import {
+  getImageMimeType,
+  receiveSingleImage,
+  saveUploadedImage,
+} from '../services/image-upload.js';
+import {
+  validateProductSalePrice,
+  validateProductUnit,
+} from '../services/product-validation.js';
 import { sendPushToUser } from '../services/push-notifications.js';
 import { identityAlreadyInUse, normalizeEmail, normalizePhone } from '../services/user-identity.js';
 
@@ -32,11 +40,15 @@ const productFields = {
   brand: z.string().trim().max(120).nullable(),
   price: z.number().finite().nonnegative(),
   originalPrice: z.number().finite().nonnegative().nullable(),
+  isWholesale: z.boolean(),
+  wholesalePrice: z.number().finite().positive().nullable(),
+  wholesaleMinimumQuantity: z.number().int().positive().max(10000),
   rating: z.number().finite().min(0).max(5),
   reviewCount: z.number().int().nonnegative(),
   description: z.string().trim().max(5000).nullable(),
   origin: z.string().trim().max(200).nullable(),
   imageUrl: z.string().trim().max(2048).nullable(),
+  unitLabel: z.string().trim().min(1).max(40),
   isOrganic: z.boolean(),
   isFeatured: z.boolean(),
   isBestSeller: z.boolean(),
@@ -62,11 +74,15 @@ const updateProductInput = z.object({
   brand: productFields.brand.optional(),
   price: productFields.price.optional(),
   originalPrice: productFields.originalPrice.optional(),
+  isWholesale: productFields.isWholesale.optional(),
+  wholesalePrice: productFields.wholesalePrice.optional(),
+  wholesaleMinimumQuantity: productFields.wholesaleMinimumQuantity.optional(),
   rating: productFields.rating.optional(),
   reviewCount: productFields.reviewCount.optional(),
   description: productFields.description.optional(),
   origin: productFields.origin.optional(),
   imageUrl: productFields.imageUrl.optional(),
+  unitLabel: productFields.unitLabel.optional(),
   isOrganic: productFields.isOrganic.optional(),
   isFeatured: productFields.isFeatured.optional(),
   isBestSeller: productFields.isBestSeller.optional(),
@@ -127,11 +143,16 @@ const productSelect = {
   brand: true,
   price: true,
   originalPrice: true,
+  isWholesale: true,
+  wholesalePrice: true,
+  wholesaleMinimumQuantity: true,
   rating: true,
   reviewCount: true,
   description: true,
   origin: true,
   imageUrl: true,
+  imageMimeType: true,
+  unitLabel: true,
   isOrganic: true,
   isFeatured: true,
   isBestSeller: true,
@@ -144,11 +165,17 @@ const productSelect = {
 type AdminProduct = Prisma.ProductGetPayload<{ select: typeof productSelect }>;
 
 function productResponse(product: AdminProduct) {
-  const { inventory, ...fields } = product;
+  const { inventory, imageMimeType, ...fields } = product;
   return {
     ...fields,
+    imageUrl: imageMimeType && product.imageUrl
+      ? `${product.imageUrl}?v=${product.updatedAt.getTime()}`
+      : product.imageUrl,
     price: Number(product.price),
     originalPrice: product.originalPrice === null ? null : Number(product.originalPrice),
+    wholesalePrice: product.wholesalePrice === null
+      ? null
+      : Number(product.wholesalePrice),
     rating: Number(product.rating),
     stock: Math.max(0, (inventory?.totalStock ?? 0) - (inventory?.reservedStock ?? 0)),
   };
@@ -217,6 +244,22 @@ async function availableProductIds(
     WHERE COALESCE(i."totalStock", 0) - COALESCE(i."reservedStock", 0) <= 0
   `;
   return rows.map(({ id }) => id);
+}
+
+function productRequestBody(req: Request): Record<string, unknown> | null {
+  let body: unknown = req.body;
+  if (req.file) {
+    const encoded = (req.body as Record<string, unknown> | undefined)?.product;
+    if (typeof encoded !== 'string') return null;
+    try {
+      body = JSON.parse(encoded);
+    } catch {
+      return null;
+    }
+  }
+  return body !== null && typeof body === 'object' && !Array.isArray(body)
+    ? body as Record<string, unknown>
+    : null;
 }
 
 export function createAdminRouter(
@@ -1206,15 +1249,59 @@ export function createAdminRouter(
     }
   });
 
-  router.post('/products', async (req, res) => {
-    const parsed = createProductInput.safeParse(req.body);
+  router.post('/products', receiveSingleImage, async (req, res) => {
+    const body = productRequestBody(req);
+    if (!body) {
+      return res.status(400).json({ error: 'Product fields are required.' });
+    }
+    const parsed = createProductInput.safeParse(body);
     if (!parsed.success) return invalidInput(res, parsed.error);
     const { stock = 0, ...data } = parsed.data;
     if (data.price <= 0) return res.status(400).json({ error: 'Price must be greater than zero' });
+    const salePriceError = validateProductSalePrice(data.price, data.originalPrice);
+    if (salePriceError) return res.status(400).json({ error: salePriceError });
+    if (data.isWholesale && data.wholesalePrice == null) {
+      return res.status(400).json({
+        error: 'Set a bulk price before enabling wholesale for this product.',
+      });
+    }
+    const imageMimeType = req.file
+      ? getImageMimeType(req.file.buffer)
+      : null;
+    if (req.file && !imageMimeType) {
+      return res.status(400).json({ error: 'Use a valid JPEG, PNG, or WebP image.' });
+    }
 
     try {
+      const category = await prisma.category.findUnique({
+        where: { id: data.categoryId },
+        select: { name: true },
+      });
+      const unitError = validateProductUnit({
+        name: data.name,
+        categoryName: category?.name ?? '',
+        unitLabel: data.unitLabel ?? '1 pc',
+      });
+      if (unitError) return res.status(400).json({ error: unitError });
+
       const product = await prisma.$transaction(async (tx) => {
-        const created = await tx.product.create({ data });
+        const created = await tx.product.create({
+          data: {
+            ...data,
+            ...(req.file && imageMimeType
+              ? {
+                  imageData: req.file.buffer,
+                  imageMimeType,
+                }
+              : {}),
+          },
+        });
+        if (req.file && imageMimeType) {
+          await tx.product.update({
+            where: { id: created.id },
+            data: { imageUrl: `/api/v1/products/${created.id}/image` },
+          });
+        }
         const adminId = res.locals.authenticatedUserId;
         await inventoryService.setStock(
           tx,
@@ -1236,25 +1323,100 @@ export function createAdminRouter(
     }
   });
 
-  router.patch('/products/:id', async (req, res) => {
+  router.patch('/products/:id', receiveSingleImage, async (req, res) => {
     const id = parseRecordId(req.params.id, res);
     if (!id) return;
-    const parsed = updateProductInput.safeParse(req.body);
+    const body = productRequestBody(req);
+    if (!body) {
+      return res.status(400).json({ error: 'Product fields are invalid.' });
+    }
+    const parsed = updateProductInput.safeParse(body);
     if (!parsed.success) return invalidInput(res, parsed.error);
     const { stock, ...data } = parsed.data;
     if (data.price !== undefined && data.price <= 0) {
       return res.status(400).json({ error: 'Price must be greater than zero' });
     }
+    const imageMimeType = req.file
+      ? getImageMimeType(req.file.buffer)
+      : null;
+    if (req.file && !imageMimeType) {
+      return res.status(400).json({ error: 'Use a valid JPEG, PNG, or WebP image.' });
+    }
 
     try {
+      const currentProduct = await prisma.product.findUnique({
+        where: { id },
+        select: {
+          name: true,
+          categoryId: true,
+          unitLabel: true,
+          price: true,
+          originalPrice: true,
+          isWholesale: true,
+          wholesalePrice: true,
+          wholesaleMinimumQuantity: true,
+          category: { select: { name: true } },
+        },
+      });
+      if (!currentProduct) {
+        return res.status(404).json({ error: 'Product not found' });
+      }
+      const category =
+        data.categoryId && data.categoryId !== currentProduct.categoryId
+          ? await prisma.category.findUnique({
+              where: { id: data.categoryId },
+              select: { name: true },
+            })
+          : currentProduct.category;
+      const unitError = validateProductUnit({
+        name: data.name ?? currentProduct.name,
+        categoryName: category?.name ?? '',
+        unitLabel: data.unitLabel ?? currentProduct.unitLabel,
+      });
+      if (unitError) return res.status(400).json({ error: unitError });
+      const salePriceError = validateProductSalePrice(
+        data.price ?? Number(currentProduct.price),
+        data.originalPrice === undefined
+          ? currentProduct.originalPrice === null
+            ? null
+            : Number(currentProduct.originalPrice)
+          : data.originalPrice,
+      );
+      if (salePriceError) {
+        return res.status(400).json({ error: salePriceError });
+      }
+      const isWholesale = data.isWholesale ?? currentProduct.isWholesale;
+      const wholesalePrice = data.wholesalePrice === undefined
+        ? currentProduct.wholesalePrice
+        : data.wholesalePrice;
+      if (isWholesale && wholesalePrice == null) {
+        return res.status(400).json({
+          error: 'Set a bulk price before enabling wholesale for this product.',
+        });
+      }
+
       const product = await prisma.$transaction(async (tx) => {
         const existing = await tx.product.findUnique({
           where: { id },
           select: { id: true },
         });
         if (!existing) return null;
-        if (Object.keys(data).length > 0) {
-          await tx.product.update({ where: { id }, data });
+        if (Object.keys(data).length > 0 || req.file) {
+          await tx.product.update({
+            where: { id },
+            data: {
+              ...data,
+              ...(req.file && imageMimeType
+                ? {
+                    imageData: req.file.buffer,
+                    imageMimeType,
+                    imageUrl: `/api/v1/products/${id}/image`,
+                  }
+                : data.imageUrl === null
+                  ? { imageData: null, imageMimeType: null }
+                  : {}),
+            },
+          });
         }
         if (stock !== undefined) {
           const adminId = res.locals.authenticatedUserId;

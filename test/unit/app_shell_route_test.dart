@@ -15,7 +15,8 @@ void main() {
           role: 'ADMIN'),
     );
 
-    expect(shell, isA<AdminShell>());
+    expect(shell, isA<StaffAppearanceBoundary>());
+    expect((shell as StaffAppearanceBoundary).child, isA<AdminShell>());
   });
 
   test('non-admin users remain in the customer shell', () {
@@ -41,6 +42,7 @@ void main() {
       ),
     );
 
-    expect(shell, isA<DeliveryShell>());
+    expect(shell, isA<StaffAppearanceBoundary>());
+    expect((shell as StaffAppearanceBoundary).child, isA<DeliveryShell>());
   });
 }

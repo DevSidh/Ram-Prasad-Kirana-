@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import 'dart:ui';
-
 import 'package:provider/provider.dart';
 
 import '../models/product.dart';
+import '../models/cart_item.dart';
 import '../providers/cart_provider.dart';
 import '../providers/product_provider.dart';
 import '../core/constants.dart';
@@ -14,7 +13,10 @@ import 'cart_flight_overlay.dart';
 class ProductCard extends StatefulWidget {
   final Product product;
 
-  const ProductCard({super.key, required this.product});
+  const ProductCard({
+    super.key,
+    required this.product,
+  });
 
   @override
   State<ProductCard> createState() => _ProductCardState();
@@ -44,10 +46,14 @@ class _ProductCardState extends State<ProductCard> {
   @override
   Widget build(BuildContext context) {
     final product = widget.product;
-    final cartProvider = Provider.of<CartProvider>(context);
-    final productProvider = Provider.of<ProductProvider>(context);
-    final cartItem = cartProvider.items[product.id];
-    final isWishlisted = productProvider.isWishlisted(product.id);
+    final cartProvider = context.read<CartProvider>();
+    final productProvider = context.read<ProductProvider>();
+    final cartItem = context.select<CartProvider, CartItem?>(
+      (provider) => provider.itemForProduct(product.id),
+    );
+    final isWishlisted = context.select<ProductProvider, bool>(
+      (provider) => provider.isWishlisted(product.id),
+    );
 
     return InkWell(
       onTap: () => showProductQuickView(
@@ -91,30 +97,25 @@ class _ProductCardState extends State<ProductCard> {
                 Positioned(
                   top: 8,
                   right: 8,
-                  child: ClipOval(
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                      child: Material(
-                        color: Colors.white.withValues(alpha: 0.72),
-                        shape: const CircleBorder(),
-                        child: IconButton(
-                          tooltip: isWishlisted
-                              ? 'Remove from saved items'
-                              : 'Save item',
-                          constraints: const BoxConstraints.tightFor(
-                              width: 44, height: 44),
-                          onPressed: () =>
-                              productProvider.toggleWishlist(product.id),
-                          icon: Icon(
-                            isWishlisted
-                                ? Icons.favorite
-                                : Icons.favorite_border,
-                            color: isWishlisted
-                                ? AppConstants.primary
-                                : AppConstants.textMuted,
-                            size: 18,
-                          ),
-                        ),
+                  child: Material(
+                    color: Colors.white.withValues(alpha: 0.86),
+                    shape: const CircleBorder(),
+                    child: IconButton(
+                      tooltip: isWishlisted
+                          ? 'Remove from saved items'
+                          : 'Save item',
+                      constraints:
+                          const BoxConstraints.tightFor(width: 44, height: 44),
+                      onPressed: () =>
+                          productProvider.toggleWishlist(product.id),
+                      icon: Icon(
+                        isWishlisted
+                            ? Icons.favorite
+                            : Icons.favorite_border,
+                        color: isWishlisted
+                            ? AppConstants.primary
+                            : AppConstants.textMuted,
+                        size: 18,
                       ),
                     ),
                   ),
@@ -172,7 +173,7 @@ class _ProductCardState extends State<ProductCard> {
                               '${AppConstants.currencySymbol}${product.price.toInt()}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 14,
                                 color: AppConstants.textDark,
@@ -215,12 +216,15 @@ class _ProductCardState extends State<ProductCard> {
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           Icon(Icons.add,
-                                              color: Colors.white, size: 14),
+                                              color: AppConstants
+                                                  .primaryForeground,
+                                              size: 14),
                                           SizedBox(width: 2),
                                           Text(
                                             'Add',
                                             style: TextStyle(
-                                              color: Colors.white,
+                                              color: AppConstants
+                                                  .primaryForeground,
                                               fontSize: 12,
                                               fontWeight: FontWeight.bold,
                                             ),
@@ -232,9 +236,9 @@ class _ProductCardState extends State<ProductCard> {
                                 ),
                               )
                             : cartItem == null
-                                ? const Text(
+                                ? Text(
                                     'Unavailable',
-                                    key: ValueKey('unavailable'),
+                                    key: const ValueKey('unavailable'),
                                     style: TextStyle(
                                       color: AppConstants.textMuted,
                                       fontSize: 10,
@@ -254,8 +258,8 @@ class _ProductCardState extends State<ProductCard> {
                                             cartProvider.updateQuantity(
                                                 product.id,
                                                 cartItem.quantity - 1),
-                                        child: const Padding(
-                                          padding: EdgeInsets.all(4),
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(4),
                                           child: Icon(Icons.remove,
                                               size: 14,
                                               color: AppConstants.primaryDark),
@@ -266,7 +270,7 @@ class _ProductCardState extends State<ProductCard> {
                                             horizontal: 4),
                                         child: Text(
                                           '${cartItem.quantity}',
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                               fontWeight: FontWeight.bold,
                                               fontSize: 12,
                                               color: AppConstants.primaryDark),
@@ -277,8 +281,8 @@ class _ProductCardState extends State<ProductCard> {
                                             cartProvider.updateQuantity(
                                                 product.id,
                                                 cartItem.quantity + 1),
-                                        child: const Padding(
-                                          padding: EdgeInsets.all(4),
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(4),
                                           child: Icon(Icons.add,
                                               size: 14,
                                               color: AppConstants.primaryDark),

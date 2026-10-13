@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../models/order.dart';
 import '../../providers/order_provider.dart';
+import '../../providers/theme_provider.dart';
 
 class OrderTrackingScreen extends StatefulWidget {
   final Order order;
@@ -109,6 +110,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<OrderProvider>();
+    context.watch<ThemeProvider?>();
     final matchingOrders =
         provider.orders.where((order) => order.id == widget.order.id);
     final order = matchingOrders.isEmpty ? widget.order : matchingOrders.first;
@@ -127,7 +129,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
       backgroundColor: AppConstants.backgroundLight,
       appBar: AppBar(
         title: Text('Track #${order.orderNumber}'),
-        backgroundColor: Colors.white,
+        backgroundColor: AppConstants.backgroundLight,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -151,12 +153,18 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                     Expanded(
                       child: Text(
                         'Live status could not be refreshed: $_refreshError',
-                        style: const TextStyle(fontSize: 12),
+                        style: const TextStyle(
+                          color: Color(0xFF563A00),
+                          fontSize: 12,
+                        ),
                       ),
                     ),
                     TextButton(
                       onPressed: _refreshOrder,
-                      child: const Text('Retry'),
+                      child: const Text(
+                        'Retry',
+                        style: TextStyle(color: Color(0xFF563A00)),
+                      ),
                     ),
                   ],
                 ),
@@ -165,7 +173,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppConstants.surfaceLight,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: AppConstants.borderLight),
               ),
@@ -187,7 +195,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                       children: [
                         Text(
                           _statusLabel(order.status),
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 14,
                               color: AppConstants.textDark),
@@ -196,7 +204,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                         Text(
                           'Kathmandu Valley 45-Min Express Cold Chain',
                           style: TextStyle(
-                              color: Colors.grey.shade500, fontSize: 11),
+                              color: AppConstants.textMuted, fontSize: 11),
                         ),
                       ],
                     ),
@@ -211,7 +219,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: AppConstants.surfaceLight,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: AppConstants.borderLight),
                 ),
@@ -241,7 +249,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                           Text(
                             'Electric Scooter · 4.9★ (1,240 deliveries)',
                             style: TextStyle(
-                                color: Colors.grey.shade500, fontSize: 11),
+                                color: AppConstants.textMuted, fontSize: 11),
                           ),
                         ],
                       ),
@@ -261,7 +269,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppConstants.surfaceLight,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: AppConstants.borderLight),
               ),
@@ -288,18 +296,20 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                               decoration: BoxDecoration(
                                 color: isComplete
                                     ? AppConstants.primary
-                                    : Colors.grey.shade200,
+                                    : AppConstants.borderLight,
                                 shape: BoxShape.circle,
                               ),
                               child: Center(
                                 child: isComplete
                                     ? const Icon(Icons.check,
-                                        size: 14, color: Colors.white)
+                                        size: 14,
+                                        color:
+                                            AppConstants.primaryForeground)
                                     : Container(
                                         width: 8,
                                         height: 8,
                                         decoration: BoxDecoration(
-                                            color: Colors.grey.shade400,
+                                            color: AppConstants.textMuted,
                                             shape: BoxShape.circle),
                                       ),
                               ),
@@ -310,7 +320,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                                 height: 36,
                                 color: isComplete
                                     ? AppConstants.primary
-                                    : Colors.grey.shade200,
+                                    : AppConstants.borderLight,
                               ),
                           ],
                         ),
@@ -330,13 +340,13 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                                     fontSize: 13,
                                     color: isComplete
                                         ? AppConstants.textDark
-                                        : Colors.grey.shade400,
+                                        : AppConstants.textMuted,
                                   ),
                                 ),
                                 Text(
                                   step['time']!,
                                   style: TextStyle(
-                                      color: Colors.grey.shade500,
+                                      color: AppConstants.textMuted,
                                       fontSize: 11),
                                 ),
                               ],
@@ -355,7 +365,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppConstants.surfaceLight,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: AppConstants.borderLight),
               ),
@@ -366,17 +376,22 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                       style:
                           TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                   const SizedBox(height: 6),
-                  Text('${order.address.fullName} · ${order.address.phone}',
-                      style: const TextStyle(fontSize: 12)),
+                  Text(
+                    '${order.address.fullName} · ${order.address.phone}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppConstants.textDark,
+                    ),
+                  ),
                   Text('${order.address.street}, ${order.address.city}',
-                      style:
-                          TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                      style: TextStyle(
+                          color: AppConstants.textMuted, fontSize: 12)),
                   if (order.address.instructions != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Text('Note: ${order.address.instructions!}',
                           style: TextStyle(
-                              color: Colors.grey.shade500,
+                              color: AppConstants.textMuted,
                               fontSize: 11,
                               fontStyle: FontStyle.italic)),
                     ),

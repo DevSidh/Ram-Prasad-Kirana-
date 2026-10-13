@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/constants.dart';
+import '../../providers/theme_provider.dart';
 import '../../services/api_service.dart';
 import '../../widgets/custom_button.dart';
 
@@ -85,6 +86,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ThemeProvider?>();
     return Scaffold(
       appBar: AppBar(title: const Text('Reset password')),
       body: SafeArea(
@@ -104,7 +106,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                             _codeRequested
                                 ? 'Choose a new password'
                                 : 'Reset your password',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 25,
                               fontWeight: FontWeight.w700,
                               color: AppConstants.textDark,
@@ -115,7 +117,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                             _codeRequested
                                 ? 'Enter the six-digit code sent to your email. The code expires in 10 minutes.'
                                 : 'We’ll email a one-time verification code to your registered address.',
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: AppConstants.textMuted,
                               height: 1.5,
                             ),
@@ -253,7 +255,7 @@ class _ResetComplete extends StatelessWidget {
           style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 8),
-        const Text(
+        Text(
           'Your new password is ready. Sign in with it to continue.',
           textAlign: TextAlign.center,
           style: TextStyle(color: AppConstants.textMuted),

@@ -70,15 +70,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    const Text(
                       'Store at a glance',
                       style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
                     ),
-                    SizedBox(height: 4),
+                    const SizedBox(height: 4),
                     Text('Live figures from your store', style: TextStyle(color: AppConstants.textMuted)),
                   ],
                 ),
@@ -223,7 +223,7 @@ class _MetricGrid extends StatelessWidget {
             return Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppConstants.surfaceLight,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: AppConstants.borderLight),
               ),
@@ -240,7 +240,7 @@ class _MetricGrid extends StatelessWidget {
                           item.label,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 11, color: AppConstants.textMuted),
+                          style: TextStyle(fontSize: 11, color: AppConstants.textMuted),
                         ),
                       ),
                     ],
@@ -277,7 +277,7 @@ class _SalesCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppConstants.surfaceLight,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppConstants.borderLight),
       ),
@@ -294,7 +294,7 @@ class _SalesCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: AppConstants.textMuted)),
+                Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: AppConstants.textMuted)),
                 const SizedBox(height: 2),
                 Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
               ],
@@ -324,16 +324,16 @@ class _RecentOrderTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppConstants.surfaceLight,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppConstants.borderLight),
       ),
       child: Row(
         children: [
-          const CircleAvatar(
+          CircleAvatar(
             radius: 19,
             backgroundColor: AppConstants.primaryLight,
-            child: Icon(Icons.receipt_long_outlined, color: AppConstants.primary, size: 19),
+            child: const Icon(Icons.receipt_long_outlined, color: AppConstants.primary, size: 19),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -342,7 +342,7 @@ class _RecentOrderTile extends StatelessWidget {
               children: [
                 Text(orderId, style: const TextStyle(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 3),
-                Text(status.replaceAll('_', ' '), style: const TextStyle(color: AppConstants.textMuted, fontSize: 12)),
+                Text(status.replaceAll('_', ' '), style: TextStyle(color: AppConstants.textMuted, fontSize: 12)),
               ],
             ),
           ),
@@ -367,7 +367,7 @@ class _SectionHeading extends StatelessWidget {
       children: [
         Expanded(child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800))),
         if (trailing.isNotEmpty)
-          Text(trailing, style: const TextStyle(fontSize: 9, letterSpacing: 1, color: AppConstants.textMuted, fontWeight: FontWeight.w700)),
+          Text(trailing, style: TextStyle(fontSize: 9, letterSpacing: 1, color: AppConstants.textMuted, fontWeight: FontWeight.w700)),
       ],
     );
   }
@@ -413,11 +413,11 @@ class _ErrorContent extends StatelessWidget {
   Widget build(BuildContext context) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.cloud_off_outlined, size: 42, color: AppConstants.textMuted),
+          Icon(Icons.cloud_off_outlined, size: 42, color: AppConstants.textMuted),
           const SizedBox(height: 12),
           const Text('Dashboard unavailable', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
           const SizedBox(height: 6),
-          Text(message, textAlign: TextAlign.center, style: const TextStyle(color: AppConstants.textMuted)),
+          Text(message, textAlign: TextAlign.center, style: TextStyle(color: AppConstants.textMuted)),
           const SizedBox(height: 16),
           FilledButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: const Text('Try again')),
         ],
@@ -435,14 +435,14 @@ class _EmptyPanel extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         width: double.infinity,
         padding: const EdgeInsets.all(22),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppConstants.borderLight)),
+        decoration: BoxDecoration(        color: AppConstants.surfaceLight, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppConstants.borderLight)),
         child: Column(
           children: [
             Icon(icon, size: 28, color: AppConstants.textMuted),
             const SizedBox(height: 9),
             Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
-            Text(message, textAlign: TextAlign.center, style: const TextStyle(color: AppConstants.textMuted, fontSize: 12)),
+            Text(message, textAlign: TextAlign.center, style: TextStyle(color: AppConstants.textMuted, fontSize: 12)),
           ],
         ),
       );

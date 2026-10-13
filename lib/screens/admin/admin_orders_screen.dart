@@ -190,7 +190,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             'Review customer details and move each order through its delivery status.',
             style: TextStyle(color: AppConstants.textMuted),
           ),
@@ -353,7 +353,7 @@ class _AdminOrderCard extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: AppConstants.borderLight),
+        side: BorderSide(color: AppConstants.borderLight),
       ),
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
@@ -573,7 +573,7 @@ class _DetailLine extends StatelessWidget {
             width: 92,
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppConstants.textMuted,
                 fontSize: 12,
               ),
@@ -638,16 +638,16 @@ class _EmptyOrders extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 44),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 44),
       child: Column(
         children: [
-          Icon(Icons.receipt_long_outlined,
+          const Icon(Icons.receipt_long_outlined,
               size: 42, color: AppConstants.primary),
-          SizedBox(height: 12),
-          Text('No orders found',
+          const SizedBox(height: 12),
+          const Text('No orders found',
               style: TextStyle(fontWeight: FontWeight.w800)),
-          SizedBox(height: 4),
+          const SizedBox(height: 4),
           Text(
             'New customer orders will appear here.',
             style: TextStyle(color: AppConstants.textMuted),
