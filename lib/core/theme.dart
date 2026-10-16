@@ -4,8 +4,13 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'constants.dart';
+import 'theme/app_colors.dart';
+import 'theme/app_theme_extension.dart';
 
 class AppTheme {
+  static ThemeData light() => lightTheme;
+  static ThemeData dark() => darkTheme;
+
   static TextTheme _textThemeFor(Color text, Color mutedText) {
     return GoogleFonts.plusJakartaSansTextTheme(ThemeData.light().textTheme)
         .apply(
@@ -46,22 +51,25 @@ class AppTheme {
       useMaterial3: true,
       brightness: Brightness.light,
       colorScheme: ColorScheme.light(
-        primary: AppConstants.primary,
+        primary: AppConstants.primaryFor(isDark),
         onPrimary: AppConstants.primaryForeground,
         secondary: AppConstants.accent,
         surface: surface,
         onSurface: text,
-        error: const Color(0xFFDC2626),
+        error: const Color(0xFFEF4444),
       ),
       scaffoldBackgroundColor: background,
+      extensions: [
+        AppThemeExtension.fromColors(AppColors.light),
+      ],
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
-          TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.android: _SmoothPageTransitionsBuilder(),
           TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.fuchsia: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.linux: _SmoothPageTransitionsBuilder(),
+          TargetPlatform.macOS: _SmoothPageTransitionsBuilder(),
+          TargetPlatform.windows: _SmoothPageTransitionsBuilder(),
+          TargetPlatform.fuchsia: _SmoothPageTransitionsBuilder(),
         },
       ),
       textTheme: _textThemeFor(text, mutedText),
@@ -77,9 +85,10 @@ class AppTheme {
       ),
       cardTheme: CardThemeData(
         color: surface,
-        elevation: 0,
+        elevation: 1,
+        shadowColor: const Color(0x14000000),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(24),
           side: BorderSide(color: border),
         ),
       ),
@@ -91,8 +100,7 @@ class AppTheme {
         backgroundColor: surface,
         showDragHandle: true,
         shape: const RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(26)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
@@ -111,29 +119,32 @@ class AppTheme {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppConstants.primary,
+          backgroundColor: AppConstants.primaryFor(isDark),
           foregroundColor: AppConstants.primaryForeground,
           elevation: 0,
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: const Color(0xFFF3F7F3),
+        fillColor: surface,
         hintStyle: TextStyle(color: mutedText),
         border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(16),
             borderSide: BorderSide(color: border)),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppConstants.primary, width: 1.5),
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(
+            color: AppConstants.primaryFor(isDark),
+            width: 1.5,
+          ),
         ),
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -152,7 +163,7 @@ class AppTheme {
       useMaterial3: true,
       brightness: Brightness.dark,
       colorScheme: ColorScheme.dark(
-        primary: AppConstants.primary,
+        primary: AppConstants.primaryFor(isDark),
         onPrimary: AppConstants.primaryForeground,
         secondary: AppConstants.accent,
         surface: surface,
@@ -160,6 +171,19 @@ class AppTheme {
         error: const Color(0xFFEF4444),
       ),
       scaffoldBackgroundColor: background,
+      extensions: [
+        AppThemeExtension.fromColors(AppColors.dark),
+      ],
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: _SmoothPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.linux: _SmoothPageTransitionsBuilder(),
+          TargetPlatform.macOS: _SmoothPageTransitionsBuilder(),
+          TargetPlatform.windows: _SmoothPageTransitionsBuilder(),
+          TargetPlatform.fuchsia: _SmoothPageTransitionsBuilder(),
+        },
+      ),
       textTheme: _textThemeFor(text, mutedText),
       appBarTheme: AppBarTheme(
         backgroundColor: background,
@@ -177,7 +201,7 @@ class AppTheme {
         color: surface,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(24),
           side: BorderSide(color: border),
         ),
       ),
@@ -191,35 +215,71 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
         showDragHandle: true,
         shape: const RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(26)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppConstants.primary,
+          backgroundColor: AppConstants.primaryFor(isDark),
           foregroundColor: AppConstants.primaryForeground,
           elevation: 0,
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: const Color(0xFF202522),
+        fillColor: surface,
         hintStyle: TextStyle(color: mutedText),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide.none,
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppConstants.primary, width: 1.5),
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(
+            color: AppConstants.primaryFor(isDark),
+            width: 1.5,
+          ),
         ),
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      ),
+    );
+  }
+}
+
+class _SmoothPageTransitionsBuilder extends PageTransitionsBuilder {
+  const _SmoothPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    if (MediaQuery.disableAnimationsOf(context)) return child;
+    final easedAnimation = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeOutCubic,
+    );
+
+    return FadeTransition(
+      opacity: Tween<double>(begin: 0.94, end: 1).animate(easedAnimation),
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0.025, 0),
+          end: Offset.zero,
+        ).animate(easedAnimation),
+        child: child,
       ),
     );
   }

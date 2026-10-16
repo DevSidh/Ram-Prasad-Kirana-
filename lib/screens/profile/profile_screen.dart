@@ -10,6 +10,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/product_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/language_provider.dart';
+import '../../services/secure_login_service.dart';
 import '../product/product_list_screen.dart';
 import '../order/my_orders_screen.dart';
 import '../auth/login_screen.dart';
@@ -20,7 +21,12 @@ import 'profile_image_crop_screen.dart';
 import 'profile_options_screens.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  const ProfileScreen({
+    super.key,
+    this.secureLoginService,
+  });
+
+  final SecureLoginService? secureLoginService;
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -28,6 +34,95 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _uploadingAvatar = false;
+  bool _deletingAccount = false;
+
+  Future<bool> _ensureSignedIn() async {
+    final auth = context.read<AuthProvider>();
+    if (auth.isAuthenticated && auth.currentUser != null) return true;
+
+    final signedIn = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const LoginScreen(returnToCaller: true),
+      ),
+    );
+    return signedIn == true &&
+        mounted &&
+        context.read<AuthProvider>().isAuthenticated;
+  }
+
+  Future<void> _openAccountSection(WidgetBuilder builder) async {
+    if (!await _ensureSignedIn() || !mounted) return;
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(builder: builder),
+    );
+  }
+
+  Future<void> _logOut(AuthProvider auth) async {
+    String? storageError;
+    try {
+      await auth.logout();
+    } catch (error) {
+      storageError = error.toString().replaceFirst('Exception: ', '');
+    }
+    if (!mounted) return;
+    if (storageError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${context.tr('You are signed out for now, but this device could not clear your saved session:')} $storageError',
+          ),
+        ),
+      );
+    }
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
+  }
+
+  Future<void> _deleteAccount(AuthProvider auth) async {
+    final password = await showDialog<String>(
+      context: context,
+      builder: (_) => const _AccountDeletionDialog(),
+    );
+    if (password == null || password.isEmpty || !mounted) return;
+
+    setState(() => _deletingAccount = true);
+    String? cleanupWarning;
+    try {
+      cleanupWarning = await auth.deleteAccount(password: password);
+      try {
+        await (widget.secureLoginService ?? SecureLoginService()).clear();
+      } catch (error) {
+        cleanupWarning ??= error.toString().replaceFirst('Exception: ', '');
+      }
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            cleanupWarning == null
+                ? context.tr('Your account has been deleted.')
+                : '${context.tr('Your account was deleted, but saved sign-in could not be cleared:')} $cleanupWarning',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            error.toString().replaceFirst('Exception: ', ''),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _deletingAccount = false);
+    }
+  }
 
   Future<void> _selectAvatar(AuthProvider auth) async {
     try {
@@ -37,6 +132,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (files.isEmpty) return;
       final image = files.single;
       final bytes = await image.readAsBytes();
+      if (bytes.length > 5 * 1024 * 1024) {
+        throw StateError('Choose a profile photo that is 5 MB or smaller.');
+      }
       if (bytes.isEmpty) {
         throw StateError('The selected image could not be read.');
       }
@@ -53,13 +151,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await auth.updateAvatar(croppedBytes, 'profile.png');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile photo updated.')),
+        SnackBar(content: Text(context.tr('Profile photo updated.'))),
       );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(error.toString().replaceFirst('Exception: ', '')),
+          content: Text(
+            context.tr(error.toString().replaceFirst('Exception: ', '')),
+          ),
         ),
       );
     } finally {
@@ -73,7 +173,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save appearance preference: $error')),
+        SnackBar(
+          content: Text(
+            '${context.tr('Could not save appearance preference:')} $error',
+          ),
+        ),
       );
     }
   }
@@ -83,7 +187,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final selected = await showDialog<String>(
       context: context,
       builder: (dialogContext) => SimpleDialog(
-        title: Text(context.tr('Choose language')),
+        title: Text(languageProvider.translate('Choose language')),
         children: [
           SimpleDialogOption(
             onPressed: () => Navigator.pop(dialogContext, 'en'),
@@ -114,7 +218,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save language preference: $error')),
+        SnackBar(
+          content: Text(
+            '${context.tr('Could not save language preference:')} $error',
+          ),
+        ),
       );
     }
   }
@@ -129,8 +237,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final user = auth.currentUser;
 
     return Scaffold(
-      backgroundColor: AppConstants.backgroundLight,
+      backgroundColor: Colors.transparent,
       body: SafeArea(
+        bottom: false,
         child: Stack(
           children: [
             Positioned.fill(
@@ -175,10 +284,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 780),
                 child: ListView(
+                  key: const ValueKey('profile-menu-scroll'),
                   physics: const BouncingScrollPhysics(
                     parent: AlwaysScrollableScrollPhysics(),
                   ),
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 124),
                   children: [
                     // Keep the expensive backdrop blur confined to this hero.
                     ClipRRect(
@@ -255,77 +365,88 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               Row(
                                 children: [
                                   InkWell(
-                                    onTap: _uploadingAvatar
+                                    onTap: _uploadingAvatar || user == null
                                         ? null
                                         : () => _selectAvatar(auth),
                                     borderRadius: BorderRadius.circular(38),
-                                    child: Stack(
-                                      children: [
-                                        CircleAvatar(
-                                          radius: 34,
-                                          backgroundColor:
-                                              AppConstants.primaryLight,
-                                          child: _uploadingAvatar
-                                              ? const SizedBox(
-                                                  width: 24,
-                                                  height: 24,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                    strokeWidth: 2,
-                                                    color: AppConstants.primary,
-                                                  ),
-                                                )
-                                              : user?.avatarUrl != null
-                                                  ? ClipOval(
-                                                      child: CachedNetworkImage(
-                                                        key: ValueKey(
-                                                          user!.avatarUrl,
-                                                        ),
-                                                        imageUrl:
-                                                            user.avatarUrl!,
-                                                        httpHeaders: {
-                                                          if (auth.authToken !=
-                                                              null)
-                                                            'Authorization':
-                                                                'Bearer ${auth.authToken}',
-                                                        },
-                                                        width: 68,
-                                                        height: 68,
-                                                        fit: BoxFit.cover,
-                                                        memCacheWidth: 256,
-                                                        memCacheHeight: 256,
-                                                        placeholder: (_, __) =>
-                                                            _avatarInitial(
-                                                                user.fullName),
-                                                        errorWidget: (_, __,
-                                                                ___) =>
-                                                            _avatarInitial(
-                                                                user.fullName),
-                                                      ),
-                                                    )
-                                                  : _avatarInitial(
-                                                      user?.fullName,
+                                    child: Tooltip(
+                                      message: context.tr(
+                                        user == null
+                                            ? 'Profile photo'
+                                            : 'Change profile photo',
+                                      ),
+                                      child: Stack(
+                                        children: [
+                                          CircleAvatar(
+                                            radius: 34,
+                                            backgroundColor:
+                                                AppConstants.primaryLight,
+                                            child: _uploadingAvatar
+                                                ? const SizedBox(
+                                                    width: 24,
+                                                    height: 24,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                      color:
+                                                          AppConstants.primary,
                                                     ),
-                                        ),
-                                        if (!_uploadingAvatar)
-                                          Positioned(
-                                            right: 0,
-                                            bottom: 0,
-                                            child: Container(
-                                              padding: const EdgeInsets.all(5),
-                                              decoration: const BoxDecoration(
-                                                color: AppConstants.primary,
-                                                shape: BoxShape.circle,
-                                              ),
-                                              child: const Icon(
-                                                Icons.camera_alt_outlined,
-                                                size: 14,
-                                                color: AppConstants
-                                                    .primaryForeground,
+                                                  )
+                                                : user?.avatarUrl != null
+                                                    ? ClipOval(
+                                                        child:
+                                                            CachedNetworkImage(
+                                                          key: ValueKey(
+                                                            user!.avatarUrl,
+                                                          ),
+                                                          imageUrl:
+                                                              user.avatarUrl!,
+                                                          httpHeaders: {
+                                                            if (auth.authToken !=
+                                                                null)
+                                                              'Authorization':
+                                                                  'Bearer ${auth.authToken}',
+                                                          },
+                                                          width: 68,
+                                                          height: 68,
+                                                          fit: BoxFit.cover,
+                                                          memCacheWidth: 256,
+                                                          memCacheHeight: 256,
+                                                          placeholder: (_,
+                                                                  __) =>
+                                                              _avatarInitial(
+                                                                  user.fullName),
+                                                          errorWidget: (_, __,
+                                                                  ___) =>
+                                                              _avatarInitial(
+                                                                  user.fullName),
+                                                        ),
+                                                      )
+                                                    : _avatarInitial(
+                                                        user?.fullName,
+                                                      ),
+                                          ),
+                                          if (!_uploadingAvatar && user != null)
+                                            Positioned(
+                                              right: 0,
+                                              bottom: 0,
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.all(5),
+                                                decoration: const BoxDecoration(
+                                                  color: AppConstants.primary,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(
+                                                  Icons.camera_alt_outlined,
+                                                  size: 14,
+                                                  color: AppConstants
+                                                      .primaryForeground,
+                                                ),
                                               ),
                                             ),
-                                          ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(width: 16),
@@ -335,7 +456,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                           CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          user?.fullName ?? 'Guest Customer',
+                                          user?.fullName ??
+                                              context.tr('Guest Customer'),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
@@ -346,7 +468,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                         ),
                                         const SizedBox(height: 4),
                                         Text(
-                                          user?.email ?? 'customer@example.com',
+                                          user?.email ??
+                                              context.tr(
+                                                'Sign in to manage your account',
+                                              ),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
@@ -358,14 +483,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     ),
                                   ),
                                   IconButton(
-                                    tooltip: 'Edit profile',
-                                    onPressed: () => Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            const EditProfileScreen(),
-                                      ),
-                                    ),
+                                    tooltip: context.tr('Edit profile'),
+                                    onPressed: user == null
+                                        ? null
+                                        : () => Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    const EditProfileScreen(),
+                                              ),
+                                            ),
                                     style: IconButton.styleFrom(
                                       backgroundColor: AppConstants.surfaceLight
                                           .withValues(alpha: 0.78),
@@ -375,29 +502,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   ),
                                 ],
                               ),
+                              if (user == null) ...[
+                                const SizedBox(height: 14),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: FilledButton.icon(
+                                    onPressed: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute<void>(
+                                        builder: (_) => const LoginScreen(
+                                          returnToCaller: true,
+                                        ),
+                                      ),
+                                    ),
+                                    icon: const Icon(Icons.login_rounded),
+                                    label: Text(
+                                      context
+                                          .tr('Sign in to manage your account'),
+                                    ),
+                                  ),
+                                ),
+                              ],
                               const SizedBox(height: 22),
                               Row(
                                 children: [
                                   _ProfileQuickAction(
                                     icon: Icons.receipt_long_outlined,
                                     label: context.tr('Orders'),
-                                    onTap: () => Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => const MyOrdersScreen(),
-                                      ),
+                                    onTap: () => _openAccountSection(
+                                      (_) => const MyOrdersScreen(),
                                     ),
                                   ),
                                   const SizedBox(width: 10),
                                   _ProfileQuickAction(
                                     icon: Icons.location_on_outlined,
                                     label: context.tr('Addresses'),
-                                    onTap: () => Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            const AddressBookScreen(),
-                                      ),
+                                    onTap: () => _openAccountSection(
+                                      (_) => const AddressBookScreen(),
                                     ),
                                   ),
                                   const SizedBox(width: 10),
@@ -427,6 +568,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     const SizedBox(height: 16),
 
+                    Text(
+                      context.tr('Preferences & payments'),
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            color: AppConstants.textDark,
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
                     // Options List
                     Material(
                       color: AppConstants.glassSurfaceFor(isDark),
@@ -501,7 +650,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ListTile(
                             leading: const Icon(Icons.payment_outlined,
                                 color: AppConstants.primary),
-                            title: Text(context.tr('Payment Methods'),
+                            title: Text(context.tr('Payment methods'),
                                 style: const TextStyle(
                                     fontSize: 13, fontWeight: FontWeight.w600)),
                             trailing: const Icon(Icons.chevron_right, size: 20),
@@ -563,10 +712,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                            subtitle:
-                                Text(context.tr(
-                                  'Sign in with an admin account',
-                                )),
+                            subtitle: Text(context.tr(
+                              'Sign in with an admin account',
+                            )),
                             trailing: const Icon(Icons.chevron_right, size: 20),
                             onTap: () {
                               Navigator.push(
@@ -583,6 +731,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     const SizedBox(height: 16),
 
+                    Text(
+                      context.tr('Help & account'),
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            color: AppConstants.textDark,
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
                     Material(
                       color: AppConstants.glassSurfaceFor(isDark),
                       shape: RoundedRectangleBorder(
@@ -626,27 +782,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                             ),
                           ),
-                          const Divider(height: 1),
-                          ListTile(
-                            leading:
-                                const Icon(Icons.logout, color: Colors.red),
-                            title: Text(context.tr('Log Out'),
+                          if (user != null) ...[
+                            const Divider(height: 1),
+                            ListTile(
+                              leading: const Icon(
+                                Icons.person_remove_outlined,
+                                color: Colors.red,
+                              ),
+                              title: Text(
+                                context.tr('Delete account'),
                                 style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.red)),
-                            onTap: () async {
-                              await auth.logout();
-                              if (context.mounted) {
-                                Navigator.pushAndRemoveUntil(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) => const LoginScreen()),
-                                  (route) => false,
-                                );
-                              }
-                            },
-                          ),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.red,
+                                ),
+                              ),
+                              enabled: !_deletingAccount,
+                              trailing: _deletingAccount
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.chevron_right, size: 20),
+                              onTap: _deletingAccount
+                                  ? null
+                                  : () => _deleteAccount(auth),
+                            ),
+                            const Divider(height: 1),
+                            ListTile(
+                              leading:
+                                  const Icon(Icons.logout, color: Colors.red),
+                              title: Text(context.tr('Log Out'),
+                                  style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.red)),
+                              onTap: () => _logOut(auth),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -659,6 +835,70 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
   }
+}
+
+class _AccountDeletionDialog extends StatefulWidget {
+  const _AccountDeletionDialog();
+
+  @override
+  State<_AccountDeletionDialog> createState() => _AccountDeletionDialogState();
+}
+
+class _AccountDeletionDialogState extends State<_AccountDeletionDialog> {
+  final TextEditingController _passwordController = TextEditingController();
+
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        scrollable: true,
+        title: Text(context.tr('Delete account?')),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  context.tr(
+                    'Your profile and saved data will be removed. Completed order records will be anonymized and retained. Active orders must be completed or cancelled first.',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _passwordController,
+                  obscureText: true,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    labelText: context.tr('Current password'),
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(context.tr('Cancel')),
+          ),
+          TextButton(
+            onPressed: () {
+              FocusScope.of(context).unfocus();
+              final password = _passwordController.text;
+              Navigator.pop(context, password.isEmpty ? null : password);
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: Text(context.tr('Delete account')),
+          ),
+        ],
+      );
 }
 
 Widget _avatarInitial(String? fullName) {

@@ -14,7 +14,8 @@ class WishlistScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     context.watch<ThemeProvider?>();
-    final products = context.watch<ProductProvider>().wishlistProducts;
+    final provider = context.watch<ProductProvider>();
+    final products = provider.wishlistProducts;
 
     return Scaffold(
       backgroundColor: AppConstants.backgroundLight,
@@ -23,7 +24,30 @@ class WishlistScreen extends StatelessWidget {
         backgroundColor: AppConstants.backgroundLight,
       ),
       body: products.isEmpty
-          ? Center(
+          ? provider.loadingWishlist
+              ? const Center(child: CircularProgressIndicator())
+              : provider.wishlistErrorMessage != null
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(28),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.cloud_off_outlined, size: 40),
+                            const SizedBox(height: 12),
+                            Text(
+                              provider.wishlistErrorMessage!,
+                              textAlign: TextAlign.center,
+                            ),
+                            TextButton(
+                              onPressed: provider.refreshWishlist,
+                              child: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : Center(
               child: Padding(
                 padding: const EdgeInsets.all(28),
                 child: Column(

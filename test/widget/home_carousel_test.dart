@@ -7,6 +7,7 @@ import 'package:freshharvest_grocery/core/constants.dart';
 import 'package:freshharvest_grocery/providers/auth_provider.dart';
 import 'package:freshharvest_grocery/providers/cart_provider.dart';
 import 'package:freshharvest_grocery/providers/product_provider.dart';
+import 'package:freshharvest_grocery/providers/store_availability_provider.dart';
 import 'package:freshharvest_grocery/screens/home/home_screen.dart';
 import 'package:freshharvest_grocery/services/api_service.dart';
 import 'package:freshharvest_grocery/widgets/cart_flight_overlay.dart';
@@ -22,6 +23,23 @@ class _CarouselApi extends ApiService {
         'data': [
           {'id': 'fresh', 'name': 'Fresh', 'slug': 'fresh'},
         ],
+      };
+    }
+    if (endpoint == '/store/availability') {
+      return {
+        'isOrderingEnabled': true,
+        'isAcceptingOrders': true,
+        'weeklyHours': List.generate(
+          7,
+          (index) => {
+            'day': index + 1,
+            'isOpen': true,
+            'openTime': '00:00',
+            'closeTime': '23:59',
+          },
+        ),
+        'timeZone': 'Asia/Kathmandu',
+        'statusMessage': 'The store is open and accepting orders.',
       };
     }
 
@@ -101,6 +119,9 @@ void main() {
           ),
           ChangeNotifierProvider<ProductProvider>.value(value: products),
           ChangeNotifierProvider<CartProvider>.value(value: cart),
+          ChangeNotifierProvider(
+            create: (_) => StoreAvailabilityProvider(apiService: api),
+          ),
         ],
         child: ValueListenableBuilder<bool>(
           valueListenable: homeActive,
@@ -127,6 +148,19 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
+    double searchOpacity(String key) => tester
+        .widget<Opacity>(
+          find
+              .ancestor(
+                of: find.byKey(ValueKey(key)),
+                matching: find.byType(Opacity),
+              )
+              .first,
+        )
+        .opacity;
+
+    expect(searchOpacity('home-search-inline'), 1);
+    expect(searchOpacity('home-search-pinned'), 0);
     expect(find.text('Shop by categories'), findsOneWidget);
     expect(find.text('Cheap'), findsOneWidget);
     expect(find.text('Everyday rice'), findsNothing);
@@ -150,8 +184,11 @@ void main() {
       ),
       findsOneWidget,
     );
+    expect(tester.getSize(find.byType(PageView)).height, lessThan(244));
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -700));
     await tester.pumpAndSettle();
+    expect(searchOpacity('home-search-inline'), 0);
+    expect(searchOpacity('home-search-pinned'), 1);
     expect(find.text('Everyday rice'), findsOneWidget);
     await tester.drag(find.byType(CustomScrollView), const Offset(0, 700));
     await tester.pumpAndSettle();
@@ -180,17 +217,25 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
-    expect(find.text('Add to basket'), findsOneWidget);
+    expect(find.textContaining('Add to basket'), findsOneWidget);
     expect(pageController.page, 1);
 
-    await tester.tap(find.text('Add to basket'));
+    expect(find.byKey(const ValueKey('home-floating-cart-bar')), findsNothing);
+    await tester.tap(find.textContaining('Add to basket'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 700));
     expect(cart.itemCount, 1);
+    expect(find.byKey(const ValueKey('home-floating-cart-bar')), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.tap(find.byTooltip('Next featured product'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     expect(pageController.page, 0);
+
+    for (final size in [const Size(360, 800), const Size(412, 915)]) {
+      tester.view.physicalSize = size;
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }
   });
 }

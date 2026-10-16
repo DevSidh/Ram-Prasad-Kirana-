@@ -44,7 +44,7 @@ class AddressMapPicker extends StatefulWidget {
 }
 
 class _AddressMapPickerState extends State<AddressMapPicker> {
-  static const _defaultPosition = LatLng(26.7288, 85.9263);
+  static const _defaultPosition = LatLng(26.743218, 85.918854);
   final TextEditingController _searchController = TextEditingController();
   Timer? _suggestionTimer;
   List<Placemark> _suggestions = [];

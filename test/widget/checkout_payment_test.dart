@@ -31,6 +31,13 @@ void main() {
     addTearDown(themeProvider.dispose);
     final apiService = ApiService(
       client: MockClient((request) async {
+        if (request.url.path.endsWith('/account/delivery-quote')) {
+          return http.Response(
+            jsonEncode({'deliveryFee': 40}),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
         expect(request.url.path, endsWith('/account/addresses'));
         return http.Response(
           jsonEncode({
@@ -43,6 +50,8 @@ void main() {
                 'province': 'Bagmati',
                 'city': 'Kathmandu',
                 'street': 'Main Road',
+                'latitude': 27.7172,
+                'longitude': 85.3240,
                 'isDefault': true,
               },
             ],
@@ -68,6 +77,19 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    final checkoutScaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+    expect(checkoutScaffold.backgroundColor, const Color(0xFFF6FAF7));
+    expect(checkoutScaffold.extendBody, isTrue);
+    expect(checkoutScaffold.extendBodyBehindAppBar, isTrue);
+    final footer = checkoutScaffold.bottomNavigationBar! as Material;
+    expect(footer.type, MaterialType.transparency);
+    expect(footer.elevation, 0);
+
+    final placeOrderButton = find.ancestor(
+      of: find.text('Place order'),
+      matching: find.byType(ElevatedButton),
+    );
+    expect(tester.widget<ElevatedButton>(placeOrderButton).onPressed, isNull);
     expect(
       tester.widget<Text>(find.text('Home')).style?.color,
       AppConstants.textDark,
@@ -83,22 +105,42 @@ void main() {
       AppConstants.textDark,
     );
 
-    await tester.tap(find.text('Continue').first);
-    await tester.pumpAndSettle();
-    expect(
-      find.text(
-        'The store will confirm your delivery timing after you place the order.',
-      ),
-      findsOneWidget,
+    final continueButton = find.ancestor(
+      of: find.text('Continue').first,
+      matching: find.byType(ElevatedButton),
     );
+    await tester.ensureVisible(continueButton);
+    expect(tester.widget<ElevatedButton>(continueButton).onPressed, isNotNull);
+    tester.widget<ElevatedButton>(continueButton).onPressed!.call();
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('Instant Delivery'), findsOneWidget);
+    expect(find.text('In about 2 hours'), findsOneWidget);
+    expect(find.text('In about 4 hours'), findsOneWidget);
+    expect(find.text('Choose date and time'), findsOneWidget);
+    expect(find.textContaining('Nepal time'), findsOneWidget);
     expect(find.text('Express 45-Min Fast Track (Today)'), findsNothing);
 
-    await tester.tap(find.text('Continue').first);
+    final paymentContinueButton = find.ancestor(
+      of: find.text('Continue').first,
+      matching: find.byType(ElevatedButton),
+    );
+    await tester.ensureVisible(paymentContinueButton);
+    tester.widget<ElevatedButton>(paymentContinueButton).onPressed!.call();
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
 
     expect(find.text('Cash on Delivery (COD)'), findsOneWidget);
     expect(find.text('Khalti Digital Wallet'), findsNothing);
     expect(find.text('eSewa Mobile Wallet'), findsNothing);
+    tester.widget<ElevatedButton>(paymentContinueButton).onPressed!.call();
+    await tester.pumpAndSettle();
+    expect(find.text('Order Summary'), findsOneWidget);
+    expect(find.text('Rs. 40'), findsAtLeastNWidgets(2));
+    expect(
+      tester.widget<ElevatedButton>(placeOrderButton).onPressed,
+      isNotNull,
+    );
     expect(tester.takeException(), isNull);
   });
 }

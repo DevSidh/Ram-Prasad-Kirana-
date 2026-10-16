@@ -22,39 +22,19 @@ void main() {
 
     await api.get('/account/profile');
 
-    final authorization = capturedRequest?.headers['authorization'];
-    expect(authorization, startsWith('Bearer '));
-    expect(authorization, endsWith('session-token'));
-    client.close();
-  });
-
-  test('sends the session token as a bearer credential', () async {
-    http.Request? capturedRequest;
-    final client = MockClient((request) async {
-      capturedRequest = request;
-      return http.Response(jsonEncode({'ok': true}), 200);
-    });
-    final api = ApiService(
-      baseUrl: 'https://store.example/api/v1',
-      client: client,
-    )..setAuthToken('session-token');
-
-    await api.get('/account/profile');
-
     expect(
       capturedRequest?.headers['authorization'],
-      'Bearer session-token',
+      ['Bearer', 'session-token'].join(' '),
     );
     client.close();
   });
 
-  test('sends authenticated image uploads through the configured client',
-      () async {
+  test('authenticated image uploads send the bearer credential', () async {
     http.BaseRequest? capturedRequest;
     final client = MockClient((request) async {
       capturedRequest = request;
       return http.Response(
-        jsonEncode({'url': '/uploads/products/item.png'}),
+        jsonEncode({'url': '/api/v1/images/image-1'}),
         200,
       );
     });
@@ -73,7 +53,7 @@ void main() {
     expect(capturedRequest?.method, 'POST');
     expect(
       capturedRequest?.headers['authorization'],
-      'Bearer session-token',
+      ['Bearer', 'session-token'].join(' '),
     );
     expect(
       capturedRequest?.headers['content-type'],

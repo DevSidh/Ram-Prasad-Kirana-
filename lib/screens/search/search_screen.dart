@@ -1,13 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../core/constants.dart';
 import '../../core/responsive_layout.dart';
+import '../../core/theme/app_theme_extension.dart';
+import '../../core/widgets/app_widgets.dart';
+import '../../providers/language_provider.dart';
 import '../../providers/product_provider.dart';
 import '../../providers/theme_provider.dart';
-import '../../providers/language_provider.dart';
-import '../../widgets/product_card.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/product_card.dart';
 
 Future<void> showSearchOverlay(BuildContext context) {
   return showGeneralDialog<void>(
@@ -16,17 +21,15 @@ Future<void> showSearchOverlay(BuildContext context) {
     barrierLabel: 'Close search',
     barrierColor: Colors.black.withValues(alpha: 0.24),
     transitionDuration: const Duration(milliseconds: 240),
-    pageBuilder: (context, _, __) => SafeArea(
+    pageBuilder: (context, _, __) => const SafeArea(
       child: Material(
-        color: AppConstants.backgroundLight,
-        child: const SearchScreen(isOverlay: true),
+        color: Colors.transparent,
+        child: SearchScreen(isOverlay: true),
       ),
     ),
     transitionBuilder: (context, animation, secondaryAnimation, child) {
-      final eased = CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeOutCubic,
-      );
+      final eased =
+          CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
       return FadeTransition(
         opacity: eased,
         child: SlideTransition(
@@ -53,6 +56,8 @@ class SearchScreen extends StatefulWidget {
 class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _searchController = TextEditingController();
   List<String> _searchHistory = [];
+  Timer? _searchDebounce;
+  bool _isDebouncing = false;
 
   @override
   void initState() {
@@ -62,6 +67,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -117,21 +123,32 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   void _selectSearch(String query, ProductProvider productProvider) {
+    _searchDebounce?.cancel();
     _searchController
       ..text = query
       ..selection = TextSelection.collapsed(offset: query.length);
     productProvider.setSearchQuery(query);
-    setState(() {});
+    setState(() => _isDebouncing = false);
     _recordSearch(query);
+  }
+
+  void _clearSearch(ProductProvider productProvider) {
+    _searchDebounce?.cancel();
+    _searchController.clear();
+    productProvider.setSearchQuery('');
+    setState(() => _isDebouncing = false);
   }
 
   @override
   Widget build(BuildContext context) {
     context.watch<ThemeProvider?>();
-    final productProvider = Provider.of<ProductProvider>(context);
+    final productProvider = context.watch<ProductProvider>();
+    final theme = Theme.of(context);
+    final tokens = AppThemeExtension.of(context);
     final results = productProvider.products;
-    final isSearching = _searchController.text.trim().isNotEmpty;
-    final query = _searchController.text.trim().toLowerCase();
+    final searchText = _searchController.text.trim();
+    final isSearching = searchText.isNotEmpty;
+    final query = searchText.toLowerCase();
     final suggestions = query.isEmpty
         ? <String>[]
         : productProvider.allProducts
@@ -147,9 +164,10 @@ class _SearchScreenState extends State<SearchScreen> {
             .toList();
 
     return Scaffold(
-      backgroundColor: AppConstants.backgroundLight,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
-        backgroundColor: AppConstants.backgroundLight,
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
         leading: widget.isOverlay
             ? IconButton(
                 tooltip: context.tr('Close search'),
@@ -158,180 +176,210 @@ class _SearchScreenState extends State<SearchScreen> {
               )
             : null,
         title: Container(
-          height: 44,
+          height: 52,
           decoration: BoxDecoration(
-            color: AppConstants.surfaceLight,
-            borderRadius: BorderRadius.circular(12),
+            color: tokens.surfaceGlass,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: tokens.glassBorder),
           ),
           child: TextField(
             controller: _searchController,
             decoration: InputDecoration(
               hintText: context.tr('Search store items...'),
-              hintStyle: TextStyle(fontSize: 13, color: AppConstants.textMuted),
-              prefixIcon:
-                  Icon(Icons.search, size: 20, color: AppConstants.primaryDark),
+              hintStyle: TextStyle(fontSize: 14, color: tokens.textSecondary),
+              prefixIcon: Icon(
+                Icons.search_rounded,
+                size: 21,
+                color: theme.colorScheme.primary,
+              ),
               suffixIcon: isSearching
                   ? IconButton(
-                      icon: const Icon(Icons.clear, size: 18),
-                      onPressed: () {
-                        _searchController.clear();
-                        productProvider.setSearchQuery('');
-                        setState(() {});
-                      },
+                      tooltip: context.tr('Clear Search'),
+                      icon: const Icon(Icons.clear, size: 19),
+                      onPressed: () => _clearSearch(productProvider),
                     )
                   : null,
               border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              contentPadding: const EdgeInsets.symmetric(vertical: 14),
             ),
             autofocus: widget.isOverlay,
             textInputAction: TextInputAction.search,
-            onSubmitted: _recordSearch,
-            onChanged: (val) {
-              setState(() {});
-              productProvider.setSearchQuery(val);
+            onSubmitted: (value) {
+              _searchDebounce?.cancel();
+              productProvider.setSearchQuery(value);
+              setState(() => _isDebouncing = false);
+              _recordSearch(value);
+            },
+            onChanged: (value) {
+              _searchDebounce?.cancel();
+              setState(() => _isDebouncing = value.trim().isNotEmpty);
+              _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+                if (!mounted) return;
+                productProvider.setSearchQuery(value);
+                setState(() => _isDebouncing = false);
+              });
             },
           ),
         ),
       ),
-      body: !isSearching
-          ? Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _searchHistory.isEmpty
-                        ? context.tr('Search the store')
-                        : context.tr('Recent searches'),
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: AppConstants.textDark,
-                    ),
+      body: AppBackground(
+        child: !isSearching
+            ? RefreshIndicator(
+                onRefresh: productProvider.loadCatalog,
+                child: CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics(),
                   ),
-                  const SizedBox(height: 8),
-                  if (_searchHistory.isEmpty)
-                    Text(
-                      context.tr(
-                        'Search products added by the store administrator.',
+                  slivers: [
+                    if (productProvider.errorMessage != null)
+                      SliverPadding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        sliver: SliverToBoxAdapter(
+                          child: NoticeBanner(
+                            message: productProvider.errorMessage!,
+                            retryLabel: context.tr('Retry'),
+                            onRetry: productProvider.loadCatalog,
+                          ),
+                        ),
                       ),
-                      style: TextStyle(
-                        color: AppConstants.textMuted,
-                        fontSize: 13,
+                    if (_searchHistory.isNotEmpty)
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 128),
+                        sliver: SliverList(
+                          delegate: SliverChildListDelegate(
+                            [
+                              SectionHeader(
+                                title: context.tr('Recent searches'),
+                              ),
+                              for (final query in _searchHistory)
+                                Card(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  child: ListTile(
+                                    leading: const Icon(Icons.history_rounded),
+                                    title: Text(query),
+                                    onTap: () => _selectSearch(
+                                      query,
+                                      productProvider,
+                                    ),
+                                    trailing: IconButton(
+                                      tooltip: context.tr(
+                                        'Remove from search history',
+                                      ),
+                                      onPressed: () =>
+                                          _removeSearchHistoryItem(query),
+                                      icon: const Icon(Icons.close_rounded),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: EmptyState(
+                          icon: Icons.history_rounded,
+                          title: context.tr('No recent searches'),
+                          message: context.tr(
+                            'Your searches will appear here.',
+                          ),
+                        ),
                       ),
-                    )
-                  else
-                    Expanded(
-                      child: ListView.separated(
-                        itemCount: _searchHistory.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (context, index) {
-                          final query = _searchHistory[index];
-                          return ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(
-                              Icons.history_rounded,
-                              color: AppConstants.textMuted,
+                  ],
+                ),
+              )
+            : Column(
+                children: [
+                  if (_isDebouncing)
+                    const LinearProgressIndicator(minHeight: 2),
+                  if (suggestions.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            context.tr('Suggestions'),
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
                             ),
-                            title: Text(query),
-                            onTap: () => _selectSearch(query, productProvider),
-                            trailing: IconButton(
-                              tooltip: 'Remove $query from search history',
-                              icon: const Icon(Icons.close_rounded, size: 19),
-                              onPressed: () => _removeSearchHistoryItem(query),
-                            ),
-                          );
-                        },
+                          ),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 2,
+                            children: suggestions
+                                .map(
+                                  (suggestion) => ActionChip(
+                                    avatar: const Icon(
+                                      Icons.search_rounded,
+                                      size: 16,
+                                    ),
+                                    label: Text(suggestion),
+                                    onPressed: () => _selectSearch(
+                                      suggestion,
+                                      productProvider,
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                        ],
                       ),
                     ),
+                  Expanded(
+                    child: _isDebouncing
+                        ? const Center(child: CircularProgressIndicator())
+                        : results.isEmpty
+                            ? suggestions.isEmpty
+                                ? EmptyState(
+                                    icon: Icons.search_off_rounded,
+                                    title:
+                                        '${context.tr('No items found for')} "$searchText"',
+                                    message: context.tr(
+                                      'Check for typos or try searching for a product or category.',
+                                    ),
+                                    buttonText: context.tr('Clear Search'),
+                                    onButtonPressed: () =>
+                                        _clearSearch(productProvider),
+                                  )
+                                : Center(
+                                    child: Text(
+                                      context.tr(
+                                        'Choose a suggestion to search the store.',
+                                      ),
+                                      style: TextStyle(
+                                        color: tokens.textSecondary,
+                                      ),
+                                    ),
+                                  )
+                            : LayoutBuilder(
+                                builder: (context, constraints) =>
+                                    GridView.builder(
+                                  padding: const EdgeInsets.fromLTRB(
+                                      16, 16, 16, 128),
+                                  gridDelegate:
+                                      SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount:
+                                        responsiveGridCrossAxisCount(
+                                      availableWidth: constraints.maxWidth,
+                                      horizontalPadding: 32,
+                                      minTileWidth: 128,
+                                    ),
+                                    childAspectRatio: 0.58,
+                                    crossAxisSpacing: 12,
+                                    mainAxisSpacing: 12,
+                                  ),
+                                  itemCount: results.length,
+                                  itemBuilder: (context, index) =>
+                                      ProductCard(product: results[index]),
+                                ),
+                              ),
+                  ),
                 ],
               ),
-            )
-          : Column(
-              children: [
-                if (suggestions.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            context.tr('Suggestions'),
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: AppConstants.textDark,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 2,
-                          children: suggestions
-                              .map(
-                                (suggestion) => ActionChip(
-                                  avatar: const Icon(Icons.search, size: 16),
-                                  label: Text(suggestion),
-                                  onPressed: () => _selectSearch(
-                                      suggestion, productProvider),
-                                ),
-                              )
-                              .toList(),
-                        ),
-                      ],
-                    ),
-                  ),
-                Expanded(
-                  child: results.isEmpty
-                      ? suggestions.isEmpty
-                          ? EmptyState(
-                              icon: Icons.search_off,
-                              title:
-                                  '${context.tr('No items found for')} "${_searchController.text}"',
-                              message: context.tr(
-                                'Check for typos or try searching for a product or category.',
-                              ),
-                              buttonText: context.tr('Clear Search'),
-                              onButtonPressed: () {
-                                _searchController.clear();
-                                productProvider.setSearchQuery('');
-                                setState(() {});
-                              },
-                            )
-                          : Center(
-                              child: Text(
-                                context.tr(
-                                  'Choose a suggestion to search the store.',
-                                ),
-                                style: TextStyle(
-                                  color: AppConstants.textMuted,
-                                ),
-                              ),
-                            )
-                      : LayoutBuilder(
-                          builder: (context, constraints) => GridView.builder(
-                            padding: const EdgeInsets.all(16),
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: responsiveGridCrossAxisCount(
-                                availableWidth: constraints.maxWidth,
-                                horizontalPadding: 32,
-                                minTileWidth: 128,
-                              ),
-                              childAspectRatio: 0.58,
-                              crossAxisSpacing: 12,
-                              mainAxisSpacing: 12,
-                            ),
-                            itemCount: results.length,
-                            itemBuilder: (context, index) =>
-                                ProductCard(product: results[index]),
-                          ),
-                        ),
-                ),
-              ],
-            ),
+      ),
     );
   }
 }

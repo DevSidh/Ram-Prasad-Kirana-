@@ -6,16 +6,22 @@ import '../models/cart_item.dart';
 import '../providers/cart_provider.dart';
 import '../providers/product_provider.dart';
 import '../core/constants.dart';
+import '../core/theme/app_theme_extension.dart';
+import '../providers/language_provider.dart';
 import 'product_quick_view.dart';
 import 'product_thumbnail.dart';
 import 'cart_flight_overlay.dart';
 
 class ProductCard extends StatefulWidget {
   final Product product;
+  final bool compact;
+  final double compactImageHeight;
 
   const ProductCard({
     super.key,
     required this.product,
+    this.compact = false,
+    this.compactImageHeight = 84,
   });
 
   @override
@@ -43,6 +49,19 @@ class _ProductCardState extends State<ProductCard> {
     );
   }
 
+  Future<void> _toggleWishlist(ProductProvider provider) async {
+    try {
+      await provider.toggleWishlist(widget.product.id);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final product = widget.product;
@@ -54,6 +73,16 @@ class _ProductCardState extends State<ProductCard> {
     final isWishlisted = context.select<ProductProvider, bool>(
       (provider) => provider.isWishlisted(product.id),
     );
+
+    if (widget.compact) {
+      return _buildCompactCard(
+        context,
+        product,
+        productProvider,
+        cartItem,
+        isWishlisted,
+      );
+    }
 
     return InkWell(
       onTap: () => showProductQuickView(
@@ -106,12 +135,9 @@ class _ProductCardState extends State<ProductCard> {
                           : 'Save item',
                       constraints:
                           const BoxConstraints.tightFor(width: 44, height: 44),
-                      onPressed: () =>
-                          productProvider.toggleWishlist(product.id),
+                      onPressed: () => _toggleWishlist(productProvider),
                       icon: Icon(
-                        isWishlisted
-                            ? Icons.favorite
-                            : Icons.favorite_border,
+                        isWishlisted ? Icons.favorite : Icons.favorite_border,
                         color: isWishlisted
                             ? AppConstants.primary
                             : AppConstants.textMuted,
@@ -188,8 +214,7 @@ class _ProductCardState extends State<ProductCard> {
                         duration: MediaQuery.disableAnimationsOf(context)
                             ? Duration.zero
                             : const Duration(milliseconds: 220),
-                        transitionBuilder: (child, animation) =>
-                            FadeTransition(
+                        transitionBuilder: (child, animation) => FadeTransition(
                           opacity: animation,
                           child: ScaleTransition(
                             scale: Tween<double>(begin: 0.92, end: 1)
@@ -247,50 +272,53 @@ class _ProductCardState extends State<ProductCard> {
                                   )
                                 : Container(
                                     key: const ValueKey('basket-quantity'),
-                                  decoration: BoxDecoration(
-                                    color: AppConstants.primaryLight,
-                                    borderRadius: BorderRadius.circular(8),
+                                    decoration: BoxDecoration(
+                                      color: AppConstants.primaryLight,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        InkWell(
+                                          onTap: () =>
+                                              cartProvider.updateQuantity(
+                                                  product.id,
+                                                  cartItem.quantity - 1),
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(4),
+                                            child: Icon(Icons.remove,
+                                                size: 14,
+                                                color:
+                                                    AppConstants.primaryDark),
+                                          ),
+                                        ),
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 4),
+                                          child: Text(
+                                            '${cartItem.quantity}',
+                                            style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 12,
+                                                color:
+                                                    AppConstants.primaryDark),
+                                          ),
+                                        ),
+                                        InkWell(
+                                          onTap: () =>
+                                              cartProvider.updateQuantity(
+                                                  product.id,
+                                                  cartItem.quantity + 1),
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(4),
+                                            child: Icon(Icons.add,
+                                                size: 14,
+                                                color:
+                                                    AppConstants.primaryDark),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                  child: Row(
-                                    children: [
-                                      InkWell(
-                                        onTap: () =>
-                                            cartProvider.updateQuantity(
-                                                product.id,
-                                                cartItem.quantity - 1),
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(4),
-                                          child: Icon(Icons.remove,
-                                              size: 14,
-                                              color: AppConstants.primaryDark),
-                                        ),
-                                      ),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 4),
-                                        child: Text(
-                                          '${cartItem.quantity}',
-                                          style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 12,
-                                              color: AppConstants.primaryDark),
-                                        ),
-                                      ),
-                                      InkWell(
-                                        onTap: () =>
-                                            cartProvider.updateQuantity(
-                                                product.id,
-                                                cartItem.quantity + 1),
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(4),
-                                          child: Icon(Icons.add,
-                                              size: 14,
-                                              color: AppConstants.primaryDark),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
                       ),
                     ],
                   ),
@@ -298,6 +326,180 @@ class _ProductCardState extends State<ProductCard> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactCard(
+    BuildContext context,
+    Product product,
+    ProductProvider productProvider,
+    CartItem? cartItem,
+    bool isWishlisted,
+  ) {
+    final tokens = AppThemeExtension.of(context);
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    return Material(
+      color: tokens.surfaceGlass,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: tokens.surfaceBorder),
+      ),
+      child: InkWell(
+        onTap: () => showProductQuickView(
+          context,
+          product,
+          cartTargetKey: CartFlightTarget.maybeOf(context),
+        ),
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: SizedBox(
+                        height: widget.compactImageHeight,
+                      width: double.infinity,
+                      child: ColoredBox(
+                        color: isDark
+                            ? theme.colorScheme.primary.withValues(alpha: .14)
+                            : theme.colorScheme.primary.withValues(alpha: .08),
+                        child: ProductThumbnail(
+                          key: _imageKey,
+                          imageUrl: product.imageUrl,
+                          size: widget.compactImageHeight,
+                          width: double.infinity,
+                          height: widget.compactImageHeight,
+                          fit: BoxFit.contain,
+                          borderRadius: BorderRadius.zero,
+                          fallbackIcon: _productIllustration(product),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    child: Material(
+                      color: tokens.surfaceGlass,
+                      shape: const CircleBorder(),
+                      child: IconButton(
+                        tooltip: context.tr(
+                          isWishlisted
+                              ? 'Remove from saved items'
+                              : 'Save item',
+                        ),
+                        constraints: const BoxConstraints.tightFor(
+                          width: 48,
+                          height: 48,
+                        ),
+                        onPressed: () => _toggleWishlist(productProvider),
+                        icon: Icon(
+                          isWishlisted ? Icons.favorite : Icons.favorite_border,
+                          color: isWishlisted
+                              ? theme.colorScheme.primary
+                              : tokens.textSecondary,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(2, 6, 2, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        product.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurface,
+                          fontWeight: FontWeight.w600,
+                          height: 1.15,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        product.weight,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: tokens.textSecondary,
+                        ),
+                      ),
+                      const Spacer(),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${AppConstants.currencySymbol}${product.price.toStringAsFixed(0)}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: Tooltip(
+                              message: context.tr(
+                                product.stock > 0
+                                    ? 'Add to basket'
+                                    : 'Unavailable',
+                              ),
+                              child: Material(
+                                color: product.stock > 0
+                                    ? theme.colorScheme.primary
+                                    : tokens.surfaceBorder,
+                                shape: const CircleBorder(),
+                                child: InkWell(
+                                  customBorder: const CircleBorder(),
+                                  onTap: product.stock > 0 ? _addToCart : null,
+                                  child: Center(
+                                    child: cartItem == null
+                                        ? Icon(
+                                            product.stock > 0
+                                                ? Icons.add_rounded
+                                                : Icons.remove_shopping_cart,
+                                            color: product.stock > 0
+                                                ? theme.colorScheme.onPrimary
+                                                : tokens.textSecondary,
+                                            size: 22,
+                                          )
+                                        : Text(
+                                            '${cartItem.quantity}',
+                                            style: theme.textTheme.titleSmall
+                                                ?.copyWith(
+                                              color:
+                                                  theme.colorScheme.onPrimary,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -3,6 +3,7 @@ class AdminCategory {
   final String name;
   final String slug;
   final String? description;
+  final String? imageUrl;
   final bool isActive;
 
   const AdminCategory({
@@ -10,6 +11,7 @@ class AdminCategory {
     required this.name,
     required this.slug,
     this.description,
+    this.imageUrl,
     required this.isActive,
   });
 
@@ -19,7 +21,123 @@ class AdminCategory {
       name: json['name']?.toString() ?? '',
       slug: json['slug']?.toString() ?? '',
       description: json['description']?.toString(),
+      imageUrl: json['imageUrl']?.toString(),
       isActive: json['isActive'] as bool? ?? true,
+    );
+  }
+}
+
+class AdminCoupon {
+  final String id;
+  final String code;
+  final String discountType;
+  final double? discountPercent;
+  final double? discountAmount;
+  final double minOrderAmount;
+  final double? maxDiscount;
+  final int? usageLimit;
+  final int usedCount;
+  final bool isActive;
+  final DateTime? expiresAt;
+
+  const AdminCoupon({
+    required this.id,
+    required this.code,
+    required this.discountType,
+    required this.discountPercent,
+    required this.discountAmount,
+    required this.minOrderAmount,
+    required this.maxDiscount,
+    required this.usageLimit,
+    required this.usedCount,
+    required this.isActive,
+    required this.expiresAt,
+  });
+
+  factory AdminCoupon.fromJson(Map<String, dynamic> json) {
+    final id = json['id'];
+    final code = json['code'];
+    final discountType = json['discountType'];
+    final isActive = json['isActive'];
+    if (id is! String ||
+        code is! String ||
+        (discountType != 'PERCENTAGE' && discountType != 'FIXED') ||
+        isActive is! bool) {
+      throw const FormatException('The server returned invalid coupon details.');
+    }
+    final rawExpiry = json['expiresAt'];
+    final expiresAt =
+        rawExpiry is String ? DateTime.tryParse(rawExpiry) : null;
+    if (rawExpiry != null && expiresAt == null) {
+      throw const FormatException('The server returned an invalid coupon expiry.');
+    }
+    return AdminCoupon(
+      id: id,
+      code: code,
+      discountType: discountType == 'FIXED' ? 'FIXED' : 'PERCENTAGE',
+      discountPercent: json['discountPercent'] == null
+          ? null
+          : _asDouble(json['discountPercent']),
+      discountAmount: json['discountAmount'] == null
+          ? null
+          : _asDouble(json['discountAmount']),
+      minOrderAmount: _asDouble(json['minOrderAmount']),
+      maxDiscount:
+          json['maxDiscount'] == null ? null : _asDouble(json['maxDiscount']),
+      usageLimit: json['usageLimit'] == null ? null : _asInt(json['usageLimit']),
+      usedCount: _asInt(json['usedCount']),
+      isActive: isActive,
+      expiresAt: expiresAt,
+    );
+  }
+}
+
+class AdminRestockReceipt {
+  final String id;
+  final String productName;
+  final String productSku;
+  final String unitLabel;
+  final int quantity;
+  final int balanceAfter;
+  final String? staffName;
+  final String? notes;
+  final DateTime createdAt;
+
+  const AdminRestockReceipt({
+    required this.id,
+    required this.productName,
+    required this.productSku,
+    required this.unitLabel,
+    required this.quantity,
+    required this.balanceAfter,
+    required this.staffName,
+    required this.notes,
+    required this.createdAt,
+  });
+
+  factory AdminRestockReceipt.fromJson(Map<String, dynamic> json) {
+    final product = json['product'];
+    final staff = json['staff'];
+    final createdAtValue = json['createdAt'];
+    final createdAt = createdAtValue is String
+        ? DateTime.tryParse(createdAtValue)
+        : null;
+    if (json['id'] is! String ||
+        product is! Map<String, dynamic> ||
+        createdAt == null) {
+      throw const FormatException('The server returned invalid restock history.');
+    }
+    return AdminRestockReceipt(
+      id: json['id'] as String,
+      productName: product['name']?.toString() ?? '',
+      productSku: product['sku']?.toString() ?? '',
+      unitLabel: product['unitLabel']?.toString() ?? 'unit',
+      quantity: _asInt(json['quantity']),
+      balanceAfter: _asInt(json['balanceAfter']),
+      staffName:
+          staff is Map<String, dynamic> ? staff['name']?.toString() : null,
+      notes: json['notes']?.toString(),
+      createdAt: createdAt,
     );
   }
 }
@@ -41,6 +159,7 @@ class AdminProduct {
   final bool isWholesale;
   final double? wholesalePrice;
   final int wholesaleMinimumQuantity;
+  final int lowStockThreshold;
   final int stock;
   final bool isActive;
   final bool isFeatured;
@@ -62,6 +181,7 @@ class AdminProduct {
     this.isWholesale = false,
     this.wholesalePrice,
     this.wholesaleMinimumQuantity = 1,
+    this.lowStockThreshold = 10,
     required this.stock,
     required this.isActive,
     required this.isFeatured,
@@ -101,6 +221,7 @@ class AdminProduct {
           : _asDouble(json['wholesalePrice']),
       wholesaleMinimumQuantity:
           _asInt(json['wholesaleMinimumQuantity'] ?? 1),
+      lowStockThreshold: _asInt(json['lowStockThreshold'] ?? 10),
       stock: _asInt(stockValue),
       isActive: json['isActive'] as bool? ?? true,
       isFeatured: json['isFeatured'] as bool? ?? false,
@@ -133,6 +254,7 @@ class AdminProduct {
       isWholesale: isWholesale,
       wholesalePrice: wholesalePrice,
       wholesaleMinimumQuantity: wholesaleMinimumQuantity,
+      lowStockThreshold: lowStockThreshold,
       stock: stock,
       isActive: isActive,
       isFeatured: isFeatured ?? this.isFeatured,
@@ -232,6 +354,69 @@ class AdminPendingDeliveryCash {
   }
 }
 
+class AdminWholesaleItem {
+  final String id;
+  final String name;
+  final String sku;
+  final String slug;
+  final String categoryId;
+  final String categoryName;
+  final String? brand;
+  final double price;
+  final int stock;
+  final int minimumQuantity;
+  final String? description;
+  final String? origin;
+  final String? imageUrl;
+  final String unitLabel;
+  final bool isActive;
+
+  const AdminWholesaleItem({
+    required this.id,
+    required this.name,
+    required this.sku,
+    required this.slug,
+    required this.categoryId,
+    required this.categoryName,
+    required this.brand,
+    required this.price,
+    required this.stock,
+    required this.minimumQuantity,
+    required this.description,
+    required this.origin,
+    required this.imageUrl,
+    required this.unitLabel,
+    required this.isActive,
+  });
+
+  factory AdminWholesaleItem.fromJson(Map<String, dynamic> json) {
+    final category = json['category'];
+    return AdminWholesaleItem(
+      id: json['id']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      sku: json['sku']?.toString() ?? '',
+      slug: json['slug']?.toString() ?? '',
+      categoryId: json['categoryId']?.toString() ??
+          (category is Map<String, dynamic>
+              ? category['id']?.toString()
+              : null) ??
+          '',
+      categoryName: category is Map<String, dynamic>
+          ? category['name']?.toString() ?? ''
+          : '',
+      brand: json['brand']?.toString(),
+      price: _asDouble(json['price']),
+      stock: _asInt(json['stock']),
+      minimumQuantity: _asInt(json['minimumQuantity'] ?? 1),
+      description: json['description']?.toString(),
+      origin: json['origin']?.toString(),
+      imageUrl: json['imageUrl']?.toString(),
+      unitLabel: json['unitLabel']?.toString() ?? '1 pc',
+      isActive: json['isActive'] as bool? ?? true,
+    );
+  }
+}
+
 class AdminOrder {
   final String id;
   final String orderNumber;
@@ -242,6 +427,7 @@ class AdminOrder {
   final double deliveryFee;
   final double discount;
   final double total;
+  final String? couponCode;
   final String customerName;
   final String customerPhone;
   final String customerEmail;
@@ -255,6 +441,7 @@ class AdminOrder {
   final String? deliveryPersonId;
   final String? deliveryPersonName;
   final List<Map<String, dynamic>> deliveryHistory;
+  final DateTime? scheduledDeliveryAt;
 
   const AdminOrder({
     required this.id,
@@ -266,6 +453,7 @@ class AdminOrder {
     required this.deliveryFee,
     required this.discount,
     required this.total,
+    this.couponCode,
     required this.customerName,
     required this.customerPhone,
     required this.customerEmail,
@@ -279,6 +467,7 @@ class AdminOrder {
     this.deliveryPersonId,
     this.deliveryPersonName,
     this.deliveryHistory = const [],
+    this.scheduledDeliveryAt,
   });
 
   factory AdminOrder.fromJson(Map<String, dynamic> json) {
@@ -292,6 +481,15 @@ class AdminOrder {
         : null;
     final deliveryHistory =
         delivery is Map<String, dynamic> ? delivery['statusHistory'] : null;
+    final rawScheduledDeliveryAt = json['scheduledDeliveryAt'];
+    final scheduledDeliveryAt = rawScheduledDeliveryAt is String
+        ? DateTime.tryParse(rawScheduledDeliveryAt)
+        : null;
+    if (rawScheduledDeliveryAt != null && scheduledDeliveryAt == null) {
+      throw const FormatException(
+        'The server returned an invalid delivery time.',
+      );
+    }
     final addressParts = shipping is Map<String, dynamic>
         ? [
             shipping['address'],
@@ -314,6 +512,7 @@ class AdminOrder {
       deliveryFee: _asDouble(json['deliveryFee']),
       discount: _asDouble(json['discount']),
       total: _asDouble(json['total']),
+      couponCode: json['couponCode']?.toString(),
       customerName: customer is Map<String, dynamic>
           ? customer['name']?.toString() ?? ''
           : shipping is Map<String, dynamic>
@@ -359,6 +558,7 @@ class AdminOrder {
       deliveryHistory: deliveryHistory is List
           ? deliveryHistory.whereType<Map<String, dynamic>>().toList()
           : const [],
+      scheduledDeliveryAt: scheduledDeliveryAt,
     );
   }
 }
@@ -369,6 +569,7 @@ class AdminOrderItem {
   final int quantity;
   final double price;
   final double total;
+  final bool isWholesale;
 
   const AdminOrderItem({
     required this.name,
@@ -376,6 +577,7 @@ class AdminOrderItem {
     required this.quantity,
     required this.price,
     required this.total,
+    this.isWholesale = false,
   });
 
   factory AdminOrderItem.fromJson(Map<String, dynamic> json) {
@@ -385,6 +587,7 @@ class AdminOrderItem {
       quantity: _asInt(json['quantity']),
       price: _asDouble(json['price']),
       total: _asDouble(json['total']),
+      isWholesale: json['isWholesale'] as bool? ?? false,
     );
   }
 }

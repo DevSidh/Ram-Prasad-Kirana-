@@ -188,4 +188,60 @@ void main() {
     expect(find.text('Order update'), findsNothing);
     expect(find.text('Nothing new yet'), findsOneWidget);
   });
+
+  testWidgets('notification preferences filter the in-app activity list',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({
+      AppConstants.keyToken: 'test-token',
+      AppConstants.keyUser: jsonEncode({
+        'id': 'customer-1',
+        'email': 'customer@example.com',
+        'fullName': 'Test Customer',
+        'role': 'CUSTOMER',
+      }),
+      'notifications_order_updates': false,
+      'notifications_store_offers': false,
+    });
+
+    final api = _NotificationsApi()
+      ..notifications.addAll([
+        {
+          'id': 'delivery-1',
+          'title': 'Delivery notice',
+          'body': 'Your order is with the rider.',
+          'type': 'DELIVERY_UPDATED',
+          'isRead': false,
+          'createdAt': '2026-10-12T06:00:00.000Z',
+        },
+        {
+          'id': 'offer-1',
+          'title': 'Store offer',
+          'body': 'A new offer is available.',
+          'type': 'PROMOTIONAL',
+          'isRead': false,
+          'createdAt': '2026-10-12T06:00:00.000Z',
+        },
+      ]);
+    final auth = AuthProvider(apiService: api);
+    final theme = ThemeProvider();
+    addTearDown(auth.dispose);
+    addTearDown(theme.dispose);
+    await auth.sessionReady;
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<ApiService>.value(value: api),
+          ChangeNotifierProvider<AuthProvider>.value(value: auth),
+          ChangeNotifierProvider<ThemeProvider>.value(value: theme),
+        ],
+        child: const MaterialApp(home: NotificationsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Delivery notice'), findsOneWidget);
+    expect(find.text('Order update'), findsNothing);
+    expect(find.text('Store offer'), findsNothing);
+  });
 }

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import '../models/admin_models.dart';
+import '../models/store_availability.dart';
 import 'api_service.dart';
 
 class AdminApiService {
@@ -11,6 +12,57 @@ class AdminApiService {
 
   Future<AdminDashboard> getDashboard() async {
     return AdminDashboard.fromJson(_asMap(await _api.get('/admin/dashboard')));
+  }
+
+  Future<List<AdminCoupon>> getCoupons() async {
+    final response = _asMap(await _api.get('/admin/coupons'));
+    final coupons = response['coupons'];
+    if (coupons is! List) {
+      throw Exception('The server returned an invalid coupon list.');
+    }
+    return coupons
+        .whereType<Map<String, dynamic>>()
+        .map(AdminCoupon.fromJson)
+        .toList();
+  }
+
+  Future<AdminCoupon> createCoupon(Map<String, dynamic> details) async {
+    final response = _asMap(await _api.post('/admin/coupons', details));
+    final coupon = response['coupon'];
+    if (coupon is! Map<String, dynamic>) {
+      throw Exception('The server did not return the saved coupon.');
+    }
+    return AdminCoupon.fromJson(coupon);
+  }
+
+  Future<AdminCoupon> setCouponActive(String id, bool isActive) async {
+    final response = _asMap(await _api.patch(
+      '/admin/coupons/$id/active',
+      {'isActive': isActive},
+    ));
+    final coupon = response['coupon'];
+    if (coupon is! Map<String, dynamic>) {
+      throw Exception('The server did not return the updated coupon.');
+    }
+    return AdminCoupon.fromJson(coupon);
+  }
+
+  Future<StoreAvailability> getStoreSettings() async {
+    return StoreAvailability.fromJson(
+        _asMap(await _api.get('/admin/store-settings')));
+  }
+
+  Future<StoreAvailability> updateStoreSettings({
+    required bool isOrderingEnabled,
+    required List<StoreHoursDay> weeklyHours,
+  }) async {
+    return StoreAvailability.fromJson(_asMap(await _api.put(
+      '/admin/store-settings',
+      {
+        'isOrderingEnabled': isOrderingEnabled,
+        'weeklyHours': weeklyHours.map((day) => day.toJson()).toList(),
+      },
+    )));
   }
 
   Future<AdminOrderPage> getOrders({
@@ -25,7 +77,8 @@ class AdminApiService {
         queryParams: {
           'page': '$page',
           'pageSize': '$pageSize',
-          if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+          if (search != null && search.trim().isNotEmpty)
+            'search': search.trim(),
           if (status != null) 'status': status,
         },
       ),
@@ -42,7 +95,8 @@ class AdminApiService {
           .toList(),
       pagination: pagination is Map<String, dynamic>
           ? AdminPagination.fromJson(pagination)
-          : AdminPagination(page: page, pageSize: pageSize, total: orders.length),
+          : AdminPagination(
+              page: page, pageSize: pageSize, total: orders.length),
     );
   }
 
@@ -54,6 +108,15 @@ class AdminApiService {
     await _api.patch('/admin/orders/$id/status', {
       'status': status,
       if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+    });
+  }
+
+  Future<void> updateOrderDeliveryTime(
+    String id,
+    DateTime? scheduledDeliveryAt,
+  ) async {
+    await _api.patch('/admin/orders/$id/delivery-time', {
+      'scheduledDeliveryAt': scheduledDeliveryAt?.toUtc().toIso8601String(),
     });
   }
 
@@ -105,7 +168,8 @@ class AdminApiService {
     });
   }
 
-  Future<void> assignDeliveryPerson(String orderId, String deliveryPersonId) async {
+  Future<void> assignDeliveryPerson(
+      String orderId, String deliveryPersonId) async {
     await _api.patch('/admin/orders/$orderId/delivery-person', {
       'deliveryPersonId': deliveryPersonId,
     });
@@ -122,7 +186,8 @@ class AdminApiService {
         queryParams: {
           'page': '$page',
           'pageSize': '$pageSize',
-          if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+          if (search != null && search.trim().isNotEmpty)
+            'search': search.trim(),
         },
       ),
     );
@@ -169,19 +234,29 @@ class AdminApiService {
     await _api.patch('/admin/categories/$id', data);
   }
 
-  Future<AdminProductPage> getProducts(
-      {required int page, int pageSize = 20}) async {
+  Future<AdminProductPage> getProducts({
+    required int page,
+    int pageSize = 20,
+    String? stock,
+    bool? wholesale,
+    String sort = 'newest',
+  }) async {
     final response = _asMap(
       await _api.get(
         '/admin/products',
-        queryParams: {'page': '$page', 'pageSize': '$pageSize'},
+        queryParams: {
+          'page': '$page',
+          'pageSize': '$pageSize',
+          'sort': sort,
+          if (stock != null) 'stock': stock,
+          if (wholesale != null) 'wholesale': '$wholesale',
+        },
       ),
     );
     final products = response['products'];
     if (products is! List) {
       throw Exception('The server returned an invalid product list.');
     }
-
     final pagination = response['pagination'];
     return AdminProductPage(
       products: products
@@ -195,13 +270,95 @@ class AdminApiService {
     );
   }
 
-  Future<List<AdminProduct>> getAllProducts() async {
+  Future<AdminWholesaleItemPage> getWholesaleItems({
+    required int page,
+    int pageSize = 20,
+    String? search,
+  }) async {
+    final response = _asMap(await _api.get(
+      '/admin/wholesale-items',
+      queryParams: {
+        'page': '$page',
+        'pageSize': '$pageSize',
+        if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+      },
+    ));
+    final items = response['wholesaleItems'];
+    if (items is! List) {
+      throw Exception('The server returned an invalid wholesale item list.');
+    }
+    final pagination = response['pagination'];
+    return AdminWholesaleItemPage(
+      items: items
+          .whereType<Map<String, dynamic>>()
+          .map(AdminWholesaleItem.fromJson)
+          .toList(),
+      pagination: pagination is Map<String, dynamic>
+          ? AdminPagination.fromJson(pagination)
+          : AdminPagination(
+              page: page, pageSize: pageSize, total: items.length),
+    );
+  }
+
+  Future<void> createWholesaleItem(
+    Map<String, dynamic> fields, {
+    Uint8List? imageBytes,
+    String? imageName,
+  }) async {
+    if (imageBytes != null && imageName != null) {
+      await _api.postFile(
+        '/admin/wholesale-items',
+        fieldName: 'image',
+        bytes: imageBytes,
+        fileName: imageName,
+        fields: {'wholesaleItem': jsonEncode(fields)},
+      );
+      return;
+    }
+    await _api.post('/admin/wholesale-items', fields);
+  }
+
+  Future<void> updateWholesaleItem(
+    String id,
+    Map<String, dynamic> fields, {
+    Uint8List? imageBytes,
+    String? imageName,
+  }) async {
+    if (imageBytes != null && imageName != null) {
+      await _api.postFile(
+        '/admin/wholesale-items/$id',
+        fieldName: 'image',
+        bytes: imageBytes,
+        fileName: imageName,
+        fields: {'wholesaleItem': jsonEncode(fields)},
+        method: 'PATCH',
+      );
+      return;
+    }
+    await _api.patch('/admin/wholesale-items/$id', fields);
+  }
+
+  Future<void> setWholesaleItemActive(String id, bool isActive) async {
+    await _api.patch('/admin/wholesale-items/$id', {'isActive': isActive});
+  }
+
+  Future<List<AdminProduct>> getAllProducts({
+    String? stock,
+    bool? wholesale,
+    String sort = 'newest',
+  }) async {
     const pageSize = 100;
     final allProducts = <AdminProduct>[];
     var page = 1;
 
     while (true) {
-      final result = await getProducts(page: page, pageSize: pageSize);
+      final result = await getProducts(
+        page: page,
+        pageSize: pageSize,
+        stock: stock,
+        wholesale: wholesale,
+        sort: sort,
+      );
       allProducts.addAll(result.products);
       if (allProducts.length >= result.pagination.total) {
         return allProducts;
@@ -225,7 +382,9 @@ class AdminApiService {
         fieldName: 'image',
         bytes: imageBytes,
         fileName: imageName,
-        fields: {'product': jsonEncode({...fields, 'stock': stock})},
+        fields: {
+          'product': jsonEncode({...fields, 'stock': stock})
+        },
       );
       return;
     }
@@ -248,7 +407,9 @@ class AdminApiService {
         fieldName: 'image',
         bytes: imageBytes,
         fileName: imageName,
-        fields: {'product': jsonEncode({...fields, 'stock': stock})},
+        fields: {
+          'product': jsonEncode({...fields, 'stock': stock})
+        },
         method: 'PATCH',
       );
       return;
@@ -265,6 +426,47 @@ class AdminApiService {
 
   Future<void> setProductActive(String id, bool isActive) async {
     await _api.patch('/admin/products/$id', {'isActive': isActive});
+  }
+
+  Future<AdminProduct> restockProduct(String id, int quantity) async {
+    final response = _asMap(
+      await _api.post('/admin/products/$id/restock', {'quantity': quantity}),
+    );
+    final product = response['product'];
+    if (product is! Map<String, dynamic>) {
+      throw Exception('The server returned an invalid restocked product.');
+    }
+    return AdminProduct.fromJson(product);
+  }
+
+  Future<AdminRestockHistoryPage> getRestockHistory({
+    required int page,
+    int pageSize = 25,
+  }) async {
+    final response = _asMap(
+      await _api.get(
+        '/admin/inventory/restock-history',
+        queryParams: {'page': '$page', 'pageSize': '$pageSize'},
+      ),
+    );
+    final receipts = response['receipts'];
+    if (receipts is! List) {
+      throw Exception('The server returned invalid restock history.');
+    }
+    final pagination = response['pagination'];
+    return AdminRestockHistoryPage(
+      receipts: receipts
+          .whereType<Map<String, dynamic>>()
+          .map(AdminRestockReceipt.fromJson)
+          .toList(),
+      pagination: pagination is Map<String, dynamic>
+          ? AdminPagination.fromJson(pagination)
+          : AdminPagination(
+              page: page,
+              pageSize: pageSize,
+              total: receipts.length,
+            ),
+    );
   }
 
   Future<void> updateProductSku(String id, String sku) async {
@@ -296,12 +498,13 @@ class AdminApiService {
       fieldName: 'image',
       bytes: bytes,
       fileName: fileName,
-      fields: {'product': jsonEncode({'imageUrl': null})},
+      fields: {
+        'product': jsonEncode({'imageUrl': null})
+      },
       method: 'PATCH',
     ));
     final product = response['product'];
-    if (product is! Map<String, dynamic> ||
-        product['imageUrl'] is! String) {
+    if (product is! Map<String, dynamic> || product['imageUrl'] is! String) {
       throw Exception('The server did not return the saved product image.');
     }
     return Uri.parse(_api.baseUrl)
@@ -310,6 +513,10 @@ class AdminApiService {
   }
 
   Future<String> uploadProductImage(Uint8List bytes, String fileName) async {
+    return uploadImage(bytes, fileName);
+  }
+
+  Future<String> uploadImage(Uint8List bytes, String fileName) async {
     final response = _asMap(await _api.postFile(
       '/admin/uploads/images',
       fieldName: 'image',
@@ -317,7 +524,7 @@ class AdminApiService {
       fileName: fileName,
     ));
     final path = response['url'];
-    if (path is! String || !path.startsWith('/uploads/')) {
+    if (path is! String || !path.startsWith('/api/v1/images/')) {
       throw Exception('The server returned an invalid image URL.');
     }
     return Uri.parse(_api.baseUrl).resolve(path).toString();
@@ -329,6 +536,26 @@ class AdminProductPage {
   final AdminPagination pagination;
 
   const AdminProductPage({required this.products, required this.pagination});
+}
+
+class AdminWholesaleItemPage {
+  final List<AdminWholesaleItem> items;
+  final AdminPagination pagination;
+
+  const AdminWholesaleItemPage({
+    required this.items,
+    required this.pagination,
+  });
+}
+
+class AdminRestockHistoryPage {
+  final List<AdminRestockReceipt> receipts;
+  final AdminPagination pagination;
+
+  const AdminRestockHistoryPage({
+    required this.receipts,
+    required this.pagination,
+  });
 }
 
 class AdminOrderPage {

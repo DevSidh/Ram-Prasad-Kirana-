@@ -6,124 +6,55 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants.dart';
 import '../../providers/language_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../services/notification_preferences.dart';
 
-class PaymentPreferenceScreen extends StatefulWidget {
+class PaymentPreferenceScreen extends StatelessWidget {
   const PaymentPreferenceScreen({super.key});
-
-  @override
-  State<PaymentPreferenceScreen> createState() =>
-      _PaymentPreferenceScreenState();
-}
-
-class _PaymentPreferenceScreenState extends State<PaymentPreferenceScreen> {
-  String _selected = 'COD';
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final preferences = await SharedPreferences.getInstance();
-    final value = preferences.getString('preferred_payment_method');
-    if (value != null && mounted) setState(() => _selected = value);
-  }
-
-  Future<void> _select(String method) async {
-    try {
-      final preferences = await SharedPreferences.getInstance();
-      await preferences.setString('preferred_payment_method', method);
-      if (!mounted) return;
-      setState(() => _selected = method);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Checkout preference saved.')),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save payment preference: $error')),
-      );
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
     context.watch<ThemeProvider?>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Payment preference')),
+      appBar: AppBar(title: Text(context.tr('Payment methods'))),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          const Text(
-            'Choose what to preselect at checkout',
-            style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700),
+          Text(
+            context
+                .tr('Cash on delivery is currently the only payment method.'),
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
           ),
           const SizedBox(height: 8),
           Text(
-            'No card details are stored. You can change the payment option for every order.',
+            context.tr(
+              'eSewa and Khalti are not available yet. Payment is confirmed by the store when your order is delivered.',
+            ),
             style: TextStyle(color: AppConstants.textMuted, height: 1.45),
           ),
           const SizedBox(height: 20),
-          _PaymentOption(
-            title: 'Cash on delivery',
-            detail: 'Pay when your Janakpur delivery arrives.',
-            icon: Icons.payments_outlined,
-            selected: _selected == 'COD',
-            onTap: () => _select('COD'),
-          ),
-          const SizedBox(height: 10),
-          _PaymentOption(
-            title: 'Khalti wallet',
-            detail: 'Use Khalti when available at checkout.',
-            icon: Icons.account_balance_wallet_outlined,
-            selected: _selected == 'KHALTI',
-            onTap: () => _select('KHALTI'),
-          ),
-          const SizedBox(height: 10),
-          _PaymentOption(
-            title: 'eSewa wallet',
-            detail: 'Use eSewa when available at checkout.',
-            icon: Icons.wallet_outlined,
-            selected: _selected == 'ESEWA',
-            onTap: () => _select('ESEWA'),
+          Card(
+            child: ListTile(
+              minVerticalPadding: 14,
+              leading: const Icon(
+                Icons.payments_outlined,
+                color: AppConstants.primary,
+              ),
+              title: Text(
+                context.tr('Cash on delivery'),
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              subtitle: Text(
+                context.tr('Pay the delivery person when your order arrives.'),
+              ),
+              trailing: const Icon(
+                Icons.check_circle,
+                color: AppConstants.primary,
+              ),
+            ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _PaymentOption extends StatelessWidget {
-  final String title;
-  final String detail;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _PaymentOption({
-    required this.title,
-    required this.detail,
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    context.watch<ThemeProvider?>();
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        minVerticalPadding: 14,
-        onTap: onTap,
-        leading: Icon(icon, color: AppConstants.primary),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-        subtitle: Text(detail),
-        trailing: Icon(
-          selected ? Icons.check_circle : Icons.circle_outlined,
-          color: selected ? AppConstants.primary : AppConstants.textMuted,
-        ),
       ),
     );
   }
@@ -139,12 +70,10 @@ class NotificationPreferencesScreen extends StatefulWidget {
 
 class _NotificationPreferencesScreenState
     extends State<NotificationPreferencesScreen> {
-  static const _keys = {
-    'Order updates': 'notifications_order_updates',
-    'Delivery updates': 'notifications_delivery_updates',
-    'Store offers': 'notifications_store_offers',
-  };
-  Map<String, bool> _values = {};
+  Map<String, bool> _values = const {};
+  final Set<String> _savingKeys = {};
+  bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
@@ -153,52 +82,116 @@ class _NotificationPreferencesScreenState
   }
 
   Future<void> _load() async {
-    final preferences = await SharedPreferences.getInstance();
-    if (!mounted) return;
     setState(() {
-      _values = {
-        for (final entry in _keys.entries)
-          entry.key: preferences.getBool(entry.value) ?? true,
-      };
+      _loading = true;
+      _error = null;
     });
+    try {
+      final values = await NotificationPreferences.load();
+      if (!mounted) return;
+      setState(() {
+        _values = values;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString().replaceFirst('Exception: ', '');
+        _loading = false;
+      });
+    }
   }
 
   Future<void> _setValue(String label, bool value) async {
-    final preferences = await SharedPreferences.getInstance();
-    final key = _keys[label]!;
-    await preferences.setBool(key, value);
-    if (mounted) setState(() => _values[label] = value);
+    final key = NotificationPreferences.keysByLabel[label];
+    if (key == null || _savingKeys.contains(key)) return;
+    setState(() => _savingKeys.add(key));
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setBool(key, value);
+      if (mounted) setState(() => _values = {..._values, key: value});
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${context.tr('Could not save this notification preference:')} $error',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _savingKeys.remove(key));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     context.watch<ThemeProvider?>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Notification preferences')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          const Text(
-            'Choose the updates you want',
-            style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'These choices are saved on this device. Enable push alerts from the Notifications screen and allow them in your device settings.',
-            style: TextStyle(color: AppConstants.textMuted, height: 1.45),
-          ),
-          const SizedBox(height: 18),
-          for (final label in _keys.keys)
-            Card(
-              child: SwitchListTile(
-                value: _values[label] ?? true,
-                onChanged: (value) => _setValue(label, value),
-                title: Text(label),
-                activeThumbColor: AppConstants.primary,
-              ),
-            ),
-        ],
-      ),
+      appBar: AppBar(title: Text(context.tr('Notification Preferences'))),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(_error!, textAlign: TextAlign.center),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: _load,
+                          icon: const Icon(Icons.refresh),
+                          label: Text(context.tr('Try again')),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : ListView(
+                  padding: const EdgeInsets.all(20),
+                  children: [
+                    Text(
+                      context.tr('Choose the updates shown in your inbox'),
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      context.tr(
+                        'These filters are saved on this device and only affect the in-app notification list. To turn off push alerts, use your device notification settings.',
+                      ),
+                      style: TextStyle(
+                        color: AppConstants.textMuted,
+                        height: 1.45,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    for (final entry
+                        in NotificationPreferences.keysByLabel.entries)
+                      Card(
+                        child: SwitchListTile.adaptive(
+                          value: _values[entry.value] ?? true,
+                          onChanged: _savingKeys.contains(entry.value)
+                              ? null
+                              : (value) => _setValue(entry.key, value),
+                          title: Text(context.tr(entry.key)),
+                          activeThumbColor: AppConstants.primary,
+                          secondary: _savingKeys.contains(entry.value)
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : null,
+                        ),
+                      ),
+                  ],
+                ),
     );
   }
 }
@@ -214,13 +207,15 @@ class StoreHelpScreen extends StatelessWidget {
       );
       if (!launched && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open this app.')),
+          SnackBar(content: Text(context.tr('Could not open this app.'))),
         );
       }
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not open this app: $error')),
+          SnackBar(
+            content: Text('${context.tr('Could not open this app.')} $error'),
+          ),
         );
       }
     }
@@ -241,38 +236,39 @@ class StoreHelpScreen extends StatelessWidget {
           const SizedBox(height: 18),
           _HelpAction(
             title: context.tr('Open store in Maps'),
-            detail: 'Ram Prasad General Store, Janakpur',
+            detail: '26.743218, 85.918854 · Ram Prasad General Store',
             icon: Icons.map_outlined,
             onTap: () => _openLink(
               context,
-              Uri.https('www.google.com', '/maps/search/', {
-                'api': '1',
-                'query': 'Ram Prasad General Store, Janakpur',
-              }),
+              Uri.parse('https://maps.app.goo.gl/VhZVyKZ6VEDCcyZf6'),
             ),
           ),
           _HelpAction(
             title: context.tr('Call store'),
             detail: '9824824813',
             icon: Icons.call_outlined,
-            onTap: () => _openLink(context, Uri(scheme: 'tel', path: '9824824813')),
+            onTap: () =>
+                _openLink(context, Uri(scheme: 'tel', path: '9824824813')),
           ),
           _HelpBlock(
             title: context.tr('Delivery area'),
-            detail:
-                'Ram Prasad General Store currently delivers within Janakpur. Add your full ward and street details to your delivery address.',
+            detail: context.tr(
+              'Delivery is available within 10 km of Ram Prasad General Store. Add your full ward and street details, and place a map pin within the service area.',
+            ),
             icon: Icons.location_on_outlined,
           ),
           _HelpBlock(
             title: context.tr('Update an address'),
-            detail:
-                'Open Account → Delivery Addresses to add, edit, remove, or choose your default address.',
+            detail: context.tr(
+              'Open Account → Delivery Addresses to add, edit, remove, or choose your default address.',
+            ),
             icon: Icons.edit_location_alt_outlined,
           ),
           _HelpBlock(
             title: context.tr('Order and payment questions'),
-            detail:
-                'Keep your order details handy and contact the store using the contact information shared directly by the store owner.',
+            detail: context.tr(
+              'Keep your order details handy and contact the store using the contact information shared directly by the store owner.',
+            ),
             icon: Icons.receipt_long_outlined,
           ),
         ],
@@ -284,41 +280,92 @@ class StoreHelpScreen extends StatelessWidget {
 class StorePrivacyScreen extends StatelessWidget {
   const StorePrivacyScreen({super.key});
 
+  Future<void> _openPublicPage(BuildContext context, String path) async {
+    final uri = Uri.parse(AppConstants.apiBaseUrl).replace(path: '/$path');
+    try {
+      final opened = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.tr('Could not open this app.'))),
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${context.tr('Could not open this app.')} $error'),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     context.watch<ThemeProvider?>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Privacy')),
+      appBar: AppBar(title: Text(context.tr('Privacy'))),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          const Text(
-            'Your information',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+          Text(
+            context.tr('Your information'),
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 12),
           Text(
-            'Your account details and delivery addresses are used to provide store services and prepare deliveries. Passwords are stored as secure hashes by the store API. This app does not save payment card numbers.',
+            context.tr(
+              'Your account details and delivery addresses are used to provide store services and prepare deliveries. Passwords are stored as secure hashes by the store API. This app does not save payment card numbers.',
+            ),
             style: TextStyle(height: 1.55, color: AppConstants.textMuted),
           ),
           const SizedBox(height: 18),
-          const Text(
-            'Saved sign-in',
-            style: TextStyle(fontWeight: FontWeight.w700),
+          Text(
+            context.tr('Saved sign-in'),
+            style: const TextStyle(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
           Text(
-            'If you opt in, sign-in details are kept in your device’s secure storage and are unlocked only after local biometric verification. You can remove them from the sign-in screen.',
+            context.tr(
+              'If you opt in, sign-in details are kept in your device’s secure storage. You can use biometrics to sign in when they are available on your device, or continue with saved sign-in otherwise. You can remove saved sign-in from the sign-in screen.',
+            ),
             style: TextStyle(height: 1.55, color: AppConstants.textMuted),
           ),
           const SizedBox(height: 18),
-          const Text(
-            'Data requests',
-            style: TextStyle(fontWeight: FontWeight.w700),
+          Text(
+            context.tr('Data requests'),
+            style: const TextStyle(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
           Text(
-            'For help with account information, contact the store owner through the contact information they provide.',
+            context.tr(
+              'You can request account deletion in the app or by contacting the store from your registered email address. Active orders must be completed or cancelled first.',
+            ),
+            style: TextStyle(height: 1.55, color: AppConstants.textMuted),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.policy_outlined),
+              title: Text(context.tr('Read full privacy policy')),
+              trailing: const Icon(Icons.open_in_new, size: 18),
+              onTap: () => _openPublicPage(context, 'privacy-policy'),
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.person_remove_outlined),
+              title: Text(context.tr('Open account deletion page')),
+              trailing: const Icon(Icons.open_in_new, size: 18),
+              onTap: () => _openPublicPage(context, 'account-deletion'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'ramprasad.faststore@gmail.com · +977 9824824813',
             style: TextStyle(height: 1.55, color: AppConstants.textMuted),
           ),
         ],

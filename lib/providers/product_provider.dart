@@ -26,8 +26,13 @@ class ProductProvider extends ChangeNotifier {
   bool _homeBestSellersOnly = false;
   bool _homeCheapOnly = false;
   final List<String> _wishlistIds = [];
+  final Map<String, bool> _wishlistOverridesDuringLoad = {};
   int _wishlistRevision = 0;
   bool _disposed = false;
+  bool _loadingWishlist = false;
+  String? _authenticatedUserId;
+  String? _wishlistErrorMessage;
+  Future<void> _wishlistSyncQueue = Future<void>.value();
   Future<void>? _catalogLoad;
   DateTime? _lastCatalogLoadAt;
 
@@ -62,6 +67,33 @@ class ProductProvider extends ChangeNotifier {
   int get favoriteCount => _wishlistIds.length;
   List<String> get wishlistIds => List.unmodifiable(_wishlistIds);
   ApiService get apiService => _apiService;
+  String? get wishlistErrorMessage => _wishlistErrorMessage;
+  bool get loadingWishlist => _loadingWishlist;
+
+  void setAuthenticatedUser(String? userId) {
+    if (_authenticatedUserId == userId) return;
+    _authenticatedUserId = userId;
+    final revision = ++_wishlistRevision;
+    _wishlistErrorMessage = null;
+    _loadingWishlist = userId != null;
+    _wishlistIds.clear();
+    _wishlistOverridesDuringLoad.clear();
+    scheduleMicrotask(() {
+      if (!_disposed) notifyListeners();
+    });
+    if (userId == null) {
+      unawaited(_loadWishlist());
+    } else {
+      unawaited(_loadAccountWishlist(userId, revision));
+    }
+  }
+
+  bool _isExcludedCustomerCategory(Category category) {
+    final normalized = '${category.name} ${category.slug}'.toLowerCase();
+    return normalized.contains('rice') ||
+        normalized.contains('vegetable') ||
+        normalized.contains('dairy');
+  }
 
   Future<void> loadCatalog() async {
     final activeLoad = _catalogLoad;
@@ -180,11 +212,20 @@ class ProductProvider extends ChangeNotifier {
       }
 
       if (_disposed) return;
-      _categories = categoryData
+      final categories = categoryData
           .cast<Map<String, dynamic>>()
           .map(Category.fromJson)
           .toList(growable: false);
-      _products = productsById.values.toList(growable: false);
+      final excludedCategoryIds = categories
+          .where(_isExcludedCustomerCategory)
+          .map((category) => category.id)
+          .toSet();
+      _categories = categories
+          .where((category) => !excludedCategoryIds.contains(category.id))
+          .toList(growable: false);
+      _products = productsById.values
+          .where((product) => !excludedCategoryIds.contains(product.categoryId))
+          .toList(growable: false);
       _lastCatalogLoadAt = DateTime.now();
       _isLoading = false;
       notifyListeners();
@@ -214,13 +255,21 @@ class ProductProvider extends ChangeNotifier {
           categoryData.any((item) => item is! Map<String, dynamic>)) {
         throw const FormatException('Saved product catalog is invalid.');
       }
+      final categories = categoryData
+          .cast<Map<String, dynamic>>()
+          .map(Category.fromJson)
+          .toList(growable: false);
+      final excludedCategoryIds = categories
+          .where(_isExcludedCustomerCategory)
+          .map((category) => category.id)
+          .toSet();
       _products = productData
           .cast<Map<String, dynamic>>()
           .map(Product.fromJson)
+          .where((product) => !excludedCategoryIds.contains(product.categoryId))
           .toList(growable: false);
-      _categories = categoryData
-          .cast<Map<String, dynamic>>()
-          .map(Category.fromJson)
+      _categories = categories
+          .where((category) => !excludedCategoryIds.contains(category.id))
           .toList(growable: false);
       notifyListeners();
     } catch (error, stackTrace) {
@@ -313,14 +362,39 @@ class ProductProvider extends ChangeNotifier {
   }
 
   Future<void> toggleWishlist(String productId) async {
-    _wishlistRevision++;
+    final userId = _authenticatedUserId;
+    final revision = ++_wishlistRevision;
     if (_wishlistIds.contains(productId)) {
       _wishlistIds.remove(productId);
     } else {
       _wishlistIds.add(productId);
     }
+    if (userId != null && _loadingWishlist) {
+      _wishlistOverridesDuringLoad[productId] =
+          _wishlistIds.contains(productId);
+    }
+    _wishlistErrorMessage = null;
     notifyListeners();
-    await _persistWishlist();
+    try {
+      if (userId == null) {
+        await _persistWishlist();
+      } else {
+        final snapshot = List<String>.from(_wishlistIds);
+        await _queueWishlistSave(userId, snapshot);
+      }
+    } catch (error) {
+      if (revision == _wishlistRevision) {
+        if (_wishlistIds.contains(productId)) {
+          _wishlistIds.remove(productId);
+        } else {
+          _wishlistIds.add(productId);
+        }
+        _wishlistErrorMessage =
+            error.toString().replaceFirst('Exception: ', '');
+        notifyListeners();
+      }
+      rethrow;
+    }
   }
 
   bool isWishlisted(String productId) => _wishlistIds.contains(productId);
@@ -339,12 +413,99 @@ class ProductProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> _loadAccountWishlist(String userId, int revision) async {
+    try {
+      final response = await _apiService.get('/account/wishlist');
+      if (response is! Map<String, dynamic> ||
+          response['productIds'] is! List ||
+          (response['productIds'] as List).any((id) => id is! String)) {
+        throw const FormatException(
+          'The server returned an invalid saved-items list.',
+        );
+      }
+      if (_disposed || _authenticatedUserId != userId) {
+        return;
+      }
+      final changedDuringLoad = revision != _wishlistRevision ||
+          _wishlistOverridesDuringLoad.isNotEmpty;
+      final productIds =
+          (response['productIds'] as List).cast<String>().toSet();
+      if (changedDuringLoad) {
+        for (final entry in _wishlistOverridesDuringLoad.entries) {
+          if (entry.value) {
+            productIds.add(entry.key);
+          } else {
+            productIds.remove(entry.key);
+          }
+        }
+      }
+      _wishlistIds
+        ..clear()
+        ..addAll(productIds);
+      _wishlistOverridesDuringLoad.clear();
+      _wishlistErrorMessage = null;
+      _loadingWishlist = false;
+      notifyListeners();
+      if (changedDuringLoad) {
+        try {
+          await _queueWishlistSave(userId, List<String>.from(_wishlistIds));
+        } catch (error) {
+          if (!_disposed && _authenticatedUserId == userId) {
+            _wishlistErrorMessage =
+                error.toString().replaceFirst('Exception: ', '');
+            notifyListeners();
+          }
+        }
+      }
+    } catch (error) {
+      if (_disposed ||
+          revision != _wishlistRevision ||
+          _authenticatedUserId != userId) {
+        return;
+      }
+      _wishlistErrorMessage = error.toString().replaceFirst('Exception: ', '');
+      _loadingWishlist = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> refreshWishlist() async {
+    final userId = _authenticatedUserId;
+    if (userId == null) {
+      await _loadWishlist();
+      return;
+    }
+    _loadingWishlist = true;
+    _wishlistErrorMessage = null;
+    notifyListeners();
+    await _loadAccountWishlist(userId, _wishlistRevision);
+  }
+
+  Future<void> _queueWishlistSave(
+    String userId,
+    List<String> productIds,
+  ) {
+    Future<void> send() async {
+      if (_authenticatedUserId != userId) return;
+      await _apiService.put('/account/wishlist', {'productIds': productIds});
+    }
+
+    final pending = _wishlistSyncQueue.then<void>(
+      (_) => send(),
+      onError: (Object _, StackTrace __) => send(),
+    );
+    _wishlistSyncQueue = pending;
+    return pending;
+  }
+
   Future<void> _persistWishlist() async {
     try {
       final preferences = await SharedPreferences.getInstance();
       await preferences.setStringList('saved_product_ids', _wishlistIds);
-    } catch (error, stackTrace) {
-      debugPrint('Unable to save favorite products: $error\n$stackTrace');
+    } catch (error) {
+      _wishlistErrorMessage = error.toString().replaceFirst('Exception: ', '');
+      debugPrint('Unable to save favorite products: $error');
+      rethrow;
     }
   }
 

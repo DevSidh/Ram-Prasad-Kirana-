@@ -72,23 +72,32 @@ void main() {
     );
     await tester.pump();
     await tester.pump();
-    expect(find.byIcon(Icons.check), findsOneWidget);
+    final trackingScaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+    expect(trackingScaffold.backgroundColor, const Color(0xFFF6FAF7));
+    expect(trackingScaffold.extendBody, isTrue);
+    expect(trackingScaffold.extendBodyBehindAppBar, isTrue);
+    expect(
+      tester.widget<AppBar>(find.byType(AppBar)).forceMaterialTransparency,
+      isTrue,
+    );
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
+    expect(find.text('Order received'), findsOneWidget);
 
     api.status = 'CONFIRMED';
-    await tester.pump(const Duration(seconds: 4));
+    await tester.pump(const Duration(seconds: 20));
     await tester.pump();
-    expect(find.byIcon(Icons.check), findsNWidgets(2));
-    expect(find.text('Confirmed'), findsNWidgets(2));
+    expect(find.text('Order confirmed'), findsOneWidget);
+    expect(find.text('Confirmed'), findsOneWidget);
 
     api.status = 'PROCESSING';
-    await tester.pump(const Duration(seconds: 4));
+    await tester.pump(const Duration(seconds: 20));
     await tester.pump();
-    expect(find.byIcon(Icons.check), findsNWidgets(3));
+    expect(find.text('Being prepared'), findsOneWidget);
 
     api.status = 'OUT_FOR_DELIVERY';
-    await tester.pump(const Duration(seconds: 4));
+    await tester.pump(const Duration(seconds: 20));
     await tester.pump();
-    expect(find.byIcon(Icons.check), findsNWidgets(5));
+    expect(find.text('On the way to you'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
   });

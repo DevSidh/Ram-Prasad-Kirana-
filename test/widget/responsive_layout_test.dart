@@ -8,10 +8,14 @@ import 'package:freshharvest_grocery/core/responsive_layout.dart';
 import 'package:freshharvest_grocery/providers/auth_provider.dart';
 import 'package:freshharvest_grocery/providers/cart_provider.dart';
 import 'package:freshharvest_grocery/providers/product_provider.dart';
+import 'package:freshharvest_grocery/providers/store_availability_provider.dart';
 import 'package:freshharvest_grocery/screens/auth/login_screen.dart';
 import 'package:freshharvest_grocery/screens/profile/profile_screen.dart';
 import 'package:freshharvest_grocery/screens/cart/cart_screen.dart';
 import 'package:freshharvest_grocery/screens/admin/admin_shell.dart';
+import 'package:freshharvest_grocery/screens/admin/admin_store_hours_screen.dart';
+import 'package:freshharvest_grocery/screens/admin/admin_coupons_screen.dart';
+import 'package:freshharvest_grocery/screens/admin/admin_restock_screen.dart';
 import 'package:freshharvest_grocery/widgets/product_card.dart';
 import 'package:freshharvest_grocery/widgets/custom_button.dart';
 import 'package:freshharvest_grocery/navigation/main_bottom_nav.dart';
@@ -19,15 +23,111 @@ import 'package:freshharvest_grocery/services/api_service.dart';
 import 'package:freshharvest_grocery/models/product.dart';
 
 class _ResponsiveApiService extends ApiService {
+  Map<String, dynamic>? storeSettingsUpdate;
+  Map<String, dynamic>? restockRequest;
+
   @override
   Future<dynamic> get(
     String endpoint, {
     Map<String, String>? queryParams,
   }) async {
+    if (endpoint == '/admin/coupons') return {'coupons': []};
+    if (endpoint == '/admin/products' && queryParams?['stock'] == 'restock') {
+      return {
+        'products': [
+          {
+            'id': 'rice-1',
+            'name': 'Rice',
+            'sku': 'rice-1kg',
+            'slug': 'rice',
+            'categoryId': 'pantry',
+            'category': {'id': 'pantry', 'name': 'Pantry'},
+            'price': 250,
+            'stock': 2,
+            'lowStockThreshold': 4,
+            'isActive': true,
+          },
+        ],
+        'pagination': {'page': 1, 'pageSize': 100, 'total': 1},
+      };
+    }
+    if (endpoint == '/admin/inventory/restock-history') {
+      return {
+        'receipts': [
+          {
+            'id': 'receipt-1',
+            'quantity': 3,
+            'balanceAfter': 5,
+            'createdAt': '2026-10-19T10:00:00.000Z',
+            'product': {
+              'id': 'rice-1',
+              'name': 'Rice',
+              'sku': 'rice-1kg',
+              'unitLabel': '1 kg',
+            },
+            'staff': {'id': 'admin-1', 'name': 'Store Admin'},
+          },
+        ],
+        'pagination': {'page': 1, 'pageSize': 25, 'total': 1},
+      };
+    }
+    if (endpoint == '/admin/store-settings' ||
+        endpoint == '/store/availability') {
+      return {
+        'isOrderingEnabled': true,
+        'isAcceptingOrders': true,
+        'weeklyHours': List.generate(
+          7,
+          (index) => {
+            'day': index + 1,
+            'isOpen': true,
+            'openTime': '09:00',
+            'closeTime': '21:00',
+          },
+        ),
+        'timeZone': 'Asia/Kathmandu',
+        'statusMessage': 'The store is open and accepting orders.',
+      };
+    }
     if (endpoint == '/categories') return {'data': []};
     return {
       'data': [],
       'pagination': {'page': 1, 'limit': 100, 'total': 0},
+    };
+  }
+
+  @override
+  Future<dynamic> post(String endpoint, Map<String, dynamic> body) async {
+    if (endpoint == '/admin/products/rice-1/restock') {
+      restockRequest = body;
+      return {
+        'product': {
+          'id': 'rice-1',
+          'name': 'Rice',
+          'sku': 'rice-1kg',
+          'slug': 'rice',
+          'categoryId': 'pantry',
+          'category': {'id': 'pantry', 'name': 'Pantry'},
+          'price': 250,
+          'stock': 5,
+          'lowStockThreshold': 4,
+          'isActive': true,
+        },
+      };
+    }
+  }
+
+  @override
+  Future<dynamic> put(String endpoint, Map<String, dynamic> body) async {
+    storeSettingsUpdate = body;
+    final isOrderingEnabled = body['isOrderingEnabled'] == true;
+    return {
+      ...body,
+      'isAcceptingOrders': isOrderingEnabled,
+      'timeZone': 'Asia/Kathmandu',
+      'statusMessage': isOrderingEnabled
+          ? 'The store is open and accepting orders.'
+          : 'Online ordering is temporarily paused by the store.',
     };
   }
 }
@@ -120,6 +220,9 @@ void main() {
             ChangeNotifierProvider<ProductProvider>.value(
               value: productProvider,
             ),
+            ChangeNotifierProvider(
+              create: (_) => StoreAvailabilityProvider(apiService: apiService),
+            ),
           ],
           child: const MaterialApp(home: MainBottomNav()),
         ),
@@ -132,7 +235,7 @@ void main() {
       );
 
       for (final label in ['Categories', 'Search', 'Cart', 'Profile']) {
-        await tester.tap(find.text(label).last);
+        await tester.tap(find.byKey(ValueKey('nav-tab-$label')));
         await tester.pump(const Duration(milliseconds: 400));
         final layoutError = tester.takeException();
         final errorDetails = layoutError is FlutterError
@@ -253,6 +356,8 @@ void main() {
 
     await tester.tap(find.byTooltip('Clear basket'));
     await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Clear basket'));
+    await tester.pumpAndSettle();
     expect(find.text('Your basket is empty'), findsOneWidget);
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
@@ -345,11 +450,142 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
-    expect(find.text('Product SKUs'), findsOneWidget);
+    final productSkusTile = find.descendant(
+      of: find.byType(Drawer),
+      matching: find.text('Product SKUs'),
+    );
+    expect(productSkusTile, findsOneWidget);
 
-    await tester.tap(find.text('Product SKUs'));
+    await tester.ensureVisible(productSkusTile);
+    await tester.tap(productSkusTile);
     await tester.pumpAndSettle();
     expect(find.text('Product SKUs'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    final productSkusTileAgain = find.descendant(
+      of: find.byType(Drawer),
+      matching: find.text('Product SKUs'),
+    );
+    await tester.ensureVisible(productSkusTileAgain);
+    await tester.tap(productSkusTileAgain);
+    await tester.pumpAndSettle();
+    expect(find.text('Product SKUs'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('store hours controls fit a narrow admin viewport',
+      (tester) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final apiService = _ResponsiveApiService();
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<ApiService>.value(value: apiService),
+          ChangeNotifierProvider(
+            create: (_) => StoreAvailabilityProvider(apiService: apiService),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(body: AdminStoreHoursScreen()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Weekly opening hours'), findsOneWidget);
+    expect(find.text('Monday'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Sunday'),
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.text('Sunday'), findsOneWidget);
+    await tester.drag(find.byType(ListView).first, const Offset(0, 1000));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(
+      SwitchListTile,
+      'Accept online orders',
+    ));
+    await tester.pumpAndSettle();
+    expect(apiService.storeSettingsUpdate?['isOrderingEnabled'], isFalse);
+    expect(find.text('Ordering is paused for every customer.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('promotion management fits a narrow admin viewport',
+      (tester) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final apiService = _ResponsiveApiService();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AdminCouponsScreen(api: apiService),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final initialLayoutError = tester.takeException();
+    if (initialLayoutError is FlutterError) {
+      debugPrint(initialLayoutError.toStringDeep());
+    }
+    expect(initialLayoutError, isNull);
+    expect(find.text('Promotions'), findsOneWidget);
+    expect(find.text('No promotions yet'), findsOneWidget);
+    await tester.tap(find.text('Add code'));
+    await tester.pumpAndSettle();
+    expect(find.text('Create promotion'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('restock queue records quantities on a narrow phone',
+      (tester) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final apiService = _ResponsiveApiService();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AdminRestockScreen(api: apiService),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Restock queue'), findsOneWidget);
+    expect(find.text('Rice'), findsOneWidget);
+    expect(find.text('2 available'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.text('Restock'));
+    await tester.pumpAndSettle();
+    expect(find.text('Record restock'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Add to stock'));
+    await tester.pumpAndSettle();
+
+    expect(apiService.restockRequest, {'quantity': 3});
+    expect(find.text('Nothing to replenish'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.text('Receipt history'));
+    await tester.pumpAndSettle();
+    expect(find.text('Recorded by Store Admin'), findsOneWidget);
+    expect(find.text('+3 × 1 kg'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

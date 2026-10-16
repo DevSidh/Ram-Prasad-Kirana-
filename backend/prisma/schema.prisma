@@ -72,16 +72,17 @@ model Address {
 }
 
 model Category {
-  id          String    @id @default(cuid())
-  name        String
-  slug        String    @unique
-  description String?
-  imageUrl    String?
-  isActive    Boolean   @default(true)
-  sortOrder   Int       @default(0)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  products    Product[]
+  id             String          @id @default(cuid())
+  name           String
+  slug           String          @unique
+  description    String?
+  imageUrl       String?
+  isActive       Boolean         @default(true)
+  sortOrder      Int             @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  products       Product[]
+  wholesaleItems WholesaleItem[]
 
   @@index([isActive])
   @@index([sortOrder])
@@ -126,6 +127,34 @@ model Product {
   @@index([isActive])
   @@index([isFeatured])
   @@index([isBestSeller])
+  @@index([name])
+}
+
+model WholesaleItem {
+  id              String      @id @default(cuid())
+  sku             String      @unique
+  name            String
+  slug            String      @unique
+  categoryId      String
+  brand           String?
+  price           Decimal
+  stock           Int         @default(0)
+  minimumQuantity Int         @default(1)
+  description     String?
+  origin          String?
+  imageUrl        String?
+  imageData       Bytes?
+  imageMimeType   String?
+  unitLabel       String      @default("1 pc")
+  isActive        Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  category        Category    @relation(fields: [categoryId], references: [id])
+  cartItems       CartItem[]
+  orderItems      OrderItem[]
+
+  @@index([categoryId])
+  @@index([isActive])
   @@index([name])
 }
 
@@ -190,37 +219,37 @@ model InventoryTransaction {
 }
 
 model Order {
-  id                 String               @id @default(cuid())
-  orderNumber        String               @unique
-  userId             String
-  addressId          String?
-  status             OrderStatus          @default(PLACED)
-  paymentMethod      PaymentMethod
-  paymentStatus      PaymentStatus        @default(PENDING)
-  subtotal           Decimal
-  deliveryFee        Decimal              @default(0)
-  discount           Decimal              @default(0)
-  tip                Decimal              @default(0)
-  total              Decimal
-  couponCode         String?
-  idempotencyKey     String?              @unique
+  id                  String               @id @default(cuid())
+  orderNumber         String               @unique
+  userId              String
+  addressId           String?
+  status              OrderStatus          @default(PLACED)
+  paymentMethod       PaymentMethod
+  paymentStatus       PaymentStatus        @default(PENDING)
+  subtotal            Decimal
+  deliveryFee         Decimal              @default(0)
+  discount            Decimal              @default(0)
+  tip                 Decimal              @default(0)
+  total               Decimal
+  couponCode          String?
+  idempotencyKey      String?              @unique
   scheduledDeliveryAt DateTime?
-  shippingName       String
-  shippingPhone      String
-  shippingAddress    String
-  shippingCity       String
-  shippingDistrict   String?
-  shippingProvince   String?
-  shippingPostalCode String?
-  notes              String?
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
-  delivery           Delivery?
-  address            Address?             @relation(fields: [addressId], references: [id])
-  user               User                 @relation(fields: [userId], references: [id])
-  items              OrderItem[]
-  statusHistory      OrderStatusHistory[]
-  payments           Payment[]
+  shippingName        String
+  shippingPhone       String
+  shippingAddress     String
+  shippingCity        String
+  shippingDistrict    String?
+  shippingProvince    String?
+  shippingPostalCode  String?
+  notes               String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  delivery            Delivery?
+  address             Address?             @relation(fields: [addressId], references: [id])
+  user                User                 @relation(fields: [userId], references: [id])
+  items               OrderItem[]
+  statusHistory       OrderStatusHistory[]
+  payments            Payment[]
 
   @@index([userId])
   @@index([userId, createdAt])
@@ -230,20 +259,24 @@ model Order {
 }
 
 model OrderItem {
-  id          String   @id @default(cuid())
-  orderId     String
-  productId   String
-  productName String
-  sku         String
-  quantity    Int
-  price       Decimal
-  total       Decimal
-  createdAt   DateTime @default(now())
-  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product     Product  @relation(fields: [productId], references: [id])
+  id              String         @id @default(cuid())
+  orderId         String
+  productId       String?
+  wholesaleItemId String?
+  productName     String
+  sku             String
+  quantity        Int
+  price           Decimal
+  total           Decimal
+  isWholesale     Boolean        @default(false)
+  createdAt       DateTime       @default(now())
+  order           Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product         Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
+  wholesaleItem   WholesaleItem? @relation(fields: [wholesaleItemId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
   @@index([productId])
+  @@index([wholesaleItemId])
 }
 
 model Payment {
@@ -278,7 +311,8 @@ model Cart {
 model CartItem {
   id               String          @id @default(cuid())
   cartId           String
-  productId        String
+  productId        String?
+  wholesaleItemId  String?
   productVariantId String?
   quantity         Int             @default(1)
   unitPrice        Decimal
@@ -286,11 +320,13 @@ model CartItem {
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
   cart             Cart            @relation(fields: [cartId], references: [id], onDelete: Cascade)
-  product          Product         @relation(fields: [productId], references: [id])
+  product          Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
+  wholesaleItem    WholesaleItem?  @relation(fields: [wholesaleItemId], references: [id], onDelete: Cascade)
   productVariant   ProductVariant? @relation(fields: [productVariantId], references: [id])
 
   @@index([cartId])
   @@index([productId])
+  @@index([wholesaleItemId])
 }
 
 model Wishlist {
@@ -363,26 +399,26 @@ model DeviceToken {
 }
 
 model Delivery {
-  id               String                  @id @default(cuid())
-  orderId          String                  @unique
-  deliveryPersonId String?
-  status           DeliveryStatus          @default(PENDING)
-  assignedAt       DateTime?
-  pickedUpAt       DateTime?
-  deliveredAt      DateTime?
-  cashCollected    Decimal                 @default(0)
-  cashCollectedAt  DateTime?
-  cashHandedOver   Decimal                 @default(0)
-  cashHandedOverAt DateTime?
+  id                String                  @id @default(cuid())
+  orderId           String                  @unique
+  deliveryPersonId  String?
+  status            DeliveryStatus          @default(PENDING)
+  assignedAt        DateTime?
+  pickedUpAt        DateTime?
+  deliveredAt       DateTime?
+  cashCollected     Decimal                 @default(0)
+  cashCollectedAt   DateTime?
+  cashHandedOver    Decimal                 @default(0)
+  cashHandedOverAt  DateTime?
   latitude          Float?
   longitude         Float?
   locationUpdatedAt DateTime?
   notes             String?
-  createdAt        DateTime                @default(now())
-  updatedAt        DateTime                @updatedAt
-  deliveryPerson   User?                   @relation(fields: [deliveryPersonId], references: [id])
-  order            Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  statusHistory    DeliveryStatusHistory[]
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  deliveryPerson    User?                   @relation(fields: [deliveryPersonId], references: [id])
+  order             Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  statusHistory     DeliveryStatusHistory[]
 
   @@index([deliveryPersonId])
   @@index([status])

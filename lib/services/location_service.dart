@@ -17,7 +17,43 @@ class CurrentLocation {
   });
 }
 
+class CurrentCoordinates {
+  final double latitude;
+  final double longitude;
+
+  const CurrentCoordinates({
+    required this.latitude,
+    required this.longitude,
+  });
+}
+
 class LocationService {
+  Future<CurrentCoordinates> getCurrentCoordinates() async {
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      throw StateError('Turn on location services to share delivery location.');
+    }
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      throw StateError('Allow location access to share delivery location.');
+    }
+
+    final position = await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        timeLimit: Duration(seconds: 12),
+      ),
+    );
+    return CurrentCoordinates(
+      latitude: position.latitude,
+      longitude: position.longitude,
+    );
+  }
+
   Future<CurrentLocation> getCurrentLocation() async {
     if (!await Geolocator.isLocationServiceEnabled()) {
       throw StateError('Turn on location services and try again.');

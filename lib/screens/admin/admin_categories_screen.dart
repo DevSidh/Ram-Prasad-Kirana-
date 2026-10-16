@@ -1,9 +1,13 @@
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/constants.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../widgets/product_thumbnail.dart';
 
 class AdminCategoriesScreen extends StatefulWidget {
   final ApiService api;
@@ -162,8 +166,10 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
   late final TextEditingController _nameController;
   late final TextEditingController _slugController;
   late final TextEditingController _descriptionController;
+  late final TextEditingController _imageUrlController;
   bool _slugEdited = false;
   bool _saving = false;
+  bool _uploadingImage = false;
   String? _error;
 
   @override
@@ -172,6 +178,8 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
     _nameController = TextEditingController(text: widget.category?.name ?? '');
     _slugController = TextEditingController(text: widget.category?.slug ?? '');
     _descriptionController = TextEditingController(text: widget.category?.description ?? '');
+    _imageUrlController =
+        TextEditingController(text: widget.category?.imageUrl ?? '');
   }
 
   @override
@@ -179,7 +187,45 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
     _nameController.dispose();
     _slugController.dispose();
     _descriptionController.dispose();
+    _imageUrlController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final files = await FilePicker.pickFiles(type: FileType.image);
+      if (files.isEmpty) return;
+      final file = files.first;
+      final size = await file.length();
+      if (size == null) {
+        throw Exception('Unable to read that image. Choose another file.');
+      }
+      if (size > 5 * 1024 * 1024) {
+        throw Exception('Choose an image smaller than 5 MB.');
+      }
+      final extension = file.extension?.toLowerCase();
+      if (!{'jpg', 'jpeg', 'png', 'webp'}.contains(extension)) {
+        throw Exception('Choose a JPEG, PNG, or WebP image.');
+      }
+      final Uint8List bytes = await file.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        _uploadingImage = true;
+        _error = null;
+      });
+      final imageUrl = await widget.api.uploadImage(bytes, file.name);
+      if (!mounted) return;
+      setState(() {
+        _imageUrlController.text = imageUrl;
+        _uploadingImage = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _uploadingImage = false;
+        _error = _cleanError(error);
+      });
+    }
   }
 
   Future<void> _save() async {
@@ -196,6 +242,9 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
       'description': _descriptionController.text.trim().isEmpty
           ? null
           : _descriptionController.text.trim(),
+      'imageUrl': _imageUrlController.text.trim().isEmpty
+          ? null
+          : _imageUrlController.text.trim(),
     };
     try {
       if (widget.category == null) {
@@ -253,6 +302,44 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
                   maxLines: 3,
                   decoration: const InputDecoration(labelText: 'Description (optional)'),
                 ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    ProductThumbnail(
+                      imageUrl: _imageUrlController.text,
+                      size: 56,
+                      fit: BoxFit.cover,
+                      fallbackIcon: Icons.category_outlined,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _uploadingImage ? null : _pickImage,
+                        icon: _uploadingImage
+                            ? const SizedBox.square(
+                                dimension: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.upload_outlined),
+                        label: Text(
+                          _uploadingImage ? 'Uploading image…' : 'Upload image',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _imageUrlController,
+                  keyboardType: TextInputType.url,
+                  decoration: const InputDecoration(
+                    labelText: 'Image URL (optional)',
+                    helperText: 'Upload an image or paste a URL.',
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
                   _ErrorBanner(message: _error!),
@@ -264,11 +351,13 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _saving ? null : () => Navigator.pop(context, false),
+          onPressed: _saving || _uploadingImage
+              ? null
+              : () => Navigator.pop(context, false),
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: _saving ? null : _save,
+          onPressed: _saving || _uploadingImage ? null : _save,
           child: _saving
               ? const SizedBox.square(dimension: 17, child: CircularProgressIndicator(strokeWidth: 2))
               : const Text('Save category'),
@@ -302,10 +391,20 @@ class _CategoryCard extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(color: AppConstants.primaryLight, borderRadius: BorderRadius.circular(13)),
-            child: const Icon(Icons.category_outlined, color: AppConstants.primary),
+            width: 48,
+            height: 48,
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: AppConstants.primaryLight,
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: ProductThumbnail(
+              imageUrl: category.imageUrl ?? '',
+              size: 48,
+              fit: BoxFit.cover,
+              borderRadius: BorderRadius.zero,
+              fallbackIcon: Icons.category_outlined,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(

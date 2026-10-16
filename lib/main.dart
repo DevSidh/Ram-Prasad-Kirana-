@@ -11,6 +11,7 @@ import 'providers/cart_provider.dart';
 import 'providers/order_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/language_provider.dart';
+import 'providers/store_availability_provider.dart';
 import 'screens/splash_screen.dart';
 
 void main() {
@@ -26,14 +27,28 @@ void main() {
         ChangeNotifierProvider<AuthProvider>(
           create: (_) => AuthProvider(apiService: apiService),
         ),
-        ChangeNotifierProvider<ProductProvider>(
+        ChangeNotifierProxyProvider<AuthProvider, ProductProvider>(
           create: (_) => ProductProvider(apiService: apiService),
+          update: (_, auth, products) {
+            final provider =
+                products ?? ProductProvider(apiService: apiService);
+            provider.setAuthenticatedUser(auth.currentUser?.id);
+            return provider;
+          },
         ),
-        ChangeNotifierProvider<CartProvider>(
-          create: (_) => CartProvider(),
+        ChangeNotifierProxyProvider<AuthProvider, CartProvider>(
+          create: (_) => CartProvider(apiService: apiService),
+          update: (_, auth, cart) {
+            final provider = cart ?? CartProvider(apiService: apiService);
+            provider.setAuthenticatedUser(auth.currentUser?.id);
+            return provider;
+          },
         ),
         ChangeNotifierProvider<OrderProvider>(
           create: (_) => OrderProvider(apiService: apiService),
+        ),
+        ChangeNotifierProvider<StoreAvailabilityProvider>(
+          create: (_) => StoreAvailabilityProvider(apiService: apiService),
         ),
         ChangeNotifierProvider<ThemeProvider>(
           create: (_) => ThemeProvider(),
@@ -54,12 +69,15 @@ class RamPrasadGeneralStoreApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final themeMode = context.watch<ThemeProvider>().themeMode;
     final languageCode = context.watch<AppLanguageProvider>().languageCode;
-    final isDark = themeMode == ThemeMode.dark;
+    final isDark = themeMode == ThemeMode.dark ||
+        (themeMode == ThemeMode.system &&
+            View.of(context).platformDispatcher.platformBrightness ==
+                Brightness.dark);
     return MaterialApp(
       title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
       themeMode: themeMode,
       locale: Locale(languageCode),
       supportedLocales: const [Locale('en'), Locale('ne')],

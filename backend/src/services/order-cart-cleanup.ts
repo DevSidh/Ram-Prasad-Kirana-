@@ -13,7 +13,9 @@ export function orderCartCleanupWhere(
   return {
     cartId,
     OR: items.map(({ productId, quantity, isWholesale }) => ({
-      productId,
+      ...(isWholesale
+        ? { wholesaleItemId: productId }
+        : { productId }),
       quantity,
       isWholesale,
     })),

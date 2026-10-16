@@ -166,6 +166,22 @@ const orderInclude = {
           category: { select: { name: true, slug: true } },
         },
       },
+      wholesaleItem: {
+        select: {
+          id: true,
+          name: true,
+          brand: true,
+          categoryId: true,
+          price: true,
+          minimumQuantity: true,
+          description: true,
+          imageUrl: true,
+          imageMimeType: true,
+          unitLabel: true,
+          updatedAt: true,
+          category: { select: { name: true, slug: true } },
+        },
+      },
     },
   },
   address: true,
@@ -189,28 +205,45 @@ function orderResponse(order: OrderRecord) {
   return {
     id: order.id,
     orderNumber: order.orderNumber,
-    items: order.items.map((item) => ({
-      quantity: item.quantity,
-      product: {
-        id: item.product.id,
-        name: item.product.name,
-        brand: item.product.brand,
-        categoryId: item.product.categoryId,
-        categoryName: item.product.category.name,
-        categorySlug: item.product.category.slug,
-        price: Number(item.product.price),
-        originalPrice: item.product.originalPrice === null
-          ? null
-          : Number(item.product.originalPrice),
-        weight: item.product.unitLabel,
-        rating: Number(item.product.rating),
-        reviewCount: item.product.reviewCount,
-        description: item.product.description ?? '',
-        imageUrl: item.product.imageMimeType && item.product.imageUrl
-          ? `${item.product.imageUrl}?v=${item.product.updatedAt.getTime()}`
-          : item.product.imageUrl ?? '',
-      },
-    })),
+    items: order.items.map((item) => {
+      const wholesaleItem = item.wholesaleItem;
+      const product = item.product;
+      const category = wholesaleItem?.category ?? product?.category;
+      if (!category) {
+        throw new Error(`Order item ${item.id} has no catalog record.`);
+      }
+      const imageUrl = wholesaleItem?.imageUrl ?? product?.imageUrl ?? '';
+      const imageMimeType = wholesaleItem?.imageMimeType ?? product?.imageMimeType;
+      const updatedAt = wholesaleItem?.updatedAt ?? product?.updatedAt;
+      return {
+        quantity: item.quantity,
+        isWholesale: item.isWholesale,
+        product: {
+          id: wholesaleItem?.id ?? product?.id ?? item.productId ?? '',
+          name: wholesaleItem?.name ?? product?.name ?? item.productName,
+          brand: wholesaleItem?.brand ?? product?.brand ?? null,
+          categoryId: wholesaleItem?.categoryId ?? product?.categoryId ?? '',
+          categoryName: category.name,
+          categorySlug: category.slug,
+          price: Number(item.price),
+          originalPrice: product?.originalPrice
+            ? Number(product.originalPrice)
+            : null,
+          weight: wholesaleItem?.unitLabel ?? product?.unitLabel ?? '1 pc',
+          rating: product ? Number(product.rating) : 0,
+          reviewCount: product?.reviewCount ?? 0,
+          isWholesale: item.isWholesale,
+          wholesalePrice: item.isWholesale
+            ? Number(wholesaleItem?.price ?? item.price)
+            : null,
+          wholesaleMinimumQuantity: wholesaleItem?.minimumQuantity ?? 1,
+          description: wholesaleItem?.description ?? product?.description ?? '',
+          imageUrl: imageMimeType && updatedAt && imageUrl
+            ? `${imageUrl}?v=${updatedAt.getTime()}`
+            : imageUrl,
+        },
+      };
+    }),
     address: order.address
       ? {
         id: order.address.id,
@@ -625,6 +658,95 @@ app.get('/api/v1/products/:id/image', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/v1/wholesale', async (req: Request, res: Response) => {
+  const page = Number(req.query.page ?? 1);
+  const limit = Number(req.query.limit ?? 20);
+  const search = typeof req.query.search === 'string'
+    ? req.query.search.trim().slice(0, 200)
+    : '';
+  if (!Number.isInteger(page) || page < 1 ||
+      !Number.isInteger(limit) || limit < 1 || limit > 100) {
+    return res.status(400).json({ error: 'Invalid wholesale catalog pagination.' });
+  }
+  try {
+    const where: Prisma.WholesaleItemWhereInput = {
+      isActive: true,
+      category: { isActive: true },
+      ...(search
+        ? {
+          OR: [
+            { name: { contains: search, mode: 'insensitive' } },
+            { brand: { contains: search, mode: 'insensitive' } },
+            { description: { contains: search, mode: 'insensitive' } },
+          ],
+        }
+        : {}),
+    };
+    const [total, items] = await Promise.all([
+      prisma.wholesaleItem.count({ where }),
+      prisma.wholesaleItem.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          id: true,
+          sku: true,
+          name: true,
+          slug: true,
+          categoryId: true,
+          brand: true,
+          price: true,
+          stock: true,
+          minimumQuantity: true,
+          description: true,
+          origin: true,
+          imageUrl: true,
+          imageMimeType: true,
+          unitLabel: true,
+          updatedAt: true,
+          category: { select: { name: true, slug: true } },
+        },
+      }),
+    ]);
+    return res.json({
+      data: items.map(({ imageMimeType, category, ...item }) => ({
+        ...item,
+        price: Number(item.price),
+        isWholesale: true,
+        wholesalePrice: Number(item.price),
+        wholesaleMinimumQuantity: item.minimumQuantity,
+        categoryName: category.name,
+        categorySlug: category.slug,
+        imageUrl: imageMimeType && item.imageUrl
+          ? `${item.imageUrl}?v=${item.updatedAt.getTime()}`
+          : item.imageUrl,
+      })),
+      pagination: { total, page, limit },
+    });
+  } catch (error) {
+    console.error('Wholesale catalog listing failed:', error);
+    return res.status(500).json({ error: 'Unable to load wholesale items.' });
+  }
+});
+
+app.get('/api/v1/wholesale/:id/image', async (req: Request, res: Response) => {
+  try {
+    const item = await prisma.wholesaleItem.findFirst({
+      where: { id: req.params.id, isActive: true },
+      select: { imageData: true, imageMimeType: true },
+    });
+    if (!item?.imageData || !item.imageMimeType) {
+      return res.status(404).json({ error: 'Wholesale item image not found.' });
+    }
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return res.type(item.imageMimeType).send(Buffer.from(item.imageData));
+  } catch (error) {
+    console.error('Wholesale item image lookup failed:', error);
+    return res.status(500).json({ error: 'Unable to load this wholesale image.' });
+  }
+});
+
 app.get('/api/v1/images/:id', async (req: Request, res: Response) => {
   try {
     const image = await prisma.storedImage.findUnique({
@@ -774,33 +896,52 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
       });
       if (!address) throw new Error('Delivery address not found.');
       assertWithinDeliveryServiceArea(address.latitude, address.longitude);
-      const productIds = [...new Set(input.items.map((item) => item.productId))];
-      const products = await transaction.product.findMany({
-        where: {
-          AND: [
-            { id: { in: productIds } },
-            CUSTOMER_CATALOG_PRODUCT_FILTER,
-          ],
-        },
-        include: { inventory: true },
-      });
+      const productIds = [...new Set(
+        input.items.filter((item) => !item.isWholesale).map((item) => item.productId),
+      )];
+      const wholesaleItemIds = [...new Set(
+        input.items.filter((item) => item.isWholesale).map((item) => item.productId),
+      )];
+      const [products, wholesaleItems] = await Promise.all([
+        transaction.product.findMany({
+          where: {
+            AND: [
+              { id: { in: productIds }, isWholesale: false },
+              CUSTOMER_CATALOG_PRODUCT_FILTER,
+            ],
+          },
+          include: { inventory: true },
+        }),
+        transaction.wholesaleItem.findMany({
+          where: {
+            id: { in: wholesaleItemIds },
+            isActive: true,
+            category: { isActive: true },
+          },
+        }),
+      ]);
       const productsById = new Map(products.map((product) => [product.id, product]));
+      const wholesaleItemsById = new Map(
+        wholesaleItems.map((item) => [item.id, item]),
+      );
       let couponEligibleSubtotal = 0;
       const subtotal = input.items.reduce((sum, item) => {
-        const product = productsById.get(item.productId);
-        if (!product) throw new OrderStockError(`This item is no longer available.`);
-        if (item.isWholesale &&
-          (!product.isWholesale ||
-            product.wholesalePrice === null ||
-            item.quantity < product.wholesaleMinimumQuantity)) {
-          throw new OrderStockError(
-            `${product.name} does not meet the current wholesale price or minimum quantity.`,
-          );
+        if (item.isWholesale) {
+          const wholesaleItem = wholesaleItemsById.get(item.productId);
+          if (!wholesaleItem) {
+            throw new OrderStockError('This wholesale item is no longer available.');
+          }
+          if (item.quantity < wholesaleItem.minimumQuantity) {
+            throw new OrderStockError(
+              `${wholesaleItem.name} does not meet the current wholesale minimum quantity.`,
+            );
+          }
+          return sum + Number(wholesaleItem.price) * item.quantity;
         }
-        const price = item.isWholesale
-          ? Number(product.wholesalePrice)
-          : Number(product.price);
-        if (!item.isWholesale) couponEligibleSubtotal += price * item.quantity;
+        const product = productsById.get(item.productId);
+        if (!product) throw new OrderStockError('This item is no longer available.');
+        const price = Number(product.price);
+        couponEligibleSubtotal += price * item.quantity;
         return sum + price * item.quantity;
       }, 0);
 
@@ -844,11 +985,18 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
       }
 
       const stockByProduct = new Map<string, number>();
+      const stockByWholesaleItem = new Map<string, number>();
       for (const item of input.items) {
-        stockByProduct.set(
-          item.productId,
-          (stockByProduct.get(item.productId) ?? 0) + item.quantity,
-        );
+        const stock = item.isWholesale ? stockByWholesaleItem : stockByProduct;
+        stock.set(item.productId, (stock.get(item.productId) ?? 0) + item.quantity);
+      }
+      for (const [wholesaleItemId, quantity] of stockByWholesaleItem) {
+        const item = wholesaleItemsById.get(wholesaleItemId);
+        if (!item || item.stock < quantity) {
+          throw new OrderStockError(
+            `${item?.name ?? 'A wholesale item'} does not have enough stock.`,
+          );
+        }
       }
       for (const [productId, quantity] of stockByProduct) {
         const product = productsById.get(productId);
@@ -896,18 +1044,16 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
           notes: address.instructions,
           items: {
             create: input.items.map((item) => {
-              const product = productsById.get(item.productId)!;
-              const price = item.isWholesale
-                ? Number(product.wholesalePrice)
-                : Number(product.price);
+              const product = item.isWholesale
+                ? wholesaleItemsById.get(item.productId)!
+                : productsById.get(item.productId)!;
+              const price = Number(product.price);
               return {
-                productId: product.id,
-                productName: item.isWholesale
-                  ? `${product.name} (Wholesale)`
-                  : product.name,
-                sku: item.isWholesale
-                  ? `${product.sku}-WHOLESALE`
-                  : product.sku,
+                productId: item.isWholesale ? null : product.id,
+                wholesaleItemId: item.isWholesale ? product.id : null,
+                isWholesale: item.isWholesale,
+                productName: product.name,
+                sku: product.sku,
                 quantity: item.quantity,
                 price,
                 total: price * item.quantity,
@@ -918,22 +1064,33 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
         },
       });
       try {
-        await inventoryService.reserveStockForOrder(
-          transaction,
-          [...stockByProduct].map(([productId, quantity]) => ({
-            productId,
-            quantity,
-          })),
-          created.id,
-        );
-        await inventoryService.commitReservedStock(
-          transaction,
-          [...stockByProduct].map(([productId, quantity]) => ({
-            productId,
-            quantity,
-          })),
-          created.id,
-        );
+        const retailStock = [...stockByProduct].map(([productId, quantity]) => ({
+          productId,
+          quantity,
+        }));
+        if (retailStock.length > 0) {
+          await inventoryService.reserveStockForOrder(
+            transaction,
+            retailStock,
+            created.id,
+          );
+          await inventoryService.commitReservedStock(
+            transaction,
+            retailStock,
+            created.id,
+          );
+        }
+        for (const [wholesaleItemId, quantity] of stockByWholesaleItem) {
+          const changed = await transaction.wholesaleItem.updateMany({
+            where: { id: wholesaleItemId, isActive: true, stock: { gte: quantity } },
+            data: { stock: { decrement: quantity } },
+          });
+          if (changed.count !== 1) {
+            throw new OrderStockError(
+              'A wholesale item was just purchased by another customer.',
+            );
+          }
+        }
       } catch (error) {
         if (error instanceof Error && error.message.startsWith('INSUFFICIENT_STOCK:')) {
           throw new OrderStockError('An item was just purchased by another customer.');
@@ -1057,30 +1214,37 @@ app.post('/api/v1/orders/:id/cancel', authenticateToken, async (req: Request, re
         });
       }
       for (const item of existing.items) {
-        const restocked = await transaction.inventory.updateMany({
-          where: { productId: item.productId },
-          data: {
-            totalStock: { increment: item.quantity },
-            version: { increment: 1 },
-          },
-        });
-        if (restocked.count === 1) {
-          const inventory = await transaction.inventory.findUnique({
+        if (item.productId) {
+          const restocked = await transaction.inventory.updateMany({
             where: { productId: item.productId },
-            select: { id: true, totalStock: true, reservedStock: true },
+            data: {
+              totalStock: { increment: item.quantity },
+              version: { increment: 1 },
+            },
           });
-          if (inventory) {
-            await transaction.inventoryTransaction.create({
-              data: {
-                inventoryId: inventory.id,
-                type: 'RESTOCKED',
-                quantity: item.quantity,
-                balanceAfter: inventory.totalStock - inventory.reservedStock,
-                referenceId: existing.id,
-                notes: `Stock returned after cancellation of Order #${existing.orderNumber}.`,
-              },
+          if (restocked.count === 1) {
+            const inventory = await transaction.inventory.findUnique({
+              where: { productId: item.productId },
+              select: { id: true, totalStock: true, reservedStock: true },
             });
+            if (inventory) {
+              await transaction.inventoryTransaction.create({
+                data: {
+                  inventoryId: inventory.id,
+                  type: 'RESTOCKED',
+                  quantity: item.quantity,
+                  balanceAfter: inventory.totalStock - inventory.reservedStock,
+                  referenceId: existing.id,
+                  notes: `Stock returned after cancellation of Order #${existing.orderNumber}.`,
+                },
+              });
+            }
           }
+        } else if (item.wholesaleItemId) {
+          await transaction.wholesaleItem.update({
+            where: { id: item.wholesaleItemId },
+            data: { stock: { increment: item.quantity } },
+          });
         }
       }
       await transaction.orderStatusHistory.create({

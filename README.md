@@ -20,7 +20,7 @@ grocery_app/
 │   ├── providers/      # AuthProvider, ProductProvider, CartProvider, OrderProvider
 │   ├── screens/        # Splash, Onboarding, Auth, Home, Category, PDP, Cart, Checkout, Tracking, Orders, Profile
 │   ├── widgets/        # ProductCard, CustomButton, EmptyState
-│   ├── navigation/     # MainBottomNav (4 tabs: Home, Store, Wishlist, Profile)
+│   ├── navigation/     # MainBottomNav (5 destinations: Home, Categories, Search, Cart, Profile)
 │   └── main.dart       # App entry point with MultiProvider
 │
 ├── android/            # Native Gradle, AndroidManifest.xml, Kotlin MainActivity
@@ -47,9 +47,11 @@ flutter pub get
 flutter run
 ```
 
-Start the backend in a separate terminal before signing in: `npm.cmd --prefix backend run dev` on Windows (or `cd backend && npm run dev` elsewhere). The web app and iOS simulator use `localhost`; the Android emulator uses `10.0.2.2` to reach the development computer. For a physical phone, use the computer's reachable LAN IP or deployed HTTPS API URL, for example `flutter run --dart-define=API_BASE_URL=http://192.168.1.20:4000/api/v1`. Keep the phone and computer on the same network and allow the backend port through the computer firewall. Login errors now identify the API URL if the server cannot be reached.
+The API is a separate backend process; it does not run inside the Android app. Start it on the development computer with `npm.cmd --prefix backend run dev` on Windows (or `cd backend && npm run dev` elsewhere). It listens on `0.0.0.0` so devices on the local network can reach it. The web app and iOS simulator use `localhost`; the Android emulator uses `10.0.2.2` to reach the development computer. A physical phone must use the computer's reachable LAN IP or the deployed HTTPS API URL, for example `flutter run -d <device-id> --dart-define=API_BASE_URL=http://192.168.1.20:4000/api/v1`. Keep the phone and computer on the same network and allow the backend port through the computer firewall. Login errors now identify the API URL if the server cannot be reached.
 
 Saving a delivery address does not require a Maps API key; customers can enter address details manually. Android and iOS use the native Google Maps SDK; Chrome uses the Maps JavaScript API and needs its own key. For Android, add `googleMapsApiKey=YOUR_RESTRICTED_KEY` to `android/local.properties` (the build also accepts `MAPS_API_KEY`) and restrict it to package `com.freshharvest.grocery_app` plus the signing certificate SHA-1. For iOS, set `GOOGLE_MAPS_API_KEY` in the Runner target's Xcode build settings and restrict it to the iOS bundle ID. For Chrome, copy `web/maps-config.example.js` to `web/maps-config.js`, set a separate key with Maps JavaScript API enabled, and restrict it to your site's HTTP referrers. The web picker is enabled by default; `--dart-define=GOOGLE_MAPS_CONFIGURED=false` can disable it explicitly. Never commit keys. Without a valid key enabled for the platform, the map tiles cannot load; manual address entry remains available.
+
+Orders require a saved map pin within a 10 km straight-line radius of the store. Set `DELIVERY_SERVICE_RADIUS_KM` in the backend environment to override the 10 km default. Customer categories whose name or slug contains “rice,” “vegetable,” or “dairy” are hidden in full, including mixed categories such as “Fruits & Vegetables” and “Dairy & Eggs.”
 
 ### 3. Build a Production Android APK or App Bundle
 
@@ -74,12 +76,18 @@ Android installs an `.apk`; `.exe` files are for Windows. The GitHub Actions wor
 
 Before tagging a release:
 
-1. Add the repository variable `API_BASE_URL` with the deployed production HTTPS API URL.
-2. Add these repository Actions secrets:
+1. Deploy the backend changes first. Confirm the public pages
+   `https://YOUR-API-HOST/privacy-policy` and
+   `https://YOUR-API-HOST/account-deletion` return HTTP 200, and that the
+   deployed API includes `POST /api/v1/account/delete-account`. The account
+   deletion changes do not require a database migration. Do not publish the app
+   until these pages and the endpoint are live.
+2. Add the repository variable `API_BASE_URL` with the deployed production HTTPS API URL.
+3. Add these repository Actions secrets:
    - `ANDROID_KEYSTORE_BASE64`: your private Android release keystore encoded as one Base64 string.
    - `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`: the credentials for that keystore.
    - `MAPS_API_KEY`: a restricted Android Maps key; restrict it to this app's package and release certificate SHA-1.
-3. If you do not already have a release keystore, create one outside the repository in PowerShell. Keep the passwords private and back up the keystore:
+4. If you do not already have a release keystore, create one outside the repository in PowerShell. Keep the passwords private and back up the keystore:
 
 ```powershell
 keytool -genkeypair -v -keystore "$HOME\upload-keystore.jks" -storetype JKS -keyalg RSA -keysize 2048 -validity 10000 -alias upload
@@ -88,7 +96,7 @@ keytool -list -v -keystore "$HOME\upload-keystore.jks" -alias upload
 ```
 
 Use the displayed SHA-1 certificate fingerprint when restricting the Android Maps key. Paste the clipboard value into the `ANDROID_KEYSTORE_BASE64` secret, and enter the keystore and alias passwords into their respective secrets.
-4. Push your code to the GitHub repository, then create and push a new version tag:
+5. Push your code to the GitHub repository, then create and push a new version tag:
 
 ```bash
 git tag v1.0.1
@@ -110,13 +118,19 @@ cd backend
 npm install
 ```
 
-Do not run `prisma migrate dev`, `prisma db push`, or a database reset as part of routine startup. Product sale prices use `price`, with `originalPrice` shown as the crossed-out former price; checkout does not accept coupons. Product units are stored with the catalog record.
+Do not run `prisma migrate dev`, `prisma db push`, or a database reset as part of routine startup. Product sale prices use `price`, with `originalPrice` shown as the crossed-out former price. Admins can create percentage or fixed-amount coupons with a minimum retail subtotal, optional discount cap, redemption limit, and expiry; checkout revalidates each code in the order transaction. Coupon discounts exclude wholesale-priced items, including in mixed baskets. Product units are stored with the catalog record.
+
+Store administrators can configure recurring opening hours and immediately pause or resume online ordering from **Admin → Store hours**. Hours use Nepal Standard Time (`Asia/Kathmandu`); closed days and a paused store are enforced by the backend as well as shown in the customer app. The migration seeds an always-open schedule to preserve existing checkout behavior; configure the actual weekly hours in the admin panel after applying the `20261018000000_store_hours` Prisma migration and before relying on automatic closing.
+
+Run `npm run prisma:migrate:deploy` from `backend` as part of each backend release before starting code that uses new Prisma fields or tables. This includes the store-hours migration, which is required for the public availability check and its customer banner to work.
 
 For email one-time-code password resets, also configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` in the backend's local environment. Use an app password for the sending mailbox; do not commit it. The reset code expires after 10 minutes and is limited to five verification attempts.
 
-New product images uploaded from the admin product editor or showcase are validated JPEG, PNG, or WebP files (up to 5 MB) and stored in the database so every device receives the same image. Older product image URLs and bundled fallback thumbnails remain supported when their referenced files still exist. Files previously written to Render's ephemeral filesystem cannot be restored after they disappear; re-upload those images through the admin product editor. The legacy generic image-upload endpoint still writes to `backend/uploads` by default and accepts `UPLOADS_DIRECTORY`; deployments using that endpoint must mount persistent storage there.
+New product images uploaded from the admin product editor or showcase are validated JPEG, PNG, or WebP files (up to 5 MB) and stored in the database so every device receives the same image. Profile photos are also stored in the database. New generic admin image uploads use database-backed image records rather than Render's ephemeral filesystem. Older image URLs and bundled fallback thumbnails remain supported when their referenced files still exist. Files previously written to Render's ephemeral filesystem cannot be restored after they disappear; re-upload those images through the admin panel.
 
-Delivery addresses, profile photos, order history, cancellations, and in-app notifications are tied to the signed-in account. Customers can crop a square profile photo in the app before uploading it as a PNG; uploaded images must be JPEG, PNG, or WebP and are limited to 5 MB. Checkout does not store payment credentials; only Cash on Delivery is currently available. The store confirms delivery timing after checkout; a specific delivery window is not booked.
+Delivery addresses, cart contents, saved items, profile photos, order history, cancellations, and in-app notifications are tied to the signed-in account. Cart and saved-item changes sync to the backend so they are restored after signing out and back in, including on another device. Customers can crop a square profile photo in the app before uploading it as a PNG; uploaded images must be JPEG, PNG, or WebP and are limited to 5 MB. Checkout does not store payment credentials; only Cash on Delivery is currently available. The store confirms delivery timing after checkout; a specific delivery window is not booked.
+
+Road-distance delivery pricing uses the Google Maps Routes API from the backend, never from the mobile app. Enable Routes API and billing in Google Cloud, then add `GOOGLE_MAPS_ROUTES_API_KEY` as a private backend/Render environment secret and restrict the key to Routes API. Never put this key in Flutter build definitions or source control. Customers must select a map pin for the delivery address. The tariff is Rs 20 for the first started kilometre and Rs 10 for each additional started kilometre (for example, 1 km = Rs 20, just over 1 km = Rs 30, and just over 2 km = Rs 40); the old free-delivery-by-subtotal rule no longer applies.
 
 Customer and delivery-account email addresses are stored lowercase, and phone numbers are stored as digits only. Registration, profile updates, and delivery-account creation check existing values even when older phone records use punctuation; existing duplicate accounts are not automatically deleted or merged.
 
@@ -247,7 +261,7 @@ The script validates and generates Prisma Client, builds/tests the backend and F
 
 ### Admin Panel Status
 
-The current admin foundation routes verified `ADMIN` users to a separate Flutter shell and provides database-backed dashboard metrics, product/category management, a homepage showcase manager, and a catalog-wide SKU editor. Select active products in **Showcase** to include them in the customer's automatically rotating product carousel; each slide uses the product's saved name, category, image, and price. Edit an item's SKU in **SKUs** using the suggested `category-productname-quantity` pattern (for example, `pulses-masoor-dal-1kg`). Order checkout, customer order history, and eligible cancellations now use the database-backed order and inventory models. Customers can review and mark in-app order notifications as read; Firebase push delivery is enabled only after the app and server credentials are configured as described above. Admin fulfillment, coupon, review, and dedicated notification-management screens remain outside this implementation. Online eSewa/Khalti payment verification is not implemented, so new online-payment orders are rejected until a gateway is integrated.
+The admin shell provides database-backed dashboard metrics, product/category management, homepage showcase controls, catalog-wide SKU tools, promotion management, store hours, restocking, and order management. Set each product's low-stock threshold in **Products**; **Restock** lists active items at or below that level, including out-of-stock items, and records received quantities in inventory history with the logged-in admin staff member and timestamp. Existing products retain the previous threshold of 10 after the `20261019000000_low_stock_threshold` migration. Apply `20261020000000_restock_receipt_staff` to link new receipt records to staff accounts; older receipts remain visible without staff attribution. Select active products in **Showcase** to include them in the customer's automatically rotating product carousel; each slide uses the product's saved name, category, image, and price. Edit an item's SKU in **SKUs** using the suggested `category-productname-quantity` pattern (for example, `pulses-masoor-dal-1kg`). Admins can assign delivery staff, update order status, and set or clear a future delivery date and time for open orders. Apply `20261022000000_order_delivery_schedule` before deploying that delivery-time feature. Customer tracking shows the road route from the store to the saved delivery address when the backend Routes API is configured; it does not claim to show live courier GPS. Customers can review and mark in-app order notifications as read; Firebase push delivery is enabled only after the app and server credentials are configured as described above. Online eSewa/Khalti payment verification is not implemented, so new online-payment orders are rejected until a gateway is integrated.
 
 ---
 
@@ -256,5 +270,6 @@ The current admin foundation routes verified `ADMIN` users to a separate Flutter
 - Passwords are stored as bcrypt hashes. Admin APIs require a valid bearer token and verify the user's active status and `ADMIN` role against CockroachDB.
 - Password resets increment the user's token version, immediately revoking previously issued access tokens. Apply the `20261014000000_user_token_version` migration before deploying this backend version.
 - Inventory reservation uses a conditional atomic database update; admin stock edits are transactional and recorded in inventory history.
+- Apply the `20261019000000_low_stock_threshold` and `20261020000000_restock_receipt_staff` migrations before deploying the restock queue and staff-linked receipt history.
 - Keep database and authentication secrets on the backend and out of Flutter source.
 - Checkout currently supports Cash on Delivery only. The API rejects eSewa, Khalti, and card orders until a real server-side payment integration is deployed; do not treat a client-provided payment result as successful.

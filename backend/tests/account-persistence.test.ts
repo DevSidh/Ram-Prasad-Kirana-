@@ -5,6 +5,24 @@ import { createAccountRouter } from '../src/routes/account.js';
 
 let storedCartItems: Array<Record<string, unknown>> = [];
 let storedWishlistIds: string[] = [];
+const wholesaleItem = {
+  id: 'wholesale-1',
+  sku: 'WHOLESALE-RICE',
+  name: 'Bulk rice',
+  categoryId: 'category-1',
+  brand: null,
+  price: 180,
+  stock: 40,
+  minimumQuantity: 5,
+  description: null,
+  origin: null,
+  imageUrl: null,
+  imageMimeType: null,
+  unitLabel: '1 kg',
+  isActive: true,
+  updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  category: { name: 'Pantry', slug: 'pantry', isActive: true },
+};
 const product = {
   id: 'product-1',
   sku: 'SKU-1',
@@ -29,7 +47,7 @@ const product = {
   isActive: true,
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   inventory: { totalStock: 10, reservedStock: 0 },
-  category: { name: 'Fruit', slug: 'fruit' },
+  category: { name: 'Fruit', slug: 'fruit', isActive: true },
 };
 
 const transaction = {
@@ -66,16 +84,24 @@ const prisma = {
     callback(transaction),
   cart: {
     findUnique: async () => ({
-      items: storedCartItems.map((item) => ({
-        ...item,
-        product,
-      })),
+      items: storedCartItems.map((item) => {
+        const isWholesale = item.isWholesale === true;
+        return {
+          ...item,
+          product: isWholesale ? null : product,
+          wholesaleItem: isWholesale ? wholesaleItem : null,
+        };
+      }),
     }),
   },
   cartItem: transaction.cartItem,
   product: {
     findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
       where.id.in.includes(product.id) ? [product] : [],
+  },
+  wholesaleItem: {
+    findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
+      where.id.in.includes(wholesaleItem.id) ? [wholesaleItem] : [],
   },
   wishlist: {
     findUnique: async () => ({
@@ -128,6 +154,60 @@ async function run(): Promise<void> {
     assert.equal(storedCartItems[0].productId, 'product-1');
     assert.equal(storedCartItems[0].quantity, 2);
     assert.equal(storedCartItems[0].isWholesale, false);
+    const loadedRetailCart = await fetch(`${baseUrl}/cart`, { headers });
+    const retailCart = await loadedRetailCart.json() as {
+      items: Array<{ product: { id: string }; isWholesale: boolean }>;
+    };
+    assert.equal(retailCart.items.length, 1);
+    assert.equal(retailCart.items[0]?.product.id, 'product-1');
+    assert.equal(retailCart.items[0]?.isWholesale, false);
+
+    const saveWholesaleCart = await fetch(`${baseUrl}/cart`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        items: [
+          { productId: 'wholesale-1', quantity: 5, isWholesale: true },
+        ],
+      }),
+    });
+    assert.equal(saveWholesaleCart.status, 204);
+    assert.equal(storedCartItems[0].productId, null);
+    assert.equal(storedCartItems[0].wholesaleItemId, 'wholesale-1');
+    const loadedWholesaleCart = await fetch(`${baseUrl}/cart`, { headers });
+    assert.deepEqual(await loadedWholesaleCart.json(), {
+      items: [
+        {
+          product: {
+            id: 'wholesale-1',
+            sku: 'WHOLESALE-RICE',
+            name: 'Bulk rice',
+            categoryId: 'category-1',
+            categoryName: 'Pantry',
+            categorySlug: 'pantry',
+            brand: null,
+            price: 180,
+            originalPrice: null,
+            discountPercent: 0,
+            unitLabel: '1 kg',
+            stock: 40,
+            rating: 0,
+            reviewCount: 0,
+            isOrganic: false,
+            isFeatured: false,
+            isBestSeller: false,
+            isWholesale: true,
+            wholesalePrice: 180,
+            wholesaleMinimumQuantity: 5,
+            description: '',
+            origin: null,
+            imageUrl: '',
+          },
+          quantity: 5,
+          isWholesale: true,
+        },
+      ],
+    });
 
     const saveWishlist = await fetch(`${baseUrl}/wishlist`, {
       method: 'PUT',

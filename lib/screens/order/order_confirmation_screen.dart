@@ -5,6 +5,7 @@ import '../../core/constants.dart';
 import '../../models/cart_item.dart';
 import '../../models/order.dart';
 import '../../navigation/main_bottom_nav.dart';
+import '../../providers/language_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../widgets/product_thumbnail.dart';
 import 'order_tracking_screen.dart';
@@ -29,10 +30,19 @@ class OrderConfirmationScreen extends StatelessWidget {
               _SuccessMedallion(reduceMotion: reduceMotion),
               const SizedBox(height: 24),
               Text(
+                context.tr('Congratulations!'),
+                style: const TextStyle(
+                  color: AppConstants.primary,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
                 'Order placed',
                 style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
                   color: AppConstants.textDark,
                 ),
               ),
@@ -245,10 +255,16 @@ class _SuccessMedallionState extends State<_SuccessMedallion>
               ),
               child: Opacity(
                 opacity: (progress * 1.5).clamp(0.0, 1.0),
-                child: const Icon(
-                  Icons.check_rounded,
-                  color: AppConstants.primary,
-                  size: 48,
+                child: Transform.rotate(
+                  angle: widget.reduceMotion ? 0 : (1 - progress) * -0.18,
+                  child: Transform.scale(
+                    scale: widget.reduceMotion ? 1 : 0.6 + progress * 0.4,
+                    child: const Icon(
+                      Icons.check_rounded,
+                      color: AppConstants.primary,
+                      size: 48,
+                    ),
+                  ),
                 ),
               ),
             ),

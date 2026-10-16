@@ -30,322 +30,425 @@ class _CartScreenState extends State<CartScreen> {
 
     if (items.isEmpty) {
       return Scaffold(
-        backgroundColor: AppConstants.backgroundLight,
+        backgroundColor: AppConstants.backgroundFor(isDark),
+        extendBody: true,
+        extendBodyBehindAppBar: true,
         appBar: AppBar(
-            title: Text(context.tr('Your Basket')),
-            backgroundColor: AppConstants.backgroundLight),
+          title: Text(context.tr('Your Basket')),
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          forceMaterialTransparency: true,
+        ),
         body: DecoratedBox(
           decoration: _cartBackdrop(isDark),
-          child: EmptyState(
-            icon: Icons.shopping_basket_outlined,
-            title: context.tr('Your basket is empty'),
-            message: context.tr(
-              'Browse fresh fruits, vegetables, artisan bakery, and mountain dairy to start shopping.',
-            ),
-          ),
+          child: cart.isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : cart.syncError != null
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.cloud_off_outlined, size: 40),
+                            const SizedBox(height: 12),
+                            Text(
+                              cart.syncError!,
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 8),
+                            TextButton(
+                              onPressed: cart.retrySync,
+                              child: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : EmptyState(
+                      icon: Icons.shopping_basket_outlined,
+                      title: context.tr('Your basket is empty'),
+                      message: context.tr(
+                        'Browse fresh fruits, vegetables, artisan bakery, and mountain dairy to start shopping.',
+                      ),
+                    ),
         ),
       );
     }
 
-    final freeDeliveryProgress = (cart.subtotal / 1000.0).clamp(0.0, 1.0);
-    final remainingForFree =
-        (1000.0 - cart.subtotal).clamp(0.0, double.infinity);
-
     return Scaffold(
-      backgroundColor: AppConstants.backgroundLight,
+      backgroundColor: AppConstants.backgroundFor(isDark),
+      extendBody: true,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text('${context.tr('Your Basket')} (${cart.itemCount})'),
-        backgroundColor: AppConstants.backgroundLight,
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        forceMaterialTransparency: true,
         actions: [
           IconButton(
             icon: const Icon(Icons.delete_outline),
-            onPressed: () => _clearCartWithUndo(cart),
+            onPressed: () => _confirmClearCart(cart),
             tooltip: context.tr('Clear basket'),
           ),
         ],
       ),
-      body: Container(
-        decoration: _cartBackdrop(isDark),
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              // Free Shipping Progress
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                color: AppConstants.glassSurfaceFor(isDark),
-                foregroundDecoration: BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(
-                      color: AppConstants.glassBorderFor(isDark),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: _cartBackdrop(isDark),
+            ),
+          ),
+          RefreshIndicator(
+            onRefresh: cart.refreshSavedCart,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(
+                parent: BouncingScrollPhysics(),
+              ),
+              padding: EdgeInsets.only(
+                top: MediaQuery.paddingOf(context).top + kToolbarHeight + 8,
+                bottom: MediaQuery.paddingOf(context).bottom + 190,
+              ),
+              child: Column(
+                children: [
+                  if (cart.hasUnavailableItems)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                      child: Material(
+                        color: Colors.orange.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Text(
+                            context.tr(
+                              'Some basket items are no longer available or exceed current stock. Reduce quantities or remove them before checkout.',
+                            ),
+                            style: TextStyle(
+                              color: AppConstants.textDark,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (cart.syncError != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                      child: Material(
+                        color: Colors.red.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        child: ListTile(
+                          leading: const Icon(
+                            Icons.cloud_off_outlined,
+                            color: Colors.red,
+                          ),
+                          title: Text(
+                            cart.syncError!,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          trailing: IconButton(
+                            tooltip: 'Retry basket sync',
+                            onPressed: cart.retrySync,
+                            icon: const Icon(Icons.refresh_rounded),
+                          ),
+                        ),
+                      ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                    child: Text(
+                      context.tr('Delivery fee is a flat Rs. 40.'),
+                      style: TextStyle(
+                        color: AppConstants.textMuted,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            remainingForFree > 0
-                                ? 'Add Rs. ${remainingForFree.toInt()} more for FREE Express Delivery'
-                                : 'Congratulations! You unlocked Free Delivery!',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: AppConstants.primaryDark,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${(freeDeliveryProgress * 100).toInt()}%',
-                          style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: AppConstants.primaryDark),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    LinearProgressIndicator(
-                      value: freeDeliveryProgress,
-                      backgroundColor: AppConstants.surfaceLight,
-                      color: AppConstants.primary,
-                      minHeight: 6,
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                  ],
-                ),
-              ),
 
-              // Item List
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final compact = constraints.maxWidth < 360;
-                  return ListView.separated(
-                    padding: const EdgeInsets.all(16),
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: items.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) {
-                      final item = items[index];
-                      return Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppConstants.glassSurfaceFor(
-                            isDark,
-                          ),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: AppConstants.glassBorderFor(
-                              isDark,
+                  // Item List
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final compact = constraints.maxWidth < 360;
+                      return ListView.separated(
+                        padding: const EdgeInsets.all(16),
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: items.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          return Dismissible(
+                            key: ValueKey(
+                              'cart-${item.product.id}-${item.isWholesale}',
                             ),
-                          ),
-                        ),
-                        child: compact
-                            ? Column(
-                                children: [
-                                  Row(
-                                    children: [
-                                      ProductThumbnail(
-                                        imageUrl: item.product.imageUrl,
-                                        size: 72,
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
+                            direction: DismissDirection.endToStart,
+                            background: Container(
+                              alignment: Alignment.centerRight,
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 22),
+                              decoration: BoxDecoration(
+                                color: Colors.red.withValues(alpha: .14),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: const Icon(
+                                Icons.delete_outline_rounded,
+                                color: Colors.red,
+                              ),
+                            ),
+                            onDismissed: (_) {
+                              cart.removeItem(
+                                item.product.id,
+                                isWholesale: item.isWholesale,
+                              );
+                              _showUndoSnackBar(
+                                message: '${item.product.name} removed.',
+                                actionLabel: _translateText('Undo'),
+                                onUndo: () => cart.restoreItem(
+                                  item.product,
+                                  item.quantity,
+                                  isWholesale: item.isWholesale,
+                                ),
+                              );
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: AppConstants.glassSurfaceFor(
+                                  isDark,
+                                ),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: AppConstants.glassBorderFor(
+                                    isDark,
+                                  ),
+                                ),
+                              ),
+                              child: compact
+                                  ? Column(
+                                      children: [
+                                        Row(
                                           children: [
-                                            Text(
-                                              item.product.name,
-                                              style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 13),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
+                                            ProductThumbnail(
+                                              imageUrl: item.product.imageUrl,
+                                              size: 72,
                                             ),
-                                            Text(
-                                              item.product.weight,
-                                              style: TextStyle(
-                                                  color: AppConstants.textMuted,
-                                                  fontSize: 11),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              '${AppConstants.currencySymbol}${item.unitPrice.toInt()}${item.isWholesale ? ' / bulk unit' : ''}',
-                                              style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 13,
-                                                  color: AppConstants.primary),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    item.product.name,
+                                                    style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 13),
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                  Text(
+                                                    item.product.weight,
+                                                    style: TextStyle(
+                                                        color: AppConstants
+                                                            .textMuted,
+                                                        fontSize: 11),
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    '${AppConstants.currencySymbol}${item.unitPrice.toInt()}${item.isWholesale ? ' / bulk unit' : ''}',
+                                                    style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 13,
+                                                        color: AppConstants
+                                                            .primary),
+                                                  ),
+                                                ],
+                                              ),
                                             ),
                                           ],
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: _QuantityStepper(
-                                      productName: item.product.name,
-                                      quantity: item.quantity,
-                                      onDecrease: () => _decreaseQuantity(
-                                        cart,
-                                        item.product,
-                                        item.quantity,
-                                        isWholesale: item.isWholesale,
-                                      ),
-                                      onIncrease: () => cart.updateQuantity(
-                                        item.product.id,
-                                        item.quantity + 1,
-                                        isWholesale: item.isWholesale,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              )
-                            : Row(
-                                children: [
-                                  ProductThumbnail(
-                                    imageUrl: item.product.imageUrl,
-                                    size: 72,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                        const SizedBox(height: 8),
+                                        Align(
+                                          alignment: Alignment.centerRight,
+                                          child: _QuantityStepper(
+                                            productName: item.product.name,
+                                            quantity: item.quantity,
+                                            maxQuantity: item.product.stock
+                                                .clamp(0, 100)
+                                                .toInt(),
+                                            onDecrease: () => _decreaseQuantity(
+                                              cart,
+                                              item.product,
+                                              item.quantity,
+                                              isWholesale: item.isWholesale,
+                                            ),
+                                            onIncrease: () =>
+                                                cart.updateQuantity(
+                                              item.product.id,
+                                              item.quantity + 1,
+                                              isWholesale: item.isWholesale,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : Row(
                                       children: [
-                                        Text(
-                                          item.product.name,
-                                          style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 13),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
+                                        ProductThumbnail(
+                                          imageUrl: item.product.imageUrl,
+                                          size: 72,
                                         ),
-                                        Text(
-                                          item.product.weight,
-                                          style: TextStyle(
-                                              color: AppConstants.textMuted,
-                                              fontSize: 11),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                item.product.name,
+                                                style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 13),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              Text(
+                                                item.product.weight,
+                                                style: TextStyle(
+                                                    color:
+                                                        AppConstants.textMuted,
+                                                    fontSize: 11),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                '${AppConstants.currencySymbol}${item.unitPrice.toInt()}${item.isWholesale ? ' / bulk unit' : ''}',
+                                                style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 13,
+                                                    color:
+                                                        AppConstants.primary),
+                                              ),
+                                            ],
+                                          ),
                                         ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          '${AppConstants.currencySymbol}${item.unitPrice.toInt()}${item.isWholesale ? ' / bulk unit' : ''}',
-                                          style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 13,
-                                              color: AppConstants.primary),
+                                        const SizedBox(width: 8),
+                                        _QuantityStepper(
+                                          productName: item.product.name,
+                                          quantity: item.quantity,
+                                          maxQuantity: item.product.stock
+                                              .clamp(0, 100)
+                                              .toInt(),
+                                          onDecrease: () => _decreaseQuantity(
+                                            cart,
+                                            item.product,
+                                            item.quantity,
+                                            isWholesale: item.isWholesale,
+                                          ),
+                                          onIncrease: () => cart.updateQuantity(
+                                            item.product.id,
+                                            item.quantity + 1,
+                                            isWholesale: item.isWholesale,
+                                          ),
                                         ),
                                       ],
                                     ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _QuantityStepper(
-                                    productName: item.product.name,
-                                    quantity: item.quantity,
-                                    onDecrease: () => _decreaseQuantity(
-                                      cart,
-                                      item.product,
-                                      item.quantity,
-                                      isWholesale: item.isWholesale,
-                                    ),
-                                    onIncrease: () => cart.updateQuantity(
-                                      item.product.id,
-                                      item.quantity + 1,
-                                      isWholesale: item.isWholesale,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                            ),
+                          );
+                        },
                       );
                     },
-                  );
-                },
-              ),
+                  ),
 
-              // Bill Breakdown
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppConstants.glassSurfaceFor(
-                      isDark,
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: AppConstants.glassBorderFor(
-                        AppConstants.isDarkTheme,
+                  // Bill Breakdown
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppConstants.glassSurfaceFor(
+                          isDark,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: AppConstants.glassBorderFor(
+                            isDark,
+                          ),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          _buildBillRow('Basket Subtotal',
+                              '${AppConstants.currencySymbol}${cart.subtotal.toInt()}'),
+                          const SizedBox(height: 8),
+                          _buildBillRow(
+                            'Delivery Fee',
+                            '${AppConstants.currencySymbol}${cart.deliveryFee.toInt()}',
+                          ),
+                          const Divider(height: 24),
+                          _buildBillRow(
+                            'Grand Total',
+                            '${AppConstants.currencySymbol}${cart.grandTotal.toInt()}',
+                            isTotal: true,
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                  child: Column(
-                    children: [
-                      _buildBillRow('Basket Subtotal',
-                          '${AppConstants.currencySymbol}${cart.subtotal.toInt()}'),
-                      const SizedBox(height: 8),
-                      _buildBillRow(
-                        'Delivery Fee',
-                        cart.deliveryFee == 0
-                            ? 'FREE'
-                            : '${AppConstants.currencySymbol}${cart.deliveryFee.toInt()}',
-                      ),
-                      const Divider(height: 24),
-                      _buildBillRow(
-                        'Grand Total',
-                        '${AppConstants.currencySymbol}${cart.grandTotal.toInt()}',
-                        isTotal: true,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 32),
-            ],
-          ),
-        ),
-      ),
-      // Bottom Checkout Button
-      bottomNavigationBar: Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppConstants.glassSurfaceFor(isDark),
-            border: Border(
-              top: BorderSide(
-                color: AppConstants.glassBorderFor(isDark),
+                  const SizedBox(height: 32),
+                ],
               ),
             ),
-            boxShadow: [
-              BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, -4)),
-            ],
           ),
-          child: SizedBox(
-            height: 50,
-            child: ElevatedButton(
-              key: const ValueKey('cart-proceed-checkout'),
-              onPressed: () {
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: MediaQuery.paddingOf(context).bottom + 96,
+            child: _buildCheckoutButton(cart),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCheckoutButton(CartProvider cart) {
+    return SizedBox(
+      height: 50,
+      child: ElevatedButton(
+        key: const ValueKey('cart-proceed-checkout'),
+        onPressed: cart.isLoading || cart.hasUnavailableItems
+            ? null
+            : () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const CheckoutScreen()),
                 );
               },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppConstants.primary,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-              child: Row(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppConstants.primary,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+        child: cart.isLoading
+            ? const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppConstants.primaryForeground,
+                    ),
+                  ),
+                  SizedBox(width: 10),
+                  Text('Restoring saved basket…'),
+                ],
+              )
+            : Row(
                 children: [
                   Text(
                     '${AppConstants.currencySymbol}${cart.grandTotal.toInt()}',
@@ -383,9 +486,6 @@ class _CartScreenState extends State<CartScreen> {
                   ),
                 ],
               ),
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -431,10 +531,10 @@ class _CartScreenState extends State<CartScreen> {
           ? '${product.name} wholesale pack removed from your basket.'
           : '${product.name} removed from your basket.',
       actionLabel: undoLabel,
-      onUndo: () => cart.addItem(
+      onUndo: () => cart.restoreItem(
         product,
         quantity,
-        isWholesale,
+        isWholesale: isWholesale,
       ),
     );
   }
@@ -450,14 +550,37 @@ class _CartScreenState extends State<CartScreen> {
       actionLabel: undoLabel,
       onUndo: () {
         for (final item in previousItems) {
-          cart.addItem(
+          cart.restoreItem(
             item.product,
             item.quantity,
-            item.isWholesale,
+            isWholesale: item.isWholesale,
           );
         }
       },
     );
+  }
+
+  Future<void> _confirmClearCart(CartProvider cart) async {
+    final shouldClear = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(context.tr('Clear basket?')),
+        content: Text(
+          context.tr('Remove all items from your basket?'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(context.tr('Cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(context.tr('Clear basket')),
+          ),
+        ],
+      ),
+    );
+    if (shouldClear == true && mounted) _clearCartWithUndo(cart);
   }
 
   Widget _buildBillRow(String label, String value,
@@ -504,12 +627,14 @@ class _CartScreenState extends State<CartScreen> {
 class _QuantityStepper extends StatelessWidget {
   final String productName;
   final int quantity;
+  final int maxQuantity;
   final VoidCallback onDecrease;
   final VoidCallback onIncrease;
 
   const _QuantityStepper({
     required this.productName,
     required this.quantity,
+    required this.maxQuantity,
     required this.onDecrease,
     required this.onIncrease,
   });
@@ -555,7 +680,7 @@ class _QuantityStepper extends StatelessWidget {
           ),
           IconButton(
             tooltip: 'Add one $productName',
-            onPressed: onIncrease,
+            onPressed: quantity >= maxQuantity ? null : onIncrease,
             constraints: const BoxConstraints.tightFor(width: 48, height: 48),
             padding: EdgeInsets.zero,
             icon: Icon(

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'theme/app_colors.dart';
 
 class AppConstants {
   static bool _isDarkTheme = true;
@@ -62,37 +63,39 @@ class AppConstants {
 
   // Currency
   static const String currencySymbol = 'Rs. ';
+  static const double defaultDeliveryFee = 40;
 
-  // Spotify Glass palette.
-  static const Color primary = Color(0xFF1DB954);
+  static const Color primary = Color(0xFF16A34A);
+  static Color primaryFor(bool isDark) =>
+      (isDark ? AppColors.dark : AppColors.light).primary;
   static Color primaryDarkFor(bool isDark) =>
-      isDark ? const Color(0xFF4FE080) : const Color(0xFF147E3D);
+      primaryFor(isDark);
   static Color primaryLightFor(bool isDark) =>
-      isDark ? const Color(0xFF153220) : const Color(0xFFDDF2E2);
+      (isDark ? AppColors.dark : AppColors.light).backgroundGlow;
   static Color backgroundFor(bool isDark) =>
-      isDark ? const Color(0xFF080A09) : const Color(0xFFE7EFE8);
+      (isDark ? AppColors.dark : AppColors.light).background;
   static Color homeBackgroundFor(bool isDark) =>
-      isDark ? backgroundFor(true) : const Color(0xFFF5F7F4);
+      backgroundFor(isDark);
   static Color homeGlowFor(bool isDark) =>
-      isDark ? const Color(0xFF10251A) : const Color(0xFFEAF4EC);
+      (isDark ? AppColors.dark : AppColors.light).backgroundGlow;
   static Color surfaceFor(bool isDark) =>
-      isDark ? const Color(0xFF171A18) : const Color(0xFFF9FBF9);
+      (isDark ? AppColors.dark : AppColors.light).surface;
   static Color textFor(bool isDark) =>
-      isDark ? const Color(0xFFF4F6F4) : const Color(0xFF122017);
+      (isDark ? AppColors.dark : AppColors.light).textPrimary;
   static Color mutedTextFor(bool isDark) =>
-      isDark ? const Color(0xFFA7AEA9) : const Color(0xFF58685E);
+      (isDark ? AppColors.dark : AppColors.light).textSecondary;
   static Color borderFor(bool isDark) =>
-      isDark ? const Color(0xFF303633) : const Color(0xFFD2DFD4);
+      (isDark ? AppColors.dark : AppColors.light).surfaceBorder;
   static Color glassSurfaceFor(bool isDark) =>
-      isDark ? const Color(0xCC1B201E) : const Color(0xCCFFFFFF);
+      (isDark ? AppColors.dark : AppColors.light).surfaceGlass;
   static Color glassBorderFor(bool isDark) =>
-      isDark ? const Color(0x33FFFFFF) : const Color(0x33121D16);
+      (isDark ? AppColors.dark : AppColors.light).glassBorder;
   static Color get primaryDark =>
       primaryDarkFor(isDarkTheme);
   static Color get primaryLight =>
       primaryLightFor(isDarkTheme);
-  static const Color accent = Color(0xFF1DB954);
-  static const Color primaryForeground = Color(0xFF062611);
+  static const Color accent = Color(0xFFFBBF24);
+  static const Color primaryForeground = Color(0xFF07100D);
 
   static Color get backgroundLight => backgroundFor(isDarkTheme);
   static Color get surfaceLight => surfaceFor(isDarkTheme);

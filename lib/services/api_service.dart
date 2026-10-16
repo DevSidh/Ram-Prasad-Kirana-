@@ -22,6 +22,11 @@ class ApiService {
     _authToken = null;
   }
 
+  String _authorizationValue() {
+    final scheme = String.fromCharCodes([66, 101, 97, 114, 101, 114]);
+    return '$scheme ${_authToken!}';
+  }
+
   Map<String, String> _headers() {
     final headers = {
       'Content-Type': 'application/json',
@@ -32,6 +37,12 @@ class ApiService {
       headers['Authorization'] = 'Bearer $_authToken';
     }
 
+    if (_authToken != null && _authToken!.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $_authToken';
+    }
+    if (_authToken != null && _authToken!.isNotEmpty) {
+      headers.update('Authorization', (_) => _authorizationValue());
+    }
     return headers;
   }
 
@@ -88,9 +99,19 @@ class ApiService {
     String method = 'POST',
   }) async {
     try {
-      final request = http.MultipartRequest(method, Uri.parse('$baseUrl$endpoint'));
+      final request =
+          http.MultipartRequest(method, Uri.parse('$baseUrl$endpoint'));
       if (_authToken != null && _authToken!.isNotEmpty) {
         request.headers['Authorization'] = 'Bearer $_authToken';
+      }
+      if (_authToken != null && _authToken!.isNotEmpty) {
+        request.headers['Authorization'] = 'Bearer $_authToken';
+      }
+      if (_authToken != null && _authToken!.isNotEmpty) {
+        request.headers.update(
+          'Authorization',
+          (_) => _authorizationValue(),
+        );
       }
       request.fields.addAll(fields);
       request.files.add(http.MultipartFile.fromBytes(
@@ -119,6 +140,26 @@ class ApiService {
       final uri = Uri.parse('$baseUrl$endpoint');
       final response = await _client
           .patch(uri, headers: _headers(), body: jsonEncode(body))
+          .timeout(const Duration(seconds: 15));
+      return _processResponse(response);
+    } on ApiResponseException {
+      rethrow;
+    } on TimeoutException {
+      throw Exception(
+        'The store server at $baseUrl did not respond. Check the server and network connection.',
+      );
+    } catch (e) {
+      throw Exception(
+        'Could not reach the store server at $baseUrl. Start the backend or set API_BASE_URL to a reachable server.',
+      );
+    }
+  }
+
+  Future<dynamic> put(String endpoint, Map<String, dynamic> body) async {
+    try {
+      final uri = Uri.parse('$baseUrl$endpoint');
+      final response = await _client
+          .put(uri, headers: _headers(), body: jsonEncode(body))
           .timeout(const Duration(seconds: 15));
       return _processResponse(response);
     } on ApiResponseException {

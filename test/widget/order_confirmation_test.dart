@@ -42,8 +42,13 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(home: OrderConfirmationScreen(order: order)),
     );
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('Apples × 2'), findsOneWidget);
     expect(find.byIcon(Icons.shopping_basket_outlined), findsOneWidget);
+    expect(find.text('Congratulations!'), findsOneWidget);
+    expect(find.text('Order placed'), findsOneWidget);
+    expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

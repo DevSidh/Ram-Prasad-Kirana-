@@ -16,4 +16,9 @@ export const orderInput = z.object({
   tip: z.number().finite().min(0).max(10000).default(0),
   couponCode: z.string().trim().min(1).max(40).transform((code) => code.toUpperCase()).optional(),
   idempotencyKey: z.string().trim().min(8).max(100).optional(),
-}).strict();
+}).strict().refine(
+  ({ items }) =>
+    new Set(items.map((item) => `${item.productId}:${item.isWholesale}`)).size ===
+    items.length,
+  'Order items must not contain duplicates.',
+);

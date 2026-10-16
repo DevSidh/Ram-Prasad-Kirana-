@@ -81,6 +81,8 @@ void main() {
     expect(find.text('Rice × 2'), findsOneWidget);
     expect(find.textContaining('Main Road, Janakpur'), findsOneWidget);
 
+    await tester.drag(find.byType(ListView).first, const Offset(0, -240));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Update order status'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Confirmed').last);

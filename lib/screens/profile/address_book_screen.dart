@@ -48,6 +48,11 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
         _error = error.toString().replaceFirst('Exception: ', '');
         _loading = false;
       });
+      if (_addresses.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Unable to refresh addresses: $_error')),
+        );
+      }
     }
   }
 
@@ -65,14 +70,32 @@ class _AddressBookScreenState extends State<AddressBookScreen> {
       final saved = current == null
           ? await _addressService.createAddress(address)
           : await _addressService.updateAddress(address);
+      if (!mounted) return;
+      if (widget.selectionMode) {
+        Navigator.pop(context, saved);
+        return;
+      }
+      setState(() {
+        _addresses = current == null
+            ? [..._addresses, saved]
+            : _addresses
+                .map((item) => item.id == saved.id ? saved : item)
+                .toList();
+        _loading = false;
+      });
       await _load();
-      if (widget.selectionMode && mounted) Navigator.pop(context, saved);
+      if (mounted && !_addresses.any((item) => item.id == saved.id)) {
+        setState(() => _addresses = [..._addresses, saved]);
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _error = error.toString().replaceFirst('Exception: ', '');
         _loading = false;
       });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to save address: $_error')),
+      );
     }
   }
 
@@ -346,12 +369,12 @@ class _AddressFormDialogState extends State<_AddressFormDialog> {
                   child: OutlinedButton.icon(
                     onPressed: _chooseMapLocation,
                     icon: const Icon(Icons.map_outlined),
-                    label: const Text('Choose a map pin (optional)'),
+                    label: const Text('Choose a map pin'),
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'You can save this address without using the map.',
+                  'A map pin is optional and helps the courier find your address.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: AppConstants.textMuted,

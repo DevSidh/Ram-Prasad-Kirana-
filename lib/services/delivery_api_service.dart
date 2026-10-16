@@ -9,7 +9,8 @@ class DeliveryApiService {
   Future<DeliveryProfile> getProfile() async {
     final response = await _api.get('/delivery/profile');
     if (response is! Map<String, dynamic>) {
-      throw const FormatException('The server returned an invalid delivery profile.');
+      throw const FormatException(
+          'The server returned an invalid delivery profile.');
     }
     return DeliveryProfile.fromJson(response);
   }
@@ -20,13 +21,25 @@ class DeliveryApiService {
       queryParams: {if (status != null) 'status': status},
     );
     if (response is! Map<String, dynamic>) {
-      throw const FormatException('The server returned an invalid delivery list.');
+      throw const FormatException(
+          'The server returned an invalid delivery list.');
     }
     return DeliveryAssignmentPage.fromJson(response);
   }
 
   Future<void> setAvailability(bool isAvailable) async {
     await _api.patch('/delivery/availability', {'isAvailable': isAvailable});
+  }
+
+  Future<void> updateAssignmentLocation(
+    String id, {
+    required double latitude,
+    required double longitude,
+  }) async {
+    await _api.post('/delivery/assignments/$id/location', {
+      'latitude': latitude,
+      'longitude': longitude,
+    });
   }
 
   Future<void> updateAssignment(

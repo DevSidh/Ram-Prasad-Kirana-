@@ -54,18 +54,25 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       backgroundColor: AppConstants.backgroundLight,
       appBar: AppBar(
         backgroundColor: AppConstants.backgroundLight,
-        actions: [
-          if (_currentIndex < _pages.length - 1)
-            TextButton(
-              onPressed: _completeOnboarding,
-              child: Text('Skip',
-                  style: TextStyle(color: AppConstants.textMuted)),
-            ),
-        ],
       ),
       body: SafeArea(
         child: Column(
           children: [
+            SizedBox(
+              height: 48,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: _currentIndex < _pages.length - 1
+                    ? TextButton(
+                        onPressed: _completeOnboarding,
+                        child: Text(
+                          'Skip',
+                          style: TextStyle(color: AppConstants.textMuted),
+                        ),
+                      )
+                    : null,
+              ),
+            ),
             Expanded(
               child: PageView.builder(
                 controller: _pageController,

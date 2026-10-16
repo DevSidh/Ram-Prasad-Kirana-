@@ -139,13 +139,30 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
-    _token = null;
-    _currentUser = null;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(AppConstants.keyToken);
-    await prefs.remove(AppConstants.keyUser);
-    _apiService.clearAuthToken();
-    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await Future.wait([
+        prefs.remove(AppConstants.keyToken),
+        prefs.remove(AppConstants.keyUser),
+      ]);
+    } finally {
+      _token = null;
+      _currentUser = null;
+      _isLoading = false;
+      _errorMessage = null;
+      _apiService.clearAuthToken();
+      notifyListeners();
+    }
+  }
+
+  Future<String?> deleteAccount({required String password}) async {
+    await _apiService.post('/account/delete-account', {'password': password});
+    try {
+      await logout();
+      return null;
+    } catch (error) {
+      return error.toString().replaceFirst('Exception: ', '');
+    }
   }
 
   Future<void> updateProfile({

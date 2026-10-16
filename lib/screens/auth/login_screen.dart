@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../services/secure_login_service.dart';
 import '../../core/constants.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/language_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../widgets/custom_button.dart';
 import '../../widgets/auth_surface.dart';
@@ -12,10 +13,12 @@ import '../../navigation/app_shell_route.dart';
 
 class LoginScreen extends StatefulWidget {
   final bool isAdminLogin;
+  final bool returnToCaller;
 
   const LoginScreen({
     super.key,
     this.isAdminLogin = false,
+    this.returnToCaller = false,
   });
 
   @override
@@ -94,11 +97,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (!fromSavedLogin) await _offerToSavePassword();
       if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-            builder: (_) => appShellForUser(authProvider.currentUser)),
-      );
+      if (widget.returnToCaller && !widget.isAdminLogin) {
+        Navigator.pop(context, true);
+      } else {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (_) => appShellForUser(authProvider.currentUser),
+          ),
+          (_) => false,
+        );
+      }
     } else if (mounted && authProvider.errorMessage != null) {
       if (fromSavedLogin) {
         await _forgetSavedLogin();
@@ -325,6 +334,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     labelText: 'Password',
                     prefixIcon: const Icon(Icons.lock_outline),
                     suffixIcon: IconButton(
+                      tooltip: context.tr(
+                        _obscurePassword ? 'Show password' : 'Hide password',
+                      ),
                       icon: Icon(_obscurePassword
                           ? Icons.visibility_off
                           : Icons.visibility),

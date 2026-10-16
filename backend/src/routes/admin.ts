@@ -1,5 +1,6 @@
 import { Router, type Request, type RequestHandler, type Response } from 'express';
 import { Prisma, type PrismaClient } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { sendAdminError } from '../middleware/auth.js';
@@ -46,9 +47,6 @@ const productFields = {
   brand: z.string().trim().max(120).nullable(),
   price: z.number().finite().nonnegative(),
   originalPrice: z.number().finite().nonnegative().nullable(),
-  isWholesale: z.boolean(),
-  wholesalePrice: z.number().finite().positive().nullable(),
-  wholesaleMinimumQuantity: z.number().int().positive().max(10000),
   lowStockThreshold: z.number().int().min(1).max(100000),
   rating: z.number().finite().min(0).max(5),
   reviewCount: z.number().int().nonnegative(),
@@ -81,9 +79,6 @@ const updateProductInput = z.object({
   brand: productFields.brand.optional(),
   price: productFields.price.optional(),
   originalPrice: productFields.originalPrice.optional(),
-  isWholesale: productFields.isWholesale.optional(),
-  wholesalePrice: productFields.wholesalePrice.optional(),
-  wholesaleMinimumQuantity: productFields.wholesaleMinimumQuantity.optional(),
   lowStockThreshold: productFields.lowStockThreshold.optional(),
   rating: productFields.rating.optional(),
   reviewCount: productFields.reviewCount.optional(),
@@ -183,6 +178,85 @@ const couponCreateInput = z.object({
   }
 });
 const couponActiveInput = z.object({ isActive: z.boolean() }).strict();
+const wholesaleItemFields = {
+  sku: z.string().trim().min(1).max(80),
+  name: z.string().trim().min(1).max(160),
+  slug: z.string().trim().min(1).max(180)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug must be lowercase words separated by hyphens'),
+  categoryId: z.string().trim().min(1).max(100),
+  brand: z.string().trim().max(120).nullable(),
+  price: z.number().finite().positive(),
+  stock: z.number().int().nonnegative().max(1000000),
+  minimumQuantity: z.number().int().positive().max(100),
+  description: z.string().trim().max(5000).nullable(),
+  origin: z.string().trim().max(200).nullable(),
+  imageUrl: z.string().trim().max(2048).nullable(),
+  unitLabel: z.string().trim().min(1).max(40),
+  isActive: z.boolean(),
+};
+const createWholesaleItemInput = z.object(wholesaleItemFields).partial().extend({
+  sku: wholesaleItemFields.sku,
+  name: wholesaleItemFields.name,
+  slug: wholesaleItemFields.slug,
+  categoryId: wholesaleItemFields.categoryId,
+  price: wholesaleItemFields.price,
+}).strict();
+const updateWholesaleItemInput = z.object({
+  sku: wholesaleItemFields.sku.optional(),
+  name: wholesaleItemFields.name.optional(),
+  slug: wholesaleItemFields.slug.optional(),
+  categoryId: wholesaleItemFields.categoryId.optional(),
+  brand: wholesaleItemFields.brand.optional(),
+  price: wholesaleItemFields.price.optional(),
+  stock: wholesaleItemFields.stock.optional(),
+  minimumQuantity: wholesaleItemFields.minimumQuantity.optional(),
+  description: wholesaleItemFields.description.optional(),
+  origin: wholesaleItemFields.origin.optional(),
+  imageUrl: wholesaleItemFields.imageUrl.optional(),
+  unitLabel: wholesaleItemFields.unitLabel.optional(),
+  isActive: wholesaleItemFields.isActive.optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, 'At least one field is required');
+const wholesaleItemsQuery = z.object({
+  search: z.string().trim().max(200).optional(),
+  categoryId: z.string().trim().min(1).max(100).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+}).strict();
+const wholesaleItemSelect = {
+  id: true,
+  sku: true,
+  name: true,
+  slug: true,
+  categoryId: true,
+  brand: true,
+  price: true,
+  stock: true,
+  minimumQuantity: true,
+  description: true,
+  origin: true,
+  imageUrl: true,
+  imageMimeType: true,
+  unitLabel: true,
+  isActive: true,
+  createdAt: true,
+  updatedAt: true,
+  category: { select: { id: true, name: true, slug: true } },
+} satisfies Prisma.WholesaleItemSelect;
+
+type WholesaleItemRecord = Prisma.WholesaleItemGetPayload<{
+  select: typeof wholesaleItemSelect;
+}>;
+
+function wholesaleItemResponse(item: WholesaleItemRecord) {
+  return {
+    ...item,
+    price: Number(item.price),
+    imageUrl: item.imageMimeType && item.imageUrl
+      ? `${item.imageUrl}?v=${item.updatedAt.getTime()}`
+      : item.imageUrl,
+  };
+}
+
 const restockInput = z.object({
   quantity: z.number().int().min(1).max(1000000),
   notes: z.string().trim().max(500).optional(),
@@ -352,6 +426,22 @@ function productRequestBody(req: Request): Record<string, unknown> | null {
   let body: unknown = req.body;
   if (req.file) {
     const encoded = (req.body as Record<string, unknown> | undefined)?.product;
+    if (typeof encoded !== 'string') return null;
+    try {
+      body = JSON.parse(encoded);
+    } catch {
+      return null;
+    }
+  }
+  return body !== null && typeof body === 'object' && !Array.isArray(body)
+    ? body as Record<string, unknown>
+    : null;
+}
+
+function wholesaleItemRequestBody(req: Request): Record<string, unknown> | null {
+  let body: unknown = req.body;
+  if (req.file) {
+    const encoded = (req.body as Record<string, unknown> | undefined)?.wholesaleItem;
     if (typeof encoded !== 'string') return null;
     try {
       body = JSON.parse(encoded);
@@ -626,7 +716,9 @@ export function createAdminRouter(
                 quantity: true,
                 price: true,
                 total: true,
+                isWholesale: true,
                 product: { select: { imageUrl: true } },
+                wholesaleItem: { select: { imageUrl: true } },
               },
             },
             payments: {
@@ -694,7 +786,8 @@ export function createAdminRouter(
             quantity: item.quantity,
             price: Number(item.price),
             total: Number(item.total),
-            imageUrl: item.product.imageUrl,
+            isWholesale: item.isWholesale,
+            imageUrl: item.wholesaleItem?.imageUrl ?? item.product?.imageUrl ?? null,
           })),
           payments: order.payments.map((payment) => ({
             ...payment,
@@ -1254,12 +1347,25 @@ export function createAdminRouter(
               },
             });
           }
-          await inventoryService.adjustInventory(
-            tx,
-            existing.items.map(({ productId, quantity }) => ({ productId, quantity })),
-            `order:${existing.id}`,
-            `Inventory restored after order cancellation by admin ${adminId}.`,
+          const retailItems = existing.items.flatMap(({ productId, quantity }) =>
+            productId ? [{ productId, quantity }] : [],
           );
+          if (retailItems.length > 0) {
+            await inventoryService.adjustInventory(
+              tx,
+              retailItems,
+              `order:${existing.id}`,
+              `Inventory restored after order cancellation by admin ${adminId}.`,
+            );
+          }
+          for (const item of existing.items) {
+            if (!item.productId && item.wholesaleItemId) {
+              await tx.wholesaleItem.update({
+                where: { id: item.wholesaleItemId },
+                data: { stock: { increment: item.quantity } },
+              });
+            }
+          }
         }
 
         await tx.orderStatusHistory.create({
@@ -1458,6 +1564,125 @@ export function createAdminRouter(
     }
   });
 
+  router.get('/wholesale-items', async (req, res) => {
+    const parsed = wholesaleItemsQuery.safeParse(req.query);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+    const { search, categoryId, page, pageSize } = parsed.data;
+    const where: Prisma.WholesaleItemWhereInput = {
+      ...(categoryId ? { categoryId } : {}),
+      ...(search
+        ? {
+          OR: [
+            { name: { contains: search, mode: 'insensitive' } },
+            { sku: { contains: search, mode: 'insensitive' } },
+            { brand: { contains: search, mode: 'insensitive' } },
+          ],
+        }
+        : {}),
+    };
+    try {
+      const [total, items] = await Promise.all([
+        prisma.wholesaleItem.count({ where }),
+        prisma.wholesaleItem.findMany({
+          where,
+          orderBy: [{ updatedAt: 'desc' }, { name: 'asc' }],
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          select: wholesaleItemSelect,
+        }),
+      ]);
+      return res.json({
+        wholesaleItems: items.map(wholesaleItemResponse),
+        pagination: { page, pageSize, total },
+      });
+    } catch (error) {
+      sendAdminError(error, res);
+    }
+  });
+
+  router.post('/wholesale-items', receiveSingleImage, async (req, res) => {
+    const body = wholesaleItemRequestBody(req);
+    if (!body) return res.status(400).json({ error: 'Wholesale item fields are required.' });
+    const parsed = createWholesaleItemInput.safeParse(body);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+    const imageMimeType = req.file ? getImageMimeType(req.file.buffer) : null;
+    if (req.file && !imageMimeType) {
+      return res.status(400).json({ error: 'Use a valid JPEG, PNG, or WebP image.' });
+    }
+    try {
+      const id = randomUUID();
+      const item = await prisma.wholesaleItem.create({
+        data: {
+          id,
+          ...parsed.data,
+          ...(req.file && imageMimeType
+            ? {
+                imageData: req.file.buffer,
+                imageMimeType,
+                imageUrl: `/api/v1/wholesale/${id}/image`,
+              }
+            : {}),
+        },
+        select: wholesaleItemSelect,
+      });
+      return res.status(201).json({ wholesaleItem: wholesaleItemResponse(item) });
+    } catch (error) {
+      if (handleKnownError(error, res)) return;
+      sendAdminError(error, res);
+    }
+  });
+
+  router.patch('/wholesale-items/:id', receiveSingleImage, async (req, res) => {
+    const id = parseRecordId(req.params.id, res);
+    if (!id) return;
+    const body = wholesaleItemRequestBody(req);
+    if (!body) return res.status(400).json({ error: 'Wholesale item fields are required.' });
+    const parsed = updateWholesaleItemInput.safeParse(body);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+    const imageMimeType = req.file ? getImageMimeType(req.file.buffer) : null;
+    if (req.file && !imageMimeType) {
+      return res.status(400).json({ error: 'Use a valid JPEG, PNG, or WebP image.' });
+    }
+    try {
+      const item = await prisma.wholesaleItem.update({
+        where: { id },
+        data: {
+          ...parsed.data,
+          ...(req.file && imageMimeType
+            ? {
+                imageData: req.file.buffer,
+                imageMimeType,
+                imageUrl: `/api/v1/wholesale/${id}/image`,
+              }
+            : parsed.data.imageUrl === null
+              ? { imageData: null, imageMimeType: null }
+              : {}),
+        },
+        select: wholesaleItemSelect,
+      });
+      return res.json({ wholesaleItem: wholesaleItemResponse(item) });
+    } catch (error) {
+      if (handleKnownError(error, res)) return;
+      sendAdminError(error, res);
+    }
+  });
+
+  router.delete('/wholesale-items/:id', async (req, res) => {
+    const id = parseRecordId(req.params.id, res);
+    if (!id) return;
+    try {
+      const item = await prisma.wholesaleItem.update({
+        where: { id },
+        data: { isActive: false },
+        select: { id: true, isActive: true },
+      });
+      return res.json({ wholesaleItem: item });
+    } catch (error) {
+      if (handleKnownError(error, res)) return;
+      sendAdminError(error, res);
+    }
+  });
+
   router.get('/products', async (req, res) => {
     const parsed = productsQuery.safeParse(req.query);
     if (!parsed.success) return invalidInput(res, parsed.error);
@@ -1544,11 +1769,6 @@ export function createAdminRouter(
     if (data.price <= 0) return res.status(400).json({ error: 'Price must be greater than zero' });
     const salePriceError = validateProductSalePrice(data.price, data.originalPrice);
     if (salePriceError) return res.status(400).json({ error: salePriceError });
-    if (data.isWholesale && data.wholesalePrice == null) {
-      return res.status(400).json({
-        error: 'Set a bulk price before enabling wholesale for this product.',
-      });
-    }
     const imageMimeType = req.file
       ? getImageMimeType(req.file.buffer)
       : null;
@@ -1636,9 +1856,6 @@ export function createAdminRouter(
           unitLabel: true,
           price: true,
           originalPrice: true,
-          isWholesale: true,
-          wholesalePrice: true,
-          wholesaleMinimumQuantity: true,
           category: { select: { name: true } },
         },
       });
@@ -1670,16 +1887,6 @@ export function createAdminRouter(
       if (salePriceError) {
         return res.status(400).json({ error: salePriceError });
       }
-      const isWholesale = data.isWholesale ?? currentProduct.isWholesale;
-      const wholesalePrice = data.wholesalePrice === undefined
-        ? currentProduct.wholesalePrice
-        : data.wholesalePrice;
-      if (isWholesale && wholesalePrice == null) {
-        return res.status(400).json({
-          error: 'Set a bulk price before enabling wholesale for this product.',
-        });
-      }
-
       const product = await prisma.$transaction(async (tx) => {
         const existing = await tx.product.findUnique({
           where: { id },

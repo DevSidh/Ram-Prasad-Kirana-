@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -9,12 +11,21 @@ class _CatalogApi extends ApiService {
   int productRequestCount = 0;
   int emptyProductResponses = 0;
   bool failProductRequests = false;
+  List<String> serverWishlist = [];
+  final List<List<String>> wishlistWrites = [];
+  Completer<dynamic>? wishlistLoad;
+  int wishlistWriteCount = 0;
+  final Completer<void> twoWishlistWrites = Completer<void>();
 
   @override
   Future<dynamic> get(
     String endpoint, {
     Map<String, String>? queryParams,
   }) async {
+    if (endpoint == '/account/wishlist') {
+      if (wishlistLoad != null) return wishlistLoad!.future;
+      return {'productIds': serverWishlist};
+    }
     if (endpoint == '/categories') {
       return {
         'data': [
@@ -108,6 +119,20 @@ class _CatalogApi extends ApiService {
         'total': products.length,
       },
     };
+  }
+
+  @override
+  Future<dynamic> put(String endpoint, Map<String, dynamic> body) async {
+    if (endpoint == '/account/wishlist') {
+      serverWishlist = List<String>.from(body['productIds'] as List);
+      wishlistWrites.add(serverWishlist);
+      wishlistWriteCount++;
+      if (wishlistWriteCount == 2 && !twoWishlistWrites.isCompleted) {
+        twoWishlistWrites.complete();
+      }
+      return null;
+    }
+    return super.put(endpoint, body);
   }
 }
 
@@ -264,6 +289,32 @@ void main() {
     offlineProvider.dispose();
   });
 
+  test('offline catalog cache hides excluded category products', () async {
+    SharedPreferences.setMockInitialValues({
+      'catalog_cache_v1': '''
+{
+  "categories": [
+    {"id": "cat-produce", "name": "Fruits & Vegetables", "slug": "fruit-vegetables"},
+    {"id": "cat-dairy", "name": "Dairy & Eggs", "slug": "dairy-eggs"},
+    {"id": "cat-fruit", "name": "Fruit", "slug": "fruit"}
+  ],
+  "products": [
+    {"id": "vegetable", "name": "Greens", "categoryId": "cat-produce", "price": 80, "weight": "1 bunch", "stock": 5, "description": "", "imageUrl": ""},
+    {"id": "dairy", "name": "Milk", "categoryId": "cat-dairy", "price": 150, "weight": "1 L", "stock": 5, "description": "", "imageUrl": ""},
+    {"id": "fruit", "name": "Apples", "categoryId": "cat-fruit", "price": 200, "weight": "1 kg", "stock": 5, "description": "", "imageUrl": ""}
+  ]
+}
+''',
+    });
+    final offlineApi = _CatalogApi()..failProductRequests = true;
+    final provider = ProductProvider(apiService: offlineApi);
+    await provider.loadCatalog();
+
+    expect(provider.categories.map((category) => category.id), ['cat-fruit']);
+    expect(provider.allProducts.map((product) => product.id), ['fruit']);
+    provider.dispose();
+  });
+
   test('cheap catalog sorting includes products created by admin', () async {
     final api = _CatalogApi()..version = 1;
     final provider = ProductProvider(apiService: api);
@@ -321,6 +372,43 @@ void main() {
       provider.featuredProducts.map((product) => product.id),
       ['lentils', 'greens'],
     );
+    provider.dispose();
+  });
+
+  test('signed-in saved items load and sync separately per account', () async {
+    final api = _CatalogApi()..serverWishlist = ['rice'];
+    final provider = ProductProvider(apiService: api);
+    await provider.loadCatalog();
+
+    provider.setAuthenticatedUser('customer-1');
+    await provider.refreshWishlist();
+    expect(provider.wishlistIds, ['rice']);
+
+    await provider.toggleWishlist('lentils');
+    expect(api.wishlistWrites.last, ['rice', 'lentils']);
+
+    api.serverWishlist = ['greens'];
+    provider.setAuthenticatedUser('customer-2');
+    await provider.refreshWishlist();
+    expect(provider.wishlistIds, ['greens']);
+    provider.dispose();
+  });
+
+  test('saved-item edits during account load merge with server items',
+      () async {
+    final api = _CatalogApi()..wishlistLoad = Completer<dynamic>();
+    final provider = ProductProvider(apiService: api);
+    await provider.loadCatalog();
+    provider.setAuthenticatedUser('customer-1');
+
+    await provider.toggleWishlist('lentils');
+    api.wishlistLoad!.complete({
+      'productIds': ['rice'],
+    });
+    await api.twoWishlistWrites.future;
+
+    expect(provider.wishlistIds, containsAll(['rice', 'lentils']));
+    expect(api.serverWishlist, containsAll(['rice', 'lentils']));
     provider.dispose();
   });
 }

@@ -64,6 +64,11 @@ const wishlistInput = z.object({
   'Saved products must not contain duplicates.',
 );
 class CartItemRejectedError extends Error {}
+type CartResponseItem = {
+  product: Record<string, unknown>;
+  quantity: number;
+  isWholesale: boolean;
+};
 
 function authenticatedUserId(res: Response): string | null {
   const id = res.locals.authenticatedUserId;
@@ -235,69 +240,110 @@ export function createAccountRouter(
         where: { userId },
         include: {
           items: {
-            where: {
-              product: { is: CUSTOMER_CATALOG_PRODUCT_FILTER },
-            },
             include: {
               product: {
                 include: {
-                  category: { select: { name: true, slug: true } },
+                  category: { select: { name: true, slug: true, isActive: true } },
                   inventory: { select: { totalStock: true, reservedStock: true } },
+                },
+              },
+              wholesaleItem: {
+                include: {
+                  category: {
+                    select: { name: true, slug: true, isActive: true },
+                  },
                 },
               },
             },
           },
         },
       });
-      const items = (cart?.items ?? [])
-        .filter(({ product }) =>
-          !isExcludedCustomerCategory(product.category.name, product.category.slug))
-        .map(({ product, ...item }) => {
-          const price = Number(product.price);
-          const originalPrice = product.originalPrice === null
-            ? null
-            : Number(product.originalPrice);
-          const stock = Math.max(
-            0,
-            (product.inventory?.totalStock ?? 0) -
-              (product.inventory?.reservedStock ?? 0),
-          );
-          return {
+      const items = (cart?.items ?? []).flatMap<CartResponseItem>((item) => {
+        if (item.isWholesale) {
+          const wholesaleItem = item.wholesaleItem;
+          if (!wholesaleItem || !wholesaleItem.isActive ||
+              !wholesaleItem.category.isActive) return [];
+          return [{
             product: {
-              id: product.id,
-              sku: product.sku,
-              name: product.name,
-              categoryId: product.categoryId,
-              categoryName: product.category.name,
-              categorySlug: product.category.slug,
-              brand: product.brand,
-              price,
-              originalPrice,
-              discountPercent: originalPrice !== null && originalPrice > price
-                ? Math.round(((originalPrice - price) / originalPrice) * 100)
-                : 0,
-              unitLabel: product.unitLabel,
-              stock,
-              rating: Number(product.rating),
-              reviewCount: product.reviewCount,
-              isOrganic: product.isOrganic,
-              isFeatured: product.isFeatured,
-              isBestSeller: product.isBestSeller,
-              isWholesale: product.isWholesale,
-              wholesalePrice: product.wholesalePrice === null
-                ? null
-                : Number(product.wholesalePrice),
-              wholesaleMinimumQuantity: product.wholesaleMinimumQuantity,
-              description: product.description ?? '',
-              origin: product.origin,
-              imageUrl: product.imageMimeType && product.imageUrl
-                ? `${product.imageUrl}?v=${product.updatedAt.getTime()}`
-                : product.imageUrl ?? '',
+              id: wholesaleItem.id,
+              sku: wholesaleItem.sku,
+              name: wholesaleItem.name,
+              categoryId: wholesaleItem.categoryId,
+              categoryName: wholesaleItem.category.name,
+              categorySlug: wholesaleItem.category.slug,
+              brand: wholesaleItem.brand,
+              price: Number(wholesaleItem.price),
+              originalPrice: null,
+              discountPercent: 0,
+              unitLabel: wholesaleItem.unitLabel,
+              stock: wholesaleItem.stock,
+              rating: 0,
+              reviewCount: 0,
+              isOrganic: false,
+              isFeatured: false,
+              isBestSeller: false,
+              isWholesale: true,
+              wholesalePrice: Number(wholesaleItem.price),
+              wholesaleMinimumQuantity: wholesaleItem.minimumQuantity,
+              description: wholesaleItem.description ?? '',
+              origin: wholesaleItem.origin,
+              imageUrl: wholesaleItem.imageMimeType && wholesaleItem.imageUrl
+                ? `${wholesaleItem.imageUrl}?v=${wholesaleItem.updatedAt.getTime()}`
+                : wholesaleItem.imageUrl ?? '',
             },
             quantity: item.quantity,
-            isWholesale: item.isWholesale,
-          };
-        });
+            isWholesale: true,
+          }];
+        }
+        const product = item.product;
+        if (!product || !product.isActive ||
+            !product.category.isActive ||
+            isExcludedCustomerCategory(product.category.name, product.category.slug)) {
+          return [];
+        }
+        const price = Number(product.price);
+        const originalPrice = product.originalPrice === null
+          ? null
+          : Number(product.originalPrice);
+        const stock = Math.max(
+          0,
+          (product.inventory?.totalStock ?? 0) -
+            (product.inventory?.reservedStock ?? 0),
+        );
+        return [{
+          product: {
+            id: product.id,
+            sku: product.sku,
+            name: product.name,
+            categoryId: product.categoryId,
+            categoryName: product.category.name,
+            categorySlug: product.category.slug,
+            brand: product.brand,
+            price,
+            originalPrice,
+            discountPercent: originalPrice !== null && originalPrice > price
+              ? Math.round(((originalPrice - price) / originalPrice) * 100)
+              : 0,
+            unitLabel: product.unitLabel,
+            stock,
+            rating: Number(product.rating),
+            reviewCount: product.reviewCount,
+            isOrganic: product.isOrganic,
+            isFeatured: product.isFeatured,
+            isBestSeller: product.isBestSeller,
+            isWholesale: false,
+            wholesalePrice: null,
+            wholesaleMinimumQuantity: 1,
+            description: product.description ?? '',
+            origin: product.origin,
+            imageUrl: product.imageMimeType && product.imageUrl
+              ? `${product.imageUrl}?v=${product.updatedAt.getTime()}`
+              : product.imageUrl ?? '',
+          },
+          quantity: item.quantity,
+          isWholesale: false,
+        }];
+      });
       return res.json({ items });
     } catch (error) {
       console.error('Account cart load failed:', error);
@@ -313,40 +359,69 @@ export function createAccountRouter(
       return res.status(400).json({ error: 'Check the products and quantities in your basket.' });
     }
     try {
-      const products = await prisma.product.findMany({
+      const [products, wholesaleItems] = await Promise.all([
+        prisma.product.findMany({
         where: {
-          id: { in: parsed.data.items.map((item) => item.productId) },
+          id: {
+            in: parsed.data.items
+              .filter((item) => !item.isWholesale)
+              .map((item) => item.productId),
+          },
           ...CUSTOMER_CATALOG_PRODUCT_FILTER,
+          isWholesale: false,
         },
         select: {
           id: true,
           price: true,
-          isWholesale: true,
-          wholesalePrice: true,
-          wholesaleMinimumQuantity: true,
         },
-      });
+        }),
+        prisma.wholesaleItem.findMany({
+          where: {
+            id: {
+              in: parsed.data.items
+                .filter((item) => item.isWholesale)
+                .map((item) => item.productId),
+            },
+            isActive: true,
+            category: { isActive: true },
+          },
+          select: { id: true, price: true, stock: true, minimumQuantity: true },
+        }),
+      ]);
       const productsById = new Map(products.map((product) => [product.id, product]));
+      const wholesaleItemsById = new Map(
+        wholesaleItems.map((item) => [item.id, item]),
+      );
       const itemData = parsed.data.items.map((item) => {
+        if (item.isWholesale) {
+          const wholesaleItem = wholesaleItemsById.get(item.productId);
+          if (!wholesaleItem ||
+              item.quantity < wholesaleItem.minimumQuantity ||
+              item.quantity > wholesaleItem.stock) {
+            throw new CartItemRejectedError(
+              'A wholesale item is unavailable or no longer meets its minimum quantity.',
+            );
+          }
+          return {
+            productId: null,
+            wholesaleItemId: wholesaleItem.id,
+            quantity: item.quantity,
+            unitPrice: wholesaleItem.price,
+            isWholesale: true,
+          };
+        }
         const product = productsById.get(item.productId);
         if (!product) {
           throw new CartItemRejectedError(
             'One or more products in the basket are no longer available.',
           );
         }
-        if (item.isWholesale &&
-            (!product.isWholesale ||
-              product.wholesalePrice === null ||
-              item.quantity < product.wholesaleMinimumQuantity)) {
-          throw new CartItemRejectedError(
-            'A wholesale item no longer meets its minimum quantity.',
-          );
-        }
         return {
           productId: product.id,
+          wholesaleItemId: null,
           quantity: item.quantity,
-          unitPrice: item.isWholesale ? product.wholesalePrice! : product.price,
-          isWholesale: item.isWholesale,
+          unitPrice: product.price,
+          isWholesale: false,
         };
       });
       await prisma.$transaction(async (transaction) => {

@@ -74,9 +74,10 @@ void main() {
     expect(find.text('Recent searches'), findsOneWidget);
     expect(find.text('Apples'), findsOneWidget);
 
-    await tester.tap(find.byTooltip('Remove Apples from search history'));
+    expect(find.text('Featured products'), findsNothing);
+    await tester.tap(find.byTooltip('Remove from search history'));
     await tester.pumpAndSettle();
-    expect(find.text('Search the store'), findsOneWidget);
+    expect(find.text('No recent searches'), findsOneWidget);
     expect(preferences.getStringList(AppConstants.keySearchHistory), isEmpty);
   });
 

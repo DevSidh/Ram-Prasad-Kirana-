@@ -58,8 +58,11 @@ class OrderProvider extends ChangeNotifier {
     if (_activeOrder?.id == orderId) _activeOrder = updatedOrder;
     if (currentOrder == null ||
         currentOrder.status != updatedOrder.status ||
+        currentOrder.scheduledDeliveryAt != updatedOrder.scheduledDeliveryAt ||
         currentOrder.deliveryPersonName != updatedOrder.deliveryPersonName ||
-        currentOrder.deliveryPersonPhone != updatedOrder.deliveryPersonPhone) {
+        currentOrder.deliveryPersonPhone != updatedOrder.deliveryPersonPhone ||
+        currentOrder.deliveryLocationUpdatedAt !=
+            updatedOrder.deliveryLocationUpdatedAt) {
       notifyListeners();
     }
   }
@@ -69,6 +72,8 @@ class OrderProvider extends ChangeNotifier {
     required Address address,
     required String paymentMethod,
     required String idempotencyKey,
+    DateTime? scheduledDeliveryAt,
+    String? couponCode,
   }) async {
     _isLoading = true;
     notifyListeners();
@@ -84,6 +89,10 @@ class OrderProvider extends ChangeNotifier {
             .toList(),
         'addressId': address.id,
         'paymentMethod': paymentMethod,
+        if (scheduledDeliveryAt != null)
+          'scheduledDeliveryAt': scheduledDeliveryAt.toUtc().toIso8601String(),
+        if (couponCode != null && couponCode.isNotEmpty)
+          'couponCode': couponCode,
         'idempotencyKey': idempotencyKey,
       });
       if (response is! Map<String, dynamic> ||
@@ -152,8 +161,12 @@ class OrderProvider extends ChangeNotifier {
         tip: current.tip,
         total: current.total,
         createdAt: current.createdAt,
+        scheduledDeliveryAt: current.scheduledDeliveryAt,
         deliveryPersonName: current.deliveryPersonName,
         deliveryPersonPhone: current.deliveryPersonPhone,
+        deliveryPersonLatitude: current.deliveryPersonLatitude,
+        deliveryPersonLongitude: current.deliveryPersonLongitude,
+        deliveryLocationUpdatedAt: current.deliveryLocationUpdatedAt,
       );
       if (_activeOrder?.id == orderId) {
         _activeOrder = _orders[index];

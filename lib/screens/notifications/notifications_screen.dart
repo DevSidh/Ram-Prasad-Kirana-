@@ -7,7 +7,9 @@ import '../../providers/theme_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/push_notification_service.dart';
+import '../../services/notification_preferences.dart';
 import '../auth/login_screen.dart';
+import '../profile/profile_options_screens.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -23,6 +25,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   bool _pushBusy = false;
   bool _clearingNotifications = false;
   String? _error;
+  String? _preferencesWarning;
+  Map<String, bool> _notificationPreferences =
+      NotificationPreferences.defaults;
   String? _loadedUserId;
   final Set<String> _deletingNotificationIds = {};
   int _loadRevision = 0;
@@ -79,6 +84,20 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           context.read<AuthProvider>().currentUser?.id != userId) {
         return;
       }
+      Map<String, bool> notificationPreferences =
+          NotificationPreferences.defaults;
+      String? preferencesWarning;
+      try {
+        notificationPreferences = await NotificationPreferences.load();
+      } catch (error) {
+        preferencesWarning =
+            error.toString().replaceFirst('Exception: ', '');
+      }
+      if (!mounted ||
+          revision != _loadRevision ||
+          context.read<AuthProvider>().currentUser?.id != userId) {
+        return;
+      }
       setState(() {
         _notifications = (response['data'] as List)
             .whereType<Map<String, dynamic>>()
@@ -88,6 +107,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               ),
             )
             .toList();
+        _notificationPreferences = notificationPreferences;
+        _preferencesWarning = preferencesWarning;
         _pushAvailable = response['pushAvailable'] == true;
         _loading = false;
       });
@@ -314,8 +335,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Widget build(BuildContext context) {
     final signedIn = context.watch<AuthProvider>().currentUser != null;
     context.watch<ThemeProvider?>();
+    final visibleNotifications = _notifications.where((item) {
+      final type = item['type']?.toString() ?? '';
+      return NotificationPreferences.allows(type, _notificationPreferences);
+    }).toList(growable: false);
     final unreadCount =
-        _notifications.where((item) => item['isRead'] != true).length;
+        visibleNotifications.where((item) => item['isRead'] != true).length;
 
     return Scaffold(
       backgroundColor: AppConstants.backgroundLight,
@@ -350,7 +375,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 final authProvider = context.read<AuthProvider>();
                 await Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  MaterialPageRoute(
+                    builder: (_) => const LoginScreen(returnToCaller: true),
+                  ),
                 );
                 if (mounted && authProvider.currentUser != null) {
                   await _loadNotifications();
@@ -449,6 +476,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                               busy: _pushBusy,
                               onEnable: _enablePush,
                             ),
+                            if (_preferencesWarning != null) ...[
+                              const SizedBox(height: 10),
+                              Text(
+                                '${context.tr('Notification filters could not be loaded:')} $_preferencesWarning. ${context.tr('Showing all updates.')}',
+                                style: TextStyle(
+                                  color: AppConstants.textMuted,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
                             const SizedBox(height: 22),
                             Text(
                               'Recent activity',
@@ -461,8 +498,21 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             const SizedBox(height: 10),
                             if (_notifications.isEmpty)
                               const _EmptyNotifications()
+                            else if (visibleNotifications.isEmpty)
+                              _FilteredNotificationsEmpty(
+                                onManage: () async {
+                                  await Navigator.push<void>(
+                                    context,
+                                    MaterialPageRoute<void>(
+                                      builder: (_) =>
+                                          const NotificationPreferencesScreen(),
+                                    ),
+                                  );
+                                  if (mounted) await _loadNotifications();
+                                },
+                              )
                             else
-                              for (final notification in _notifications)
+                              for (final notification in visibleNotifications)
                                 _NotificationTile(
                                   notification: notification,
                                   onTap: () => _markAsRead(notification),
@@ -706,6 +756,49 @@ class _EmptyNotifications extends StatelessWidget {
       ),
     );
   }
+}
+
+class _FilteredNotificationsEmpty extends StatelessWidget {
+  const _FilteredNotificationsEmpty({required this.onManage});
+
+  final VoidCallback onManage;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 18),
+        decoration: BoxDecoration(
+          color: AppConstants.glassSurfaceFor(AppConstants.isDarkTheme),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: AppConstants.glassBorderFor(AppConstants.isDarkTheme),
+          ),
+        ),
+        child: Column(
+          children: [
+            const Icon(Icons.filter_alt_off_outlined,
+                size: 40, color: AppConstants.primary),
+            const SizedBox(height: 10),
+            Text(
+              context.tr('No updates match these filters'),
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              context.tr('Change notification preferences to see more activity.'),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppConstants.textMuted,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 14),
+            OutlinedButton(
+              onPressed: onManage,
+              child: Text(context.tr('Manage notification preferences')),
+            ),
+          ],
+        ),
+      );
 }
 
 class _SignInPrompt extends StatelessWidget {

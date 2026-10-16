@@ -20,6 +20,19 @@ class ProductDetailsScreen extends StatefulWidget {
 class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   int _quantity = 1;
 
+  Future<void> _toggleWishlist(ProductProvider provider) async {
+    try {
+      await provider.toggleWishlist(widget.product.id);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final cartProvider = Provider.of<CartProvider>(context);
@@ -37,7 +50,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
               isWishlisted ? Icons.favorite : Icons.favorite_border,
               color: isWishlisted ? Colors.red : AppConstants.textDark,
             ),
-            onPressed: () => productProvider.toggleWishlist(widget.product.id),
+            onPressed: () => _toggleWishlist(productProvider),
           ),
           IconButton(
             icon: const Icon(Icons.share_outlined),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/constants.dart';
 import '../../models/admin_models.dart';
@@ -94,7 +95,8 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
       await _adminApi.assignDeliveryPerson(order.id, person.id);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${order.orderNumber} assigned to ${person.name}.')),
+        SnackBar(
+            content: Text('${order.orderNumber} assigned to ${person.name}.')),
       );
       await _load();
     } catch (error) {
@@ -109,8 +111,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
   List<String> _allowedStatuses(AdminOrder order) {
     if (order.deliveryId != null && order.status != 'CANCELLED') {
       return order.status == 'PROCESSING' &&
-              ['ASSIGNED', 'DECLINED', 'FAILED']
-                  .contains(order.deliveryStatus)
+              ['ASSIGNED', 'DECLINED', 'FAILED'].contains(order.deliveryStatus)
           ? ['CANCELLED']
           : const [];
     }
@@ -156,6 +157,71 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
         SnackBar(
           content: Text(
             '${order.orderNumber}: ${_statusLabel(nextStatus)}',
+          ),
+        ),
+      );
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _savingId = null;
+        _error = error.toString().replaceFirst('Exception: ', '');
+      });
+    }
+  }
+
+  Future<void> _chooseDeliveryTime(AdminOrder order) async {
+    final now = DateTime.now();
+    final savedTime = order.scheduledDeliveryAt?.toLocal();
+    final current = savedTime != null && savedTime.isAfter(now)
+        ? savedTime
+        : now.add(const Duration(hours: 1));
+    final selectedDate = await showDatePicker(
+      context: context,
+      initialDate: DateTime(current.year, current.month, current.day),
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: DateTime(now.year + 1),
+    );
+    if (selectedDate == null || !mounted) return;
+
+    final selectedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(current),
+    );
+    if (selectedTime == null || !mounted) return;
+    final scheduledAt = DateTime(
+      selectedDate.year,
+      selectedDate.month,
+      selectedDate.day,
+      selectedTime.hour,
+      selectedTime.minute,
+    );
+    if (!scheduledAt.isAfter(DateTime.now())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Choose a future delivery time.')),
+      );
+      return;
+    }
+    await _saveDeliveryTime(order, scheduledAt);
+  }
+
+  Future<void> _clearDeliveryTime(AdminOrder order) =>
+      _saveDeliveryTime(order, null);
+
+  Future<void> _saveDeliveryTime(
+    AdminOrder order,
+    DateTime? scheduledAt,
+  ) async {
+    setState(() => _savingId = order.id);
+    try {
+      await _adminApi.updateOrderDeliveryTime(order.id, scheduledAt);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            scheduledAt == null
+                ? 'Delivery time cleared for ${order.orderNumber}.'
+                : 'Delivery time saved for ${order.orderNumber}.',
           ),
         ),
       );
@@ -276,6 +342,10 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                 onDeliveryPersonSelected: (person) =>
                     _assignDeliveryPerson(order, person),
                 canAssign: canAssign,
+                canChangeDeliveryTime:
+                    order.status != 'DELIVERED' && order.status != 'CANCELLED',
+                onSetDeliveryTime: () => _chooseDeliveryTime(order),
+                onClearDeliveryTime: () => _clearDeliveryTime(order),
               );
             }),
           if (pagination != null && pagination.total > pagination.pageSize)
@@ -333,6 +403,9 @@ class _AdminOrderCard extends StatelessWidget {
   final ValueChanged<String> onStatusSelected;
   final ValueChanged<AdminDeliveryPerson> onDeliveryPersonSelected;
   final bool canAssign;
+  final bool canChangeDeliveryTime;
+  final VoidCallback onSetDeliveryTime;
+  final VoidCallback onClearDeliveryTime;
 
   const _AdminOrderCard({
     required this.order,
@@ -344,6 +417,9 @@ class _AdminOrderCard extends StatelessWidget {
     required this.onStatusSelected,
     required this.onDeliveryPersonSelected,
     required this.canAssign,
+    required this.canChangeDeliveryTime,
+    required this.onSetDeliveryTime,
+    required this.onClearDeliveryTime,
   });
 
   @override
@@ -403,7 +479,8 @@ class _AdminOrderCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      '${item.name} × ${item.quantity}',
+                      '${item.name}${item.isWholesale ? ' · wholesale' : ''}'
+                      ' × ${item.quantity}',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -425,6 +502,38 @@ class _AdminOrderCard extends StatelessWidget {
             label: 'Payment',
             value: '${order.paymentMethod} · ${order.paymentStatus}',
           ),
+          const SizedBox(height: 8),
+          _DetailLine(
+            label: 'Estimated delivery',
+            value: order.scheduledDeliveryAt == null
+                ? 'Not set'
+                : DateFormat('EEE, d MMM · h:mm a')
+                    .format(order.scheduledDeliveryAt!.toLocal()),
+          ),
+          if (canChangeDeliveryTime)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: isSaving ? null : onSetDeliveryTime,
+                    icon: const Icon(Icons.schedule_rounded, size: 18),
+                    label: Text(
+                      order.scheduledDeliveryAt == null
+                          ? 'Set delivery time'
+                          : 'Change time',
+                    ),
+                  ),
+                  if (order.scheduledDeliveryAt != null)
+                    TextButton(
+                      onPressed: isSaving ? null : onClearDeliveryTime,
+                      child: const Text('Clear'),
+                    ),
+                ],
+              ),
+            ),
           if (canAssign || order.deliveryPersonName != null) ...[
             const SizedBox(height: 8),
             _DetailLine(
@@ -465,7 +574,10 @@ class _AdminOrderCard extends StatelessWidget {
                         [
                           entry['note']?.toString(),
                           entry['createdAt']?.toString(),
-                        ].whereType<String>().where((value) => value.isNotEmpty).join('\n'),
+                        ]
+                            .whereType<String>()
+                            .where((value) => value.isNotEmpty)
+                            .join('\n'),
                         style: const TextStyle(fontSize: 11),
                       ),
                     ),

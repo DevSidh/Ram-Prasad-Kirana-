@@ -13,7 +13,10 @@ import '../../services/api_service.dart';
 class AdminProductsScreen extends StatefulWidget {
   final ApiService api;
 
-  const AdminProductsScreen({super.key, required this.api});
+  const AdminProductsScreen({
+    super.key,
+    required this.api,
+  });
 
   @override
   State<AdminProductsScreen> createState() => _AdminProductsScreenState();
@@ -41,7 +44,9 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
     try {
       final results = await Future.wait([
         _adminApi.getCategories(),
-        _adminApi.getProducts(page: page),
+        _adminApi.getProducts(
+          page: page,
+        ),
       ]);
       if (!mounted) return;
       setState(() {
@@ -139,9 +144,13 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Store catalog',
-                        style: TextStyle(
-                            fontSize: 21, fontWeight: FontWeight.w800)),
+                    const Text(
+                      'Store catalog',
+                      style: TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                     const SizedBox(height: 4),
                     Text(
                       _productPage == null
@@ -163,7 +172,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                     ? () => _editProduct()
                     : null,
                 icon: const Icon(Icons.add, size: 18),
-                label: const Text('Add'),
+                label: const Text('Add product'),
               ),
             ],
           ),
@@ -230,15 +239,13 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
   late final TextEditingController _priceController;
   late final TextEditingController _originalPriceController;
   late final TextEditingController _stockController;
+  late final TextEditingController _lowStockThresholdController;
   late final TextEditingController _descriptionController;
   late final TextEditingController _originController;
   late final TextEditingController _unitAmountController;
-  late final TextEditingController _wholesalePriceController;
-  late final TextEditingController _wholesaleMinimumController;
   Uint8List? _pickedImageBytes;
   String? _pickedImageName;
   bool _removeCurrentImage = false;
-  bool _isWholesale = false;
   String? _categoryId;
   String _unitType = 'pack';
   bool _saving = false;
@@ -299,6 +306,9 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
     );
     _stockController =
         TextEditingController(text: product?.stock.toString() ?? '0');
+    _lowStockThresholdController = TextEditingController(
+      text: product?.lowStockThreshold.toString() ?? '10',
+    );
     _descriptionController =
         TextEditingController(text: product?.description ?? '');
     _originController = TextEditingController(text: product?.origin ?? '');
@@ -307,13 +317,6 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
     _unitAmountController = TextEditingController(
       text: unitParts?.group(1) ?? '1',
     );
-    _wholesalePriceController = TextEditingController(
-      text: product?.wholesalePrice?.toStringAsFixed(2) ?? '',
-    );
-    _wholesaleMinimumController = TextEditingController(
-      text: product?.wholesaleMinimumQuantity.toString() ?? '1',
-    );
-    _isWholesale = product?.isWholesale ?? false;
     final savedUnit = unitParts?.group(2)?.toLowerCase();
     _unitType = switch (savedUnit) {
       'kg' || 'g' => 'weight',
@@ -335,11 +338,10 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
     _priceController.dispose();
     _originalPriceController.dispose();
     _stockController.dispose();
+    _lowStockThresholdController.dispose();
     _descriptionController.dispose();
     _originController.dispose();
     _unitAmountController.dispose();
-    _wholesalePriceController.dispose();
-    _wholesaleMinimumController.dispose();
     super.dispose();
   }
 
@@ -375,12 +377,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
           : _brandController.text.trim(),
       'price': double.parse(_priceController.text.trim()),
       'originalPrice': double.tryParse(_originalPriceController.text.trim()),
-      'isWholesale': _isWholesale,
-      'wholesalePrice': _isWholesale
-          ? double.tryParse(_wholesalePriceController.text.trim())
-          : null,
-      'wholesaleMinimumQuantity':
-          int.tryParse(_wholesaleMinimumController.text.trim()) ?? 1,
+      'lowStockThreshold': int.parse(_lowStockThresholdController.text.trim()),
       'description': _descriptionController.text.trim().isEmpty
           ? null
           : _descriptionController.text.trim(),
@@ -604,6 +601,25 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                   ],
                 ),
                 const SizedBox(height: 11),
+                TextFormField(
+                  controller: _lowStockThresholdController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Low-stock alert threshold',
+                    helperText:
+                        'Show in Restock when available stock reaches this amount.',
+                  ),
+                  validator: (value) {
+                    final threshold = int.tryParse(value?.trim() ?? '');
+                    if (threshold == null ||
+                        threshold < 1 ||
+                        threshold > 100000) {
+                      return 'Enter a whole number from 1 to 100,000';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 11),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: OutlinedButton.icon(
@@ -722,62 +738,6 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                     return null;
                   },
                 ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Offer this product wholesale'),
-                  subtitle: const Text(
-                    'Show it in Wholesale with its own bulk price and minimum quantity.',
-                  ),
-                  value: _isWholesale,
-                  onChanged: _saving
-                      ? null
-                      : (value) => setState(() => _isWholesale = value),
-                ),
-                if (_isWholesale) ...[
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _wholesalePriceController,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: const InputDecoration(
-                            labelText: 'Bulk price (Rs.)',
-                          ),
-                          validator: (value) {
-                            final price = double.tryParse(value?.trim() ?? '');
-                            if (price == null ||
-                                !price.isFinite ||
-                                price <= 0) {
-                              return 'Enter a bulk price above 0';
-                            }
-                            return null;
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _wholesaleMinimumController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'Minimum quantity',
-                          ),
-                          validator: (value) {
-                            final quantity = int.tryParse(value?.trim() ?? '');
-                            if (quantity == null ||
-                                quantity < 1 ||
-                                quantity > 10000) {
-                              return 'Enter a quantity from 1 to 10,000';
-                            }
-                            return null;
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
                 const SizedBox(height: 11),
                 TextFormField(
                   controller: _descriptionController,
@@ -792,15 +752,6 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                   textCapitalization: TextCapitalization.words,
                   decoration: const InputDecoration(
                       labelText: 'Country/region of origin'),
-                ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Low-stock threshold is not present in the current inventory schema.',
-                    style:
-                        TextStyle(fontSize: 11, color: AppConstants.textMuted),
-                  ),
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),

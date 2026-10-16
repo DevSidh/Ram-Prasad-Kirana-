@@ -80,4 +80,28 @@ void main() {
     );
     expect(auth.authToken, 'session-token');
   });
+
+  test('logout clears the active session and persisted account data', () async {
+    SharedPreferences.setMockInitialValues({
+      AppConstants.keyToken: 'session-token',
+      AppConstants.keyUser: jsonEncode({
+        'id': 'user-1',
+        'email': 'customer@example.com',
+        'fullName': 'Customer',
+        'role': 'CUSTOMER',
+      }),
+    });
+
+    final auth = AuthProvider(apiService: _ProfileApi());
+    addTearDown(auth.dispose);
+    await auth.sessionReady;
+
+    await auth.logout();
+
+    expect(auth.isAuthenticated, isFalse);
+    expect(auth.currentUser, isNull);
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.containsKey(AppConstants.keyToken), isFalse);
+    expect(preferences.containsKey(AppConstants.keyUser), isFalse);
+  });
 }

@@ -7,13 +7,17 @@ import '../../providers/product_provider.dart';
 import '../../services/api_service.dart';
 import '../auth/login_screen.dart';
 import 'admin_categories_screen.dart';
+import 'admin_coupons_screen.dart';
 import 'admin_customers_screen.dart';
 import 'admin_dashboard_screen.dart';
 import 'admin_delivery_people_screen.dart';
 import 'admin_orders_screen.dart';
 import 'admin_products_screen.dart';
+import 'admin_restock_screen.dart';
 import 'admin_showcase_screen.dart';
 import 'admin_skus_screen.dart';
+import 'admin_store_hours_screen.dart';
+import 'admin_wholesale_screen.dart';
 
 class AdminShell extends StatefulWidget {
   const AdminShell({super.key});
@@ -32,9 +36,13 @@ class _AdminShellState extends State<AdminShell> {
     'Delivery',
     'Customers',
     'Products',
+    'Wholesale',
+    'Restock',
     'Categories',
     'Showcase',
     'Product SKUs',
+    'Store hours',
+    'Promotions',
   ];
 
   @override
@@ -52,6 +60,8 @@ class _AdminShellState extends State<AdminShell> {
       AdminDeliveryPeopleScreen(api: api),
       AdminCustomersScreen(api: api),
       AdminProductsScreen(api: api),
+      AdminWholesaleScreen(api: api),
+      AdminRestockScreen(api: api),
       AdminCategoriesScreen(api: api),
       AdminShowcaseScreen(
         api: api,
@@ -60,6 +70,8 @@ class _AdminShellState extends State<AdminShell> {
             context.read<ProductProvider>().setProductImageLocally,
       ),
       AdminSkusScreen(api: api),
+      const AdminStoreHoursScreen(),
+      AdminCouponsScreen(api: api),
     ];
   }
 
@@ -275,6 +287,16 @@ class _AdminShellState extends State<AdminShell> {
       label: Text('Products'),
     ),
     NavigationRailDestination(
+      icon: Icon(Icons.storefront_outlined),
+      selectedIcon: Icon(Icons.storefront_rounded),
+      label: Text('Wholesale'),
+    ),
+    NavigationRailDestination(
+      icon: Icon(Icons.add_box_outlined),
+      selectedIcon: Icon(Icons.add_box_rounded),
+      label: Text('Restock'),
+    ),
+    NavigationRailDestination(
       icon: Icon(Icons.category_outlined),
       selectedIcon: Icon(Icons.category_rounded),
       label: Text('Categories'),
@@ -289,6 +311,16 @@ class _AdminShellState extends State<AdminShell> {
       selectedIcon: Icon(Icons.qr_code_2_rounded),
       label: Text('Product SKUs'),
     ),
+    NavigationRailDestination(
+      icon: Icon(Icons.schedule_outlined),
+      selectedIcon: Icon(Icons.schedule_rounded),
+      label: Text('Store hours'),
+    ),
+    NavigationRailDestination(
+      icon: Icon(Icons.local_offer_outlined),
+      selectedIcon: Icon(Icons.local_offer_rounded),
+      label: Text('Promotions'),
+    ),
   ];
 
   static const _unselectedIcons = [
@@ -297,9 +329,13 @@ class _AdminShellState extends State<AdminShell> {
     Icons.local_shipping_outlined,
     Icons.people_outline_rounded,
     Icons.inventory_2_outlined,
+    Icons.storefront_outlined,
+    Icons.add_box_outlined,
     Icons.category_outlined,
     Icons.view_carousel_outlined,
     Icons.qr_code_2_outlined,
+    Icons.schedule_outlined,
+    Icons.local_offer_outlined,
   ];
 
   static const _selectedIcons = [
@@ -308,8 +344,12 @@ class _AdminShellState extends State<AdminShell> {
     Icons.local_shipping_rounded,
     Icons.people_rounded,
     Icons.inventory_2_rounded,
+    Icons.storefront_rounded,
+    Icons.add_box_rounded,
     Icons.category_rounded,
     Icons.view_carousel_rounded,
     Icons.qr_code_2_rounded,
+    Icons.schedule_rounded,
+    Icons.local_offer_rounded,
   ];
 }

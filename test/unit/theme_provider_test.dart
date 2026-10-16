@@ -41,6 +41,23 @@ void main() {
     provider.dispose();
   });
 
+  test('system theme mode is persisted and restored', () async {
+    final provider = ThemeProvider();
+    await provider.setThemeMode(ThemeMode.system);
+
+    expect(provider.themeMode, ThemeMode.system);
+    expect(
+      (await SharedPreferences.getInstance()).getString('app_theme_mode'),
+      'system',
+    );
+    provider.dispose();
+
+    final restoredProvider = ThemeProvider();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(restoredProvider.themeMode, ThemeMode.system);
+    restoredProvider.dispose();
+  });
+
   test('light and dark palettes use distinct readable surfaces', () {
     expect(
       AppConstants.backgroundFor(false),
@@ -53,13 +70,10 @@ void main() {
   });
 
   test('home uses a soft light canvas while preserving its dark palette', () {
-    expect(AppConstants.homeBackgroundFor(false), const Color(0xFFF5F7F4));
-    expect(AppConstants.homeGlowFor(false), const Color(0xFFEAF4EC));
-    expect(
-      AppConstants.homeBackgroundFor(true),
-      AppConstants.backgroundFor(true),
-    );
-    expect(AppConstants.homeGlowFor(true), const Color(0xFF10251A));
+    expect(AppConstants.homeBackgroundFor(false), const Color(0xFFF6FAF7));
+    expect(AppConstants.homeGlowFor(false), const Color(0xFFD3F2DE));
+    expect(AppConstants.homeBackgroundFor(true), const Color(0xFF07100D));
+    expect(AppConstants.homeGlowFor(true), const Color(0xFF0F3D2A));
   });
 
   test('staff appearance can stay light without changing saved user choice',
@@ -98,9 +112,21 @@ void main() {
       ),
     );
 
+    final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+    expect(scaffold.backgroundColor, const Color(0xFF07100D));
+    DecoratedBox cartBackdrop() => tester.widget<DecoratedBox>(
+          find
+              .descendant(
+                of: find.byType(Scaffold),
+                matching: find.byType(DecoratedBox),
+              )
+              .first,
+        );
     expect(
-      tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
-      AppConstants.backgroundFor(true),
+      ((cartBackdrop().decoration as BoxDecoration).gradient! as LinearGradient)
+          .colors
+          .first,
+      const Color(0xFF101812),
     );
 
     await themeProvider.setDarkMode(false);
@@ -108,7 +134,13 @@ void main() {
 
     expect(
       tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
-      AppConstants.backgroundFor(false),
+      const Color(0xFFF6FAF7),
+    );
+    expect(
+      ((cartBackdrop().decoration as BoxDecoration).gradient! as LinearGradient)
+          .colors
+          .first,
+      const Color(0xFFE2F4E7),
     );
   });
 }

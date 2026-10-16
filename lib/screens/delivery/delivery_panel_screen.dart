@@ -9,6 +9,7 @@ import '../../models/delivery_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/delivery_api_service.dart';
+import '../../services/location_service.dart';
 import '../auth/login_screen.dart';
 
 class DeliveryPanelScreen extends StatefulWidget {
@@ -20,9 +21,12 @@ class DeliveryPanelScreen extends StatefulWidget {
   State<DeliveryPanelScreen> createState() => _DeliveryPanelScreenState();
 }
 
-class _DeliveryPanelScreenState extends State<DeliveryPanelScreen> {
+class _DeliveryPanelScreenState extends State<DeliveryPanelScreen>
+    with WidgetsBindingObserver {
   late final DeliveryApiService _deliveryApi = DeliveryApiService(widget.api);
   Timer? _refreshTimer;
+  Timer? _locationTimer;
+  final LocationService _locationService = LocationService();
   DeliveryProfile? _profile;
   DeliveryAssignmentPage? _page;
   String? _error;
@@ -31,6 +35,8 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen> {
   bool _loading = true;
   int _selectedIndex = 0;
   bool _availabilitySaving = false;
+  bool _publishingLocation = false;
+  String? _locationError;
 
   static const _filters = <(String?, String)>[
     (null, 'All'),
@@ -47,6 +53,7 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _refresh();
     _refreshTimer = Timer.periodic(
       const Duration(seconds: 60),
@@ -56,8 +63,21 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _refreshTimer?.cancel();
+    _locationTimer?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _locationError = null;
+      _refresh(silent: true);
+    } else if (state == AppLifecycleState.paused) {
+      _locationTimer?.cancel();
+      _locationTimer = null;
+    }
   }
 
   Future<void> refresh() => _refresh();
@@ -82,12 +102,64 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen> {
         _loading = false;
         _error = null;
       });
+      _syncLiveLocation();
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _error = error.toString().replaceFirst('Exception: ', '');
         _loading = false;
       });
+    }
+  }
+
+  void _syncLiveLocation() {
+    final hasOnTheWayDeliveries = (_page?.assignments ?? const [])
+        .any((assignment) => assignment.status == 'OUT_FOR_DELIVERY');
+    if (!hasOnTheWayDeliveries) {
+      _locationTimer?.cancel();
+      _locationTimer = null;
+      if (_locationError != null) setState(() => _locationError = null);
+      return;
+    }
+    if (_locationError != null) return;
+    if (_locationTimer != null) return;
+    unawaited(_publishLiveLocations());
+    _locationTimer = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => unawaited(_publishLiveLocations()),
+    );
+  }
+
+  Future<void> _publishLiveLocations() async {
+    if (_publishingLocation || !mounted) return;
+    final assignments = (_page?.assignments ?? const <DeliveryAssignment>[])
+        .where((assignment) => assignment.status == 'OUT_FOR_DELIVERY')
+        .toList(growable: false);
+    if (assignments.isEmpty) return;
+    _publishingLocation = true;
+    try {
+      final position = await _locationService.getCurrentCoordinates();
+      for (final assignment in assignments) {
+        await _deliveryApi.updateAssignmentLocation(
+          assignment.id,
+          latitude: position.latitude,
+          longitude: position.longitude,
+        );
+      }
+      if (mounted && _locationError != null) {
+        setState(() => _locationError = null);
+      }
+    } catch (error) {
+      if (mounted) {
+        final message = error.toString().replaceFirst('Bad state: ', '');
+        if (_locationError != message) {
+          setState(() => _locationError = message);
+        }
+      }
+      _locationTimer?.cancel();
+      _locationTimer = null;
+    } finally {
+      _publishingLocation = false;
     }
   }
 
@@ -463,6 +535,12 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen> {
             isSaving: _availabilitySaving,
             onChanged: _setAvailability,
           ),
+          if (_locationError != null) ...[
+            const SizedBox(height: 8),
+            _ErrorNotice(
+              message: 'Live location is not updating: $_locationError',
+            ),
+          ],
           const SizedBox(height: 14),
           Row(
             children: [
@@ -519,7 +597,7 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen> {
           ],
           const SizedBox(height: 6),
           Text(
-            'Assignments refresh automatically while this panel is open.',
+            'When a delivery is on the way, your location is shared with that customer while this panel is open.',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: AppConstants.textMuted.withValues(alpha: 0.9),
@@ -854,8 +932,7 @@ class _CashHandoverDueCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.storefront_outlined,
-              color: AppConstants.primaryDark),
+          Icon(Icons.storefront_outlined, color: AppConstants.primaryDark),
           const SizedBox(width: 11),
           const Expanded(
             child: Text(

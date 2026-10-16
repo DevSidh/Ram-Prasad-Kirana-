@@ -3,8 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../../core/constants.dart';
 import '../../models/product.dart';
+import '../../models/wholesale_item.dart';
 import '../../providers/cart_provider.dart';
-import '../../providers/product_provider.dart';
+import '../../services/api_service.dart';
 import '../../widgets/product_thumbnail.dart';
 
 class WholesaleScreen extends StatefulWidget {
@@ -16,7 +17,50 @@ class WholesaleScreen extends StatefulWidget {
 
 class _WholesaleScreenState extends State<WholesaleScreen> {
   final TextEditingController _searchController = TextEditingController();
+  List<Product> _products = const [];
+  bool _loading = true;
+  String? _error;
   String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWholesaleItems();
+  }
+
+  Future<void> _loadWholesaleItems() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final response = await context.read<ApiService>().get(
+            '/wholesale',
+            queryParams: const {'page': '1', 'limit': '100'},
+          );
+      if (!mounted) return;
+      if (response is! Map<String, dynamic> || response['data'] is! List) {
+        throw const FormatException(
+          'The server returned an invalid wholesale catalog.',
+        );
+      }
+      final items = (response['data'] as List)
+          .whereType<Map<String, dynamic>>()
+          .map(WholesaleItem.fromJson)
+          .map((item) => item.toProduct())
+          .toList(growable: false);
+      setState(() {
+        _products = items;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString().replaceFirst('Exception: ', '');
+        _loading = false;
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -26,11 +70,9 @@ class _WholesaleScreenState extends State<WholesaleScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final catalog = context.watch<ProductProvider>();
     final cart = context.watch<CartProvider>();
     final query = _query.toLowerCase();
-    final products = catalog.allProducts.where((product) {
-      if (!product.isWholesale) return false;
+    final products = _products.where((product) {
       return query.isEmpty ||
           product.name.toLowerCase().contains(query) ||
           (product.brand?.toLowerCase().contains(query) ?? false) ||
@@ -113,8 +155,29 @@ class _WholesaleScreenState extends State<WholesaleScreen> {
             ),
           ),
           Expanded(
-            child: catalog.isLoading && catalog.allProducts.isEmpty
+            child: _loading
                 ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(28),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.cloud_off_outlined,
+                                size: 42,
+                              ),
+                              const SizedBox(height: 10),
+                              Text(_error!, textAlign: TextAlign.center),
+                              TextButton(
+                                onPressed: _loadWholesaleItems,
+                                child: const Text('Try again'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
                 : products.isEmpty
                     ? Center(
                         child: Padding(
@@ -123,29 +186,21 @@ class _WholesaleScreenState extends State<WholesaleScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
-                                catalog.errorMessage == null
-                                    ? Icons.inventory_2_outlined
-                                    : Icons.cloud_off_outlined,
+                                Icons.inventory_2_outlined,
                                 size: 42,
                                 color: AppConstants.textMuted,
                               ),
                               const SizedBox(height: 10),
                               Text(
-                                catalog.errorMessage ??
-                                    (_query.isEmpty
-                                        ? 'Wholesale products will appear here when the store adds them.'
-                                        : 'No wholesale products match "$_query".'),
+                                _query.isEmpty
+                                    ? 'Wholesale products will appear here when the store adds them.'
+                                    : 'No wholesale products match "$_query".',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   color: AppConstants.textMuted,
                                   fontSize: 13,
                                 ),
                               ),
-                              if (catalog.errorMessage != null)
-                                TextButton(
-                                  onPressed: catalog.loadCatalog,
-                                  child: const Text('Try again'),
-                                ),
                             ],
                           ),
                         ),
@@ -153,18 +208,16 @@ class _WholesaleScreenState extends State<WholesaleScreen> {
                     : ListView.separated(
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                         itemCount: products.length,
-                        separatorBuilder: (_, __) =>
-                            const SizedBox(height: 10),
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
                         itemBuilder: (context, index) => _WholesaleProductCard(
                           product: products[index],
-                          cartQuantity:
-                              cart.items['${products[index].id}:wholesale']
-                                      ?.quantity ??
-                                  0,
+                          cartQuantity: cart
+                                  .items['${products[index].id}:wholesale']
+                                  ?.quantity ??
+                              0,
                           onAdd: () {
                             final product = products[index];
-                            final minimum =
-                                product.wholesaleMinimumQuantity;
+                            final minimum = product.wholesaleMinimumQuantity;
                             try {
                               cart.addItem(product, minimum, true);
                             } on StateError catch (error) {
@@ -199,6 +252,7 @@ class _WholesaleProductCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final unitPrice = product.wholesalePrice ?? product.price;
     final minimum = product.wholesaleMinimumQuantity;
+    final hasMinimum = minimum > 1;
     final outOfStock = product.stock < minimum;
     return Container(
       padding: const EdgeInsets.all(12),
@@ -243,11 +297,10 @@ class _WholesaleProductCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  'Minimum $minimum × ${product.weight} · ${product.stock} available',
+                  '${hasMinimum ? 'Minimum $minimum × ${product.weight} · ' : ''}${product.stock} available',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style:
-                      TextStyle(color: AppConstants.textMuted, fontSize: 10),
+                  style: TextStyle(color: AppConstants.textMuted, fontSize: 10),
                 ),
                 const SizedBox(height: 7),
                 Text(
@@ -278,7 +331,9 @@ class _WholesaleProductCard extends StatelessWidget {
                     ? '$cartQuantity in basket'
                     : outOfStock
                         ? 'Unavailable'
-                        : 'Add $minimum',
+                        : hasMinimum
+                            ? 'Add $minimum'
+                            : 'Add',
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 10),
               ),
