@@ -163,6 +163,7 @@ class AdminProduct {
   final int stock;
   final bool isActive;
   final bool isFeatured;
+  final bool isVendingDrink;
 
   const AdminProduct({
     required this.id,
@@ -185,6 +186,7 @@ class AdminProduct {
     required this.stock,
     required this.isActive,
     required this.isFeatured,
+    this.isVendingDrink = false,
   });
 
   factory AdminProduct.fromJson(Map<String, dynamic> json) {
@@ -225,12 +227,14 @@ class AdminProduct {
       stock: _asInt(stockValue),
       isActive: json['isActive'] as bool? ?? true,
       isFeatured: json['isFeatured'] as bool? ?? false,
+      isVendingDrink: json['isVendingDrink'] as bool? ?? false,
     );
   }
 
   AdminProduct copyWith({
     String? sku,
     bool? isFeatured,
+    bool? isVendingDrink,
     String? imageUrl,
     double? price,
     double? originalPrice,
@@ -258,6 +262,7 @@ class AdminProduct {
       stock: stock,
       isActive: isActive,
       isFeatured: isFeatured ?? this.isFeatured,
+      isVendingDrink: isVendingDrink ?? this.isVendingDrink,
     );
   }
 }

@@ -12,6 +12,7 @@ class AuthProvider extends ChangeNotifier {
   String? _token;
   bool _isLoading = false;
   String? _errorMessage;
+  String? _pendingVerificationEmail;
 
   late final Future<void> sessionReady;
 
@@ -24,6 +25,7 @@ class AuthProvider extends ChangeNotifier {
   bool get isAuthenticated => _token != null;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+  String? get pendingVerificationEmail => _pendingVerificationEmail;
 
   Future<void> loadSavedSession() async {
     final prefs = await SharedPreferences.getInstance();
@@ -90,8 +92,7 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> register(
-      String fullName, String email, String phone, String password) async {
+  Future<bool> register(String fullName, String email, String password) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -100,14 +101,46 @@ class AuthProvider extends ChangeNotifier {
       final response = await _apiService.post('/auth/register', {
         'fullName': fullName.trim(),
         'email': email.trim(),
-        'phone': phone.trim(),
         'password': password,
       });
+      if (response is! Map<String, dynamic> ||
+          response['requiresEmailVerification'] != true ||
+          response['email'] is! String) {
+        throw Exception('Invalid registration response from server');
+      }
 
+      _pendingVerificationEmail = response['email'] as String;
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _isLoading = false;
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<void> requestEmailVerification(String email) async {
+    await _apiService.post('/auth/email-verification/request', {
+      'email': email.trim(),
+    });
+  }
+
+  Future<bool> verifyEmail(String email, String code) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final response = await _apiService.post(
+        '/auth/email-verification/confirm',
+        {'email': email.trim(), 'code': code.trim()},
+      );
       final token = response['token'] as String?;
       final userData = response['user'] as Map<String, dynamic>?;
       if (token == null || userData == null) {
-        throw Exception('Invalid registration response from server');
+        throw Exception('Invalid email verification response from server');
       }
 
       _token = token;
@@ -115,24 +148,25 @@ class AuthProvider extends ChangeNotifier {
         id: userData['id'] as String? ??
             'user-${DateTime.now().millisecondsSinceEpoch}',
         email: userData['email'] as String? ?? email,
-        fullName: userData['fullName'] as String? ?? fullName,
-        phone: userData['phone'] as String? ?? phone,
+        fullName: userData['fullName'] as String? ?? 'Customer',
+        phone: userData['phone'] as String?,
         avatarUrl: _resolveAvatarUrl(userData['avatarUrl']),
         role: (userData['role'] as String? ?? 'CUSTOMER').toUpperCase(),
       );
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(AppConstants.keyToken, _token!);
-      await prefs.setString(
-          AppConstants.keyUser, jsonEncode(_currentUser!.toJson()));
-
-      _apiService.setAuthToken(_token!);
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString(AppConstants.keyToken, token);
+      await preferences.setString(
+        AppConstants.keyUser,
+        jsonEncode(_currentUser!.toJson()),
+      );
+      _apiService.setAuthToken(token);
+      _pendingVerificationEmail = null;
       _isLoading = false;
       notifyListeners();
       return true;
-    } catch (e) {
+    } catch (error) {
       _isLoading = false;
-      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      _errorMessage = error.toString().replaceFirst('Exception: ', '');
       notifyListeners();
       return false;
     }

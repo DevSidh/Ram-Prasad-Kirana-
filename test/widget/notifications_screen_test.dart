@@ -38,7 +38,10 @@ class _NotificationsApi extends ApiService {
   }
 
   @override
-  Future<dynamic> delete(String endpoint) async {
+  Future<dynamic> delete(
+    String endpoint, {
+    Map<String, dynamic>? body,
+  }) async {
     deletedEndpoint = endpoint;
     if (failDelete) throw Exception('Delete request failed.');
     if (endpoint == '/account/notifications') {

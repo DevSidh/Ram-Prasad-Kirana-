@@ -25,6 +25,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
   String? _deliveryError;
   String? _savingId;
   bool _loading = true;
+  bool _clearingItemDetails = false;
   int _pageNumber = 1;
 
   static const _statuses = <(String, String)>[
@@ -235,6 +236,90 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
     }
   }
 
+  Future<void> _clearAllOrderItemDetails() async {
+    if (_clearingItemDetails) return;
+    var confirmationText = '';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Clear all order item details?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'This permanently removes product line items from every '
+                'order. Orders, totals, payments, delivery records, and '
+                'status history will remain.',
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                key: const ValueKey('clear-order-items-confirmation'),
+                autofocus: true,
+                textCapitalization: TextCapitalization.characters,
+                decoration: const InputDecoration(
+                  labelText: 'Type CONFIRM DELETE',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (value) {
+                  confirmationText = value;
+                  setDialogState(() {});
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: confirmationText == 'CONFIRM DELETE'
+                  ? () => Navigator.pop(dialogContext, true)
+                  : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error,
+                foregroundColor: Theme.of(context).colorScheme.onError,
+              ),
+              child: const Text('Delete item details'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      setState(() {
+        _clearingItemDetails = true;
+        _error = null;
+      });
+      final deletedItems = await _adminApi.clearAllOrderItemDetails(
+        confirmation: confirmationText,
+      );
+      if (!mounted) return;
+      setState(() => _clearingItemDetails = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            deletedItems == 0
+                ? 'There were no order item details to delete.'
+                : 'Deleted item details for $deletedItems '
+                    '${deletedItems == 1 ? 'order item' : 'order items'}.',
+          ),
+        ),
+      );
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _clearingItemDetails = false;
+        _error = error.toString().replaceFirst('Exception: ', '');
+      });
+    }
+  }
+
   String _statusLabel(String status) {
     for (final entry in _statuses) {
       if (entry.$1 == status) return entry.$2;
@@ -251,9 +336,28 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
         children: [
-          const Text(
-            'Orders',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Orders',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+                ),
+              ),
+              IconButton(
+                key: const ValueKey('clear-all-order-item-details'),
+                tooltip: 'Delete all order item details',
+                onPressed:
+                    _clearingItemDetails ? null : _clearAllOrderItemDetails,
+                color: Theme.of(context).colorScheme.error,
+                icon: _clearingItemDetails
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.delete_sweep_outlined),
+              ),
+            ],
           ),
           const SizedBox(height: 4),
           Text(

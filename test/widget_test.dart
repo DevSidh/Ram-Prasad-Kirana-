@@ -22,7 +22,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  testWidgets('customer navigation switches smoothly between five destinations',
+  testWidgets('customer navigation switches smoothly between six destinations',
       (tester) async {
     tester.view.physicalSize = const Size(320, 780);
     tester.view.devicePixelRatio = 1;
@@ -69,7 +69,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
 
-    for (final label in ['Home', 'Categories', 'Search', 'Cart', 'Profile']) {
+    for (final label in [
+      'Home',
+      'Vending',
+      'Categories',
+      'Search',
+      'Cart',
+      'Profile'
+    ]) {
       final tab = find.byKey(ValueKey('nav-tab-$label'));
       expect(tab, findsOneWidget);
       expect(
@@ -88,14 +95,14 @@ void main() {
     expectIndicatorWithinTab('Home');
     expect(find.byKey(const ValueKey('floating-nav-capsule')), findsOneWidget);
     final capsuleFinder = find.byKey(const ValueKey('floating-nav-capsule'));
-    expect(tester.getSize(capsuleFinder), const Size(294, 62));
+    expect(tester.getSize(capsuleFinder), const Size(312, 66));
     void expectTransparentNavigationArea() {
       final navigationArea = tester.widget<Positioned>(
         find.byKey(const ValueKey('transparent-nav-area')),
       );
       expect(navigationArea.left, 0);
       expect(navigationArea.right, 0);
-      expect(navigationArea.height, 62);
+      expect(navigationArea.height, 66);
       expect(
         tester.getRect(find.byKey(const ValueKey('transparent-nav-area'))),
         Rect.fromLTWH(
@@ -103,9 +110,9 @@ void main() {
           tester.view.physicalSize.height / tester.view.devicePixelRatio -
               MediaQuery.paddingOf(tester.element(capsuleFinder)).bottom -
               18 -
-              62,
+              66,
           tester.view.physicalSize.width / tester.view.devicePixelRatio,
-          62,
+          66,
         ),
       );
       final capsule = tester.widget<ClipRRect>(capsuleFinder);
@@ -186,7 +193,10 @@ void main() {
     for (final width in [360.0, 412.0]) {
       tester.view.physicalSize = Size(width, 780);
       await tester.pumpAndSettle();
-      expect(tester.getSize(capsuleFinder), const Size(294, 62));
+      expect(
+        tester.getSize(capsuleFinder),
+        Size((width - 8).clamp(0.0, 360.0).toDouble(), 66),
+      );
       expectTransparentNavigationArea();
     }
     tester.view.physicalSize = const Size(320, 780);
@@ -204,7 +214,7 @@ void main() {
             find.byKey(const ValueKey('main-bottom-nav-pages')),
           )
           .index,
-      1,
+      2,
     );
     await tester.pump(const Duration(milliseconds: 120));
     final categoriesBounds =
@@ -325,7 +335,7 @@ void main() {
           ),
           ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ],
-        child: const MaterialApp(home: MainBottomNav(initialIndex: 3)),
+        child: const MaterialApp(home: MainBottomNav(initialIndex: 4)),
       ),
     );
     await tester.pumpAndSettle();

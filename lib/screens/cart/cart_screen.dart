@@ -6,6 +6,7 @@ import '../../providers/cart_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/store_animation.dart';
 import '../../widgets/product_thumbnail.dart';
 import '../checkout/checkout_screen.dart';
 
@@ -44,26 +45,11 @@ class _CartScreenState extends State<CartScreen> {
           child: cart.isLoading
               ? const Center(child: CircularProgressIndicator())
               : cart.syncError != null
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.cloud_off_outlined, size: 40),
-                            const SizedBox(height: 12),
-                            Text(
-                              cart.syncError!,
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 8),
-                            TextButton(
-                              onPressed: cart.retrySync,
-                              child: const Text('Retry'),
-                            ),
-                          ],
-                        ),
-                      ),
+                  ? StorePageError(
+                      title: 'Basket unavailable',
+                      message: cart.syncError!,
+                      retryLabel: 'Retry',
+                      onRetry: cart.retrySync,
                     )
                   : EmptyState(
                       icon: Icons.shopping_basket_outlined,

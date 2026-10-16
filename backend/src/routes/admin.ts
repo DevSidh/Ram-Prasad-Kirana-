@@ -20,6 +20,10 @@ import {
   getStoreAvailability,
   storeHoursSchema,
 } from '../services/store-hours.js';
+import {
+  clearAllOrderItemDetails,
+  clearOrderItemsInput,
+} from '../services/order-maintenance.js';
 
 const categoryInput = z.object({
   name: z.string().trim().min(1).max(120).optional(),
@@ -57,6 +61,7 @@ const productFields = {
   isOrganic: z.boolean(),
   isFeatured: z.boolean(),
   isBestSeller: z.boolean(),
+  isVendingDrink: z.boolean(),
   isActive: z.boolean(),
   stock: z.number().int().nonnegative(),
 };
@@ -89,6 +94,7 @@ const updateProductInput = z.object({
   isOrganic: productFields.isOrganic.optional(),
   isFeatured: productFields.isFeatured.optional(),
   isBestSeller: productFields.isBestSeller.optional(),
+  isVendingDrink: productFields.isVendingDrink.optional(),
   isActive: productFields.isActive.optional(),
   stock: productFields.stock.optional(),
 }).strict().refine((value) => Object.keys(value).length > 0, 'At least one field is required');
@@ -100,6 +106,9 @@ export const productsQuery = z.object({
   availability: z.enum(['available', 'unavailable', 'in_stock', 'out_of_stock']).optional(),
   stock: z.enum(['in_stock', 'out_of_stock', 'low_stock', 'restock']).optional(),
   wholesale: z.enum(['true', 'false'])
+    .transform((value) => value === 'true')
+    .optional(),
+  vendingDrink: z.enum(['true', 'false'])
     .transform((value) => value === 'true')
     .optional(),
   sort: z.enum([
@@ -289,6 +298,7 @@ const productSelect = {
   isOrganic: true,
   isFeatured: true,
   isBestSeller: true,
+  isVendingDrink: true,
   isActive: true,
   createdAt: true,
   updatedAt: true,
@@ -814,6 +824,21 @@ export function createAdminRouter(
         })),
         pagination: { page, pageSize, total },
       });
+
+    } catch (error) {
+      sendAdminError(error, res);
+    }
+  });
+
+  router.delete('/orders/items', async (req, res) => {
+    const parsed = clearOrderItemsInput.safeParse(req.body);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+    try {
+      const deletedItems = await clearAllOrderItemDetails(
+        prisma,
+        parsed.data.confirmation,
+      );
+      return res.json({ deletedItems });
     } catch (error) {
       sendAdminError(error, res);
     }
@@ -1725,6 +1750,9 @@ export function createAdminRouter(
       }
       if (query.wholesale !== undefined) {
         and.push({ isWholesale: query.wholesale });
+      }
+      if (query.vendingDrink !== undefined) {
+        and.push({ isVendingDrink: query.vendingDrink });
       }
 
       const where: Prisma.ProductWhereInput = and.length ? { AND: and } : {};

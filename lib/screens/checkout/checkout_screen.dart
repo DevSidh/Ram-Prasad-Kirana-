@@ -19,6 +19,7 @@ import '../../services/address_service.dart';
 import '../../services/api_service.dart';
 import '../profile/address_book_screen.dart';
 import '../order/order_confirmation_screen.dart';
+import '../../widgets/store_animation.dart';
 
 class CheckoutScreen extends StatefulWidget {
   const CheckoutScreen({super.key});
@@ -667,213 +668,288 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         AppConstants.defaultDeliveryFee -
         (_couponMatchesSubtotal(couponEligibleSubtotal) ? _couponDiscount : 0);
 
-    return Scaffold(
-      backgroundColor: AppConstants.backgroundFor(isDark),
-      extendBody: true,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: Text(context.tr('Express Checkout')),
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        forceMaterialTransparency: true,
-      ),
-      body: AppBackground(
-        child: Padding(
-          padding: EdgeInsets.only(
-            top: MediaQuery.paddingOf(context).top + kToolbarHeight,
-          ),
-          child: Stepper(
-            currentStep: _currentStep,
-            onStepContinue: () {
-              if (_canAdvanceStep) setState(() => _currentStep++);
-            },
-            onStepCancel: () {
-              if (_currentStep > 0) setState(() => _currentStep--);
-            },
-            controlsBuilder: (context, details) {
-              return Padding(
-                padding: const EdgeInsets.only(top: 16),
-                child: Row(
-                  children: [
-                    if (_currentStep < 3)
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed:
-                              _canAdvanceStep ? details.onStepContinue : null,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppConstants.primary,
-                            shape: const StadiumBorder(),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                          ),
-                          child: Text(context.tr('Continue')),
-                        ),
-                      ),
-                    if (_currentStep > 0) ...[
-                      if (_currentStep < 3) const SizedBox(width: 12),
-                      OutlinedButton(
-                        onPressed: details.onStepCancel,
-                        style: OutlinedButton.styleFrom(
-                          shape: const StadiumBorder(),
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 14,
-                            horizontal: 18,
-                          ),
-                        ),
-                        child: Text(context.tr('Back')),
-                      ),
-                    ],
-                  ],
-                ),
-              );
-            },
-            steps: [
-              // Step 1: Address
-              Step(
-                title: const Text('Delivery Address',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                isActive: _currentStep >= 0,
-                state:
-                    _currentStep > 0 ? StepState.complete : StepState.indexed,
-                content: _buildAddressCard(),
-              ),
-
-              Step(
-                title: const Text('Delivery Timing',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                isActive: _currentStep >= 1,
-                state:
-                    _currentStep > 1 ? StepState.complete : StepState.indexed,
-                content: _buildDeliveryTiming(),
-              ),
-
-              // Step 3: Payment
-              Step(
-                title: const Text('Payment Method',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                isActive: _currentStep >= 2,
-                state:
-                    _currentStep > 2 ? StepState.complete : StepState.indexed,
-                content: Column(
-                  children: [
-                    _buildSelectionRow(
-                      value: 'COD',
-                      selectedValue: _selectedPaymentMethod,
-                      title: 'Cash on Delivery (COD)',
-                      subtitle: 'Pay cash or QR scan upon arrival',
-                      activeColor: AppConstants.primary,
-                      secondary: const Icon(Icons.payments_outlined,
-                          color: AppConstants.primary),
-                      onChanged: (value) =>
-                          setState(() => _selectedPaymentMethod = value),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Step 4: Review
-              Step(
-                title: const Text('Order Summary',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                isActive: _currentStep >= 3,
-                content: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppConstants.surfaceLight,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppConstants.borderLight),
-                  ),
-                  child: Column(
-                    children: [
-                      _buildCouponEntry(couponEligibleSubtotal),
-                      const SizedBox(height: 18),
-                      _buildSummaryRow(
-                        'Basket Items',
-                        '${cart.itemCount} items',
-                      ),
-                      const SizedBox(height: 6),
-                      _buildSummaryRow(
-                        'Subtotal',
-                        '${AppConstants.currencySymbol}${cart.subtotal.toInt()}',
-                      ),
-                      const SizedBox(height: 6),
-                      _buildSummaryRow(
-                        'Delivery',
-                        '${AppConstants.currencySymbol}${AppConstants.defaultDeliveryFee.toInt()}',
-                      ),
-                      if (_couponMatchesSubtotal(couponEligibleSubtotal) &&
-                          _couponDiscount > 0) ...[
-                        const SizedBox(height: 6),
-                        _buildSummaryRow(
-                          context.tr('Coupon discount'),
-                          '-${AppConstants.currencySymbol}${_couponDiscount.toStringAsFixed(_couponDiscount.truncateToDouble() == _couponDiscount ? 0 : 2)}',
-                          labelColor: Colors.green.shade700,
-                          valueColor: Colors.green.shade700,
-                        ),
-                      ],
-                      const Divider(height: 20),
-                      _buildSummaryRow(
-                        'Grand Total',
-                        '${AppConstants.currencySymbol}${(cart.subtotal + AppConstants.defaultDeliveryFee - (_couponMatchesSubtotal(couponEligibleSubtotal) ? _couponDiscount : 0)).toInt()}',
-                        isTotal: true,
-                        labelColor: AppConstants.textDark,
-                        valueColor: AppConstants.primaryDark,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
+    return PopScope(
+      canPop: !_isSubmitting,
+      child: Scaffold(
+        backgroundColor: AppConstants.backgroundFor(isDark),
+        extendBody: true,
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          title: Text(context.tr('Express Checkout')),
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          forceMaterialTransparency: true,
         ),
-      ),
-      bottomNavigationBar: Material(
-        type: MaterialType.transparency,
-        elevation: 0,
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: tokens.surfaceGlass,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: tokens.glassBorder),
-              ),
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            AppBackground(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                padding: EdgeInsets.only(
+                  top: MediaQuery.paddingOf(context).top + kToolbarHeight,
+                ),
+                child: Stepper(
+                  currentStep: _currentStep,
+                  onStepContinue: () {
+                    if (_canAdvanceStep) setState(() => _currentStep++);
+                  },
+                  onStepCancel: () {
+                    if (_currentStep > 0) setState(() => _currentStep--);
+                  },
+                  controlsBuilder: (context, details) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 16),
+                      child: Row(
                         children: [
-                          Text(
-                            context.tr('Total'),
-                            style:
-                                Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: tokens.textSecondary,
-                                    ),
-                          ),
-                          Text(
-                            '${AppConstants.currencySymbol}${total.toStringAsFixed(0)}',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleLarge
-                                ?.copyWith(fontWeight: FontWeight.w800),
+                          if (_currentStep < 3)
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: _canAdvanceStep
+                                    ? details.onStepContinue
+                                    : null,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppConstants.primary,
+                                  shape: const StadiumBorder(),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 14),
+                                ),
+                                child: Text(context.tr('Continue')),
+                              ),
+                            ),
+                          if (_currentStep > 0) ...[
+                            if (_currentStep < 3) const SizedBox(width: 12),
+                            OutlinedButton(
+                              onPressed: details.onStepCancel,
+                              style: OutlinedButton.styleFrom(
+                                shape: const StadiumBorder(),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                  horizontal: 18,
+                                ),
+                              ),
+                              child: Text(context.tr('Back')),
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  },
+                  steps: [
+                    // Step 1: Address
+                    Step(
+                      title: const Text('Delivery Address',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      isActive: _currentStep >= 0,
+                      state: _currentStep > 0
+                          ? StepState.complete
+                          : StepState.indexed,
+                      content: _buildAddressCard(),
+                    ),
+
+                    Step(
+                      title: const Text('Delivery Timing',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      isActive: _currentStep >= 1,
+                      state: _currentStep > 1
+                          ? StepState.complete
+                          : StepState.indexed,
+                      content: _buildDeliveryTiming(),
+                    ),
+
+                    // Step 3: Payment
+                    Step(
+                      title: const Text('Payment Method',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      isActive: _currentStep >= 2,
+                      state: _currentStep > 2
+                          ? StepState.complete
+                          : StepState.indexed,
+                      content: Column(
+                        children: [
+                          _buildSelectionRow(
+                            value: 'COD',
+                            selectedValue: _selectedPaymentMethod,
+                            title: 'Cash on Delivery (COD)',
+                            subtitle: 'Pay cash or QR scan upon arrival',
+                            activeColor: AppConstants.primary,
+                            secondary: const Icon(Icons.payments_outlined,
+                                color: AppConstants.primary),
+                            onChanged: (value) =>
+                                setState(() => _selectedPaymentMethod = value),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      width: 160,
-                      child: PrimaryButton(
-                        label: context.tr('Place order'),
-                        icon: Icons.check_rounded,
-                        isLoading: _isSubmitting,
-                        onPressed: _canPlaceOrder ? _handlePlaceOrder : null,
+
+                    // Step 4: Review
+                    Step(
+                      title: const Text('Order Summary',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      isActive: _currentStep >= 3,
+                      content: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppConstants.surfaceLight,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppConstants.borderLight),
+                        ),
+                        child: Column(
+                          children: [
+                            _buildCouponEntry(couponEligibleSubtotal),
+                            const SizedBox(height: 18),
+                            _buildSummaryRow(
+                              'Basket Items',
+                              '${cart.itemCount} items',
+                            ),
+                            const SizedBox(height: 6),
+                            _buildSummaryRow(
+                              'Subtotal',
+                              '${AppConstants.currencySymbol}${cart.subtotal.toInt()}',
+                            ),
+                            const SizedBox(height: 6),
+                            _buildSummaryRow(
+                              'Delivery',
+                              '${AppConstants.currencySymbol}${AppConstants.defaultDeliveryFee.toInt()}',
+                            ),
+                            if (_couponMatchesSubtotal(
+                                    couponEligibleSubtotal) &&
+                                _couponDiscount > 0) ...[
+                              const SizedBox(height: 6),
+                              _buildSummaryRow(
+                                context.tr('Coupon discount'),
+                                '-${AppConstants.currencySymbol}${_couponDiscount.toStringAsFixed(_couponDiscount.truncateToDouble() == _couponDiscount ? 0 : 2)}',
+                                labelColor: Colors.green.shade700,
+                                valueColor: Colors.green.shade700,
+                              ),
+                            ],
+                            const Divider(height: 20),
+                            _buildSummaryRow(
+                              'Grand Total',
+                              '${AppConstants.currencySymbol}${(cart.subtotal + AppConstants.defaultDeliveryFee - (_couponMatchesSubtotal(couponEligibleSubtotal) ? _couponDiscount : 0)).toInt()}',
+                              isTotal: true,
+                              labelColor: AppConstants.textDark,
+                              valueColor: AppConstants.primaryDark,
+                            ),
+                          ],
+                        ),
                       ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (_isSubmitting) const _OrderPlacementOverlay(),
+          ],
+        ),
+        bottomNavigationBar: Material(
+          type: MaterialType.transparency,
+          elevation: 0,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: tokens.surfaceGlass,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: tokens.glassBorder),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              context.tr('Total'),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color: tokens.textSecondary,
+                                  ),
+                            ),
+                            Text(
+                              '${AppConstants.currencySymbol}${total.toStringAsFixed(0)}',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 160,
+                        child: PrimaryButton(
+                          label: context.tr('Place order'),
+                          icon: Icons.check_rounded,
+                          isLoading: _isSubmitting,
+                          onPressed: _canPlaceOrder ? _handlePlaceOrder : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OrderPlacementOverlay extends StatelessWidget {
+  const _OrderPlacementOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Stack(
+      children: [
+        const Positioned.fill(
+          child: ModalBarrier(
+            dismissible: false,
+            color: Color(0x99000000),
+          ),
+        ),
+        Center(
+          child: Semantics(
+            liveRegion: true,
+            label: 'Placing your order',
+            child: Material(
+              color: colors.surface,
+              borderRadius: BorderRadius.circular(24),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 28,
+                  vertical: 22,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const StoreAnimation(
+                      assetPath: 'animations/shopping_cart.lottie',
+                      size: 180,
+                      semanticLabel: 'Shopping cart in motion',
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Placing your order',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Please wait while we confirm it with the store.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
                 ),
@@ -881,7 +957,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 }

@@ -175,11 +175,18 @@ class ApiService {
     }
   }
 
-  Future<dynamic> delete(String endpoint) async {
+  Future<dynamic> delete(
+    String endpoint, {
+    Map<String, dynamic>? body,
+  }) async {
     try {
       final uri = Uri.parse('$baseUrl$endpoint');
       final response = await _client
-          .delete(uri, headers: _headers())
+          .delete(
+            uri,
+            headers: _headers(),
+            body: body == null ? null : jsonEncode(body),
+          )
           .timeout(const Duration(seconds: 15));
       return _processResponse(response);
     } on ApiResponseException {

@@ -6,6 +6,7 @@ import '../../models/address.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/address_service.dart';
 import '../../services/api_service.dart';
+import '../../widgets/store_animation.dart';
 import 'address_map_picker.dart';
 
 class AddressBookScreen extends StatefulWidget {
@@ -538,21 +539,10 @@ class _AddressError extends StatelessWidget {
   const _AddressError({required this.message, required this.onRetry});
 
   @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(message, textAlign: TextAlign.center),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Try again'),
-              ),
-            ],
-          ),
-        ),
+  Widget build(BuildContext context) => StorePageError(
+        title: 'Addresses unavailable',
+        message: message,
+        retryLabel: 'Try again',
+        onRetry: onRetry,
       );
 }

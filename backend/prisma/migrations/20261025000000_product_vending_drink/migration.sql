@@ -1,0 +1,2 @@
+ALTER TABLE "Product"
+ADD COLUMN "isVendingDrink" BOOL NOT NULL DEFAULT false;

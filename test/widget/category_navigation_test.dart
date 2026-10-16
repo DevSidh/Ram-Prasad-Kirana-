@@ -148,7 +148,7 @@ void main() {
           ),
           ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ],
-        child: const MaterialApp(home: MainBottomNav(initialIndex: 1)),
+        child: const MaterialApp(home: MainBottomNav(initialIndex: 2)),
       ),
     );
     await tester.pumpAndSettle();

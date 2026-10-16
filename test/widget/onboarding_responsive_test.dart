@@ -23,10 +23,37 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Skip'), findsOneWidget);
+      expect(find.text('Checked Before It Leaves'), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is Image &&
+              widget.image is AssetImage &&
+              (widget.image as AssetImage).assetName ==
+                  'assets/onboarding/onboarding_verify_scan.png',
+        ),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     }
 
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
+  });
+
+  testWidgets('onboarding presents the three illustrated delivery steps',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: OnboardingScreen()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Checked Before It Leaves'), findsOneWidget);
+    await tester.tap(find.text('Next'));
+    await tester.pumpAndSettle();
+    expect(find.text('Packed Fresh, Dispatched Fast'), findsOneWidget);
+
+    await tester.tap(find.text('Next'));
+    await tester.pumpAndSettle();
+    expect(find.text('Handed to You, Right at the Door'), findsOneWidget);
+    expect(find.text('Get Started'), findsOneWidget);
   });
 }

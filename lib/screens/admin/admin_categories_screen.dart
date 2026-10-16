@@ -8,6 +8,7 @@ import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
 import '../../widgets/product_thumbnail.dart';
+import '../../widgets/store_animation.dart';
 
 class AdminCategoriesScreen extends StatefulWidget {
   final ApiService api;
@@ -502,22 +503,11 @@ class _LoadError extends StatelessWidget {
   const _LoadError({required this.message, required this.onRetry});
 
   @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.cloud_off_outlined, size: 40, color: AppConstants.textMuted),
-              const SizedBox(height: 12),
-              const Text('Categories unavailable', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
-              const SizedBox(height: 6),
-              Text(message, textAlign: TextAlign.center, style: TextStyle(color: AppConstants.textMuted)),
-              const SizedBox(height: 16),
-              FilledButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: const Text('Try again')),
-            ],
-          ),
-        ),
+  Widget build(BuildContext context) => StorePageError(
+        title: 'Categories unavailable',
+        message: message,
+        retryLabel: 'Try again',
+        onRetry: onRetry,
       );
 }
 

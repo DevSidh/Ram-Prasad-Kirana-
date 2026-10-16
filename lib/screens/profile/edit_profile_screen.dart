@@ -58,7 +58,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final email = context.watch<AuthProvider>().currentUser?.email ?? '';
+    final user = context.watch<AuthProvider>().currentUser;
+    final email = user?.email ?? '';
     context.watch<ThemeProvider?>();
     return Scaffold(
       appBar: AppBar(title: const Text('Edit profile')),
@@ -110,17 +111,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   TextFormField(
                     controller: _phone,
                     keyboardType: TextInputType.phone,
+                    readOnly: true,
                     decoration: const InputDecoration(
                       labelText: 'Phone number (optional)',
                       prefixIcon: Icon(Icons.phone_outlined),
+                      helperText:
+                          'Phone number changes will be available after SMS verification is configured.',
                     ),
-                    validator: (value) {
-                      final phone = value?.trim() ?? '';
-                      if (phone.isNotEmpty && phone.length < 7) {
-                        return 'Enter a valid phone number';
-                      }
-                      return null;
-                    },
                   ),
                   const SizedBox(height: 24),
                   FilledButton(

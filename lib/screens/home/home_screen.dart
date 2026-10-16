@@ -526,78 +526,292 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               RefreshIndicator(
                 onRefresh: () => _refreshHome(productProvider),
-                child: CustomScrollView(
-                  controller: _scrollController,
-                  physics: const BouncingScrollPhysics(
-                    parent: AlwaysScrollableScrollPhysics(),
-                  ),
-                  slivers: [
-                    SliverToBoxAdapter(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildCollapsingHeader(
-                            greeting,
-                            userName,
-                            user?.avatarUrl,
-                            auth.authToken,
-                          ),
-                          _buildAvailabilityNotice(storeAvailability),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: ValueListenableBuilder<double>(
-                              valueListenable: _scrollOffset,
-                              child: InkWell(
-                                key: const ValueKey('home-search-inline'),
-                                onTap: () {
-                                  showSearchOverlay(context);
-                                },
-                                borderRadius: BorderRadius.circular(24),
-                                child: GlassCard(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 14,
+                child: RepaintBoundary(
+                  child: CustomScrollView(
+                    controller: _scrollController,
+                    physics: const BouncingScrollPhysics(
+                      parent: AlwaysScrollableScrollPhysics(),
+                    ),
+                    slivers: [
+                      SliverToBoxAdapter(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildCollapsingHeader(
+                              greeting,
+                              userName,
+                              user?.avatarUrl,
+                              auth.authToken,
+                            ),
+                            _buildAvailabilityNotice(storeAvailability),
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
+                              child: ValueListenableBuilder<double>(
+                                valueListenable: _scrollOffset,
+                                child: InkWell(
+                                  key: const ValueKey('home-search-inline'),
+                                  onTap: () {
+                                    showSearchOverlay(context);
+                                  },
+                                  borderRadius: BorderRadius.circular(24),
+                                  child: GlassCard(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 14,
+                                    ),
+                                    radius: 24,
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.search,
+                                            color: AppConstants.primary,
+                                            size: 20),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            context
+                                                .tr('Find something fresh...'),
+                                            style: TextStyle(
+                                                color: AppConstants.textMuted,
+                                                fontSize: 13),
+                                          ),
+                                        ),
+                                        const Icon(Icons.tune_rounded,
+                                            color: AppConstants.primary,
+                                            size: 18),
+                                      ],
+                                    ),
                                   ),
-                                  radius: 24,
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.search,
-                                          color: AppConstants.primary,
-                                          size: 20),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Text(
-                                          context.tr('Find something fresh...'),
-                                          style: TextStyle(
-                                              color: AppConstants.textMuted,
-                                              fontSize: 13),
+                                ),
+                                builder: (context, offset, child) {
+                                  final visible = offset < 160;
+                                  return IgnorePointer(
+                                    ignoring: !visible,
+                                    child: Opacity(
+                                      opacity: visible ? 1 : 0,
+                                      child: child,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            if (productProvider.categories.isNotEmpty) ...[
+                              Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                                child: SectionHeader(
+                                  title: context.tr('Shop by categories'),
+                                  actionLabel: context.tr('See all'),
+                                  onAction: () {
+                                    productProvider.selectCategory('all');
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => const ProductListScreen(
+                                          categoryName: 'All products',
                                         ),
                                       ),
-                                      const Icon(Icons.tune_rounded,
-                                          color: AppConstants.primary,
-                                          size: 18),
-                                    ],
+                                    );
+                                  },
+                                ),
+                              ),
+                              SizedBox(
+                                height: 94,
+                                child: NotificationListener<ScrollNotification>(
+                                  onNotification: _snapCategoryChips,
+                                  child: ListView.separated(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16),
+                                    scrollDirection: Axis.horizontal,
+                                    physics: const BouncingScrollPhysics(),
+                                    itemCount:
+                                        productProvider.categories.length,
+                                    separatorBuilder: (_, __) =>
+                                        const SizedBox(width: 10),
+                                    itemBuilder: (context, index) {
+                                      final category =
+                                          productProvider.categories[index];
+                                      final selected = productProvider
+                                              .selectedCategorySlug ==
+                                          category.slug;
+                                      final chipKey =
+                                          _categoryChipKeys.putIfAbsent(
+                                        category.id,
+                                        GlobalKey.new,
+                                      );
+                                      return CategoryBubble(
+                                        key: chipKey,
+                                        label: context.tr(category.name),
+                                        selected: selected,
+                                        icon: category.imageUrl != null &&
+                                                category.imageUrl!.isNotEmpty
+                                            ? ClipOval(
+                                                child: ProductThumbnail(
+                                                  imageUrl: category.imageUrl!,
+                                                  size: 42,
+                                                  width: 42,
+                                                  height: 42,
+                                                  fit: BoxFit.cover,
+                                                  borderRadius:
+                                                      BorderRadius.zero,
+                                                ),
+                                              )
+                                            : Icon(
+                                                _categoryIcon(
+                                                    category.iconName,
+                                                    category.slug,
+                                                    category.name),
+                                                size: 30,
+                                                color: selected
+                                                    ? Theme.of(context)
+                                                        .colorScheme
+                                                        .onPrimary
+                                                    : Theme.of(context)
+                                                        .colorScheme
+                                                        .primary,
+                                              ),
+                                        onTap: () {
+                                          productProvider
+                                              .selectCategory(category.slug);
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) => ProductListScreen(
+                                                categoryName: category.name,
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      );
+                                    },
                                   ),
                                 ),
                               ),
-                              builder: (context, offset, child) {
-                                final visible = offset < 160;
-                                return IgnorePointer(
-                                  ignoring: !visible,
-                                  child: Opacity(
-                                    opacity: visible ? 1 : 0,
-                                    child: child,
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          if (productProvider.categories.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                            ],
                             Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
+                              child: _FeaturedProductCarousel(
+                                products: productProvider.featuredProducts,
+                                isLoading: productProvider.isLoading,
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  children: [
+                                    _HomeShortcut(
+                                      icon: Icons.favorite_rounded,
+                                      label:
+                                          '${context.tr('Saved')} ${productProvider.favoriteCount}',
+                                      selected: productProvider.favoritesOnly,
+                                      onTap: () {
+                                        productProvider.setHomeFilters(
+                                          savedOnly:
+                                              !productProvider.favoritesOnly,
+                                          bestSellersOnly: productProvider
+                                              .homeBestSellersOnly,
+                                          cheapOnly:
+                                              productProvider.homeCheapOnly,
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(width: 8),
+                                    _HomeShortcut(
+                                      icon: Icons.inventory_2_outlined,
+                                      label: context.tr('Wholesale'),
+                                      selected: false,
+                                      onTap: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                const WholesaleScreen(),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(width: 8),
+                                    _HomeShortcut(
+                                      icon: Icons.trending_up_rounded,
+                                      label: context.tr('Best sellers'),
+                                      selected:
+                                          productProvider.homeBestSellersOnly,
+                                      onTap: () {
+                                        productProvider.setHomeFilters(
+                                          savedOnly:
+                                              productProvider.favoritesOnly,
+                                          bestSellersOnly: !productProvider
+                                              .homeBestSellersOnly,
+                                          cheapOnly: false,
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(width: 8),
+                                    _HomeShortcut(
+                                      icon: Icons.local_offer_outlined,
+                                      label: context.tr('Offers'),
+                                      selected: _offersOnly,
+                                      onTap: () => setState(
+                                          () => _offersOnly = !_offersOnly),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    _HomeShortcut(
+                                      icon: Icons.replay_rounded,
+                                      label: context.tr('Reorder'),
+                                      selected: false,
+                                      onTap: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                const MyOrdersScreen(),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(width: 8),
+                                    _HomeShortcut(
+                                      icon: Icons.sell_outlined,
+                                      label: context.tr('Cheap'),
+                                      selected: productProvider.homeCheapOnly,
+                                      onTap: () {
+                                        productProvider.setHomeFilters(
+                                          savedOnly:
+                                              productProvider.favoritesOnly,
+                                          bestSellersOnly: false,
+                                          cheapOnly:
+                                              !productProvider.homeCheapOnly,
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
                               child: SectionHeader(
-                                title: context.tr('Shop by categories'),
+                                title: context.tr(
+                                  _offersOnly
+                                      ? 'Offers'
+                                      : productProvider.favoritesOnly
+                                          ? 'Saved items'
+                                          : productProvider.homeCheapOnly
+                                              ? 'Cheap picks'
+                                              : productProvider
+                                                      .homeBestSellersOnly
+                                                  ? 'Best seller picks'
+                                                  : 'Popular near you',
+                                ),
                                 actionLabel: context.tr('See all'),
                                 onAction: () {
                                   productProvider.selectCategory('all');
@@ -612,303 +826,103 @@ class _HomeScreenState extends State<HomeScreen> {
                                 },
                               ),
                             ),
-                            SizedBox(
-                              height: 94,
-                              child: NotificationListener<ScrollNotification>(
-                                onNotification: _snapCategoryChips,
-                                child: ListView.separated(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 16),
-                                  scrollDirection: Axis.horizontal,
-                                  physics: const BouncingScrollPhysics(),
-                                  itemCount: productProvider.categories.length,
-                                  separatorBuilder: (_, __) =>
-                                      const SizedBox(width: 10),
-                                  itemBuilder: (context, index) {
-                                    final category =
-                                        productProvider.categories[index];
-                                    final selected =
-                                        productProvider.selectedCategorySlug ==
-                                            category.slug;
-                                    final chipKey =
-                                        _categoryChipKeys.putIfAbsent(
-                                      category.id,
-                                      GlobalKey.new,
-                                    );
-                                    return CategoryBubble(
-                                      key: chipKey,
-                                      label: context.tr(category.name),
-                                      selected: selected,
-                                      icon: category.imageUrl != null &&
-                                              category.imageUrl!.isNotEmpty
-                                          ? ClipOval(
-                                              child: ProductThumbnail(
-                                                imageUrl: category.imageUrl!,
-                                                size: 42,
-                                                width: 42,
-                                                height: 42,
-                                                fit: BoxFit.cover,
-                                                borderRadius: BorderRadius.zero,
-                                              ),
-                                            )
-                                          : Icon(
-                                              _categoryIcon(category.iconName,
-                                                  category.slug, category.name),
-                                              size: 30,
-                                              color: selected
-                                                  ? Theme.of(context)
-                                                      .colorScheme
-                                                      .onPrimary
-                                                  : Theme.of(context)
-                                                      .colorScheme
-                                                      .primary,
-                                            ),
-                                      onTap: () {
-                                        productProvider
-                                            .selectCategory(category.slug);
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) => ProductListScreen(
-                                              categoryName: category.name,
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    );
-                                  },
+                            const SizedBox(height: 10),
+                          ],
+                        ),
+                      ),
+                      if (productProvider.isLoading && products.isEmpty)
+                        SliverPadding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          sliver: SliverLayoutBuilder(
+                            builder: (context, constraints) =>
+                                SliverGrid.builder(
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: responsiveGridCrossAxisCount(
+                                  availableWidth: constraints.crossAxisExtent,
+                                  minTileWidth: 128,
+                                ),
+                                mainAxisExtent: 220,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                              ),
+                              itemCount: 4,
+                              itemBuilder: (context, index) => const ShimmerBox(
+                                borderRadius: BorderRadius.all(
+                                  Radius.circular(20),
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 12),
-                          ],
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: _FeaturedProductCarousel(
-                              products: productProvider.featuredProducts,
-                              isLoading: productProvider.isLoading,
-                            ),
                           ),
-                          const SizedBox(height: 14),
-                          Padding(
+                        )
+                      else if (productProvider.errorMessage != null &&
+                          products.isEmpty)
+                        SliverToBoxAdapter(
+                          child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: Row(
-                                children: [
-                                  _HomeShortcut(
-                                    icon: Icons.favorite_rounded,
-                                    label:
-                                        '${context.tr('Saved')} ${productProvider.favoriteCount}',
-                                    selected: productProvider.favoritesOnly,
-                                    onTap: () {
-                                      productProvider.setHomeFilters(
-                                        savedOnly:
-                                            !productProvider.favoritesOnly,
-                                        bestSellersOnly:
-                                            productProvider.homeBestSellersOnly,
-                                        cheapOnly:
-                                            productProvider.homeCheapOnly,
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _HomeShortcut(
-                                    icon: Icons.inventory_2_outlined,
-                                    label: context.tr('Wholesale'),
-                                    selected: false,
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              const WholesaleScreen(),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _HomeShortcut(
-                                    icon: Icons.trending_up_rounded,
-                                    label: context.tr('Best sellers'),
-                                    selected:
-                                        productProvider.homeBestSellersOnly,
-                                    onTap: () {
-                                      productProvider.setHomeFilters(
-                                        savedOnly:
-                                            productProvider.favoritesOnly,
-                                        bestSellersOnly: !productProvider
-                                            .homeBestSellersOnly,
-                                        cheapOnly: false,
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _HomeShortcut(
-                                    icon: Icons.local_offer_outlined,
-                                    label: context.tr('Offers'),
-                                    selected: _offersOnly,
-                                    onTap: () => setState(
-                                        () => _offersOnly = !_offersOnly),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _HomeShortcut(
-                                    icon: Icons.replay_rounded,
-                                    label: context.tr('Reorder'),
-                                    selected: false,
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              const MyOrdersScreen(),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _HomeShortcut(
-                                    icon: Icons.sell_outlined,
-                                    label: context.tr('Cheap'),
-                                    selected: productProvider.homeCheapOnly,
-                                    onTap: () {
-                                      productProvider.setHomeFilters(
-                                        savedOnly:
-                                            productProvider.favoritesOnly,
-                                        bestSellersOnly: false,
-                                        cheapOnly:
-                                            !productProvider.homeCheapOnly,
-                                      );
-                                    },
-                                  ),
-                                ],
+                            child: _CatalogMessage(
+                              icon: Icons.cloud_off_outlined,
+                              message: productProvider.errorMessage!,
+                              action: TextButton(
+                                onPressed: productProvider.loadCatalog,
+                                child: Text(context.tr('Try again')),
                               ),
                             ),
                           ),
-                          const SizedBox(height: 24),
-                          Padding(
+                        )
+                      else if (products.isEmpty)
+                        SliverToBoxAdapter(
+                          child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: SectionHeader(
-                              title: context.tr(
-                                _offersOnly
-                                    ? 'Offers'
-                                    : productProvider.favoritesOnly
-                                        ? 'Saved items'
-                                        : productProvider.homeCheapOnly
-                                            ? 'Cheap picks'
-                                            : productProvider
-                                                    .homeBestSellersOnly
-                                                ? 'Best seller picks'
-                                                : 'Popular near you',
-                              ),
-                              actionLabel: context.tr('See all'),
-                              onAction: () {
-                                productProvider.selectCategory('all');
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const ProductListScreen(
-                                      categoryName: 'All products',
+                            child: _CatalogMessage(
+                              icon: _offersOnly
+                                  ? Icons.local_offer_outlined
+                                  : Icons.inventory_2_outlined,
+                              message: _offersOnly
+                                  ? context.tr('No products match this filter.')
+                                  : context.tr(
+                                      'No items yet. Products added by the administrator will appear here.',
                                     ),
-                                  ),
-                                );
-                              },
+                              action: _offersOnly
+                                  ? TextButton(
+                                      onPressed: () =>
+                                          setState(() => _offersOnly = false),
+                                      child: Text(context.tr('Clear filter')),
+                                    )
+                                  : null,
                             ),
                           ),
-                          const SizedBox(height: 10),
-                        ],
-                      ),
-                    ),
-                    if (productProvider.isLoading && products.isEmpty)
-                      SliverPadding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        sliver: SliverLayoutBuilder(
-                          builder: (context, constraints) => SliverGrid.builder(
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: responsiveGridCrossAxisCount(
-                                availableWidth: constraints.crossAxisExtent,
-                                minTileWidth: 128,
-                              ),
-                              mainAxisExtent: 204,
-                              crossAxisSpacing: 12,
-                              mainAxisSpacing: 12,
-                            ),
-                            itemCount: 4,
-                            itemBuilder: (context, index) => const ShimmerBox(
-                              borderRadius: BorderRadius.all(
-                                Radius.circular(20),
-                              ),
-                            ),
-                          ),
-                        ),
-                      )
-                    else if (productProvider.errorMessage != null &&
-                        products.isEmpty)
-                      SliverToBoxAdapter(
-                        child: Padding(
+                        )
+                      else
+                        SliverPadding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: _CatalogMessage(
-                            icon: Icons.cloud_off_outlined,
-                            message: productProvider.errorMessage!,
-                            action: TextButton(
-                              onPressed: productProvider.loadCatalog,
-                              child: Text(context.tr('Try again')),
-                            ),
-                          ),
-                        ),
-                      )
-                    else if (products.isEmpty)
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: _CatalogMessage(
-                            icon: _offersOnly
-                                ? Icons.local_offer_outlined
-                                : Icons.inventory_2_outlined,
-                            message: _offersOnly
-                                ? context.tr('No products match this filter.')
-                                : context.tr(
-                                    'No items yet. Products added by the administrator will appear here.',
-                                  ),
-                            action: _offersOnly
-                                ? TextButton(
-                                    onPressed: () =>
-                                        setState(() => _offersOnly = false),
-                                    child: Text(context.tr('Clear filter')),
-                                  )
-                                : null,
-                          ),
-                        ),
-                      )
-                    else
-                      SliverPadding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        sliver: SliverLayoutBuilder(
-                          builder: (context, constraints) => SliverGrid.builder(
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: responsiveGridCrossAxisCount(
-                                availableWidth: constraints.crossAxisExtent,
-                                minTileWidth: 128,
+                          sliver: SliverLayoutBuilder(
+                            builder: (context, constraints) =>
+                                SliverGrid.builder(
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: responsiveGridCrossAxisCount(
+                                  availableWidth: constraints.crossAxisExtent,
+                                  minTileWidth: 128,
+                                ),
+                                mainAxisExtent: 220,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
                               ),
-                              mainAxisExtent: 204,
-                              crossAxisSpacing: 12,
-                              mainAxisSpacing: 12,
-                            ),
-                            itemCount: products.length,
-                            itemBuilder: (context, index) => ProductCard(
-                              key: ValueKey(products[index].id),
-                              product: products[index],
-                              compact: true,
+                              itemCount: products.length,
+                              itemBuilder: (context, index) => ProductCard(
+                                key: ValueKey(products[index].id),
+                                product: products[index],
+                                compact: true,
+                              ),
                             ),
                           ),
                         ),
+                      const SliverToBoxAdapter(
+                        child: SizedBox(height: 120),
                       ),
-                    const SliverToBoxAdapter(
-                      child: SizedBox(height: 120),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               Positioned(

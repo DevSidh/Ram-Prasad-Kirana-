@@ -11,6 +11,7 @@ import '../../services/api_service.dart';
 import '../../services/delivery_api_service.dart';
 import '../../services/location_service.dart';
 import '../auth/login_screen.dart';
+import '../../widgets/store_animation.dart';
 
 class DeliveryPanelScreen extends StatefulWidget {
   final ApiService api;
@@ -1290,9 +1291,8 @@ class _EmptyDeliveries extends StatelessWidget {
 
 class _ErrorNotice extends StatelessWidget {
   final String message;
-  final VoidCallback? onRetry;
 
-  const _ErrorNotice({required this.message, this.onRetry});
+  const _ErrorNotice({required this.message});
 
   @override
   Widget build(BuildContext context) {
@@ -1312,8 +1312,6 @@ class _ErrorNotice extends StatelessWidget {
               style: const TextStyle(color: Color(0xFF8A3312), fontSize: 12),
             ),
           ),
-          if (onRetry != null)
-            TextButton(onPressed: onRetry, child: const Text('Retry')),
         ],
       ),
     );
@@ -1327,10 +1325,10 @@ class _LoadFailure extends StatelessWidget {
   const _LoadFailure({required this.message, required this.onRetry});
 
   @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: _ErrorNotice(message: message, onRetry: onRetry),
-        ),
+  Widget build(BuildContext context) => StorePageError(
+        title: 'Could not load delivery details',
+        message: message,
+        retryLabel: 'Retry',
+        onRetry: onRetry,
       );
 }

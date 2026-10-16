@@ -111,6 +111,20 @@ class AdminApiService {
     });
   }
 
+  Future<int> clearAllOrderItemDetails({
+    required String confirmation,
+  }) async {
+    final response = _asMap(await _api.delete(
+      '/admin/orders/items',
+      body: {'confirmation': confirmation},
+    ));
+    final deletedItems = response['deletedItems'];
+    if (deletedItems is! int || deletedItems < 0) {
+      throw Exception('The server returned an invalid order cleanup result.');
+    }
+    return deletedItems;
+  }
+
   Future<void> updateOrderDeliveryTime(
     String id,
     DateTime? scheduledDeliveryAt,
@@ -239,6 +253,7 @@ class AdminApiService {
     int pageSize = 20,
     String? stock,
     bool? wholesale,
+    bool? vendingDrink,
     String sort = 'newest',
   }) async {
     final response = _asMap(
@@ -250,6 +265,7 @@ class AdminApiService {
           'sort': sort,
           if (stock != null) 'stock': stock,
           if (wholesale != null) 'wholesale': '$wholesale',
+          if (vendingDrink != null) 'vendingDrink': '$vendingDrink',
         },
       ),
     );

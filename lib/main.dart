@@ -13,10 +13,12 @@ import 'providers/theme_provider.dart';
 import 'providers/language_provider.dart';
 import 'providers/store_availability_provider.dart';
 import 'screens/splash_screen.dart';
+import 'widgets/store_animation.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   AppConstants.validateApiConfiguration();
+  ErrorWidget.builder = (_) => const StorePageError();
 
   final apiService = ApiService();
 
@@ -82,6 +84,7 @@ class RamPrasadGeneralStoreApp extends StatelessWidget {
       locale: Locale(languageCode),
       supportedLocales: const [Locale('en'), Locale('ne')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      scrollBehavior: const _StoreScrollBehavior(),
       builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
         value: SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
@@ -94,5 +97,19 @@ class RamPrasadGeneralStoreApp extends StatelessWidget {
       ),
       home: const SplashScreen(),
     );
+  }
+}
+
+class _StoreScrollBehavior extends MaterialScrollBehavior {
+  const _StoreScrollBehavior();
+
+  @override
+  ScrollPhysics getScrollPhysics(BuildContext context) {
+    if (getPlatform(context) == TargetPlatform.android) {
+      return const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      );
+    }
+    return super.getScrollPhysics(context);
   }
 }

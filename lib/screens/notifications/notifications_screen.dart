@@ -8,6 +8,7 @@ import '../../providers/language_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/push_notification_service.dart';
 import '../../services/notification_preferences.dart';
+import '../../widgets/store_animation.dart';
 import '../auth/login_screen.dart';
 import '../profile/profile_options_screens.dart';
 
@@ -400,21 +401,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       ],
                     )
                   : _error != null
-                      ? ListView(
-                          padding: const EdgeInsets.all(24),
-                          children: [
-                            Icon(Icons.cloud_off_outlined,
-                                size: 42, color: AppConstants.textMuted),
-                            const SizedBox(height: 12),
-                            Text(_error!, textAlign: TextAlign.center),
-                            const SizedBox(height: 12),
-                            Center(
-                              child: OutlinedButton(
-                                onPressed: _loadNotifications,
-                                child: const Text('Try again'),
-                              ),
-                            ),
-                          ],
+                      ? StorePageError(
+                          title: 'Notifications could not load',
+                          message: _error!,
+                          retryLabel: 'Try again',
+                          onRetry: _loadNotifications,
                         )
                       : ListView(
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),

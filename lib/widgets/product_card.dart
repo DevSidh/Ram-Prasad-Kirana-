@@ -21,7 +21,7 @@ class ProductCard extends StatefulWidget {
     super.key,
     required this.product,
     this.compact = false,
-    this.compactImageHeight = 84,
+    this.compactImageHeight = 100,
   });
 
   @override
@@ -364,7 +364,7 @@ class _ProductCardState extends State<ProductCard> {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(14),
                     child: SizedBox(
-                        height: widget.compactImageHeight,
+                      height: widget.compactImageHeight,
                       width: double.infinity,
                       child: ColoredBox(
                         color: isDark

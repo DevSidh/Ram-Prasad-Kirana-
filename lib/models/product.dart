@@ -15,6 +15,7 @@ class Product {
   final bool isOrganic;
   final bool isFeatured;
   final bool isBestSeller;
+  final bool isVendingDrink;
   final bool isWholesale;
   final double? wholesalePrice;
   final int wholesaleMinimumQuantity;
@@ -39,6 +40,7 @@ class Product {
     this.isOrganic = false,
     this.isFeatured = false,
     this.isBestSeller = false,
+    this.isVendingDrink = false,
     this.isWholesale = false,
     this.wholesalePrice,
     this.wholesaleMinimumQuantity = 1,
@@ -65,6 +67,7 @@ class Product {
       isOrganic: json['isOrganic'] ?? false,
       isFeatured: json['isFeatured'] ?? false,
       isBestSeller: json['isBestSeller'] ?? false,
+      isVendingDrink: json['isVendingDrink'] ?? false,
       isWholesale: json['isWholesale'] ?? false,
       wholesalePrice: (json['wholesalePrice'] as num?)?.toDouble(),
       wholesaleMinimumQuantity:
@@ -93,6 +96,7 @@ class Product {
       'isOrganic': isOrganic,
       'isFeatured': isFeatured,
       'isBestSeller': isBestSeller,
+      'isVendingDrink': isVendingDrink,
       'isWholesale': isWholesale,
       'wholesalePrice': wholesalePrice,
       'wholesaleMinimumQuantity': wholesaleMinimumQuantity,
@@ -120,6 +124,7 @@ class Product {
       isOrganic: isOrganic,
       isFeatured: isFeatured ?? this.isFeatured,
       isBestSeller: isBestSeller,
+      isVendingDrink: isVendingDrink,
       isWholesale: isWholesale,
       wholesalePrice: wholesalePrice,
       wholesaleMinimumQuantity: wholesaleMinimumQuantity,

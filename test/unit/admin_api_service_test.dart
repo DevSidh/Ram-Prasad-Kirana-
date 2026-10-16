@@ -8,6 +8,7 @@ import 'package:freshharvest_grocery/services/api_service.dart';
 class _AdminApi extends ApiService {
   final List<(String, Map<String, dynamic>)> patches = [];
   final List<(String, Map<String, dynamic>)> puts = [];
+  final List<(String, Map<String, dynamic>?)> deletes = [];
   String? requestedOrdersStatus;
   String? uploadedFileName;
   Uint8List? uploadedBytes;
@@ -272,6 +273,15 @@ class _AdminApi extends ApiService {
   }
 
   @override
+  Future<dynamic> delete(
+    String endpoint, {
+    Map<String, dynamic>? body,
+  }) async {
+    deletes.add((endpoint, body));
+    return {'deletedItems': 7};
+  }
+
+  @override
   Future<dynamic> post(String endpoint, Map<String, dynamic> body) async {
     if (endpoint == '/admin/wholesale-items') {
       postedWholesaleItem = body;
@@ -352,6 +362,14 @@ void main() {
     expect(queue.products.single.lowStockThreshold, 4);
     expect(updated.stock, 8);
     expect(api.restockRequest, {'quantity': 6});
+  });
+
+  test('can filter the admin product catalog to vending drinks', () async {
+    final api = _AdminApi();
+
+    await AdminApiService(api).getProducts(page: 1, vendingDrink: true);
+
+    expect(api.productQuery?['vendingDrink'], 'true');
   });
 
   test('loads the separate wholesale catalog', () async {
@@ -504,6 +522,20 @@ void main() {
       result.orders.single.scheduledDeliveryAt,
       DateTime.parse('2026-12-10T12:00:00.000Z'),
     );
+  });
+
+  test('clears order item details only after sending the typed confirmation',
+      () async {
+    final api = _AdminApi();
+
+    final deleted = await AdminApiService(api).clearAllOrderItemDetails(
+      confirmation: 'CONFIRM DELETE',
+    );
+
+    expect(deleted, 7);
+    expect(api.deletes, hasLength(1));
+    expect(api.deletes.single.$1, '/admin/orders/items');
+    expect(api.deletes.single.$2, {'confirmation': 'CONFIRM DELETE'});
   });
 
   test('sets and clears the scheduled delivery time for an order', () async {

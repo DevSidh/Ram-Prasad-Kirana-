@@ -27,7 +27,12 @@ void main() {
         ),
       ),
     );
-    await tester.pump(const Duration(seconds: 3));
+    await tester.pump(const Duration(milliseconds: 2999));
+    expect(
+      find.byKey(const ValueKey('scooter-loading-screen')),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 1));
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);

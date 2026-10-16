@@ -9,6 +9,7 @@ import '../../widgets/custom_button.dart';
 import '../../widgets/auth_surface.dart';
 import 'register_screen.dart';
 import 'forgot_password_screen.dart';
+import 'email_verification_screen.dart';
 import '../../navigation/app_shell_route.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -396,6 +397,19 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       child: const Text('Create account'),
+                    ),
+                  ),
+                  Center(
+                    child: TextButton(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => EmailVerificationScreen(
+                            email: _emailController.text.trim(),
+                          ),
+                        ),
+                      ),
+                      child: const Text('Verify email address'),
                     ),
                   ),
                   const SizedBox(height: 2),

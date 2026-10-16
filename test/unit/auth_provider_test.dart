@@ -24,6 +24,38 @@ class _ProfileApi extends ApiService {
   }
 }
 
+class _EmailVerificationApi extends ApiService {
+  _EmailVerificationApi() : super(baseUrl: 'https://store.example/api/v1');
+
+  final requests = <String>[];
+
+  @override
+  Future<dynamic> post(
+    String endpoint,
+    Map<String, dynamic> body,
+  ) async {
+    requests.add(endpoint);
+    if (endpoint == '/auth/register') {
+      return {
+        'requiresEmailVerification': true,
+        'email': body['email'],
+      };
+    }
+    if (endpoint == '/auth/email-verification/confirm') {
+      return {
+        'token': 'verified-session-token',
+        'user': {
+          'id': 'user-verified',
+          'email': body['email'],
+          'fullName': 'Verified Customer',
+          'role': 'CUSTOMER',
+        },
+      };
+    }
+    return {'message': 'Verification code sent.'};
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -51,13 +83,13 @@ void main() {
       'https://store.example/uploads/avatar.png',
     );
     final preferences = await SharedPreferences.getInstance();
-    final savedUser =
-        jsonDecode(preferences.getString(AppConstants.keyUser)!)
-            as Map<String, dynamic>;
+    final savedUser = jsonDecode(preferences.getString(AppConstants.keyUser)!)
+        as Map<String, dynamic>;
     expect(savedUser['avatarUrl'], 'https://store.example/uploads/avatar.png');
   });
 
-  test('saved profile photos resolve through the API on a new device', () async {
+  test('saved profile photos resolve through the API on a new device',
+      () async {
     SharedPreferences.setMockInitialValues({
       AppConstants.keyToken: 'session-token',
       AppConstants.keyUser: jsonEncode({
@@ -103,5 +135,39 @@ void main() {
     final preferences = await SharedPreferences.getInstance();
     expect(preferences.containsKey(AppConstants.keyToken), isFalse);
     expect(preferences.containsKey(AppConstants.keyUser), isFalse);
+  });
+
+  test('registration stays signed out until email verification completes',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final api = _EmailVerificationApi();
+    final auth = AuthProvider(apiService: api);
+    addTearDown(auth.dispose);
+    await auth.sessionReady;
+
+    final registered = await auth.register(
+      'New Customer',
+      'customer@example.com',
+      'a-long-password',
+    );
+
+    expect(registered, isTrue);
+    expect(auth.isAuthenticated, isFalse);
+    expect(auth.currentUser, isNull);
+    expect(auth.pendingVerificationEmail, 'customer@example.com');
+
+    await auth.requestEmailVerification('customer@example.com');
+    expect(api.requests.last, '/auth/email-verification/request');
+
+    final verified = await auth.verifyEmail('customer@example.com', '123456');
+    expect(verified, isTrue);
+    expect(auth.isAuthenticated, isTrue);
+    expect(auth.currentUser?.email, 'customer@example.com');
+    expect(auth.pendingVerificationEmail, isNull);
+    final preferences = await SharedPreferences.getInstance();
+    expect(
+      preferences.getString(AppConstants.keyToken),
+      'verified-session-token',
+    );
   });
 }

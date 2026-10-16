@@ -6,6 +6,7 @@ import '../../core/constants.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../widgets/store_animation.dart';
 
 class AdminRestockScreen extends StatefulWidget {
   final ApiService api;
@@ -86,22 +87,11 @@ class _AdminRestockScreenState extends State<AdminRestockScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     if (_error != null && _products.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(_error!, textAlign: TextAlign.center),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: _load,
-                icon: const Icon(Icons.refresh_rounded),
-                label: const Text('Try again'),
-              ),
-            ],
-          ),
-        ),
+      return StorePageError(
+        title: 'Restock items unavailable',
+        message: _error!,
+        retryLabel: 'Try again',
+        onRetry: _load,
       );
     }
 
@@ -233,22 +223,11 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
     if (_error != null && _history == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Receipt history')),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(_error!, textAlign: TextAlign.center),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: _load,
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('Try again'),
-                ),
-              ],
-            ),
-          ),
+        body: StorePageError(
+          title: 'Receipt history unavailable',
+          message: _error!,
+          retryLabel: 'Try again',
+          onRetry: _load,
         ),
       );
     }

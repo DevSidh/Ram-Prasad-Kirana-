@@ -5,7 +5,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../widgets/custom_button.dart';
 import '../../widgets/auth_surface.dart';
-import '../../navigation/app_shell_route.dart';
+import 'email_verification_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -18,7 +18,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
-  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   bool _obscurePassword = true;
@@ -27,7 +26,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
-    _phoneController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
@@ -40,7 +38,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final success = await authProvider.register(
       _nameController.text.trim(),
       _emailController.text.trim(),
-      _phoneController.text.trim(),
       _passwordController.text,
     );
 
@@ -48,8 +45,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(
-            builder: (_) => appShellForUser(authProvider.currentUser)),
-        (route) => false,
+          builder: (_) => EmailVerificationScreen(
+            email: authProvider.pendingVerificationEmail!,
+          ),
+        ),
+        (route) => route.isFirst,
       );
     }
   }
@@ -102,17 +102,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       prefixIcon: Icon(Icons.email_outlined)),
                   validator: (val) => val == null || !val.contains('@')
                       ? 'Valid email required'
-                      : null,
-                ),
-                const SizedBox(height: 14),
-                TextFormField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
-                      labelText: 'Mobile Number',
-                      prefixIcon: Icon(Icons.phone_outlined)),
-                  validator: (val) => val == null || val.length < 8
-                      ? 'Valid phone required'
                       : null,
                 ),
                 const SizedBox(height: 14),

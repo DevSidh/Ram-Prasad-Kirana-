@@ -4,6 +4,7 @@ import '../../core/constants.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../widgets/store_animation.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   final ApiService api;
@@ -410,17 +411,11 @@ class _ErrorContent extends StatelessWidget {
   const _ErrorContent({required this.message, required this.onRetry});
 
   @override
-  Widget build(BuildContext context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.cloud_off_outlined, size: 42, color: AppConstants.textMuted),
-          const SizedBox(height: 12),
-          const Text('Dashboard unavailable', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 6),
-          Text(message, textAlign: TextAlign.center, style: TextStyle(color: AppConstants.textMuted)),
-          const SizedBox(height: 16),
-          FilledButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: const Text('Try again')),
-        ],
+  Widget build(BuildContext context) => StorePageError(
+        title: 'Dashboard unavailable',
+        message: message,
+        retryLabel: 'Try again',
+        onRetry: onRetry,
       );
 }
 

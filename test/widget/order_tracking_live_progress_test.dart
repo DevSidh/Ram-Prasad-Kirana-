@@ -10,12 +10,14 @@ import 'package:freshharvest_grocery/services/api_service.dart';
 
 class _LiveOrderApi extends ApiService {
   String status = 'PLACED';
+  int orderRequests = 0;
 
   @override
   Future<dynamic> get(
     String endpoint, {
     Map<String, String>? queryParams,
   }) async {
+    orderRequests += 1;
     return {
       'order': {
         'id': 'order-1',
@@ -72,6 +74,7 @@ void main() {
     );
     await tester.pump();
     await tester.pump();
+    expect(api.orderRequests, greaterThan(0));
     final trackingScaffold = tester.widget<Scaffold>(find.byType(Scaffold));
     expect(trackingScaffold.backgroundColor, const Color(0xFFF6FAF7));
     expect(trackingScaffold.extendBody, isTrue);
@@ -98,6 +101,7 @@ void main() {
     await tester.pump(const Duration(seconds: 20));
     await tester.pump();
     expect(find.text('On the way to you'), findsOneWidget);
+    expect(find.text('Waiting for rider location'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
   });

@@ -4,6 +4,7 @@ import '../../core/constants.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../widgets/store_animation.dart';
 
 class AdminSkusScreen extends StatefulWidget {
   final ApiService api;
@@ -326,28 +327,12 @@ class _SkuError extends StatelessWidget {
   const _SkuError({required this.message, required this.onRetry});
 
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.cloud_off_outlined,
-                size: 40, color: AppConstants.textMuted),
-            const SizedBox(height: 12),
-            Text(message, textAlign: TextAlign.center),
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Try again'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => StorePageError(
+        title: 'SKUs unavailable',
+        message: message,
+        retryLabel: 'Try again',
+        onRetry: onRetry,
+      );
 }
 
 String _cleanError(Object error) =>

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -12,6 +13,7 @@ import '../providers/language_provider.dart';
 import '../providers/cart_provider.dart';
 import '../providers/product_provider.dart';
 import '../screens/home/home_screen.dart';
+import '../screens/vending/vending_machine_screen.dart';
 import '../screens/category/categories_screen.dart';
 import '../screens/search/search_screen.dart';
 import '../screens/cart/cart_screen.dart';
@@ -34,6 +36,7 @@ class _MainBottomNavState extends State<MainBottomNav>
 
   final List<Widget> _screens = const [
     HomeScreen(),
+    VendingMachineScreen(),
     CategoriesScreen(),
     SearchScreen(),
     CartScreen(),
@@ -64,11 +67,12 @@ class _MainBottomNavState extends State<MainBottomNav>
   void _selectTab(int index) {
     if (index == _currentIndex || index < 0 || index >= _screens.length) return;
     FocusManager.instance.primaryFocus?.unfocus();
+    unawaited(HapticFeedback.selectionClick());
     setState(() {
       _currentIndex = index;
       _visitedScreens.add(index);
     });
-    if (index == 0 || index == 1 || index == 2) {
+    if (index == 0 || index == 2 || index == 3) {
       unawaited(context.read<ProductProvider>().refreshCatalogIfStale());
     }
   }
@@ -129,7 +133,7 @@ class _MainBottomNavState extends State<MainBottomNav>
               left: 0,
               right: 0,
               bottom: MediaQuery.paddingOf(context).bottom + 18,
-              height: 62,
+              height: 66,
               child: Center(
                 child: _FloatingNavigationBar(
                   selectedIndex: _currentIndex,
@@ -161,10 +165,11 @@ class _FloatingNavigationBar extends StatelessWidget {
     final cartItemCount =
         context.select<CartProvider, int>((cart) => cart.itemCount);
     final navigationWidth =
-        (MediaQuery.sizeOf(context).width - 24).clamp(0.0, 294.0).toDouble();
+        (MediaQuery.sizeOf(context).width - 8).clamp(0.0, 360.0).toDouble();
     final tokens = AppThemeExtension.of(context);
     final labels = [
       context.tr('Home'),
+      context.tr('Vending'),
       context.tr('Categories'),
       context.tr('Search'),
       context.tr('Cart'),
@@ -172,12 +177,20 @@ class _FloatingNavigationBar extends StatelessWidget {
     ];
     const icons = [
       Icons.home_outlined,
+      Icons.local_drink_outlined,
       Icons.grid_view_outlined,
       Icons.search_outlined,
       Icons.shopping_cart_outlined,
       Icons.person_outline,
     ];
-    const keyNames = ['Home', 'Categories', 'Search', 'Cart', 'Profile'];
+    const keyNames = [
+      'Home',
+      'Vending',
+      'Categories',
+      'Search',
+      'Cart',
+      'Profile',
+    ];
 
     return ClipRRect(
       key: const ValueKey('floating-nav-capsule'),
@@ -186,8 +199,8 @@ class _FloatingNavigationBar extends StatelessWidget {
         filter: ImageFilter.blur(sigmaX: 17, sigmaY: 17),
         child: Container(
           width: navigationWidth,
-          height: 62,
-          padding: const EdgeInsets.all(7),
+          height: 66,
+          padding: const EdgeInsets.all(9),
           decoration: BoxDecoration(
             color: tokens.navBarFill,
             border: Border.all(color: tokens.navBarBorder),
@@ -195,7 +208,7 @@ class _FloatingNavigationBar extends StatelessWidget {
           ),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              const gap = 8.0;
+              const gap = 0.0;
               final tabWidth =
                   (constraints.maxWidth - gap * (labels.length - 1)) /
                       labels.length;
@@ -204,25 +217,12 @@ class _FloatingNavigationBar extends StatelessWidget {
                 height: constraints.maxHeight,
                 child: Stack(
                   children: [
-                    AnimatedPositioned(
-                      duration: MediaQuery.disableAnimationsOf(context)
-                          ? Duration.zero
-                          : const Duration(milliseconds: 150),
-                      curve: Curves.easeOutCubic,
-                      left: selectedIndex * (tabWidth + gap) +
-                          (tabWidth - indicatorSize) / 2,
-                      top: (50 - indicatorSize) / 2,
-                      width: indicatorSize,
-                      height: indicatorSize,
-                      child: IgnorePointer(
-                        child: DecoratedBox(
-                          key: const ValueKey('selected-tab-indicator'),
-                          decoration: BoxDecoration(
-                            color: tokens.navBarActiveBackground,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      ),
+                    _NavigationIndicator(
+                      selectedIndex: selectedIndex,
+                      tabWidth: tabWidth,
+                      gap: gap,
+                      size: indicatorSize,
+                      color: tokens.navBarActiveBackground,
                     ),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -238,9 +238,9 @@ class _FloatingNavigationBar extends StatelessWidget {
                               selected: selectedIndex == index,
                               activeIconColor: tokens.navBarActiveIcon,
                               inactiveIconColor: tokens.navBarInactiveIcon,
-                              showBadge: index == 3,
-                              badgeCount: index == 3 ? cartItemCount : 0,
-                              iconTargetKey: index == 3 ? cartTargetKey : null,
+                              showBadge: index == 4,
+                              badgeCount: index == 4 ? cartItemCount : 0,
+                              iconTargetKey: index == 4 ? cartTargetKey : null,
                               onTap: () => onSelect(index),
                             ),
                           ),
@@ -302,41 +302,49 @@ class _NavigationItem extends StatelessWidget {
                 width: 48,
                 height: 48,
                 child: Center(
-                  child: AnimatedSwitcher(
+                  child: AnimatedScale(
+                    scale: selected ? 1 : 0.94,
                     duration: MediaQuery.disableAnimationsOf(context)
                         ? Duration.zero
-                        : const Duration(milliseconds: 160),
-                    transitionBuilder: (child, animation) => ScaleTransition(
-                      scale: animation,
-                      child: child,
-                    ),
-                    child: showBadge && badgeCount > 0
-                        ? Badge(
-                            key: ValueKey(
-                              '${selected ? 'selected' : 'unselected'}-$badgeCount',
-                            ),
-                            backgroundColor: const Color(0xFFEF4444),
-                            textColor: Colors.white,
-                            textStyle: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                            ),
-                            label: Text('$badgeCount'),
-                            child: Icon(
+                        : const Duration(milliseconds: 150),
+                    curve: Curves.easeOutCubic,
+                    child: AnimatedSwitcher(
+                      duration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : const Duration(milliseconds: 140),
+                      transitionBuilder: (child, animation) => ScaleTransition(
+                        scale: animation,
+                        child: child,
+                      ),
+                      child: showBadge && badgeCount > 0
+                          ? Badge(
+                              key: ValueKey(
+                                '${selected ? 'selected' : 'unselected'}-$badgeCount',
+                              ),
+                              backgroundColor: const Color(0xFFEF4444),
+                              textColor: Colors.white,
+                              textStyle: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              label: Text('$badgeCount'),
+                              child: Icon(
+                                selected ? _selectedIcon(icon) : icon,
+                                color: selected
+                                    ? activeIconColor
+                                    : inactiveIconColor,
+                                size: 22,
+                              ),
+                            )
+                          : Icon(
                               selected ? _selectedIcon(icon) : icon,
+                              key: ValueKey(selected),
                               color: selected
                                   ? activeIconColor
                                   : inactiveIconColor,
                               size: 22,
                             ),
-                          )
-                        : Icon(
-                            selected ? _selectedIcon(icon) : icon,
-                            key: ValueKey(selected),
-                            color:
-                                selected ? activeIconColor : inactiveIconColor,
-                            size: 22,
-                          ),
+                    ),
                   ),
                 ),
               ),
@@ -349,6 +357,9 @@ class _NavigationItem extends StatelessWidget {
 
   IconData _selectedIcon(IconData icon) {
     if (icon == Icons.home_outlined) return Icons.home;
+    if (icon == Icons.local_drink_outlined) {
+      return Icons.local_drink_rounded;
+    }
     if (icon == Icons.grid_view_outlined) return Icons.grid_view_rounded;
     if (icon == Icons.search_outlined) return Icons.search;
     if (icon == Icons.shopping_cart_outlined) {
@@ -357,6 +368,85 @@ class _NavigationItem extends StatelessWidget {
     if (icon == Icons.person_outline) return Icons.person;
     return icon;
   }
+}
+
+class _NavigationIndicator extends StatefulWidget {
+  final int selectedIndex;
+  final double tabWidth;
+  final double gap;
+  final double size;
+  final Color color;
+
+  const _NavigationIndicator({
+    required this.selectedIndex,
+    required this.tabWidth,
+    required this.gap,
+    required this.size,
+    required this.color,
+  });
+
+  @override
+  State<_NavigationIndicator> createState() => _NavigationIndicatorState();
+}
+
+class _NavigationIndicatorState extends State<_NavigationIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _position;
+
+  @override
+  void initState() {
+    super.initState();
+    _position = AnimationController.unbounded(
+      vsync: this,
+      value: widget.selectedIndex.toDouble(),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _NavigationIndicator oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedIndex == widget.selectedIndex) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _position.value = widget.selectedIndex.toDouble();
+      return;
+    }
+    _position.animateWith(
+      SpringSimulation(
+        const SpringDescription(mass: 1, stiffness: 900, damping: 52),
+        _position.value,
+        widget.selectedIndex.toDouble(),
+        _position.velocity,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _position.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _position,
+        child: IgnorePointer(
+          child: DecoratedBox(
+            key: const ValueKey('selected-tab-indicator'),
+            decoration: BoxDecoration(
+              color: widget.color,
+              shape: BoxShape.circle,
+            ),
+          ),
+        ),
+        builder: (context, child) => Positioned(
+          left: _position.value * (widget.tabWidth + widget.gap) +
+              (widget.tabWidth - widget.size) / 2,
+          top: (48 - widget.size) / 2,
+          width: widget.size,
+          height: widget.size,
+          child: child!,
+        ),
+      );
 }
 
 class _KeepAlivePage extends StatefulWidget {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:dotlottie_flutter/dotlottie_flutter.dart';
 import 'package:freshharvest_grocery/models/address.dart';
 import 'package:freshharvest_grocery/models/cart_item.dart';
 import 'package:freshharvest_grocery/models/order.dart';
@@ -48,7 +49,15 @@ void main() {
     expect(find.byIcon(Icons.shopping_basket_outlined), findsOneWidget);
     expect(find.text('Congratulations!'), findsOneWidget);
     expect(find.text('Order placed'), findsOneWidget);
-    expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey(
+          'store-animation-animations/order_success.lottie',
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byType(DotLottieView), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

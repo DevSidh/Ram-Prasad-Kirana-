@@ -7,6 +7,7 @@ import '../../models/wholesale_item.dart';
 import '../../providers/cart_provider.dart';
 import '../../services/api_service.dart';
 import '../../widgets/product_thumbnail.dart';
+import '../../widgets/store_animation.dart';
 
 class WholesaleScreen extends StatefulWidget {
   const WholesaleScreen({super.key});
@@ -158,25 +159,11 @@ class _WholesaleScreenState extends State<WholesaleScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _error != null
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(28),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.cloud_off_outlined,
-                                size: 42,
-                              ),
-                              const SizedBox(height: 10),
-                              Text(_error!, textAlign: TextAlign.center),
-                              TextButton(
-                                onPressed: _loadWholesaleItems,
-                                child: const Text('Try again'),
-                              ),
-                            ],
-                          ),
-                        ),
+                    ? StorePageError(
+                        title: 'Wholesale items could not load',
+                        message: _error!,
+                        retryLabel: 'Try again',
+                        onRetry: _loadWholesaleItems,
                       )
                 : products.isEmpty
                     ? Center(

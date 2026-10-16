@@ -36,6 +36,7 @@ class _AdminShellState extends State<AdminShell> {
     'Delivery',
     'Customers',
     'Products',
+    'Vending drinks',
     'Wholesale',
     'Restock',
     'Categories',
@@ -60,6 +61,7 @@ class _AdminShellState extends State<AdminShell> {
       AdminDeliveryPeopleScreen(api: api),
       AdminCustomersScreen(api: api),
       AdminProductsScreen(api: api),
+      AdminProductsScreen(api: api, vendingOnly: true),
       AdminWholesaleScreen(api: api),
       AdminRestockScreen(api: api),
       AdminCategoriesScreen(api: api),
@@ -176,7 +178,13 @@ class _AdminShellState extends State<AdminShell> {
                   constraints: const BoxConstraints(maxWidth: 1280),
                   child: IndexedStack(
                     index: _selectedIndex,
-                    children: _screens,
+                    children: [
+                      for (var index = 0; index < _screens.length; index++)
+                        TickerMode(
+                          enabled: index == _selectedIndex,
+                          child: _screens[index],
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -287,6 +295,11 @@ class _AdminShellState extends State<AdminShell> {
       label: Text('Products'),
     ),
     NavigationRailDestination(
+      icon: Icon(Icons.local_drink_outlined),
+      selectedIcon: Icon(Icons.local_drink_rounded),
+      label: Text('Vending drinks'),
+    ),
+    NavigationRailDestination(
       icon: Icon(Icons.storefront_outlined),
       selectedIcon: Icon(Icons.storefront_rounded),
       label: Text('Wholesale'),
@@ -329,6 +342,7 @@ class _AdminShellState extends State<AdminShell> {
     Icons.local_shipping_outlined,
     Icons.people_outline_rounded,
     Icons.inventory_2_outlined,
+    Icons.local_drink_outlined,
     Icons.storefront_outlined,
     Icons.add_box_outlined,
     Icons.category_outlined,
@@ -344,6 +358,7 @@ class _AdminShellState extends State<AdminShell> {
     Icons.local_shipping_rounded,
     Icons.people_rounded,
     Icons.inventory_2_rounded,
+    Icons.local_drink_rounded,
     Icons.storefront_rounded,
     Icons.add_box_rounded,
     Icons.category_rounded,

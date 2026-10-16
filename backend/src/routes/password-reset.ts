@@ -2,9 +2,9 @@ import bcrypt from 'bcryptjs';
 import { randomInt } from 'node:crypto';
 import { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
-import nodemailer from 'nodemailer';
 import { z } from 'zod';
 import type { PrismaClient } from '@prisma/client';
+import { createSmtpEmailSender } from '../services/email-sender.js';
 
 const emailSchema = z.string().trim().email().max(254).transform((email) => email.toLowerCase());
 const requestSchema = z.object({ email: emailSchema }).strict();
@@ -22,29 +22,10 @@ class InvalidResetCodeError extends Error {}
 type SendResetCode = (email: string, code: string) => Promise<void>;
 
 function createSmtpSender(): SendResetCode | null {
-  const host = process.env.SMTP_HOST?.trim();
-  const port = Number(process.env.SMTP_PORT);
-  const user = process.env.SMTP_USER?.trim();
-  const password = process.env.SMTP_PASS;
-  const from = process.env.SMTP_FROM?.trim();
-
-  if (!host || !Number.isInteger(port) || port < 1 || port > 65535 ||
-      !user || !password || !from) {
-    return null;
-  }
-
-  const transport = nodemailer.createTransport({
-    host,
-    port,
-    secure: process.env.SMTP_SECURE === 'true',
-    auth: { user, pass: password },
-    connectionTimeout: 15_000,
-    greetingTimeout: 15_000,
-    socketTimeout: 15_000,
-  });
+  const sendEmail = createSmtpEmailSender();
+  if (!sendEmail) return null;
   return async (email, code) => {
-    await transport.sendMail({
-      from,
+    await sendEmail({
       to: email,
       subject: 'Your Ram Prasad General Store password reset code',
       text: `Your password reset code is ${code}. It expires in 10 minutes. If you did not request this, you can ignore this email.`,

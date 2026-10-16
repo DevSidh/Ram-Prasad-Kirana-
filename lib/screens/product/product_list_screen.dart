@@ -10,6 +10,7 @@ import '../../providers/theme_provider.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/frosted_panel.dart';
 import '../../widgets/product_card.dart';
+import '../../widgets/store_animation.dart';
 
 class ProductListScreen extends StatelessWidget {
   final String categoryName;
@@ -167,8 +168,8 @@ class ProductListScreen extends StatelessWidget {
                               _FilterChip(
                                 label: 'Any',
                                 selected: localMinimumRating == 0,
-                                onSelected: () => setSheetState(
-                                    () => localMinimumRating = 0),
+                                onSelected: () =>
+                                    setSheetState(() => localMinimumRating = 0),
                               ),
                               for (final rating in [3.0, 4.0, 4.5])
                                 _FilterChip(
@@ -325,37 +326,44 @@ class ProductListScreen extends StatelessWidget {
         ],
       ),
       body: products.isEmpty
-          ? EmptyState(
-              icon: productProvider.isLoading
-                  ? Icons.hourglass_empty
-                  : favoritesOnly
-                      ? Icons.favorite_border
-                      : Icons.inventory_2_outlined,
-              title: productProvider.isLoading
-                  ? 'Loading store items'
-                  : productProvider.errorMessage != null
-                      ? 'Unable to load store items'
+          ? productProvider.errorMessage != null
+              ? StorePageError(
+                  title: 'Unable to load store items',
+                  message: productProvider.errorMessage!,
+                  retryLabel: 'Try again',
+                  onRetry: productProvider.loadCatalog,
+                )
+              : EmptyState(
+                  icon: productProvider.isLoading
+                      ? Icons.hourglass_empty
                       : favoritesOnly
-                          ? 'No saved items yet'
+                          ? Icons.favorite_border
+                          : Icons.inventory_2_outlined,
+                  title: productProvider.isLoading
+                      ? 'Loading store items'
+                      : productProvider.errorMessage != null
+                          ? 'Unable to load store items'
+                          : favoritesOnly
+                              ? 'No saved items yet'
+                              : productProvider.allProducts.isEmpty
+                                  ? 'No items in this store yet'
+                                  : 'No items match these filters',
+                  message: productProvider.errorMessage ??
+                      (favoritesOnly
+                          ? 'Tap the heart on anything you like and it will be waiting here.'
                           : productProvider.allProducts.isEmpty
-                              ? 'No items in this store yet'
-                              : 'No items match these filters',
-              message: productProvider.errorMessage ??
-                  (favoritesOnly
-                      ? 'Tap the heart on anything you like and it will be waiting here.'
-                      : productProvider.allProducts.isEmpty
-                          ? 'Items added by the store administrator will appear here.'
-                          : 'Try adjusting your filters or choose a different department.'),
-              buttonText: productProvider.errorMessage != null
-                  ? 'Try again'
-                  : favoritesOnly
-                      ? null
-                      : 'Refresh items',
-              onButtonPressed: productProvider.errorMessage != null ||
-                      !favoritesOnly
-                  ? productProvider.loadCatalog
-                  : null,
-            )
+                              ? 'Items added by the store administrator will appear here.'
+                              : 'Try adjusting your filters or choose a different department.'),
+                  buttonText: productProvider.errorMessage != null
+                      ? 'Try again'
+                      : favoritesOnly
+                          ? null
+                          : 'Refresh items',
+                  onButtonPressed:
+                      productProvider.errorMessage != null || !favoritesOnly
+                          ? productProvider.loadCatalog
+                          : null,
+                )
           : Column(
               children: [
                 if (productProvider.favoritesOnly)
@@ -376,8 +384,7 @@ class ProductListScreen extends StatelessWidget {
                   child: LayoutBuilder(
                     builder: (context, constraints) => GridView.builder(
                       padding: const EdgeInsets.all(16),
-                      gridDelegate:
-                          SliverGridDelegateWithFixedCrossAxisCount(
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: responsiveGridCrossAxisCount(
                           availableWidth: constraints.maxWidth,
                           horizontalPadding: 32,
@@ -423,9 +430,8 @@ class _FilterChip extends StatelessWidget {
         color: selected ? AppConstants.primary : AppConstants.borderLight,
       ),
       labelStyle: TextStyle(
-        color: selected
-            ? AppConstants.primaryForeground
-            : AppConstants.textDark,
+        color:
+            selected ? AppConstants.primaryForeground : AppConstants.textDark,
         fontWeight: FontWeight.w600,
         fontSize: 12,
       ),

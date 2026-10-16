@@ -49,7 +49,10 @@ class _AddressApi extends ApiService {
   }
 
   @override
-  Future<dynamic> delete(String endpoint) async {
+  Future<dynamic> delete(
+    String endpoint, {
+    Map<String, dynamic>? body,
+  }) async {
     deletes.add(endpoint);
     return null;
   }

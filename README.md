@@ -53,6 +53,14 @@ Saving a delivery address does not require a Maps API key; customers can enter a
 
 Orders require a saved map pin within a 10 km straight-line radius of the store. Set `DELIVERY_SERVICE_RADIUS_KM` in the backend environment to override the 10 km default. Customer categories whose name or slug contains “rice,” “vegetable,” or “dairy” are hidden in full, including mixed categories such as “Fruits & Vegetables” and “Dairy & Eggs.”
 
+New customer accounts must verify their email with the six-digit code sent through
+the configured SMTP server before signing in. Existing accounts remain verified.
+Phone numbers are not collected at registration; changes to a saved phone number
+remain unavailable until SMS verification is configured for the deployment.
+Configure the SMTP environment variables listed in `backend/.env.example` in the
+backend host's secret manager. Email delivery requires a working mail provider;
+the local `.env` file is not deployed with the app.
+
 ### 3. Build a Production Android APK or App Bundle
 
 Release builds must embed the deployed backend's HTTPS API URL. Do not build
@@ -79,9 +87,11 @@ Before tagging a release:
 1. Deploy the backend changes first. Confirm the public pages
    `https://YOUR-API-HOST/privacy-policy` and
    `https://YOUR-API-HOST/account-deletion` return HTTP 200, and that the
-   deployed API includes `POST /api/v1/account/delete-account`. The account
-   deletion changes do not require a database migration. Do not publish the app
-   until these pages and the endpoint are live.
+   deployed API includes `POST /api/v1/account/delete-account` and
+   `/api/v1/auth/email-verification/{request,confirm}`. Apply the
+   `20261026000000_email_verification` migration after a verified backup and
+   configure SMTP on the backend before publishing. Do not publish the app
+   until these endpoints and email delivery are live.
 2. Add the repository variable `API_BASE_URL` with the deployed production HTTPS API URL.
 3. Add these repository Actions secrets:
    - `ANDROID_KEYSTORE_BASE64`: your private Android release keystore encoded as one Base64 string.
@@ -245,7 +255,7 @@ docker build -t ram-prasad-store-api:release ./backend
 
 Configure the host to run the image on the assigned `PORT` and use `/health` as its readiness check. The health endpoint verifies CockroachDB connectivity and returns HTTP 503 if the database is unavailable. Run migrations as a single release step, not concurrently in every app replica.
 
-For production, set `NODE_ENV=production`, a CockroachDB TLS connection string, a unique `AUTH_SECRET` (at least 32 characters), and the assigned `PORT` in the hosting provider's secret/configuration manager. Set `CORS_ORIGINS` to the exact HTTPS origin(s) only when the Flutter web client needs browser access; native Android/iOS requests do not send browser origins. Configure SMTP credentials if password-reset email is required. Keep `backend/.env` out of deployment artifacts and do not copy the local development values from `.env.example` into production.
+For production, set `NODE_ENV=production`, a CockroachDB TLS connection string, a unique `AUTH_SECRET` (at least 32 characters), and the assigned `PORT` in the hosting provider's secret/configuration manager. Set `CORS_ORIGINS` to the exact HTTPS origin(s) only when the Flutter web client needs browser access; native Android/iOS requests do not send browser origins. Configure SMTP credentials for password-reset and registration email verification. Keep `backend/.env` out of deployment artifacts and do not copy the local development values from `.env.example` into production.
 
 ### Android Release
 
@@ -261,7 +271,7 @@ The script validates and generates Prisma Client, builds/tests the backend and F
 
 ### Admin Panel Status
 
-The admin shell provides database-backed dashboard metrics, product/category management, homepage showcase controls, catalog-wide SKU tools, promotion management, store hours, restocking, and order management. Set each product's low-stock threshold in **Products**; **Restock** lists active items at or below that level, including out-of-stock items, and records received quantities in inventory history with the logged-in admin staff member and timestamp. Existing products retain the previous threshold of 10 after the `20261019000000_low_stock_threshold` migration. Apply `20261020000000_restock_receipt_staff` to link new receipt records to staff accounts; older receipts remain visible without staff attribution. Select active products in **Showcase** to include them in the customer's automatically rotating product carousel; each slide uses the product's saved name, category, image, and price. Edit an item's SKU in **SKUs** using the suggested `category-productname-quantity` pattern (for example, `pulses-masoor-dal-1kg`). Admins can assign delivery staff, update order status, and set or clear a future delivery date and time for open orders. Apply `20261022000000_order_delivery_schedule` before deploying that delivery-time feature. Customer tracking shows the road route from the store to the saved delivery address when the backend Routes API is configured; it does not claim to show live courier GPS. Customers can review and mark in-app order notifications as read; Firebase push delivery is enabled only after the app and server credentials are configured as described above. Online eSewa/Khalti payment verification is not implemented, so new online-payment orders are rejected until a gateway is integrated.
+The admin shell provides database-backed dashboard metrics, product/category management, homepage showcase controls, catalog-wide SKU tools, promotion management, store hours, restocking, and order management. Set each product's low-stock threshold in **Products**; **Restock** lists active items at or below that level, including out-of-stock items, and records received quantities in inventory history with the logged-in admin staff member and timestamp. Existing products retain the previous threshold of 10 after the `20261019000000_low_stock_threshold` migration. Apply `20261020000000_restock_receipt_staff` to link new receipt records to staff accounts; older receipts remain visible without staff attribution. Use **Vending drinks** to add or edit regular catalog products and select **Show in vending machine**; these drinks use the same product stock, cart, and checkout flow as other items. Apply the `20261025000000_product_vending_drink` migration before deploying this option. Select active products in **Showcase** to include them in the customer's automatically rotating product carousel; each slide uses the product's saved name, category, image, and price. Edit an item's SKU in **SKUs** using the suggested `category-productname-quantity` pattern (for example, `pulses-masoor-dal-1kg`). Admins can assign delivery staff, update order status, and set or clear a future delivery date and time for open orders. Apply `20261022000000_order_delivery_schedule` before deploying that delivery-time feature. Customer tracking shows the road route from the store to the saved delivery address when the backend Routes API is configured; it does not claim to show live courier GPS. Customers can review and mark in-app order notifications as read; Firebase push delivery is enabled only after the app and server credentials are configured as described above. Online eSewa/Khalti payment verification is not implemented, so new online-payment orders are rejected until a gateway is integrated.
 
 ---
 

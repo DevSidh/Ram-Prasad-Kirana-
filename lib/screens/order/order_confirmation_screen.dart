@@ -8,6 +8,7 @@ import '../../navigation/main_bottom_nav.dart';
 import '../../providers/language_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../widgets/product_thumbnail.dart';
+import '../../widgets/store_animation.dart';
 import 'order_tracking_screen.dart';
 
 class OrderConfirmationScreen extends StatelessWidget {
@@ -18,7 +19,6 @@ class OrderConfirmationScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     context.watch<ThemeProvider?>();
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return Scaffold(
       backgroundColor: AppConstants.backgroundLight,
       body: SafeArea(
@@ -27,7 +27,12 @@ class OrderConfirmationScreen extends StatelessWidget {
           child: Column(
             children: [
               const SizedBox(height: 18),
-              _SuccessMedallion(reduceMotion: reduceMotion),
+              const StoreAnimation(
+                assetPath: 'animations/order_success.lottie',
+                size: 130,
+                semanticLabel: 'Order successfully placed',
+                loop: false,
+              ),
               const SizedBox(height: 24),
               Text(
                 context.tr('Congratulations!'),
@@ -191,111 +196,6 @@ class OrderConfirmationScreen extends StatelessWidget {
       ),
     );
   }
-}
-
-class _SuccessMedallion extends StatefulWidget {
-  final bool reduceMotion;
-
-  const _SuccessMedallion({required this.reduceMotion});
-
-  @override
-  State<_SuccessMedallion> createState() => _SuccessMedallionState();
-}
-
-class _SuccessMedallionState extends State<_SuccessMedallion>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: widget.reduceMotion
-        ? Duration.zero
-        : const Duration(milliseconds: 1050),
-  );
-
-  @override
-  void initState() {
-    super.initState();
-    _controller.forward();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) {
-        final progress = Curves.easeOutCubic.transform(_controller.value);
-        final scale = widget.reduceMotion
-            ? 1.0
-            : Curves.elasticOut.transform(_controller.value);
-        return Transform.scale(
-          scale: scale,
-          child: CustomPaint(
-            painter: _SuccessRingPainter(progress: progress),
-            child: Container(
-              width: 90,
-              height: 90,
-              margin: const EdgeInsets.all(7),
-              decoration: BoxDecoration(
-                color: AppConstants.primaryLight,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: AppConstants.primary.withValues(
-                      alpha: .12 * (1 - progress),
-                    ),
-                    blurRadius: 22,
-                    spreadRadius: 4 * (1 - progress),
-                  ),
-                ],
-              ),
-              child: Opacity(
-                opacity: (progress * 1.5).clamp(0.0, 1.0),
-                child: Transform.rotate(
-                  angle: widget.reduceMotion ? 0 : (1 - progress) * -0.18,
-                  child: Transform.scale(
-                    scale: widget.reduceMotion ? 1 : 0.6 + progress * 0.4,
-                    child: const Icon(
-                      Icons.check_rounded,
-                      color: AppConstants.primary,
-                      size: 48,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _SuccessRingPainter extends CustomPainter {
-  final double progress;
-
-  const _SuccessRingPainter({required this.progress});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = AppConstants.primary.withValues(alpha: .42 * (1 - progress))
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5 * (1 - progress) + .5;
-    canvas.drawCircle(
-      size.center(Offset.zero),
-      43 + 20 * progress,
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _SuccessRingPainter oldDelegate) =>
-      oldDelegate.progress != progress;
 }
 
 class _OrderItemRow extends StatelessWidget {

@@ -9,6 +9,7 @@ import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
 import '../../widgets/product_thumbnail.dart';
+import '../../widgets/store_animation.dart';
 
 class AdminWholesaleScreen extends StatefulWidget {
   final ApiService api;
@@ -728,22 +729,11 @@ class _WholesaleLoadError extends StatelessWidget {
   const _WholesaleLoadError({required this.message, required this.onRetry});
 
   @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(message, textAlign: TextAlign.center),
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh_rounded),
-                label: const Text('Retry'),
-              ),
-            ],
-          ),
-        ),
+  Widget build(BuildContext context) => StorePageError(
+        title: 'Wholesale unavailable',
+        message: message,
+        retryLabel: 'Retry',
+        onRetry: onRetry,
       );
 }
 

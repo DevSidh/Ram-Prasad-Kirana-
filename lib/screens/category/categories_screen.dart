@@ -9,6 +9,7 @@ import '../../core/widgets/app_widgets.dart';
 import '../../models/category.dart';
 import '../../providers/language_provider.dart';
 import '../../providers/product_provider.dart';
+import '../../widgets/store_animation.dart';
 import '../../screens/product/product_list_screen.dart';
 import '../search/search_screen.dart';
 
@@ -20,8 +21,8 @@ class CategoriesScreen extends StatelessWidget {
     final provider = context.watch<ProductProvider>();
     final categories = provider.categories;
     final tokens = AppThemeExtension.of(context);
-    final totalItems =
-        categories.fold<int>(0, (total, category) => total + category.itemCount);
+    final totalItems = categories.fold<int>(
+        0, (total, category) => total + category.itemCount);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -309,6 +310,14 @@ class _EmptyCategories extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (errorMessage != null) {
+      return StorePageError(
+        title: context.tr('Categories unavailable'),
+        message: errorMessage!,
+        retryLabel: context.tr('Retry'),
+        onRetry: onRetry,
+      );
+    }
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(28),

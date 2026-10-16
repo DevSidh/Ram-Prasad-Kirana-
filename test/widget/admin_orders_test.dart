@@ -6,6 +6,7 @@ import 'package:freshharvest_grocery/services/api_service.dart';
 
 class _OrdersApi extends ApiService {
   final List<(String, Map<String, dynamic>)> patches = [];
+  Map<String, dynamic>? deleteBody;
 
   @override
   Future<dynamic> get(
@@ -61,6 +62,16 @@ class _OrdersApi extends ApiService {
   Future<dynamic> patch(String endpoint, Map<String, dynamic> body) async {
     patches.add((endpoint, body));
   }
+
+  @override
+  Future<dynamic> delete(
+    String endpoint, {
+    Map<String, dynamic>? body,
+  }) async {
+    expect(endpoint, '/admin/orders/items');
+    deleteBody = body;
+    return {'deletedItems': 1};
+  }
 }
 
 void main() {
@@ -91,5 +102,36 @@ void main() {
     expect(api.patches, hasLength(1));
     expect(api.patches.single.$1, '/admin/orders/order-1/status');
     expect(api.patches.single.$2, {'status': 'CONFIRMED'});
+  });
+
+  testWidgets('admin must type exact confirmation before clearing order items',
+      (tester) async {
+    final api = _OrdersApi();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: AdminOrdersScreen(api: api)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester
+        .tap(find.byKey(const ValueKey('clear-all-order-item-details')));
+    await tester.pumpAndSettle();
+    final deleteButton = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Delete item details'),
+    );
+    expect(deleteButton.onPressed, isNull);
+    expect(api.deleteBody, isNull);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('clear-order-items-confirmation')),
+      'CONFIRM DELETE',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete item details'));
+    await tester.pumpAndSettle();
+
+    expect(api.deleteBody, {'confirmation': 'CONFIRM DELETE'});
+    expect(find.text('Deleted item details for 1 order item.'), findsOneWidget);
   });
 }

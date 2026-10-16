@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 import '../theme/app_theme_extension.dart';
+import '../../widgets/store_animation.dart';
 
 class AppBackground extends StatelessWidget {
   const AppBackground({
@@ -608,46 +609,17 @@ class ErrorState extends StatelessWidget {
     required this.message,
     required this.retryLabel,
     required this.onRetry,
-    this.icon = Icons.cloud_off_outlined,
   });
 
   final String title;
   final String message;
   final String retryLabel;
   final VoidCallback onRetry;
-  final IconData icon;
-
   @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 44,
-                color: Theme.of(context).colorScheme.error,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 14),
-              TextButton(
-                onPressed: onRetry,
-                child: Text(retryLabel),
-              ),
-            ],
-          ),
-        ),
+  Widget build(BuildContext context) => StorePageError(
+        title: title,
+        message: message,
+        retryLabel: retryLabel,
+        onRetry: onRetry,
       );
 }

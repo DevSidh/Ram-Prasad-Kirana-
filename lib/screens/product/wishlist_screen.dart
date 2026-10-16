@@ -5,6 +5,7 @@ import '../../core/constants.dart';
 import '../../core/responsive_layout.dart';
 import '../../providers/product_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../widgets/store_animation.dart';
 import '../category/categories_screen.dart';
 import '../../widgets/product_card.dart';
 
@@ -27,25 +28,11 @@ class WishlistScreen extends StatelessWidget {
           ? provider.loadingWishlist
               ? const Center(child: CircularProgressIndicator())
               : provider.wishlistErrorMessage != null
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(28),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.cloud_off_outlined, size: 40),
-                            const SizedBox(height: 12),
-                            Text(
-                              provider.wishlistErrorMessage!,
-                              textAlign: TextAlign.center,
-                            ),
-                            TextButton(
-                              onPressed: provider.refreshWishlist,
-                              child: const Text('Retry'),
-                            ),
-                          ],
-                        ),
-                      ),
+                  ? StorePageError(
+                      title: 'Wishlist unavailable',
+                      message: provider.wishlistErrorMessage!,
+                      retryLabel: 'Retry',
+                      onRetry: provider.refreshWishlist,
                     )
                   : Center(
               child: Padding(

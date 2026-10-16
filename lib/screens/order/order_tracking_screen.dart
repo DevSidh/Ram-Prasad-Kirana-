@@ -45,9 +45,12 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_refreshOrder());
+    });
     _refreshTimer = Timer.periodic(
       const Duration(seconds: 20),
-      (_) => _refreshOrder(),
+      (_) => unawaited(_refreshOrder()),
     );
   }
 
@@ -117,6 +120,16 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
           northeast: LatLng(maxLatitude, maxLongitude),
         ),
         44,
+      ),
+    );
+  }
+
+  void _zoomMap(bool zoomIn) {
+    final controller = _mapController;
+    if (controller == null) return;
+    unawaited(
+      controller.animateCamera(
+        zoomIn ? CameraUpdate.zoomIn() : CameraUpdate.zoomOut(),
       ),
     );
   }
@@ -229,6 +242,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                       children: [
                         if (destination != null && !kIsWeb)
                           GoogleMap(
+                            key: const ValueKey('order-tracking-google-map'),
                             initialCameraPosition: CameraPosition(
                               target: LatLng(
                                 (_storeLocation.latitude +
@@ -284,6 +298,11 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                             },
                             myLocationButtonEnabled: false,
                             zoomControlsEnabled: false,
+                            zoomGesturesEnabled: true,
+                            scrollGesturesEnabled: true,
+                            rotateGesturesEnabled: true,
+                            tiltGesturesEnabled: true,
+                            compassEnabled: true,
                             mapToolbarEnabled: false,
                           )
                         else
@@ -297,11 +316,60 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                           child: _MapStatusPill(
                             icon: Icons.route_rounded,
                             label: riderLocation == null
-                                ? 'Store to delivery address'
-                                : 'Delivery rider · live',
-                            theme: theme,
-                          ),
+                                  ? (order.status.toUpperCase() ==
+                                          'OUT_FOR_DELIVERY'
+                                      ? 'Waiting for rider location'
+                                      : 'Store to delivery address')
+                                  : 'Delivery rider · live',
+                              theme: theme,
+                            ),
                         ),
+                        if (destination != null && !kIsWeb)
+                            Positioned(
+                              right: 12,
+                              bottom: 12,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _MapControlButton(
+                                    tooltip: 'Zoom in',
+                                    icon: Icons.add_rounded,
+                                    theme: theme,
+                                    onPressed: () => _zoomMap(true),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _MapControlButton(
+                                    tooltip: 'Zoom out',
+                                    icon: Icons.remove_rounded,
+                                    theme: theme,
+                                    onPressed: () => _zoomMap(false),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _MapControlButton(
+                                    tooltip: 'Show store, rider and address',
+                                    icon: Icons.center_focus_strong_rounded,
+                                    theme: theme,
+                                    onPressed: () => _fitMapToMarkers(
+                                      destination,
+                                      riderLocation: riderLocation,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        if (order.status.toUpperCase() == 'OUT_FOR_DELIVERY' &&
+                              riderLocation == null)
+                            Positioned(
+                              left: 16,
+                              right: 72,
+                              bottom: 16,
+                              child: _MapStatusPill(
+                                icon: Icons.location_searching_rounded,
+                                label:
+                                    'Live location appears when the delivery partner shares it.',
+                                theme: theme,
+                              ),
+                            ),
                       ],
                     ),
                   ),
@@ -365,6 +433,34 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
   }
 }
 
+class _MapControlButton extends StatelessWidget {
+  final String tooltip;
+  final IconData icon;
+  final ThemeData theme;
+  final VoidCallback onPressed;
+
+  const _MapControlButton({
+    required this.tooltip,
+    required this.icon,
+    required this.theme,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: theme.colorScheme.surface.withValues(alpha: 0.96),
+        shape: const CircleBorder(),
+        elevation: 2,
+        child: IconButton(
+          tooltip: tooltip,
+          onPressed: onPressed,
+          icon: Icon(icon),
+          color: theme.colorScheme.onSurface,
+          constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+        ),
+      );
+}
+
 class _RefreshErrorCard extends StatelessWidget {
   final String message;
   final ThemeData theme;
@@ -420,10 +516,14 @@ class _MapStatusPill extends StatelessWidget {
             children: [
               Icon(icon, size: 17, color: AppConstants.primary),
               const SizedBox(width: 7),
-              Text(
-                label,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],

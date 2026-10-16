@@ -593,9 +593,14 @@ export function createAccountRouter(
     try {
       const currentUser = await prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true },
+        select: { id: true, phone: true },
       });
       if (!currentUser) return res.status(404).json({ error: 'Account not found.' });
+      if (parsed.data.phone !== currentUser.phone) {
+        return res.status(503).json({
+          error: 'Phone number changes are unavailable until SMS verification is configured.',
+        });
+      }
       if (await identityAlreadyInUse(prisma, {
         phone: parsed.data.phone,
         excludeUserId: userId,

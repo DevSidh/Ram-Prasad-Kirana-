@@ -9,13 +9,16 @@ import '../../core/product_sku.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../widgets/store_animation.dart';
 
 class AdminProductsScreen extends StatefulWidget {
   final ApiService api;
+  final bool vendingOnly;
 
   const AdminProductsScreen({
     super.key,
     required this.api,
+    this.vendingOnly = false,
   });
 
   @override
@@ -29,11 +32,24 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
   String? _error;
   bool _loading = true;
   int _page = 1;
+  bool _observedTabVisibility = false;
+  bool _wasTabVisible = true;
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final isVisible = TickerMode.valuesOf(context).enabled;
+    if (_observedTabVisibility && isVisible && !_wasTabVisible) {
+      _load(page: _page);
+    }
+    _observedTabVisibility = true;
+    _wasTabVisible = isVisible;
   }
 
   Future<void> _load({int page = 1}) async {
@@ -46,6 +62,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
         _adminApi.getCategories(),
         _adminApi.getProducts(
           page: page,
+          vendingDrink: widget.vendingOnly ? true : null,
         ),
       ]);
       if (!mounted) return;
@@ -72,6 +89,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
         api: _adminApi,
         categories: _categories,
         product: product,
+        vendingOnly: widget.vendingOnly,
       ),
     );
     if (saved == true) _load(page: _page);
@@ -144,9 +162,11 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Store catalog',
-                      style: TextStyle(
+                    Text(
+                      widget.vendingOnly
+                          ? 'Vending machine drinks'
+                          : 'Store catalog',
+                      style: const TextStyle(
                         fontSize: 21,
                         fontWeight: FontWeight.w800,
                       ),
@@ -154,8 +174,12 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                     const SizedBox(height: 4),
                     Text(
                       _productPage == null
-                          ? 'Manage products and stock.'
-                          : '${_productPage!.pagination.total} products in the catalog',
+                          ? widget.vendingOnly
+                              ? 'Manage drinks shown in the customer vending machine.'
+                              : 'Manage products and stock.'
+                          : widget.vendingOnly
+                              ? '${_productPage!.pagination.total} vending drinks'
+                              : '${_productPage!.pagination.total} products in the catalog',
                       style: TextStyle(
                           color: AppConstants.textMuted, fontSize: 12),
                     ),
@@ -172,7 +196,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                     ? () => _editProduct()
                     : null,
                 icon: const Icon(Icons.add, size: 18),
-                label: const Text('Add product'),
+                label: Text(widget.vendingOnly ? 'Add drink' : 'Add product'),
               ),
             ],
           ),
@@ -189,7 +213,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
           ],
           const SizedBox(height: 16),
           if (products.isEmpty && !_loading)
-            const _EmptyProducts()
+            _EmptyProducts(vendingOnly: widget.vendingOnly)
           else
             ...products.map(
               (product) => _ProductCard(
@@ -220,11 +244,13 @@ class _ProductFormDialog extends StatefulWidget {
   final AdminApiService api;
   final List<AdminCategory> categories;
   final AdminProduct? product;
+  final bool vendingOnly;
 
   const _ProductFormDialog({
     required this.api,
     required this.categories,
     this.product,
+    this.vendingOnly = false,
   });
 
   @override
@@ -249,6 +275,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
   String? _categoryId;
   String _unitType = 'pack';
   bool _saving = false;
+  late bool _isVendingDrink;
   String? _error;
   String _weightUnit = 'g';
   String _volumeUnit = 'ml';
@@ -296,6 +323,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
   void initState() {
     super.initState();
     final product = widget.product;
+    _isVendingDrink = product?.isVendingDrink ?? widget.vendingOnly;
     _nameController = TextEditingController(text: product?.name ?? '');
     _brandController = TextEditingController(text: product?.brand ?? '');
     _skuController = TextEditingController(text: product?.sku ?? '');
@@ -385,6 +413,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
           ? null
           : _originController.text.trim(),
       'unitLabel': '${_unitAmountController.text.trim()} $_selectedUnitSuffix',
+      'isVendingDrink': _isVendingDrink,
     };
     final stock = int.parse(_stockController.text.trim());
 
@@ -448,7 +477,15 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.product == null ? 'Add product' : 'Edit product'),
+      title: Text(
+        widget.vendingOnly
+            ? widget.product == null
+                ? 'Add vending drink'
+                : 'Edit vending drink'
+            : widget.product == null
+                ? 'Add product'
+                : 'Edit product',
+      ),
       content: SizedBox(
         width: 460,
         child: Form(
@@ -536,6 +573,16 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                     onChanged: (value) =>
                         setState(() => _unitType = value ?? _unitType),
                   ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Show in vending machine'),
+                  subtitle: const Text(
+                    'List this drink in the customer vending section.',
+                  ),
+                  value: _isVendingDrink,
+                  onChanged: (value) => setState(() => _isVendingDrink = value),
+                ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -773,7 +820,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
               ? const SizedBox.square(
                   dimension: 17,
                   child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('Save product'),
+              : Text(widget.vendingOnly ? 'Save drink' : 'Save product'),
         ),
       ],
     );
@@ -997,34 +1044,18 @@ class _ProductsError extends StatelessWidget {
   const _ProductsError({required this.message, required this.onRetry});
 
   @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.cloud_off_outlined,
-                  size: 40, color: AppConstants.textMuted),
-              const SizedBox(height: 12),
-              const Text('Products unavailable',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
-              const SizedBox(height: 6),
-              Text(message,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: AppConstants.textMuted)),
-              const SizedBox(height: 16),
-              FilledButton.icon(
-                  onPressed: onRetry,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Try again')),
-            ],
-          ),
-        ),
+  Widget build(BuildContext context) => StorePageError(
+        title: 'Products unavailable',
+        message: message,
+        retryLabel: 'Try again',
+        onRetry: onRetry,
       );
 }
 
 class _EmptyProducts extends StatelessWidget {
-  const _EmptyProducts();
+  final bool vendingOnly;
+
+  const _EmptyProducts({this.vendingOnly = false});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -1035,13 +1066,20 @@ class _EmptyProducts extends StatelessWidget {
             border: Border.all(color: AppConstants.borderLight)),
         child: Column(
           children: [
-            Icon(Icons.inventory_2_outlined,
-                size: 34, color: AppConstants.textMuted),
+            Icon(
+                vendingOnly
+                    ? Icons.local_drink_outlined
+                    : Icons.inventory_2_outlined,
+                size: 34,
+                color: AppConstants.textMuted),
             const SizedBox(height: 10),
-            const Text('No products found',
-                style: TextStyle(fontWeight: FontWeight.w700)),
+            Text(vendingOnly ? 'No vending drinks yet' : 'No products found',
+                style: const TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 5),
-            Text('Products from your catalog will appear here.',
+            Text(
+                vendingOnly
+                    ? 'Add a drink and enable “Show in vending machine” to list it here.'
+                    : 'Products from your catalog will appear here.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 12, color: AppConstants.textMuted)),
           ],

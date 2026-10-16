@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../core/constants.dart';
+import 'store_animation.dart';
 
 class EmptyState extends StatelessWidget {
   final IconData icon;
@@ -19,20 +20,29 @@ class EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isError =
+        icon == Icons.cloud_off_outlined || icon == Icons.wifi_off_rounded;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: AppConstants.primaryLight,
-                shape: BoxShape.circle,
+            if (isError)
+              const StoreAnimation(
+                assetPath: 'animations/error_404.lottie',
+                size: 220,
+                semanticLabel: 'Page error animation',
+              )
+            else
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppConstants.primaryLight,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 48, color: AppConstants.primaryDark),
               ),
-              child: Icon(icon, size: 48, color: AppConstants.primaryDark),
-            ),
             const SizedBox(height: 16),
             Text(
               title,

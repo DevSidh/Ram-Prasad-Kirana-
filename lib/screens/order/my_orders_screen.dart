@@ -5,6 +5,7 @@ import '../../providers/order_provider.dart';
 import '../../providers/theme_provider.dart';
 import 'order_tracking_screen.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/store_animation.dart';
 
 class MyOrdersScreen extends StatefulWidget {
   const MyOrdersScreen({super.key});
@@ -74,21 +75,11 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
         body: _loading
             ? const Center(child: CircularProgressIndicator())
             : _error != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(_error!, textAlign: TextAlign.center),
-                          const SizedBox(height: 12),
-                          OutlinedButton(
-                            onPressed: _loadOrders,
-                            child: const Text('Try again'),
-                          ),
-                        ],
-                      ),
-                    ),
+                ? StorePageError(
+                    title: 'Orders could not load',
+                    message: _error!,
+                    retryLabel: 'Try again',
+                    onRetry: _loadOrders,
                   )
                 : orders.isEmpty
                     ? const EmptyState(

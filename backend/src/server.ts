@@ -12,6 +12,7 @@ import { createAuthMiddleware } from './middleware/auth.js';
 import { createAccountRouter } from './routes/account.js';
 import { createAdminRouter } from './routes/admin.js';
 import { createDeliveryRouter } from './routes/delivery.js';
+import { createEmailVerificationRouter } from './routes/email-verification.js';
 import { createPasswordResetRouter } from './routes/password-reset.js';
 import { createPublicLegalRouter } from './routes/public-legal.js';
 import { sendPushToUser } from './services/push-notifications.js';
@@ -113,6 +114,10 @@ const authRateLimit = rateLimit({
 });
 app.use('/api/v1/auth/login', authRateLimit);
 app.use('/api/v1/auth/register', authRateLimit);
+app.use(
+  '/api/v1/auth/email-verification',
+  createEmailVerificationRouter(prisma, AUTH_SECRET, JWT_EXPIRES_IN_SECONDS),
+);
 
 const { authenticateToken, requireAdmin, requireDeliveryPerson } =
   createAuthMiddleware(prisma, AUTH_SECRET);
@@ -318,6 +323,11 @@ app.post('/api/v1/auth/register', async (req: Request, res: Response) => {
   if (phone !== undefined && phone !== null && typeof phone !== 'string') {
     return res.status(400).json({ error: 'Enter a valid phone number' });
   }
+  if (normalizedPhone) {
+    return res.status(503).json({
+      error: 'Phone numbers can be added after SMS verification is configured.',
+    });
+  }
 
   if (password.length < 8 || password.length > 128) {
     return res.status(400).json({ error: 'Password must be between 8 and 128 characters long' });
@@ -341,31 +351,14 @@ app.post('/api/v1/auth/register', async (req: Request, res: Response) => {
         email: normalizedEmail,
         phone: normalizedPhone,
         passwordHash,
+        emailVerified: false,
       },
     });
-    const token = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        fullName: user.name,
-        role: user.role,
-        tokenVersion: user.tokenVersion,
-      },
-      AUTH_SECRET,
-      { expiresIn: JWT_EXPIRES_IN_SECONDS }
-    );
 
     return res.status(201).json({
-      message: 'User registered successfully',
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        fullName: user.name,
-        phone: user.phone,
-        role: user.role,
-        avatarUrl: user.avatarUrl,
-      },
+      message: 'Account created. Verify your email address to finish registration.',
+      requiresEmailVerification: true,
+      email: user.email,
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -385,6 +378,7 @@ const loginUserSelect = {
   role: true,
   avatarUrl: true,
   isActive: true,
+  emailVerified: true,
   passwordHash: true,
   tokenVersion: true,
 } satisfies Prisma.UserSelect;
@@ -438,6 +432,13 @@ app.post('/api/v1/auth/login', async (req: Request, res: Response) => {
         !(await bcrypt.compare(password, user.passwordHash))
       ) {
         return res.status(401).json({ error: 'Invalid email or password' });
+      }
+      if (!user.emailVerified) {
+        return res.status(403).json({
+          error: 'Verify your email address before signing in.',
+          requiresEmailVerification: true,
+          email: user.email,
+        });
       }
     } else {
       return res.status(400).json({ error: 'Email or admin username is required' });
@@ -517,6 +518,7 @@ app.get('/api/v1/store/availability', async (_req: Request, res: Response) => {
 
 app.get('/api/v1/products', async (req: Request, res: Response) => {
   const category = typeof req.query.category === 'string' ? req.query.category : undefined;
+  const vendingDrink = req.query.vendingDrink === 'true';
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : undefined;
   const sort = typeof req.query.sort === 'string' ? req.query.sort : undefined;
   const page = typeof req.query.page === 'string' ? Number(req.query.page) : 1;
@@ -547,6 +549,7 @@ app.get('/api/v1/products', async (req: Request, res: Response) => {
 
     const where: Prisma.ProductWhereInput = {
       ...CUSTOMER_CATALOG_PRODUCT_FILTER,
+      ...(vendingDrink ? { isVendingDrink: true } : {}),
       ...(categoryRecord ? { categoryId: categoryRecord.id } : {}),
       ...(search
         ? {
@@ -593,6 +596,7 @@ app.get('/api/v1/products', async (req: Request, res: Response) => {
           isOrganic: true,
           isFeatured: true,
           isBestSeller: true,
+          isVendingDrink: true,
           isActive: true,
           createdAt: true,
           updatedAt: true,
@@ -795,6 +799,7 @@ app.get('/api/v1/products/:id', async (req: Request, res: Response) => {
         isOrganic: true,
         isFeatured: true,
         isBestSeller: true,
+        isVendingDrink: true,
         isActive: true,
         createdAt: true,
         updatedAt: true,

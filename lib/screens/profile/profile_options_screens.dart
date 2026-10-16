@@ -7,6 +7,7 @@ import '../../core/constants.dart';
 import '../../providers/language_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/notification_preferences.dart';
+import '../../widgets/store_animation.dart';
 
 class PaymentPreferenceScreen extends StatelessWidget {
   const PaymentPreferenceScreen({super.key});
@@ -132,22 +133,11 @@ class _NotificationPreferencesScreenState
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(_error!, textAlign: TextAlign.center),
-                        const SizedBox(height: 12),
-                        OutlinedButton.icon(
-                          onPressed: _load,
-                          icon: const Icon(Icons.refresh),
-                          label: Text(context.tr('Try again')),
-                        ),
-                      ],
-                    ),
-                  ),
+              ? StorePageError(
+                  title: context.tr('Preferences unavailable'),
+                  message: _error!,
+                  retryLabel: context.tr('Try again'),
+                  onRetry: _load,
                 )
               : ListView(
                   padding: const EdgeInsets.all(20),
