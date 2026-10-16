@@ -378,7 +378,7 @@ class _VendingMachineBody extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'Fresh drinks\\nanytime',
+                    'Fresh drinks\nanytime',
                     textAlign: TextAlign.end,
                     style: theme.textTheme.labelMedium?.copyWith(
                       color: const Color(0xFFFFE4BB),

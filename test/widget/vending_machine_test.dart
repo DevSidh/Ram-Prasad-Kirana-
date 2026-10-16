@@ -81,6 +81,7 @@ void main() {
     });
     expect(find.text('Cola'), findsOneWidget);
     expect(find.text('Rice'), findsNothing);
+    expect(find.text('Fresh drinks\nanytime'), findsOneWidget);
 
     await tester.tap(find.text('Cola'));
     await tester.pumpAndSettle();
