@@ -1,7 +1,18 @@
 import { Router, type RequestHandler, type Response } from 'express';
 import { Prisma, type PrismaClient } from '@prisma/client';
+import { randomBytes, randomUUID } from 'node:crypto';
+import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { getImageMimeType, receiveSingleImage } from '../services/image-upload.js';
+import {
+  calculateRoadDeliveryQuote,
+  DEFAULT_DELIVERY_FEE,
+  DeliveryPricingError,
+} from '../services/delivery-pricing.js';
+import {
+  CUSTOMER_CATALOG_PRODUCT_FILTER,
+  isExcludedCustomerCategory,
+} from '../services/customer-catalog.js';
 import { isPushConfigured } from '../services/push-notifications.js';
 import { identityAlreadyInUse, normalizePhone } from '../services/user-identity.js';
 
@@ -27,10 +38,32 @@ const updateProfileInput = z.object({
     .transform((phone) => normalizePhone(phone))
     .refine((phone) => phone === null || (phone.length >= 7 && phone.length <= 30)),
 }).strict();
+const deleteAccountInput = z.object({
+  password: z.string().min(1).max(256),
+}).strict();
 const deviceTokenInput = z.object({
   token: z.string().trim().min(20).max(4096),
   platform: z.enum(['android', 'ios', 'web']),
 }).strict();
+const cartInput = z.object({
+  items: z.array(z.object({
+    productId: z.string().trim().min(1).max(100),
+    quantity: z.number().int().min(1).max(100),
+    isWholesale: z.boolean().default(false),
+  }).strict()).max(100),
+}).strict().refine(
+  ({ items }) =>
+    new Set(items.map((item) => `${item.productId}:${item.isWholesale}`)).size ===
+    items.length,
+  'Cart items must not contain duplicates.',
+);
+const wishlistInput = z.object({
+  productIds: z.array(z.string().trim().min(1).max(100)).max(200),
+}).strict().refine(
+  ({ productIds }) => new Set(productIds).size === productIds.length,
+  'Saved products must not contain duplicates.',
+);
+class CartItemRejectedError extends Error {}
 
 function authenticatedUserId(res: Response): string | null {
   const id = res.locals.authenticatedUserId;
@@ -194,6 +227,287 @@ export function createAccountRouter(
     }
   });
 
+  router.get('/cart', async (_req, res) => {
+    const userId = authenticatedUserId(res);
+    if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
+    try {
+      const cart = await prisma.cart.findUnique({
+        where: { userId },
+        include: {
+          items: {
+            where: {
+              product: { is: CUSTOMER_CATALOG_PRODUCT_FILTER },
+            },
+            include: {
+              product: {
+                include: {
+                  category: { select: { name: true, slug: true } },
+                  inventory: { select: { totalStock: true, reservedStock: true } },
+                },
+              },
+            },
+          },
+        },
+      });
+      const items = (cart?.items ?? [])
+        .filter(({ product }) =>
+          !isExcludedCustomerCategory(product.category.name, product.category.slug))
+        .map(({ product, ...item }) => {
+          const price = Number(product.price);
+          const originalPrice = product.originalPrice === null
+            ? null
+            : Number(product.originalPrice);
+          const stock = Math.max(
+            0,
+            (product.inventory?.totalStock ?? 0) -
+              (product.inventory?.reservedStock ?? 0),
+          );
+          return {
+            product: {
+              id: product.id,
+              sku: product.sku,
+              name: product.name,
+              categoryId: product.categoryId,
+              categoryName: product.category.name,
+              categorySlug: product.category.slug,
+              brand: product.brand,
+              price,
+              originalPrice,
+              discountPercent: originalPrice !== null && originalPrice > price
+                ? Math.round(((originalPrice - price) / originalPrice) * 100)
+                : 0,
+              unitLabel: product.unitLabel,
+              stock,
+              rating: Number(product.rating),
+              reviewCount: product.reviewCount,
+              isOrganic: product.isOrganic,
+              isFeatured: product.isFeatured,
+              isBestSeller: product.isBestSeller,
+              isWholesale: product.isWholesale,
+              wholesalePrice: product.wholesalePrice === null
+                ? null
+                : Number(product.wholesalePrice),
+              wholesaleMinimumQuantity: product.wholesaleMinimumQuantity,
+              description: product.description ?? '',
+              origin: product.origin,
+              imageUrl: product.imageMimeType && product.imageUrl
+                ? `${product.imageUrl}?v=${product.updatedAt.getTime()}`
+                : product.imageUrl ?? '',
+            },
+            quantity: item.quantity,
+            isWholesale: item.isWholesale,
+          };
+        });
+      return res.json({ items });
+    } catch (error) {
+      console.error('Account cart load failed:', error);
+      return res.status(500).json({ error: 'Unable to load your saved basket.' });
+    }
+  });
+
+  router.put('/cart', async (req, res) => {
+    const userId = authenticatedUserId(res);
+    if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
+    const parsed = cartInput.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Check the products and quantities in your basket.' });
+    }
+    try {
+      const products = await prisma.product.findMany({
+        where: {
+          id: { in: parsed.data.items.map((item) => item.productId) },
+          ...CUSTOMER_CATALOG_PRODUCT_FILTER,
+        },
+        select: {
+          id: true,
+          price: true,
+          isWholesale: true,
+          wholesalePrice: true,
+          wholesaleMinimumQuantity: true,
+        },
+      });
+      const productsById = new Map(products.map((product) => [product.id, product]));
+      const itemData = parsed.data.items.map((item) => {
+        const product = productsById.get(item.productId);
+        if (!product) {
+          throw new CartItemRejectedError(
+            'One or more products in the basket are no longer available.',
+          );
+        }
+        if (item.isWholesale &&
+            (!product.isWholesale ||
+              product.wholesalePrice === null ||
+              item.quantity < product.wholesaleMinimumQuantity)) {
+          throw new CartItemRejectedError(
+            'A wholesale item no longer meets its minimum quantity.',
+          );
+        }
+        return {
+          productId: product.id,
+          quantity: item.quantity,
+          unitPrice: item.isWholesale ? product.wholesalePrice! : product.price,
+          isWholesale: item.isWholesale,
+        };
+      });
+      await prisma.$transaction(async (transaction) => {
+        const cart = await transaction.cart.upsert({
+          where: { userId },
+          create: { userId },
+          update: {},
+          select: { id: true },
+        });
+        await transaction.cartItem.deleteMany({ where: { cartId: cart.id } });
+        if (itemData.length > 0) {
+          await transaction.cartItem.createMany({
+            data: itemData.map((item) => ({ ...item, cartId: cart.id })),
+          });
+        }
+      });
+      return res.sendStatus(204);
+    } catch (error) {
+      if (error instanceof CartItemRejectedError) {
+        return res.status(409).json({ error: error.message });
+      }
+      console.error('Account cart save failed:', error);
+      return res.status(500).json({ error: 'Unable to save your basket.' });
+    }
+  });
+
+  router.get('/wishlist', async (_req, res) => {
+    const userId = authenticatedUserId(res);
+    if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
+    try {
+      const wishlist = await prisma.wishlist.findUnique({
+        where: { userId },
+        include: {
+          items: {
+            where: {
+              product: { is: CUSTOMER_CATALOG_PRODUCT_FILTER },
+            },
+            select: { productId: true },
+          },
+        },
+      });
+      return res.json({
+        productIds: wishlist?.items.map((item) => item.productId) ?? [],
+      });
+    } catch (error) {
+      console.error('Account wishlist load failed:', error);
+      return res.status(500).json({ error: 'Unable to load your saved items.' });
+    }
+  });
+
+  router.put('/wishlist', async (req, res) => {
+    const userId = authenticatedUserId(res);
+    if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
+    const parsed = wishlistInput.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Check the products in your saved items.' });
+    }
+    try {
+      const products = await prisma.product.findMany({
+        where: {
+          id: { in: parsed.data.productIds },
+          ...CUSTOMER_CATALOG_PRODUCT_FILTER,
+        },
+        select: { id: true },
+      });
+      if (products.length !== parsed.data.productIds.length) {
+        return res.status(409).json({
+          error: 'One or more saved products are no longer available.',
+        });
+      }
+      await prisma.$transaction(async (transaction) => {
+        const wishlist = await transaction.wishlist.upsert({
+          where: { userId },
+          create: { userId },
+          update: {},
+          select: { id: true },
+        });
+        await transaction.wishlistItem.deleteMany({
+          where: { wishlistId: wishlist.id },
+        });
+        if (parsed.data.productIds.length > 0) {
+          await transaction.wishlistItem.createMany({
+            data: parsed.data.productIds.map((productId) => ({
+              wishlistId: wishlist.id,
+              productId,
+            })),
+          });
+        }
+      });
+      return res.sendStatus(204);
+    } catch (error) {
+      console.error('Account wishlist save failed:', error);
+      return res.status(500).json({ error: 'Unable to save your saved items.' });
+    }
+  });
+
+  router.post('/delivery-quote', async (req, res) => {
+    const userId = authenticatedUserId(res);
+    if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
+    const parsed = z.object({
+      addressId: z.string().trim().min(1).max(100),
+    }).strict().safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Choose a valid delivery address.' });
+    }
+    try {
+      const address = await prisma.address.findFirst({
+        where: { id: parsed.data.addressId, userId },
+        select: { id: true },
+      });
+      if (!address) {
+        return res.status(404).json({ error: 'Delivery address not found.' });
+      }
+      return res.json({ deliveryFee: DEFAULT_DELIVERY_FEE });
+    } catch (error) {
+      if (error instanceof DeliveryPricingError) {
+        return res.status(error.statusCode).json({ error: error.message });
+      }
+      console.error('Delivery quote failed:', error);
+      return res.status(500).json({ error: 'Unable to calculate the delivery fee.' });
+    }
+  });
+
+  router.get('/orders/:id/delivery-route', async (req, res) => {
+    const userId = authenticatedUserId(res);
+    if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
+    if (!req.params.id || req.params.id.length > 100) {
+      return res.status(400).json({ error: 'A valid order is required.' });
+    }
+
+    try {
+      const order = await prisma.order.findFirst({
+        where: { id: req.params.id, userId },
+        select: {
+          address: {
+            select: { latitude: true, longitude: true },
+          },
+        },
+      });
+      if (!order) return res.status(404).json({ error: 'Order not found.' });
+      const route = await calculateRoadDeliveryQuote(
+        order.address?.latitude ?? null,
+        order.address?.longitude ?? null,
+        { includePolyline: true },
+      );
+      if (!route.encodedPolyline) {
+        throw new DeliveryPricingError(
+          'The road-distance service did not return a route line.',
+          502,
+        );
+      }
+      return res.json({ encodedPolyline: route.encodedPolyline });
+    } catch (error) {
+      if (error instanceof DeliveryPricingError) {
+        return res.status(error.statusCode).json({ error: error.message });
+      }
+      console.error('Order route load failed:', error);
+      return res.status(500).json({ error: 'Unable to load the delivery route.' });
+    }
+  });
+
   router.patch('/profile', async (req, res) => {
     const userId = authenticatedUserId(res);
     if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
@@ -242,6 +556,120 @@ export function createAccountRouter(
       }
       console.error('Profile update failed:', error);
       return res.status(500).json({ error: 'Unable to update your profile.' });
+    }
+  });
+
+  router.post('/delete-account', async (req, res) => {
+    const userId = authenticatedUserId(res);
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication is required.' });
+    }
+    const parsed = deleteAccountInput.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Enter your password to delete your account.' });
+    }
+
+    try {
+      const currentUser = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          passwordHash: true,
+          role: true,
+          isActive: true,
+        },
+      });
+      if (!currentUser || !currentUser.isActive) {
+        return res.status(401).json({ error: 'Your account is no longer available.' });
+      }
+      if (currentUser.role !== 'CUSTOMER') {
+        return res.status(403).json({ error: 'Only customer accounts can be deleted here.' });
+      }
+      if (!(await bcrypt.compare(parsed.data.password, currentUser.passwordHash))) {
+        return res.status(401).json({ error: 'The password is incorrect.' });
+      }
+
+      const anonymizedEmail = `deleted-${randomUUID()}@accounts.invalid`;
+      const replacementPasswordHash = await bcrypt.hash(
+        randomBytes(32).toString('hex'),
+        12,
+      );
+      const result = await prisma.$transaction(async (transaction) => {
+        const deactivated = await transaction.user.updateMany({
+          where: { id: userId, isActive: true, role: 'CUSTOMER' },
+          data: {
+            isActive: false,
+            tokenVersion: { increment: 1 },
+            name: 'Deleted customer',
+            email: anonymizedEmail,
+            phone: null,
+            avatarUrl: null,
+            avatarData: null,
+            avatarMimeType: null,
+            passwordHash: replacementPasswordHash,
+          },
+        });
+        if (deactivated.count !== 1) return 'unavailable' as const;
+
+        const activeOrderCount = await transaction.order.count({
+          where: {
+            userId,
+            status: { notIn: ['DELIVERED', 'CANCELLED'] },
+          },
+        });
+        if (activeOrderCount > 0) {
+          throw new Error('ACCOUNT_HAS_ACTIVE_ORDERS');
+        }
+
+        await transaction.order.updateMany({
+          where: { userId },
+          data: {
+            addressId: null,
+            shippingName: 'Deleted customer',
+            shippingPhone: 'Removed',
+            shippingAddress: 'Removed on account deletion',
+            shippingCity: 'Removed',
+            shippingDistrict: null,
+            shippingProvince: null,
+            shippingPostalCode: null,
+            notes: null,
+          },
+        });
+        await transaction.payment.updateMany({
+          where: { order: { userId } },
+          data: {
+            transactionId: null,
+            gatewayResponse: Prisma.DbNull,
+            errorMessage: null,
+          },
+        });
+        await transaction.passwordResetOtp.deleteMany({
+          where: { email: currentUser.email },
+        });
+        await transaction.address.deleteMany({ where: { userId } });
+        await transaction.cart.deleteMany({ where: { userId } });
+        await transaction.wishlist.deleteMany({ where: { userId } });
+        await transaction.review.deleteMany({ where: { userId } });
+        await transaction.notification.deleteMany({ where: { userId } });
+        await transaction.deviceToken.deleteMany({ where: { userId } });
+        return 'deleted' as const;
+      });
+
+      if (result === 'unavailable') {
+        return res.status(401).json({ error: 'Your account is no longer available.' });
+      }
+      return res.status(200).json({
+        message: 'Your account was deleted and historical orders were anonymized.',
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_HAS_ACTIVE_ORDERS') {
+        return res.status(409).json({
+          error: 'Complete or cancel your active orders before deleting your account.',
+        });
+      }
+      console.error('Account deletion failed:', error);
+      return res.status(500).json({ error: 'Unable to delete your account.' });
     }
   });
 

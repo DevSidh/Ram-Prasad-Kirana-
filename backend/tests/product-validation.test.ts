@@ -3,6 +3,7 @@ import {
   validateProductSalePrice,
   validateProductUnit,
 } from '../src/services/product-validation.js';
+import { isExcludedCustomerCategory } from '../src/services/customer-catalog.js';
 
 assert.equal(
   validateProductUnit({
@@ -37,4 +38,8 @@ assert.ok(
 );
 assert.equal(validateProductSalePrice(80, 100), null);
 assert.ok(validateProductSalePrice(100, 80));
-console.log('Product unit and sale-price tests passed.');
+assert.equal(isExcludedCustomerCategory('Fruits & Vegetables', 'fruit-vegetables'), true);
+assert.equal(isExcludedCustomerCategory('Dairy & Eggs', 'dairy-eggs'), true);
+assert.equal(isExcludedCustomerCategory('Rice & Grains', 'rice-grains'), true);
+assert.equal(isExcludedCustomerCategory('Fresh Fruit', 'fresh-fruit'), false);
+console.log('Product validation and customer catalog exclusion tests passed.');

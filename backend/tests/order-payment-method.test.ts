@@ -8,6 +8,12 @@ const order = {
 };
 
 assert.equal(orderInput.safeParse(order).success, true);
+const couponOrder = orderInput.safeParse({ ...order, couponCode: ' save10 ' });
+assert.equal(couponOrder.success, true);
+if (couponOrder.success) {
+  assert.equal(couponOrder.data.couponCode, 'SAVE10');
+}
+assert.equal(orderInput.safeParse({ ...order, couponCode: '' }).success, false);
 
 for (const paymentMethod of ['ESEWA', 'KHALTI', 'CARD']) {
   const result = orderInput.safeParse({ ...order, paymentMethod });

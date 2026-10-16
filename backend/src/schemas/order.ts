@@ -12,6 +12,8 @@ export const orderInput = z.object({
       message: 'Online payment is not available yet. Choose Cash on Delivery.',
     }),
   }),
+  scheduledDeliveryAt: z.string().datetime().nullable().optional(),
   tip: z.number().finite().min(0).max(10000).default(0),
+  couponCode: z.string().trim().min(1).max(40).transform((code) => code.toUpperCase()).optional(),
   idempotencyKey: z.string().trim().min(8).max(100).optional(),
 }).strict();

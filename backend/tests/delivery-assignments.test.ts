@@ -222,6 +222,30 @@ async function run(): Promise<void> {
     assert.equal((await patch({ status: 'ACCEPTED' })).status, 200);
     assert.equal((await patch({ status: 'PICKED_UP' })).status, 200);
     assert.equal((await patch({ status: 'OUT_FOR_DELIVERY' })).status, 200);
+    const locationEndpoint = `${endpoint}/delivery-1/location`;
+    const sendLocation = (userId: string, body: Record<string, unknown>) =>
+      fetch(locationEndpoint, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${jwt.sign({ id: userId }, secret)}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+    assert.equal((await sendLocation('rider-1', {
+      latitude: 26.728,
+      longitude: 85.925,
+    })).status, 204);
+    assert.equal(deliveryRecord.latitude, 26.728);
+    assert.equal(deliveryRecord.longitude, 85.925);
+    assert.equal((await sendLocation('rider-2', {
+      latitude: 26.728,
+      longitude: 85.925,
+    })).status, 409);
+    assert.equal((await sendLocation('rider-1', {
+      latitude: 95,
+      longitude: 85.925,
+    })).status, 400);
     const wrongCash = await patch({
       status: 'DELIVERED',
       recipientName: 'Asha',
@@ -235,6 +259,8 @@ async function run(): Promise<void> {
       cashCollected: 1250,
     })).status, 200);
     assert.equal(deliveryRecord.status, 'DELIVERED');
+    assert.equal(deliveryRecord.latitude, null);
+    assert.equal(deliveryRecord.longitude, null);
     assert.equal(deliveryRecord.order.status, 'DELIVERED');
     assert.equal(deliveryRecord.order.paymentStatus, 'COMPLETED');
     assert.equal(deliveryRecord.cashCollected, 1250);

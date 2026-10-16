@@ -13,7 +13,7 @@
     "admin:create": "tsx src/create-admin.ts",
     "categories:seed": "tsx src/seed-categories.ts",
     "prisma:seed": "tsx prisma/seed.ts",
-    "test": "tsx tests/concurrency.test.ts && tsx tests/admin-auth.test.ts && tsx tests/admin-login.test.ts && tsx tests/inventory-set-stock.test.ts && tsx tests/password-reset.test.ts && tsx tests/delivery-assignments.test.ts && tsx tests/delivery-cash-handover.test.ts && tsx tests/order-payment-method.test.ts && tsx tests/order-cancellation.test.ts && tsx tests/user-identity.test.ts && tsx tests/account-notifications.test.ts && tsx tests/image-upload-storage.test.ts && tsx tests/product-validation.test.ts"
+    "test": "tsx tests/concurrency.test.ts && tsx tests/admin-auth.test.ts && tsx tests/admin-login.test.ts && tsx tests/admin-delivery-time.test.ts && tsx tests/admin-wholesale-filter.test.ts && tsx tests/admin-category-image.test.ts && tsx tests/inventory-set-stock.test.ts && tsx tests/password-reset.test.ts && tsx tests/delivery-assignments.test.ts && tsx tests/delivery-cash-handover.test.ts && tsx tests/order-payment-method.test.ts && tsx tests/order-schedule.test.ts && tsx tests/order-cart-cleanup.test.ts && tsx tests/order-cancellation.test.ts && tsx tests/user-identity.test.ts && tsx tests/account-notifications.test.ts && tsx tests/account-persistence.test.ts && tsx tests/account-deletion.test.ts && tsx tests/public-legal-pages.test.ts && tsx tests/image-upload-storage.test.ts && tsx tests/product-validation.test.ts && tsx tests/store-hours.test.ts && tsx tests/coupon.test.ts && tsx tests/delivery-pricing.test.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.10.2",

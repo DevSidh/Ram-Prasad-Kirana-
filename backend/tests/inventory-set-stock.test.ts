@@ -43,6 +43,9 @@ function createTransaction(initialInventory: {
   return {
     tx,
     transactions,
+    get currentInventory() {
+      return inventory;
+    },
     get inventoryCreate() {
       return inventoryCreate;
     },
@@ -70,6 +73,67 @@ async function run(): Promise<void> {
   assert.deepEqual(missing.inventoryCreate, { productId: 'product-2', totalStock: 7 });
   assert.equal(missing.transactions[0].quantity, 7);
   assert.equal(missing.transactions[0].balanceAfter, 7);
+
+  const restocked = createTransaction({ totalStock: 10, reservedStock: 2 });
+  await service.restock(
+    restocked.tx,
+    [{ productId: 'product-1', quantity: 5 }],
+    'admin:user-1',
+    'Delivery received',
+    'user-1',
+  );
+  assert.deepEqual(restocked.currentInventory, {
+    totalStock: 15,
+    reservedStock: 2,
+  });
+  assert.equal(restocked.transactions[0].type, 'RESTOCKED');
+  assert.deepEqual(restocked.transactions[0].performedBy, {
+    connect: { id: 'user-1' },
+  });
+  assert.equal(restocked.transactions[0].quantity, 5);
+  assert.equal(restocked.transactions[0].balanceAfter, 13);
+
+  const overLimit = createTransaction({
+    totalStock: 2147483645,
+    reservedStock: 0,
+  });
+  await assert.rejects(
+    service.restock(
+      overLimit.tx,
+      [{ productId: 'product-1', quantity: 3 }],
+      'admin:user-1',
+      'Over limit',
+    ),
+    InventoryAdjustmentError,
+  );
+
+  const firstRestock = createTransaction(null);
+  await service.restock(
+    firstRestock.tx,
+    [{ productId: 'product-2', quantity: 6 }],
+    'admin:user-2',
+    'First delivery',
+    'user-2',
+  );
+  assert.deepEqual(firstRestock.inventoryCreate, {
+    productId: 'product-2',
+    totalStock: 6,
+  });
+  assert.equal(firstRestock.transactions[0].type, 'RESTOCKED');
+  assert.deepEqual(firstRestock.transactions[0].performedBy, {
+    connect: { id: 'user-2' },
+  });
+  assert.equal(firstRestock.transactions[0].balanceAfter, 6);
+
+  await assert.rejects(
+    service.restock(
+      restocked.tx,
+      [{ productId: 'product-1', quantity: 0 }],
+      'admin:user-1',
+      'Invalid',
+    ),
+    InventoryAdjustmentError,
+  );
 
   await assert.rejects(
     service.setStock(missing.tx, 'product-2', -1, 'admin:user-2', 'Invalid'),

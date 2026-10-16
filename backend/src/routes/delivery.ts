@@ -9,6 +9,10 @@ const assignmentQuery = z.object({
   ]).optional(),
 });
 const availabilityInput = z.object({ isAvailable: z.boolean() }).strict();
+const locationInput = z.object({
+  latitude: z.number().finite().min(-90).max(90),
+  longitude: z.number().finite().min(-180).max(180),
+}).strict();
 const updateInput = z.object({
   status: z.enum([
     'ACCEPTED', 'DECLINED', 'PICKED_UP',
@@ -243,6 +247,40 @@ export function createDeliveryRouter(
     }
   });
 
+  router.post('/assignments/:id/location', async (req, res) => {
+    const userId = riderId(res);
+    if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
+    if (!req.params.id || req.params.id.length > 100) {
+      return invalidRequest(res, 'A valid delivery assignment is required.');
+    }
+    const parsed = locationInput.safeParse(req.body);
+    if (!parsed.success) return invalidRequest(res, 'Send a valid delivery location.');
+
+    try {
+      const updated = await prisma.delivery.updateMany({
+        where: {
+          id: req.params.id,
+          deliveryPersonId: userId,
+          status: 'OUT_FOR_DELIVERY',
+        },
+        data: {
+          latitude: parsed.data.latitude,
+          longitude: parsed.data.longitude,
+          locationUpdatedAt: new Date(),
+        },
+      });
+      if (updated.count !== 1) {
+        return res.status(409).json({
+          error: 'Live location is accepted only for your active delivery.',
+        });
+      }
+      return res.sendStatus(204);
+    } catch (error) {
+      console.error('Delivery location update failed:', error);
+      return res.status(500).json({ error: 'Unable to update your delivery location.' });
+    }
+  });
+
   router.patch('/assignments/:id', async (req, res) => {
     const userId = riderId(res);
     if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
@@ -327,6 +365,13 @@ export function createDeliveryRouter(
           where: { id: current.id, deliveryPersonId: userId, status: current.status },
           data: {
             status,
+            ...(current.status === 'OUT_FOR_DELIVERY' && status !== 'OUT_FOR_DELIVERY'
+              ? {
+                latitude: null,
+                longitude: null,
+                locationUpdatedAt: null,
+              }
+              : {}),
             ...(status === 'PICKED_UP' ? { pickedUpAt: new Date() } : {}),
             ...(status === 'DELIVERED'
               ? {

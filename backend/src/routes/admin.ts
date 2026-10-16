@@ -7,7 +7,6 @@ import { InventoryAdjustmentError, InventoryService } from '../services/inventor
 import {
   getImageMimeType,
   receiveSingleImage,
-  saveUploadedImage,
 } from '../services/image-upload.js';
 import {
   validateProductSalePrice,
@@ -15,6 +14,11 @@ import {
 } from '../services/product-validation.js';
 import { sendPushToUser } from '../services/push-notifications.js';
 import { identityAlreadyInUse, normalizeEmail, normalizePhone } from '../services/user-identity.js';
+import {
+  DEFAULT_WEEKLY_HOURS,
+  getStoreAvailability,
+  storeHoursSchema,
+} from '../services/store-hours.js';
 
 const categoryInput = z.object({
   name: z.string().trim().min(1).max(120).optional(),
@@ -22,6 +26,7 @@ const categoryInput = z.object({
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug must be lowercase words separated by hyphens')
     .optional(),
   description: z.string().trim().max(2000).nullable().optional(),
+  imageUrl: z.string().trim().max(2048).nullable().optional(),
   isActive: z.boolean().optional(),
 }).strict();
 const createCategoryInput = z.object({
@@ -29,6 +34,7 @@ const createCategoryInput = z.object({
   slug: z.string().trim().min(1).max(140)
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug must be lowercase words separated by hyphens'),
   description: z.string().trim().max(2000).nullable().optional(),
+  imageUrl: z.string().trim().max(2048).nullable().optional(),
 }).strict();
 
 const productFields = {
@@ -43,6 +49,7 @@ const productFields = {
   isWholesale: z.boolean(),
   wholesalePrice: z.number().finite().positive().nullable(),
   wholesaleMinimumQuantity: z.number().int().positive().max(10000),
+  lowStockThreshold: z.number().int().min(1).max(100000),
   rating: z.number().finite().min(0).max(5),
   reviewCount: z.number().int().nonnegative(),
   description: z.string().trim().max(5000).nullable(),
@@ -77,6 +84,7 @@ const updateProductInput = z.object({
   isWholesale: productFields.isWholesale.optional(),
   wholesalePrice: productFields.wholesalePrice.optional(),
   wholesaleMinimumQuantity: productFields.wholesaleMinimumQuantity.optional(),
+  lowStockThreshold: productFields.lowStockThreshold.optional(),
   rating: productFields.rating.optional(),
   reviewCount: productFields.reviewCount.optional(),
   description: productFields.description.optional(),
@@ -90,12 +98,15 @@ const updateProductInput = z.object({
   stock: productFields.stock.optional(),
 }).strict().refine((value) => Object.keys(value).length > 0, 'At least one field is required');
 
-const productsQuery = z.object({
+export const productsQuery = z.object({
   search: z.string().trim().max(200).optional(),
   category: z.string().trim().min(1).max(140).optional(),
   categoryId: z.string().trim().min(1).max(100).optional(),
   availability: z.enum(['available', 'unavailable', 'in_stock', 'out_of_stock']).optional(),
-  stock: z.enum(['in_stock', 'out_of_stock', 'low_stock']).optional(),
+  stock: z.enum(['in_stock', 'out_of_stock', 'low_stock', 'restock']).optional(),
+  wholesale: z.enum(['true', 'false'])
+    .transform((value) => value === 'true')
+    .optional(),
   sort: z.enum([
     'name_asc', 'name_desc', 'price_asc', 'price_desc', 'newest', 'oldest',
     'stock_asc', 'stock_desc',
@@ -133,6 +144,53 @@ const orderStatusInput = z.object({
   ]),
   note: z.string().trim().max(1000).optional(),
 }).strict();
+const orderDeliveryTimeInput = z.object({
+  scheduledDeliveryAt: z.string().datetime().nullable(),
+}).strict();
+const couponCreateInput = z.object({
+  code: z.string().trim().toUpperCase().min(3).max(40)
+    .regex(/^[A-Z0-9][A-Z0-9_-]*$/, 'Use letters, numbers, underscores, or hyphens.'),
+  discountType: z.enum(['PERCENTAGE', 'FIXED']),
+  discountPercent: z.number().finite().positive().max(100).nullable(),
+  discountAmount: z.number().finite().positive().nullable(),
+  minOrderAmount: z.number().finite().nonnegative(),
+  maxDiscount: z.number().finite().positive().nullable(),
+  usageLimit: z.number().int().positive().nullable(),
+  expiresAt: z.string().datetime().nullable()
+    .transform((value) => value === null ? null : new Date(value)),
+}).strict().superRefine((coupon, context) => {
+  if (coupon.discountType === 'PERCENTAGE') {
+    if (coupon.discountPercent === null || coupon.discountAmount !== null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['discountPercent'],
+        message: 'Percentage coupons need a percentage discount only.',
+      });
+    }
+  } else if (coupon.discountAmount === null || coupon.discountPercent !== null) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['discountAmount'],
+      message: 'Fixed coupons need a fixed amount discount only.',
+    });
+  }
+  if (coupon.discountType === 'FIXED' && coupon.maxDiscount !== null) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['maxDiscount'],
+      message: 'A maximum discount cap is only used for percentage coupons.',
+    });
+  }
+});
+const couponActiveInput = z.object({ isActive: z.boolean() }).strict();
+const restockInput = z.object({
+  quantity: z.number().int().min(1).max(1000000),
+  notes: z.string().trim().max(500).optional(),
+}).strict();
+const restockHistoryQuery = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
 const recordIdInput = z.string().trim().min(1).max(100);
 const productSelect = {
   id: true,
@@ -146,6 +204,7 @@ const productSelect = {
   isWholesale: true,
   wholesalePrice: true,
   wholesaleMinimumQuantity: true,
+  lowStockThreshold: true,
   rating: true,
   reviewCount: true,
   description: true,
@@ -178,6 +237,37 @@ function productResponse(product: AdminProduct) {
       : Number(product.wholesalePrice),
     rating: Number(product.rating),
     stock: Math.max(0, (inventory?.totalStock ?? 0) - (inventory?.reservedStock ?? 0)),
+  };
+}
+
+function couponResponse(coupon: {
+  id: string;
+  code: string;
+  discountType: 'PERCENTAGE' | 'FIXED';
+  discountPercent: Prisma.Decimal | null;
+  discountAmount: Prisma.Decimal | null;
+  minOrderAmount: Prisma.Decimal;
+  maxDiscount: Prisma.Decimal | null;
+  usageLimit: number | null;
+  usedCount: number;
+  isActive: boolean;
+  expiresAt: Date | null;
+  createdAt: Date;
+}) {
+  return {
+    ...coupon,
+    discountPercent: coupon.discountPercent === null
+      ? null
+      : Number(coupon.discountPercent),
+    discountAmount: coupon.discountAmount === null
+      ? null
+      : Number(coupon.discountAmount),
+    minOrderAmount: Number(coupon.minOrderAmount),
+    maxDiscount: coupon.maxDiscount === null
+      ? null
+      : Number(coupon.maxDiscount),
+    expiresAt: coupon.expiresAt?.toISOString() ?? null,
+    createdAt: coupon.createdAt.toISOString(),
   };
 }
 
@@ -217,7 +307,7 @@ function handleKnownError(error: unknown, res: Response): boolean {
 
 async function availableProductIds(
   prisma: PrismaClient,
-  stock: 'in_stock' | 'out_of_stock' | 'low_stock',
+  stock: 'in_stock' | 'out_of_stock' | 'low_stock' | 'restock',
 ): Promise<string[]> {
   if (stock === 'in_stock') {
     const rows = await prisma.$queryRaw<Array<{ id: string }>>`
@@ -233,7 +323,19 @@ async function availableProductIds(
       SELECT p."id"
       FROM "Product" AS p
       INNER JOIN "Inventory" AS i ON i."productId" = p."id"
-      WHERE i."totalStock" - i."reservedStock" BETWEEN 1 AND 10
+      WHERE i."totalStock" - i."reservedStock" > 0
+        AND i."totalStock" - i."reservedStock" <= p."lowStockThreshold"
+    `;
+    return rows.map(({ id }) => id);
+  }
+  if (stock === 'restock') {
+    const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT p."id"
+      FROM "Product" AS p
+      LEFT JOIN "Inventory" AS i ON i."productId" = p."id"
+      WHERE p."isActive" = true
+        AND COALESCE(i."totalStock", 0) - COALESCE(i."reservedStock", 0)
+          <= p."lowStockThreshold"
     `;
     return rows.map(({ id }) => id);
   }
@@ -271,17 +373,129 @@ export function createAdminRouter(
   const inventoryService = new InventoryService(prisma);
   router.use(authenticateToken, requireAdmin);
 
+  router.get('/store-settings', async (_req, res) => {
+    try {
+      res.setHeader('Cache-Control', 'no-store');
+      const settings = await prisma.storeSetting.findUnique({ where: { id: 'store' } });
+      return res.json(getStoreAvailability(
+        settings?.isOrderingEnabled ?? true,
+        settings?.weeklyHours ?? DEFAULT_WEEKLY_HOURS,
+      ));
+    } catch (error) {
+      console.error('Admin store settings lookup failed:', error);
+      return res.status(500).json({ error: 'Unable to load store hours.' });
+    }
+  });
+
+  router.put('/store-settings', async (req, res) => {
+    const input = z.object({
+      isOrderingEnabled: z.boolean(),
+      weeklyHours: storeHoursSchema,
+    }).strict().safeParse(req.body);
+    if (!input.success) return invalidInput(res, input.error);
+
+    try {
+      const weeklyHours: Prisma.InputJsonArray = input.data.weeklyHours.map(
+        ({ day, isOpen, openTime, closeTime }) => ({
+          day,
+          isOpen,
+          openTime,
+          closeTime,
+        }),
+      );
+      const settings = await prisma.storeSetting.upsert({
+        where: { id: 'store' },
+        create: {
+          id: 'store',
+          isOrderingEnabled: input.data.isOrderingEnabled,
+          weeklyHours,
+        },
+        update: {
+          isOrderingEnabled: input.data.isOrderingEnabled,
+          weeklyHours,
+        },
+      });
+      return res.json(getStoreAvailability(
+        settings.isOrderingEnabled,
+        settings.weeklyHours,
+      ));
+    } catch (error) {
+      console.error('Admin store settings update failed:', error);
+      return res.status(500).json({ error: 'Unable to save store hours.' });
+    }
+  });
+
   router.post('/uploads/images', receiveSingleImage, async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'Choose an image to upload.' });
     try {
-      const url = await saveUploadedImage(req.file.buffer);
-      if (!url) {
+      const mimeType = getImageMimeType(req.file.buffer);
+      if (!mimeType) {
         return res.status(400).json({ error: 'Use a valid JPEG, PNG, or WebP image.' });
       }
-      return res.status(201).json({ url });
+      const image = await prisma.storedImage.create({
+        data: {
+          imageData: req.file.buffer,
+          mimeType,
+        },
+        select: { id: true },
+      });
+      return res.status(201).json({ url: `/api/v1/images/${image.id}` });
     } catch (error) {
       console.error('Admin image upload failed:', error);
       return res.status(500).json({ error: 'Unable to save this product image.' });
+    }
+  });
+
+  router.get('/coupons', async (_req, res) => {
+    try {
+      const coupons = await prisma.coupon.findMany({
+        orderBy: [{ createdAt: 'desc' }, { code: 'asc' }],
+      });
+      return res.json({ coupons: coupons.map(couponResponse) });
+    } catch (error) {
+      sendAdminError(error, res);
+    }
+  });
+
+  router.post('/coupons', async (req, res) => {
+    const parsed = couponCreateInput.safeParse(req.body);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+    try {
+      const coupon = await prisma.coupon.create({
+        data: {
+          ...parsed.data,
+          code: parsed.data.code,
+          isActive: true,
+        },
+      });
+      return res.status(201).json({ coupon: couponResponse(coupon) });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002') {
+        return res.status(409).json({ error: 'A coupon with this code already exists.' });
+      }
+      sendAdminError(error, res);
+    }
+  });
+
+  router.patch('/coupons/:id/active', async (req, res) => {
+    const id = recordIdInput.safeParse(req.params.id);
+    const input = couponActiveInput.safeParse(req.body);
+    if (!id.success) return res.status(400).json({ error: 'Invalid coupon ID.' });
+    if (!input.success) return invalidInput(res, input.error);
+    try {
+      const updated = await prisma.coupon.updateMany({
+        where: { id: id.data },
+        data: { isActive: input.data.isActive },
+      });
+      if (updated.count === 0) {
+        return res.status(404).json({ error: 'Coupon not found.' });
+      }
+      const coupon = await prisma.coupon.findUnique({ where: { id: id.data } });
+      if (!coupon) return res.status(404).json({ error: 'Coupon not found.' });
+      return res.json({ coupon: couponResponse(coupon) });
+    } catch (error) {
+      sendAdminError(error, res);
     }
   });
 
@@ -307,7 +521,9 @@ export function createAdminRouter(
               WHERE COALESCE(i."totalStock", 0) - COALESCE(i."reservedStock", 0) <= 0
             ) AS "outOfStock",
             COUNT(*) FILTER (
-              WHERE COALESCE(i."totalStock", 0) - COALESCE(i."reservedStock", 0) BETWEEN 1 AND 10
+              WHERE COALESCE(i."totalStock", 0) - COALESCE(i."reservedStock", 0) > 0
+                AND COALESCE(i."totalStock", 0) - COALESCE(i."reservedStock", 0)
+                  <= p."lowStockThreshold"
             ) AS "lowStock"
           FROM "Product" AS p
           LEFT JOIN "Inventory" AS i ON i."productId" = p."id"
@@ -457,6 +673,7 @@ export function createAdminRouter(
           subtotal: Number(order.subtotal),
           deliveryFee: Number(order.deliveryFee),
           discount: Number(order.discount),
+          couponCode: order.couponCode,
           tip: Number(order.tip),
           total: Number(order.total),
           customer: order.user,
@@ -499,6 +716,7 @@ export function createAdminRouter(
             ...entry,
             createdAt: entry.createdAt.toISOString(),
           })),
+          scheduledDeliveryAt: order.scheduledDeliveryAt?.toISOString() ?? null,
           createdAt: order.createdAt.toISOString(),
         })),
         pagination: { page, pageSize, total },
@@ -572,6 +790,7 @@ export function createAdminRouter(
                 orderNumber: true,
                 status: true,
                 paymentStatus: true,
+                couponCode: true,
                 total: true,
                 createdAt: true,
               },
@@ -980,6 +1199,7 @@ export function createAdminRouter(
             id: true,
             status: true,
             paymentStatus: true,
+            couponCode: true,
             items: true,
             userId: true,
             orderNumber: true,
@@ -1013,6 +1233,12 @@ export function createAdminRouter(
         if (changed.count !== 1) return { kind: 'conflict' as const };
 
         if (status === 'CANCELLED') {
+          if (existing.couponCode) {
+            await tx.coupon.updateMany({
+              where: { code: existing.couponCode, usedCount: { gt: 0 } },
+              data: { usedCount: { decrement: 1 } },
+            });
+          }
           if (existing.delivery) {
             const deliveryChanged = await tx.delivery.updateMany({
               where: { id: existing.delivery.id, status: existing.delivery.status },
@@ -1106,6 +1332,61 @@ export function createAdminRouter(
       }
 
       return res.json({ message: 'Order status updated.', id, status });
+    } catch (error) {
+      sendAdminError(error, res);
+    }
+  });
+
+  router.patch('/orders/:id/delivery-time', async (req, res) => {
+    const id = parseRecordId(req.params.id, res);
+    if (!id) return;
+    const parsed = orderDeliveryTimeInput.safeParse(req.body);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+    const scheduledDeliveryAt = parsed.data.scheduledDeliveryAt === null
+      ? null
+      : new Date(parsed.data.scheduledDeliveryAt);
+    if (scheduledDeliveryAt !== null && scheduledDeliveryAt <= new Date()) {
+      return res.status(400).json({
+        error: 'Choose a delivery time in the future.',
+      });
+    }
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const order = await tx.order.findUnique({
+          where: { id },
+          select: { status: true },
+        });
+        if (!order) return { kind: 'missing' as const };
+        if (order.status === 'DELIVERED' || order.status === 'CANCELLED') {
+          return { kind: 'closed' as const };
+        }
+        const updated = await tx.order.updateMany({
+          where: { id, status: order.status },
+          data: { scheduledDeliveryAt },
+        });
+        return updated.count === 1
+          ? { kind: 'updated' as const }
+          : { kind: 'conflict' as const };
+      });
+      if (result.kind === 'missing') {
+        return res.status(404).json({ error: 'Order not found.' });
+      }
+      if (result.kind === 'closed') {
+        return res.status(409).json({
+          error: 'Delivery time cannot be changed for a closed order.',
+        });
+      }
+      if (result.kind === 'conflict') {
+        return res.status(409).json({
+          error: 'The order changed. Refresh and try again.',
+        });
+      }
+      return res.json({
+        message: 'Delivery time updated.',
+        id,
+        scheduledDeliveryAt: scheduledDeliveryAt?.toISOString() ?? null,
+      });
     } catch (error) {
       sendAdminError(error, res);
     }
@@ -1216,6 +1497,9 @@ export function createAdminRouter(
       if (stockFilter) {
         const productIds = await availableProductIds(prisma, stockFilter);
         and.push({ id: { in: productIds } });
+      }
+      if (query.wholesale !== undefined) {
+        and.push({ isWholesale: query.wholesale });
       }
 
       const where: Prisma.ProductWhereInput = and.length ? { AND: and } : {};
@@ -1358,6 +1642,7 @@ export function createAdminRouter(
           category: { select: { name: true } },
         },
       });
+
       if (!currentProduct) {
         return res.status(404).json({ error: 'Product not found' });
       }
@@ -1437,6 +1722,82 @@ export function createAdminRouter(
         return res.status(409).json({ error: error.message });
       }
       if (handleKnownError(error, res)) return;
+      sendAdminError(error, res);
+    }
+  });
+
+  router.post('/products/:id/restock', async (req, res) => {
+    const id = parseRecordId(req.params.id, res);
+    if (!id) return;
+    const parsed = restockInput.safeParse(req.body);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+    try {
+      const product = await prisma.$transaction(async (tx) => {
+        const existing = await tx.product.findUnique({
+          where: { id },
+          select: { id: true },
+        });
+        if (!existing) return null;
+        const adminId = res.locals.authenticatedUserId;
+        await inventoryService.restock(
+          tx,
+          [{ productId: id, quantity: parsed.data.quantity }],
+          `admin:${adminId}`,
+          parsed.data.notes ?? 'Stock receipt added by store staff.',
+          adminId,
+        );
+        return tx.product.findUnique({ where: { id }, select: productSelect });
+      });
+      if (!product) return res.status(404).json({ error: 'Product not found' });
+      return res.json({ product: productResponse(product) });
+    } catch (error) {
+      if (error instanceof InventoryAdjustmentError) {
+        return res.status(409).json({ error: error.message });
+      }
+      if (handleKnownError(error, res)) return;
+      sendAdminError(error, res);
+    }
+  });
+
+  router.get('/inventory/restock-history', async (req, res) => {
+    const parsed = restockHistoryQuery.safeParse(req.query);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+    const { page, pageSize } = parsed.data;
+    const where = { type: 'RESTOCKED' as const };
+    try {
+      const [total, receipts] = await Promise.all([
+        prisma.inventoryTransaction.count({ where }),
+        prisma.inventoryTransaction.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          select: {
+            id: true,
+            quantity: true,
+            balanceAfter: true,
+            notes: true,
+            createdAt: true,
+            performedBy: { select: { id: true, name: true } },
+            inventory: {
+              select: {
+                product: {
+                  select: { id: true, name: true, sku: true, unitLabel: true },
+                },
+              },
+            },
+          },
+        }),
+      ]);
+      return res.json({
+        receipts: receipts.map(({ inventory, performedBy, ...receipt }) => ({
+          ...receipt,
+          staff: performedBy,
+          product: inventory.product,
+        })),
+        pagination: { page, pageSize, total },
+      });
+    } catch (error) {
       sendAdminError(error, res);
     }
   });

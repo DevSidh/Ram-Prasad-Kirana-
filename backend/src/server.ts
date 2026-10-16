@@ -13,6 +13,7 @@ import { createAccountRouter } from './routes/account.js';
 import { createAdminRouter } from './routes/admin.js';
 import { createDeliveryRouter } from './routes/delivery.js';
 import { createPasswordResetRouter } from './routes/password-reset.js';
+import { createPublicLegalRouter } from './routes/public-legal.js';
 import { sendPushToUser } from './services/push-notifications.js';
 import { getUploadsDirectory } from './services/image-upload.js';
 import { identityAlreadyInUse, normalizeEmail, normalizePhone } from './services/user-identity.js';
@@ -20,11 +21,29 @@ import { findAdminByPassword } from './services/admin-login.js';
 import { orderInput } from './schemas/order.js';
 import { InventoryService } from './services/inventory.js';
 import { canCustomerCancelOrder } from './services/order-cancellation.js';
+import { orderCartCleanupWhere } from './services/order-cart-cleanup.js';
+import { checkCoupon } from './services/coupon.js';
+import {
+  CUSTOMER_CATALOG_CATEGORY_FILTER,
+  CUSTOMER_CATALOG_PRODUCT_FILTER,
+} from './services/customer-catalog.js';
+import {
+  assertWithinDeliveryServiceArea,
+  DEFAULT_DELIVERY_FEE,
+  DeliveryPricingError,
+} from './services/delivery-pricing.js';
+import {
+  DEFAULT_WEEKLY_HOURS,
+  getStoreAvailability,
+} from './services/store-hours.js';
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 4000;
+const PORT = Number(process.env.PORT ?? 4000);
+if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
+  throw new Error('PORT must be a valid TCP port between 1 and 65535.');
+}
 app.set('trust proxy', process.env.RENDER === 'true' ? 1 : false);
 const AUTH_SECRET = process.env.AUTH_SECRET;
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME?.trim().toLowerCase();
@@ -83,6 +102,7 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'catalog-uploads'), 
   immutable: true,
   fallthrough: true,
 }));
+app.use(createPublicLegalRouter());
 
 const authRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -93,139 +113,6 @@ const authRateLimit = rateLimit({
 });
 app.use('/api/v1/auth/login', authRateLimit);
 app.use('/api/v1/auth/register', authRateLimit);
-
-// In-Memory Fallback Store (Synchronized with Prisma schema structure for instant testing)
-let memoryCategories = [
-  { id: 'cat-1', name: 'Fruits & Vegetables', slug: 'fruits-vegetables', iconName: 'Apple', itemCount: 12 },
-  { id: 'cat-2', name: 'Dairy & Eggs', slug: 'dairy-eggs', iconName: 'Milk', itemCount: 8 },
-  { id: 'cat-3', name: 'Meat & Seafood', slug: 'meat-seafood', iconName: 'Fish', itemCount: 6 },
-  { id: 'cat-4', name: 'Bakery', slug: 'bakery', iconName: 'Bread', itemCount: 6 },
-  { id: 'cat-5', name: 'Rice & Grains', slug: 'rice-grains', iconName: 'Wheat', itemCount: 7 },
-  { id: 'cat-6', name: 'Pulses & Beans', slug: 'pulses-beans', iconName: 'Layers', itemCount: 5 },
-  { id: 'cat-7', name: 'Snacks', slug: 'snacks', iconName: 'Cookie', itemCount: 8 },
-  { id: 'cat-8', name: 'Beverages', slug: 'beverages', iconName: 'Coffee', itemCount: 6 },
-  { id: 'cat-9', name: 'Breakfast', slug: 'breakfast', iconName: 'Sun', itemCount: 5 },
-  { id: 'cat-10', name: 'Frozen Foods', slug: 'frozen-foods', iconName: 'Snowflake', itemCount: 4 },
-  { id: 'cat-11', name: 'Cooking Essentials', slug: 'cooking-essentials', iconName: 'Flame', itemCount: 8 },
-  { id: 'cat-12', name: 'Spices', slug: 'spices', iconName: 'Sparkles', itemCount: 6 },
-  { id: 'cat-13', name: 'Personal Care', slug: 'personal-care', iconName: 'Heart', itemCount: 4 },
-  { id: 'cat-14', name: 'Household', slug: 'household', iconName: 'Home', itemCount: 4 },
-  { id: 'cat-15', name: 'Baby Products', slug: 'baby-products', iconName: 'Smile', itemCount: 3 },
-  { id: 'cat-16', name: 'Pet Supplies', slug: 'pet-supplies', iconName: 'Activity', itemCount: 3 },
-];
-
-let memoryProducts = [
-  {
-    id: 'prod-1',
-    sku: 'FH-APP-001',
-    name: 'Organic Honeycrisp Mountain Apples',
-    slug: 'organic-honeycrisp-mountain-apples',
-    categoryId: 'cat-1',
-    categoryName: 'Fruits & Vegetables',
-    brand: 'Mustang Orchards',
-    price: 320,
-    originalPrice: 380,
-    discountPercent: 15,
-    weight: '1 kg (4-5 pcs)',
-    stock: 40,
-    rating: 4.9,
-    reviewCount: 38,
-    isOrganic: true,
-    isFeatured: true,
-    isBestSeller: true,
-    description: 'Crisp mountain apples hand-harvested from Mustang orchards.',
-    origin: 'Mustang, Nepal',
-    imageUrl: 'https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?w=600&auto=format&fit=crop',
-  },
-  {
-    id: 'prod-2',
-    sku: 'FH-CIT-002',
-    name: 'Pokhara Sweet Blood Oranges',
-    slug: 'pokhara-sweet-blood-oranges',
-    categoryId: 'cat-1',
-    categoryName: 'Fruits & Vegetables',
-    brand: 'Pokhara Valley Groves',
-    price: 240,
-    originalPrice: 280,
-    discountPercent: 14,
-    weight: '1 kg',
-    stock: 28,
-    rating: 4.8,
-    reviewCount: 22,
-    isOrganic: true,
-    isFeatured: true,
-    isBestSeller: false,
-    description: 'Sweet crimson-fleshed citrus with rich Vitamin C.',
-    origin: 'Pokhara Valley',
-    imageUrl: 'https://images.unsplash.com/photo-1557800636-894a64c1696f?w=600&auto=format&fit=crop',
-  },
-  {
-    id: 'prod-3',
-    sku: 'FH-MILK-003',
-    name: 'Farm Fresh A2 Whole Milk',
-    slug: 'farm-fresh-a2-whole-milk',
-    categoryId: 'cat-2',
-    categoryName: 'Dairy & Eggs',
-    brand: 'Himalayan Pastures',
-    price: 150,
-    originalPrice: 170,
-    discountPercent: 11,
-    weight: '1 Litre Glass Bottle',
-    stock: 35,
-    rating: 4.9,
-    reviewCount: 67,
-    isOrganic: true,
-    isFeatured: true,
-    isBestSeller: true,
-    description: 'Non-homogenized, slow-pasteurized A2 milk with natural cream top.',
-    origin: 'Kavre Farm',
-    imageUrl: 'https://images.unsplash.com/photo-1550583724-b2692b85b150?w=600&auto=format&fit=crop',
-  },
-  {
-    id: 'prod-4',
-    sku: 'FH-EGG-004',
-    name: 'Pasture-Raised Organic Brown Eggs',
-    slug: 'pasture-raised-organic-brown-eggs',
-    categoryId: 'cat-2',
-    categoryName: 'Dairy & Eggs',
-    brand: 'Hillside Free Range',
-    price: 360,
-    originalPrice: 400,
-    discountPercent: 10,
-    weight: '12 pcs pack (1 dozen)',
-    stock: 50,
-    rating: 4.9,
-    reviewCount: 88,
-    isOrganic: true,
-    isFeatured: false,
-    isBestSeller: true,
-    description: 'Golden yolks from hens roaming freely on natural mountain pastures.',
-    origin: 'Lalitpur Hills',
-    imageUrl: 'https://images.unsplash.com/photo-1582722872445-44dc5f7e3c8f?w=600&auto=format&fit=crop',
-  },
-  {
-    id: 'prod-5',
-    sku: 'FH-BRD-005',
-    name: 'Slow-Fermented Artisanal Sourdough Boule',
-    slug: 'slow-fermented-artisanal-sourdough',
-    categoryId: 'cat-4',
-    categoryName: 'Bakery',
-    brand: 'Kathmandu Artisan Bakers',
-    price: 290,
-    originalPrice: 320,
-    discountPercent: 9,
-    weight: '750 g Loaf',
-    stock: 18,
-    rating: 5.0,
-    reviewCount: 42,
-    isOrganic: true,
-    isFeatured: true,
-    isBestSeller: false,
-    description: 'Naturally leavened sourdough with open crumb and blistering crust.',
-    origin: 'Patan Lab',
-    imageUrl: 'https://images.unsplash.com/photo-1589367920969-ab8e050bbb04?w=600&auto=format&fit=crop',
-  },
-];
 
 const { authenticateToken, requireAdmin, requireDeliveryPerson } =
   createAuthMiddleware(prisma, AUTH_SECRET);
@@ -282,11 +169,23 @@ const orderInclude = {
     },
   },
   address: true,
+  delivery: {
+    include: {
+      deliveryPerson: {
+        select: { name: true, phone: true },
+      },
+    },
+  },
 } satisfies Prisma.OrderInclude;
 
 type OrderRecord = Prisma.OrderGetPayload<{ include: typeof orderInclude }>;
 
 function orderResponse(order: OrderRecord) {
+  const deliveryLocationIsFresh =
+    order.status === 'OUT_FOR_DELIVERY' &&
+    order.delivery?.status === 'OUT_FOR_DELIVERY' &&
+    order.delivery.locationUpdatedAt !== null &&
+    Date.now() - order.delivery.locationUpdatedAt.getTime() <= 120_000;
   return {
     id: order.id,
     orderNumber: order.orderNumber,
@@ -314,40 +213,53 @@ function orderResponse(order: OrderRecord) {
     })),
     address: order.address
       ? {
-          id: order.address.id,
-          title: order.address.label ?? 'Delivery address',
-          fullName: order.address.fullName,
-          phone: order.address.phone,
-          province: order.address.province ?? '',
-          city: order.address.city,
-          street: order.address.addressLine1,
-          landmark: order.address.addressLine2,
-          instructions: order.address.instructions,
-          isDefault: order.address.isDefault,
-          latitude: order.address.latitude,
-          longitude: order.address.longitude,
-        }
+        id: order.address.id,
+        title: order.address.label ?? 'Delivery address',
+        fullName: order.address.fullName,
+        phone: order.address.phone,
+        province: order.address.province ?? '',
+        city: order.address.city,
+        street: order.address.addressLine1,
+        landmark: order.address.addressLine2,
+        instructions: order.address.instructions,
+        isDefault: order.address.isDefault,
+        latitude: order.address.latitude,
+        longitude: order.address.longitude,
+      }
       : {
-          id: '',
-          title: 'Delivery address',
-          fullName: order.shippingName,
-          phone: order.shippingPhone,
-          province: order.shippingProvince ?? '',
-          city: order.shippingCity,
-          street: order.shippingAddress,
-          landmark: null,
-          instructions: order.notes,
-          isDefault: false,
-        },
+        id: '',
+        title: 'Delivery address',
+        fullName: order.shippingName,
+        phone: order.shippingPhone,
+        province: order.shippingProvince ?? '',
+        city: order.shippingCity,
+        street: order.shippingAddress,
+        landmark: null,
+        instructions: order.notes,
+        isDefault: false,
+      },
     status: order.status,
+    deliveryPersonName: order.delivery?.deliveryPerson?.name ?? null,
+    deliveryPersonPhone: order.delivery?.deliveryPerson?.phone ?? null,
+    deliveryPersonLatitude: deliveryLocationIsFresh
+      ? order.delivery?.latitude ?? null
+      : null,
+    deliveryPersonLongitude: deliveryLocationIsFresh
+      ? order.delivery?.longitude ?? null
+      : null,
+    deliveryLocationUpdatedAt: deliveryLocationIsFresh
+      ? order.delivery?.locationUpdatedAt?.toISOString() ?? null
+      : null,
     paymentMethod: order.paymentMethod,
     paymentStatus: order.paymentStatus,
     subtotal: Number(order.subtotal),
     deliveryFee: Number(order.deliveryFee),
     discount: Number(order.discount),
+    couponCode: order.couponCode,
     tip: Number(order.tip),
     total: Number(order.total),
     createdAt: order.createdAt.toISOString(),
+    scheduledDeliveryAt: order.scheduledDeliveryAt?.toISOString() ?? null,
   };
 }
 
@@ -378,7 +290,7 @@ app.post('/api/v1/auth/register', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Password must be between 8 and 128 characters long' });
   }
   if (typeof phone === 'string' && phone.trim().length > 0 &&
-      (!normalizedPhone || normalizedPhone.length < 7 || normalizedPhone.length > 30)) {
+    (!normalizedPhone || normalizedPhone.length < 7 || normalizedPhone.length > 30)) {
     return res.status(400).json({ error: 'Enter a valid phone number' });
   }
 
@@ -535,11 +447,11 @@ app.post('/api/v1/auth/login', async (req: Request, res: Response) => {
 app.get('/api/v1/categories', async (_req: Request, res: Response) => {
   try {
     const categories = await prisma.category.findMany({
-      where: { isActive: true },
+      where: CUSTOMER_CATALOG_CATEGORY_FILTER,
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       include: {
         _count: {
-          select: { products: { where: { isActive: true } } },
+          select: { products: { where: CUSTOMER_CATALOG_PRODUCT_FILTER } },
         },
       },
     });
@@ -556,6 +468,20 @@ app.get('/api/v1/categories', async (_req: Request, res: Response) => {
   }
 });
 
+app.get('/api/v1/store/availability', async (_req: Request, res: Response) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    const settings = await prisma.storeSetting.findUnique({ where: { id: 'store' } });
+    return res.json(getStoreAvailability(
+      settings?.isOrderingEnabled ?? true,
+      settings?.weeklyHours ?? DEFAULT_WEEKLY_HOURS,
+    ));
+  } catch (error) {
+    console.error('Public store availability lookup failed:', error);
+    return res.status(500).json({ error: 'Unable to check store availability.' });
+  }
+});
+
 app.get('/api/v1/products', async (req: Request, res: Response) => {
   const category = typeof req.query.category === 'string' ? req.query.category : undefined;
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : undefined;
@@ -563,7 +489,7 @@ app.get('/api/v1/products', async (req: Request, res: Response) => {
   const page = typeof req.query.page === 'string' ? Number(req.query.page) : 1;
   const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : 100;
   if (!Number.isSafeInteger(page) || page < 1 ||
-      !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
     return res.status(400).json({
       error: 'Page must be a positive integer and limit must be between 1 and 100.',
     });
@@ -572,7 +498,12 @@ app.get('/api/v1/products', async (req: Request, res: Response) => {
   try {
     const categoryRecord = category && category !== 'all'
       ? await prisma.category.findFirst({
-        where: { OR: [{ id: category }, { slug: category }], isActive: true },
+        where: {
+          AND: [
+            { OR: [{ id: category }, { slug: category }] },
+            CUSTOMER_CATALOG_CATEGORY_FILTER,
+          ],
+        },
         select: { id: true },
       })
       : null;
@@ -582,8 +513,7 @@ app.get('/api/v1/products', async (req: Request, res: Response) => {
     }
 
     const where: Prisma.ProductWhereInput = {
-      isActive: true,
-      category: { isActive: true },
+      ...CUSTOMER_CATALOG_PRODUCT_FILTER,
       ...(categoryRecord ? { categoryId: categoryRecord.id } : {}),
       ...(search
         ? {
@@ -677,8 +607,11 @@ app.get('/api/v1/products', async (req: Request, res: Response) => {
 
 app.get('/api/v1/products/:id/image', async (req: Request, res: Response) => {
   try {
-    const product = await prisma.product.findUnique({
-      where: { id: req.params.id },
+    const product = await prisma.product.findFirst({
+      where: {
+        id: req.params.id,
+        ...CUSTOMER_CATALOG_PRODUCT_FILTER,
+      },
       select: { imageData: true, imageMimeType: true },
     });
     if (!product?.imageData || !product.imageMimeType) {
@@ -692,13 +625,31 @@ app.get('/api/v1/products/:id/image', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/v1/images/:id', async (req: Request, res: Response) => {
+  try {
+    const image = await prisma.storedImage.findUnique({
+      where: { id: req.params.id },
+      select: { imageData: true, mimeType: true },
+    });
+    if (!image) {
+      return res.status(404).json({ error: 'Image not found.' });
+    }
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return res.type(image.mimeType).send(Buffer.from(image.imageData));
+  } catch (error) {
+    console.error('Stored image lookup failed:', error);
+    return res.status(500).json({ error: 'Unable to load this image.' });
+  }
+});
+
 app.get('/api/v1/products/:id', async (req: Request, res: Response) => {
   try {
     const product = await prisma.product.findFirst({
       where: {
-        OR: [{ id: req.params.id }, { slug: req.params.id }],
-        isActive: true,
-        category: { isActive: true },
+        AND: [
+          { OR: [{ id: req.params.id }, { slug: req.params.id }] },
+          CUSTOMER_CATALOG_PRODUCT_FILTER,
+        ],
       },
       select: {
         id: true,
@@ -764,7 +715,9 @@ app.get('/api/v1/products/:id', async (req: Request, res: Response) => {
 });
 
 // ==================== CHECKOUT & ORDERS (CONCURRENCY SAFE) ====================
-class OrderStockError extends Error {}
+class OrderStockError extends Error { }
+class StoreUnavailableError extends Error { }
+class CouponRejectedError extends Error { }
 
 app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response) => {
   const userId = res.locals.authenticatedUserId as string | undefined;
@@ -781,6 +734,14 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
     });
   }
   const input = parsed.data;
+  if (
+    input.scheduledDeliveryAt &&
+    new Date(input.scheduledDeliveryAt) <= new Date()
+  ) {
+    return res.status(400).json({
+      error: 'Choose a delivery time in the future.',
+    });
+  }
 
   try {
     if (input.idempotencyKey) {
@@ -797,24 +758,41 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
     }
 
     const createdOrderId = await prisma.$transaction(async (transaction) => {
+      const storeSettings = await transaction.storeSetting.findUnique({
+        where: { id: 'store' },
+      });
+      const availability = getStoreAvailability(
+        storeSettings?.isOrderingEnabled ?? true,
+        storeSettings?.weeklyHours ?? DEFAULT_WEEKLY_HOURS,
+      );
+      if (!availability.isAcceptingOrders) {
+        throw new StoreUnavailableError(availability.statusMessage);
+      }
+
       const address = await transaction.address.findFirst({
         where: { id: input.addressId, userId },
       });
       if (!address) throw new Error('Delivery address not found.');
-
+      assertWithinDeliveryServiceArea(address.latitude, address.longitude);
       const productIds = [...new Set(input.items.map((item) => item.productId))];
       const products = await transaction.product.findMany({
-        where: { id: { in: productIds }, isActive: true, category: { isActive: true } },
+        where: {
+          AND: [
+            { id: { in: productIds } },
+            CUSTOMER_CATALOG_PRODUCT_FILTER,
+          ],
+        },
         include: { inventory: true },
       });
       const productsById = new Map(products.map((product) => [product.id, product]));
+      let couponEligibleSubtotal = 0;
       const subtotal = input.items.reduce((sum, item) => {
         const product = productsById.get(item.productId);
         if (!product) throw new OrderStockError(`This item is no longer available.`);
         if (item.isWholesale &&
-            (!product.isWholesale ||
-              product.wholesalePrice === null ||
-              item.quantity < product.wholesaleMinimumQuantity)) {
+          (!product.isWholesale ||
+            product.wholesalePrice === null ||
+            item.quantity < product.wholesaleMinimumQuantity)) {
           throw new OrderStockError(
             `${product.name} does not meet the current wholesale price or minimum quantity.`,
           );
@@ -822,8 +800,48 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
         const price = item.isWholesale
           ? Number(product.wholesalePrice)
           : Number(product.price);
+        if (!item.isWholesale) couponEligibleSubtotal += price * item.quantity;
         return sum + price * item.quantity;
       }, 0);
+
+      let couponCode: string | null = null;
+      let discount = 0;
+      if (input.couponCode) {
+        const coupon = await transaction.coupon.findUnique({
+          where: { code: input.couponCode },
+        });
+        if (!coupon) {
+          throw new CouponRejectedError('That coupon code is not valid.');
+        }
+        if (couponEligibleSubtotal <= 0) {
+          throw new CouponRejectedError(
+            'Coupons do not apply to wholesale-priced items.',
+          );
+        }
+        const couponCheck = checkCoupon(coupon, couponEligibleSubtotal);
+        if (!couponCheck.valid) {
+          throw new CouponRejectedError(couponCheck.message);
+        }
+        const now = new Date();
+        const usage = await transaction.coupon.updateMany({
+          where: {
+            id: coupon.id,
+            isActive: true,
+            ...(coupon.usageLimit === null
+              ? {}
+              : { usedCount: { lt: coupon.usageLimit } }),
+            OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+          },
+          data: { usedCount: { increment: 1 } },
+        });
+        if (usage.count !== 1) {
+          throw new CouponRejectedError(
+            'This coupon has just expired or reached its redemption limit.',
+          );
+        }
+        couponCode = coupon.code;
+        discount = couponCheck.discount;
+      }
 
       const stockByProduct = new Map<string, number>();
       for (const item of input.items) {
@@ -836,16 +854,15 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
         const product = productsById.get(productId);
         const inventory = product?.inventory;
         if (!product || !inventory ||
-            inventory.totalStock - inventory.reservedStock < quantity) {
+          inventory.totalStock - inventory.reservedStock < quantity) {
           throw new OrderStockError(
             `${product?.name ?? 'An item'} does not have enough stock.`,
           );
         }
       }
 
-      const discount = 0;
-      const deliveryFee = subtotal >= 1000 ? 0 : 50;
-      const total = subtotal + deliveryFee;
+      const deliveryFee = DEFAULT_DELIVERY_FEE;
+      const total = subtotal + deliveryFee - discount;
       const orderNumber = `FH-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
       const created = await transaction.order.create({
@@ -861,7 +878,11 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
           discount,
           tip: 0,
           total,
+          couponCode,
           idempotencyKey: input.idempotencyKey,
+          scheduledDeliveryAt: input.scheduledDeliveryAt
+            ? new Date(input.scheduledDeliveryAt)
+            : null,
           shippingName: address.fullName,
           shippingPhone: address.phone,
           shippingAddress: [
@@ -919,6 +940,15 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
         }
         throw error;
       }
+      const cart = await transaction.cart.findUnique({
+        where: { userId },
+        select: { id: true },
+      });
+      if (cart) {
+        await transaction.cartItem.deleteMany({
+          where: orderCartCleanupWhere(cart.id, input.items),
+        });
+      }
       return created.id;
     }, {
       maxWait: 10_000,
@@ -944,6 +974,15 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
       order: orderResponse(created),
     });
   } catch (error) {
+    if (error instanceof DeliveryPricingError) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
+    if (error instanceof CouponRejectedError) {
+      return res.status(409).json({ error: error.message });
+    }
+    if (error instanceof StoreUnavailableError) {
+      return res.status(409).json({ error: error.message });
+    }
     if (error instanceof OrderStockError) {
       return res.status(409).json({ error: error.message });
     }
@@ -951,7 +990,7 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
       return res.status(404).json({ error: error.message });
     }
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002' &&
-        input.idempotencyKey) {
+      input.idempotencyKey) {
       const existing = await prisma.order.findFirst({
         where: { userId, idempotencyKey: input.idempotencyKey },
         include: orderInclude,
@@ -1011,6 +1050,12 @@ app.post('/api/v1/orders/:id/cancel', authenticateToken, async (req: Request, re
         data: { status: 'CANCELLED', paymentStatus: 'CANCELLED' },
       });
       if (updated.count !== 1) return { kind: 'not-cancellable' as const };
+      if (existing.couponCode) {
+        await transaction.coupon.updateMany({
+          where: { code: existing.couponCode, usedCount: { gt: 0 } },
+          data: { usedCount: { decrement: 1 } },
+        });
+      }
       for (const item of existing.items) {
         const restocked = await transaction.inventory.updateMany({
           where: { productId: item.productId },
@@ -1088,15 +1133,57 @@ app.get('/api/v1/orders/:id', authenticateToken, async (req: Request, res: Respo
   }
 });
 
-app.post('/api/v1/coupons/validate', (_req: Request, res: Response) =>
-  res.status(410).json({
-    valid: false,
-    message: 'Promotional discounts are currently unavailable.',
+app.post(
+  '/api/v1/coupons/validate',
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many coupon checks. Try again later.' },
   }),
+  async (req: Request, res: Response) => {
+    const input = z.object({
+      code: z.string().trim().min(3).max(40)
+        .transform((code) => code.toUpperCase()),
+      subtotal: z.number().finite().positive(),
+    }).strict().safeParse(req.body);
+    if (!input.success) {
+      return res.status(400).json({
+        error: 'Enter a coupon code and a valid basket subtotal.',
+        details: input.error.issues.map((issue) => ({
+          field: issue.path.join('.'),
+          message: issue.message,
+        })),
+      });
+    }
+
+    try {
+      const coupon = await prisma.coupon.findUnique({
+        where: { code: input.data.code },
+      });
+      if (!coupon) {
+        return res.json({
+          valid: false,
+          discount: 0,
+          message: 'That coupon code is not valid.',
+        });
+      }
+      const result = checkCoupon(coupon, input.data.subtotal);
+      return res.json({
+        valid: result.valid,
+        code: result.valid ? coupon.code : null,
+        discount: result.discount,
+        message: result.message,
+      });
+    } catch (error) {
+      console.error('Coupon validation failed:', error);
+      return res.status(500).json({ error: 'Unable to validate this coupon.' });
+    }
+  },
 );
 
-// Health check
-app.get('/health', async (_req: Request, res: Response) => {
+const healthCheck = async (_req: Request, res: Response) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
     return res.json({
@@ -1114,10 +1201,13 @@ app.get('/health', async (_req: Request, res: Response) => {
       timestamp: new Date().toISOString(),
     });
   }
-});
+};
+
+app.get('/health', healthCheck);
+app.get('/api/v1/health', healthCheck);
 
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
+  app.listen(PORT, '0.0.0.0', () => {
     console.log(`Ram Prasad General Store API running on port ${PORT}`);
   });
 }

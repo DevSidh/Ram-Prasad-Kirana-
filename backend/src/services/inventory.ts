@@ -5,6 +5,80 @@ export class InventoryAdjustmentError extends Error {}
 export class InventoryService {
   constructor(private prisma: PrismaClient) {}
 
+  private async restockItem(
+    tx: Prisma.TransactionClient,
+    productId: string,
+    quantity: number,
+    referenceId: string,
+    notes: string,
+    performedById?: string,
+  ): Promise<void> {
+    if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+      throw new InventoryAdjustmentError('Restock quantity must be a positive integer.');
+    }
+
+    const rows = await tx.$queryRaw<Array<{ totalStock: number; reservedStock: number }>>`
+      SELECT "totalStock", "reservedStock"
+      FROM "Inventory"
+      WHERE "productId" = ${productId}
+      FOR UPDATE
+    `;
+    const current = rows[0];
+    if (!current) {
+      const inventory = await tx.inventory.create({
+        data: { productId, totalStock: quantity },
+        select: { id: true },
+      });
+      await tx.inventoryTransaction.create({
+        data: {
+          inventory: { connect: { id: inventory.id } },
+          type: 'RESTOCKED',
+          quantity,
+          balanceAfter: quantity,
+          referenceId,
+          notes,
+          ...(performedById
+            ? { performedBy: { connect: { id: performedById } } }
+            : {}),
+        },
+      });
+      return;
+    }
+
+    const totalStock = current.totalStock + quantity;
+    if (totalStock > 2147483647) {
+      throw new InventoryAdjustmentError('Restock quantity exceeds the supported stock limit.');
+    }
+    const rowsAffected = await tx.$executeRaw`
+      UPDATE "Inventory"
+      SET "totalStock" = ${totalStock},
+          "version" = "version" + 1,
+          "updatedAt" = NOW()
+      WHERE "productId" = ${productId}
+        AND "totalStock" = ${current.totalStock}
+        AND "reservedStock" = ${current.reservedStock}
+    `;
+    if (rowsAffected === 0) {
+      throw new InventoryAdjustmentError(
+        'Inventory changed concurrently. Refresh the product and try again.',
+      );
+    }
+
+    await tx.inventoryTransaction.create({
+      data: {
+        inventory: { connect: { productId } },
+        type: 'RESTOCKED',
+        quantity,
+        balanceAfter: totalStock - current.reservedStock,
+        referenceId,
+        notes,
+        ...(performedById
+          ? { performedBy: { connect: { id: performedById } } }
+          : {}),
+      },
+    });
+  }
+
   async setStock(
     tx: Prisma.TransactionClient,
     productId: string,
@@ -197,28 +271,18 @@ export class InventoryService {
     tx: Prisma.TransactionClient,
     items: { productId: string; quantity: number }[],
     referenceId: string,
-    notes?: string
+    notes?: string,
+    performedById?: string,
   ): Promise<void> {
     for (const item of items) {
-      await tx.$executeRaw`
-        UPDATE "Inventory"
-        SET
-          "totalStock" = "totalStock" + ${item.quantity},
-          "version" = "version" + 1,
-          "updatedAt" = NOW()
-        WHERE "productId" = ${item.productId};
-      `;
-
-      await tx.inventoryTransaction.create({
-        data: {
-          inventory: { connect: { productId: item.productId } },
-          type: 'RESTOCKED',
-          quantity: item.quantity,
-          balanceAfter: 0,
-          referenceId,
-          notes: notes ?? `Stock restocked for ${referenceId}`,
-        },
-      });
+      await this.restockItem(
+        tx,
+        item.productId,
+        item.quantity,
+        referenceId,
+        notes ?? `Stock restocked for ${referenceId}`,
+        performedById,
+      );
     }
   }
 

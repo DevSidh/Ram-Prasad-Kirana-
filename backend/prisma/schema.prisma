@@ -26,6 +26,7 @@ model User {
   carts                 Cart?
   deliveries            Delivery[]
   deliveryStatusChanges DeliveryStatusHistory[] @relation("DeliveryStatusActor")
+  inventoryTransactions InventoryTransaction[]  @relation("InventoryTransactionActor")
   notifications         Notification[]
   orders                Order[]
   pushTokens            DeviceToken[]
@@ -87,44 +88,52 @@ model Category {
 }
 
 model Product {
-  id            String           @id @default(cuid())
-  sku           String           @unique
-  name          String
-  slug          String           @unique
-  categoryId    String
-  brand         String?
-  price         Decimal
-  originalPrice Decimal?
-  rating        Decimal          @default(0)
-  reviewCount   Int              @default(0)
-  description   String?
-  origin        String?
-  imageUrl      String?
-  imageData     Bytes?
-  imageMimeType String?
-  unitLabel     String           @default("1 pc")
-  isWholesale   Boolean          @default(false)
-  wholesalePrice Decimal?
-  wholesaleMinimumQuantity Int   @default(1)
-  isOrganic     Boolean          @default(false)
-  isFeatured    Boolean          @default(false)
-  isBestSeller  Boolean          @default(false)
-  isActive      Boolean          @default(true)
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-  cartItems     CartItem[]
-  inventory     Inventory?
-  orderItems    OrderItem[]
-  category      Category         @relation(fields: [categoryId], references: [id])
-  variants      ProductVariant[]
-  reviews       Review[]
-  wishlistItems WishlistItem[]
+  id                       String           @id @default(cuid())
+  sku                      String           @unique
+  name                     String
+  slug                     String           @unique
+  categoryId               String
+  brand                    String?
+  price                    Decimal
+  originalPrice            Decimal?
+  rating                   Decimal          @default(0)
+  reviewCount              Int              @default(0)
+  description              String?
+  origin                   String?
+  imageUrl                 String?
+  imageData                Bytes?
+  imageMimeType            String?
+  unitLabel                String           @default("1 pc")
+  isWholesale              Boolean          @default(false)
+  wholesalePrice           Decimal?
+  wholesaleMinimumQuantity Int              @default(1)
+  lowStockThreshold        Int              @default(10)
+  isOrganic                Boolean          @default(false)
+  isFeatured               Boolean          @default(false)
+  isBestSeller             Boolean          @default(false)
+  isActive                 Boolean          @default(true)
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
+  cartItems                CartItem[]
+  inventory                Inventory?
+  orderItems               OrderItem[]
+  category                 Category         @relation(fields: [categoryId], references: [id])
+  variants                 ProductVariant[]
+  reviews                  Review[]
+  wishlistItems            WishlistItem[]
 
   @@index([categoryId])
   @@index([isActive])
   @@index([isFeatured])
   @@index([isBestSeller])
   @@index([name])
+}
+
+model StoredImage {
+  id        String   @id @default(cuid())
+  imageData Bytes
+  mimeType  String
+  createdAt DateTime @default(now())
 }
 
 model Inventory {
@@ -161,19 +170,22 @@ model ProductVariant {
 }
 
 model InventoryTransaction {
-  id           String                   @id @default(cuid())
-  inventoryId  String
-  type         InventoryTransactionType
-  quantity     Int
-  balanceAfter Int
-  referenceId  String?
-  notes        String?
-  createdAt    DateTime                 @default(now())
-  inventory    Inventory                @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  id            String                   @id @default(cuid())
+  inventoryId   String
+  type          InventoryTransactionType
+  quantity      Int
+  balanceAfter  Int
+  referenceId   String?
+  notes         String?
+  performedById String?
+  createdAt     DateTime                 @default(now())
+  inventory     Inventory                @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  performedBy   User?                    @relation("InventoryTransactionActor", fields: [performedById], references: [id], onDelete: SetNull)
 
   @@index([inventoryId])
   @@index([type])
   @@index([referenceId])
+  @@index([performedById])
   @@index([createdAt])
 }
 
@@ -192,6 +204,7 @@ model Order {
   total              Decimal
   couponCode         String?
   idempotencyKey     String?              @unique
+  scheduledDeliveryAt DateTime?
   shippingName       String
   shippingPhone      String
   shippingAddress    String
@@ -210,6 +223,7 @@ model Order {
   payments           Payment[]
 
   @@index([userId])
+  @@index([userId, createdAt])
   @@index([status])
   @@index([paymentStatus])
   @@index([createdAt])
@@ -268,6 +282,7 @@ model CartItem {
   productVariantId String?
   quantity         Int             @default(1)
   unitPrice        Decimal
+  isWholesale      Boolean         @default(false)
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
   cart             Cart            @relation(fields: [cartId], references: [id], onDelete: Cascade)
@@ -359,7 +374,10 @@ model Delivery {
   cashCollectedAt  DateTime?
   cashHandedOver   Decimal                 @default(0)
   cashHandedOverAt DateTime?
-  notes            String?
+  latitude          Float?
+  longitude         Float?
+  locationUpdatedAt DateTime?
+  notes             String?
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
   deliveryPerson   User?                   @relation(fields: [deliveryPersonId], references: [id])
@@ -368,6 +386,7 @@ model Delivery {
 
   @@index([deliveryPersonId])
   @@index([status])
+  @@index([deliveryPersonId, status, assignedAt])
 }
 
 model DeliveryStatusHistory {
@@ -413,6 +432,14 @@ model Coupon {
 
   @@index([isActive])
   @@index([expiresAt])
+}
+
+model StoreSetting {
+  id                String   @id @default("store")
+  isOrderingEnabled Boolean  @default(true)
+  weeklyHours       Json
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }
 
 enum UserRole {
