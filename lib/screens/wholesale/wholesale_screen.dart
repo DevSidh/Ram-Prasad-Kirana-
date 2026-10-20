@@ -36,9 +36,9 @@ class _WholesaleScreenState extends State<WholesaleScreen> {
     });
     try {
       final response = await context.read<ApiService>().get(
-            '/wholesale',
-            queryParams: const {'page': '1', 'limit': '100'},
-          );
+        '/wholesale',
+        queryParams: const {'page': '1', 'limit': '100'},
+      );
       if (!mounted) return;
       if (response is! Map<String, dynamic> || response['data'] is! List) {
         throw const FormatException(
@@ -159,64 +159,69 @@ class _WholesaleScreenState extends State<WholesaleScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _error != null
-                    ? StorePageError(
-                        title: 'Wholesale items could not load',
-                        message: _error!,
-                        retryLabel: 'Try again',
-                        onRetry: _loadWholesaleItems,
+                    ? SingleChildScrollView(
+                        child: StorePageError(
+                          title: 'Wholesale items could not load',
+                          message: _error!,
+                          retryLabel: 'Try again',
+                          onRetry: _loadWholesaleItems,
+                        ),
                       )
-                : products.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(28),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.inventory_2_outlined,
-                                size: 42,
-                                color: AppConstants.textMuted,
+                    : products.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(28),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.inventory_2_outlined,
+                                    size: 42,
+                                    color: AppConstants.textMuted,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    _query.isEmpty
+                                        ? 'Wholesale products will appear here when the store adds them.'
+                                        : 'No wholesale products match "$_query".',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: AppConstants.textMuted,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 10),
-                              Text(
-                                _query.isEmpty
-                                    ? 'Wholesale products will appear here when the store adds them.'
-                                    : 'No wholesale products match "$_query".',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: AppConstants.textMuted,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
+                            ),
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                            itemCount: products.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 10),
+                            itemBuilder: (context, index) =>
+                                _WholesaleProductCard(
+                              product: products[index],
+                              cartQuantity: cart
+                                      .items['${products[index].id}:wholesale']
+                                      ?.quantity ??
+                                  0,
+                              onAdd: () {
+                                final product = products[index];
+                                final minimum =
+                                    product.wholesaleMinimumQuantity;
+                                try {
+                                  cart.addItem(product, minimum, true);
+                                } on StateError catch (error) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(error.message.toString()),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
                           ),
-                        ),
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                        itemCount: products.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
-                        itemBuilder: (context, index) => _WholesaleProductCard(
-                          product: products[index],
-                          cartQuantity: cart
-                                  .items['${products[index].id}:wholesale']
-                                  ?.quantity ??
-                              0,
-                          onAdd: () {
-                            final product = products[index];
-                            final minimum = product.wholesaleMinimumQuantity;
-                            try {
-                              cart.addItem(product, minimum, true);
-                            } on StateError catch (error) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(error.message.toString()),
-                                ),
-                              );
-                            }
-                          },
-                        ),
-                      ),
           ),
         ],
       ),
@@ -253,8 +258,10 @@ class _WholesaleProductCard extends StatelessWidget {
           ProductThumbnail(
             imageUrl: product.imageUrl,
             size: 82,
-            fit: BoxFit.cover,
+            fit: BoxFit.contain,
             borderRadius: BorderRadius.circular(13),
+            backgroundColor: Colors.white,
+            imageWidthFactor: .77,
           ),
           const SizedBox(width: 12),
           Expanded(

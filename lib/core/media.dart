@@ -48,6 +48,22 @@ String highResolutionImageUrl(String imageUrl) {
   return optimizedProductImageUrl(imageUrl);
 }
 
+String originalCarouselProductImageUrl(String imageUrl) {
+  final resolvedUrl = resolveProductImageUrl(imageUrl);
+  final uri = Uri.tryParse(resolvedUrl);
+  if (uri == null ||
+      !uri.path.contains('/api/v1/products/') ||
+      !uri.path.endsWith('/image')) {
+    return resolvedUrl;
+  }
+  return uri.replace(
+    queryParameters: {
+      ...uri.queryParameters,
+      'original': '1',
+    },
+  ).toString();
+}
+
 String optimizedProductImageUrl(
   String imageUrl, {
   int targetWidth = 800,

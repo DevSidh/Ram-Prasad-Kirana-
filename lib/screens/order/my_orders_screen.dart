@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:printing/printing.dart';
+
 import '../../core/constants.dart';
+import '../../models/order.dart';
 import '../../providers/order_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../services/order_invoice_service.dart';
 import 'order_tracking_screen.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/store_animation.dart';
@@ -17,6 +21,7 @@ class MyOrdersScreen extends StatefulWidget {
 class _MyOrdersScreenState extends State<MyOrdersScreen> {
   bool _loading = true;
   String? _error;
+  String? _invoiceOrderId;
 
   @override
   void initState() {
@@ -36,6 +41,33 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
       setState(() => _error = error.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _downloadInvoice(Order order) async {
+    if (_invoiceOrderId != null) return;
+    setState(() => _invoiceOrderId = order.id);
+    try {
+      final bytes = await OrderInvoiceService.createPdf(order);
+      if (!mounted) return;
+      final safeOrderNumber =
+          order.orderNumber.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+      await Printing.layoutPdf(
+        name: 'Ram-Prasad-Invoice-$safeOrderNumber.pdf',
+        onLayout: (_) async => bytes,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not create the invoice PDF: '
+            '${error.toString().replaceFirst('Exception: ', '')}',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _invoiceOrderId = null);
     }
   }
 
@@ -114,7 +146,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
     );
   }
 
-  Widget _buildOrdersList(BuildContext context, List<dynamic> list) {
+  Widget _buildOrdersList(BuildContext context, List<Order> list) {
     if (list.isEmpty) {
       return Center(
         child: Text('No orders in this status',
@@ -130,8 +162,8 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         final ord = list[index];
-        final canCancel = const {'PLACED', 'CONFIRMED', 'PROCESSING'}
-            .contains(ord.status);
+        final canCancel =
+            const {'PLACED', 'CONFIRMED', 'PROCESSING'}.contains(ord.status);
 
         return Container(
           padding: const EdgeInsets.all(16),
@@ -190,73 +222,93 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
               const Divider(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (canCancel)
-                    TextButton(
-                      onPressed: () {
-                        showDialog(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Text('Cancel Order?'),
-                            content: const Text(
-                                'Are you sure you want to cancel this order?'),
-                            actions: [
-                              TextButton(
-                                  onPressed: () => Navigator.pop(ctx),
-                                  child: const Text('Keep')),
-                              TextButton(
-                                onPressed: () async {
-                                  try {
-                                    await orderProvider.cancelOrder(ord.id);
-                                    if (ctx.mounted) Navigator.pop(ctx);
-                                  } catch (error) {
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            error.toString().replaceFirst(
-                                                  'Exception: ',
-                                                  '',
-                                                ),
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                  }
-                                },
-                                child: const Text('Cancel Order',
-                                    style: TextStyle(color: Colors.red)),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      if (canCancel)
+                        TextButton(
+                          onPressed: () {
+                            showDialog(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: const Text('Cancel Order?'),
+                                content: const Text(
+                                    'Are you sure you want to cancel this order?'),
+                                actions: [
+                                  TextButton(
+                                      onPressed: () => Navigator.pop(ctx),
+                                      child: const Text('Keep')),
+                                  TextButton(
+                                    onPressed: () async {
+                                      try {
+                                        await orderProvider.cancelOrder(ord.id);
+                                        if (ctx.mounted) Navigator.pop(ctx);
+                                      } catch (error) {
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                error.toString().replaceFirst(
+                                                      'Exception: ',
+                                                      '',
+                                                    ),
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    },
+                                    child: const Text('Cancel Order',
+                                        style: TextStyle(color: Colors.red)),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                        );
-                      },
-                      child: const Text('Cancel',
-                          style: TextStyle(color: Colors.red, fontSize: 12)),
-                    )
-                  else
-                    const SizedBox(),
-                  ElevatedButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => OrderTrackingScreen(order: ord)),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppConstants.primary,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
-                    ),
-                    child: const Text('Track Live',
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: AppConstants.primaryForeground)),
+                            );
+                          },
+                          child: const Text('Cancel',
+                              style:
+                                  TextStyle(color: Colors.red, fontSize: 12)),
+                        )
+                      else
+                        const SizedBox(),
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    OrderTrackingScreen(order: ord)),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppConstants.primary,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                        ),
+                        child: const Text('Track Live',
+                            style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: AppConstants.primaryForeground)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  OutlinedButton.icon(
+                    onPressed: _invoiceOrderId == null
+                        ? () => _downloadInvoice(ord)
+                        : null,
+                    icon: _invoiceOrderId == ord.id
+                        ? const SizedBox.square(
+                            dimension: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.download_outlined),
+                    label: const Text('Download invoice PDF'),
                   ),
                 ],
               ),

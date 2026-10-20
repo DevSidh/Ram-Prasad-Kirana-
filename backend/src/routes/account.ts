@@ -132,18 +132,37 @@ export function createAccountRouter(
     const userId = authenticatedUserId(res);
     if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
     try {
-      const notifications = await prisma.notification.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-        take: 100,
-      });
+      const [notifications, unreadCount] = await Promise.all([
+        prisma.notification.findMany({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+          take: 100,
+        }),
+        prisma.notification.count({ where: { userId, isRead: false } }),
+      ]);
       return res.json({
         data: notifications,
+        unreadCount,
         pushAvailable: isPushConfigured(),
       });
     } catch (error) {
       console.error('Notification list failed:', error);
       return res.status(500).json({ error: 'Unable to load your notifications.' });
+    }
+  });
+
+  router.patch('/notifications/read-all', async (_req, res) => {
+    const userId = authenticatedUserId(res);
+    if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
+    try {
+      await prisma.notification.updateMany({
+        where: { userId, isRead: false },
+        data: { isRead: true },
+      });
+      return res.sendStatus(204);
+    } catch (error) {
+      console.error('Notification read-all update failed:', error);
+      return res.status(500).json({ error: 'Unable to mark your notifications as read.' });
     }
   });
 

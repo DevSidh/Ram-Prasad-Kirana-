@@ -60,6 +60,12 @@
 @import local_auth_darwin;
 #endif
 
+#if __has_include(<printing/PrintingPlugin.h>)
+#import <printing/PrintingPlugin.h>
+#else
+@import printing;
+#endif
+
 #if __has_include(<shared_preferences_foundation/SharedPreferencesPlugin.h>)
 #import <shared_preferences_foundation/SharedPreferencesPlugin.h>
 #else
@@ -96,6 +102,7 @@
   [GeolocatorPlugin registerWithRegistrar:[registry registrarForPlugin:@"GeolocatorPlugin"]];
   [FGMGoogleMapsPlugin registerWithRegistrar:[registry registrarForPlugin:@"FGMGoogleMapsPlugin"]];
   [LocalAuthPlugin registerWithRegistrar:[registry registrarForPlugin:@"LocalAuthPlugin"]];
+  [PrintingPlugin registerWithRegistrar:[registry registrarForPlugin:@"PrintingPlugin"]];
   [SharedPreferencesPlugin registerWithRegistrar:[registry registrarForPlugin:@"SharedPreferencesPlugin"]];
   [SqflitePlugin registerWithRegistrar:[registry registrarForPlugin:@"SqflitePlugin"]];
   [URLLauncherPlugin registerWithRegistrar:[registry registrarForPlugin:@"URLLauncherPlugin"]];

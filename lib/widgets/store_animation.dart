@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 class StoreAnimation extends StatefulWidget {
   final String assetPath;
   final double size;
+  final double? aspectRatio;
   final String semanticLabel;
   final bool loop;
 
@@ -12,8 +13,9 @@ class StoreAnimation extends StatefulWidget {
     required this.assetPath,
     required this.size,
     required this.semanticLabel,
+    this.aspectRatio,
     this.loop = true,
-  });
+  }) : assert(aspectRatio == null || aspectRatio > 0);
 
   @override
   State<StoreAnimation> createState() => _StoreAnimationState();
@@ -24,12 +26,14 @@ class _StoreAnimationState extends State<StoreAnimation> {
 
   @override
   Widget build(BuildContext context) {
+    final aspectRatio = widget.aspectRatio;
     return Semantics(
       label: widget.semanticLabel,
       image: true,
-      child: SizedBox.square(
+      child: SizedBox(
         key: ValueKey('store-animation-${widget.assetPath}'),
-        dimension: widget.size,
+        width: widget.size,
+        height: aspectRatio == null ? widget.size : widget.size / aspectRatio,
         child: _failedToLoad
             ? Icon(
                 Icons.animation_outlined,

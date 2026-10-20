@@ -14,10 +14,10 @@ import '../providers/cart_provider.dart';
 import '../providers/product_provider.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/vending/vending_machine_screen.dart';
-import '../screens/category/categories_screen.dart';
 import '../screens/search/search_screen.dart';
 import '../screens/cart/cart_screen.dart';
 import '../screens/profile/profile_screen.dart';
+import '../screens/wholesale/wholesale_screen.dart';
 import '../widgets/cart_flight_overlay.dart';
 
 class MainBottomNav extends StatefulWidget {
@@ -37,7 +37,7 @@ class _MainBottomNavState extends State<MainBottomNav>
   final List<Widget> _screens = const [
     HomeScreen(),
     VendingMachineScreen(),
-    CategoriesScreen(),
+    WholesaleScreen(),
     SearchScreen(),
     CartScreen(),
     ProfileScreen(),
@@ -72,7 +72,7 @@ class _MainBottomNavState extends State<MainBottomNav>
       _currentIndex = index;
       _visitedScreens.add(index);
     });
-    if (index == 0 || index == 2 || index == 3) {
+    if (index == 0 || index == 3) {
       unawaited(context.read<ProductProvider>().refreshCatalogIfStale());
     }
   }
@@ -170,7 +170,7 @@ class _FloatingNavigationBar extends StatelessWidget {
     final labels = [
       context.tr('Home'),
       context.tr('Vending'),
-      context.tr('Categories'),
+      context.tr('Wholesale'),
       context.tr('Search'),
       context.tr('Cart'),
       context.tr('Profile'),
@@ -178,7 +178,7 @@ class _FloatingNavigationBar extends StatelessWidget {
     const icons = [
       Icons.home_outlined,
       Icons.local_drink_outlined,
-      Icons.grid_view_outlined,
+      Icons.inventory_2_outlined,
       Icons.search_outlined,
       Icons.shopping_cart_outlined,
       Icons.person_outline,
@@ -186,7 +186,7 @@ class _FloatingNavigationBar extends StatelessWidget {
     const keyNames = [
       'Home',
       'Vending',
-      'Categories',
+      'Wholesale',
       'Search',
       'Cart',
       'Profile',

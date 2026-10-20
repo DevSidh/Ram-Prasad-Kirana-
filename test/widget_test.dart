@@ -13,6 +13,7 @@ import 'package:freshharvest_grocery/providers/store_availability_provider.dart'
 import 'package:freshharvest_grocery/providers/theme_provider.dart';
 import 'package:freshharvest_grocery/models/product.dart';
 import 'package:freshharvest_grocery/screens/home/home_screen.dart';
+import 'package:freshharvest_grocery/screens/wholesale/wholesale_screen.dart';
 import 'package:freshharvest_grocery/services/api_service.dart';
 
 void main() {
@@ -72,7 +73,7 @@ void main() {
     for (final label in [
       'Home',
       'Vending',
-      'Categories',
+      'Wholesale',
       'Search',
       'Cart',
       'Profile'
@@ -206,7 +207,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('floating-nav-capsule')), findsOneWidget);
 
-    await tester.tap(find.byKey(const ValueKey('nav-tab-Categories')));
+    await tester.tap(find.byKey(const ValueKey('nav-tab-Wholesale')));
     await tester.pump();
     expect(
       tester
@@ -217,12 +218,10 @@ void main() {
       2,
     );
     await tester.pump(const Duration(milliseconds: 120));
-    final categoriesBounds =
-        tester.getRect(find.byKey(const ValueKey('categories-screen-scroll')));
-    expect(categoriesBounds.left, 0);
-    expect(categoriesBounds.width, 320);
+    expect(find.byType(WholesaleScreen), findsOneWidget);
+    expect(find.text('Wholesale'), findsOneWidget);
     await tester.pumpAndSettle();
-    expectIndicatorWithinTab('Categories');
+    expectIndicatorWithinTab('Wholesale');
 
     await tester.tap(find.byKey(const ValueKey('nav-tab-Search')));
     await tester.pump();

@@ -111,6 +111,8 @@ Future<void> showProductQuickView(
                                         borderRadius: BorderRadius.zero,
                                         fallbackIcon:
                                             Icons.local_grocery_store_rounded,
+                                        backgroundColor: Colors.white,
+                                        imageWidthFactor: .77,
                                       ),
                                     ),
                                   ),

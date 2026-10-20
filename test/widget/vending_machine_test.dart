@@ -4,9 +4,10 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:freshharvest_grocery/providers/cart_provider.dart';
+import 'package:freshharvest_grocery/providers/product_provider.dart';
 import 'package:freshharvest_grocery/screens/vending/vending_machine_screen.dart';
-import 'package:freshharvest_grocery/screens/vending/drinks_menu_section.dart';
 import 'package:freshharvest_grocery/services/api_service.dart';
+import 'package:freshharvest_grocery/widgets/product_card.dart';
 
 const _drinks = <String>[
   'Cola',
@@ -95,11 +96,14 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
+    final products = ProductProvider(apiService: api);
+    addTearDown(products.dispose);
     await tester.pumpWidget(
       MultiProvider(
         providers: [
           Provider<ApiService>.value(value: api),
           ChangeNotifierProvider<CartProvider>.value(value: cart),
+          ChangeNotifierProvider<ProductProvider>.value(value: products),
         ],
         child: MaterialApp(
           theme: brightness == Brightness.dark
@@ -119,7 +123,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('shows live drinks, filters categories, and adjusts cart inline',
+  testWidgets('shows home-style drink cards and keeps category/cart behavior',
       (tester) async {
     final api = _VendingApi();
     final cart = CartProvider();
@@ -135,38 +139,13 @@ void main() {
     expect(find.text('18 drinks'), findsOneWidget);
     expect(find.text('Cola'), findsOneWidget);
     expect(find.text('Strawberry Milk Special'), findsNothing);
-    final featuredCard = find.byWidgetPredicate(
-      (widget) => widget is DrinkCard && widget.featured,
-    );
-    expect(featuredCard, findsOneWidget);
-    expect(tester.getSize(featuredCard).width, 328);
-    final featuredStage = find.descendant(
-      of: featuredCard,
-      matching: find.byType(DrinkStage),
-    );
+    expect(find.byType(ProductCard), findsWidgets);
     expect(
-      find.descendant(
-        of: featuredStage,
-        matching: find.byWidgetPredicate(
-          (widget) => widget is ColoredBox && widget.color == Colors.white,
-        ),
-      ),
-      findsOneWidget,
+      tester.widgetList<ProductCard>(find.byType(ProductCard)).every(
+            (card) => card.compact && card.compactImageHeight == 100,
+          ),
+      isTrue,
     );
-    expect(
-      find.descendant(
-        of: featuredStage,
-        matching: find.byType(Transform),
-      ),
-      findsNothing,
-    );
-    final normalCards = find.byWidgetPredicate(
-      (widget) => widget is DrinkCard && !widget.featured,
-    );
-    final cardSizes = tester.widgetList<Widget>(normalCards).map(
-          (card) => tester.getSize(find.byWidget(card)),
-        );
-    expect(cardSizes.toSet().length, 1);
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.byKey(const ValueKey('drink-category-Milk')));
@@ -176,12 +155,16 @@ void main() {
     expect(find.text('Cola'), findsNothing);
     expect(tester.takeException(), isNull);
 
-    await tester.tap(find.byKey(const ValueKey('add-drink-drink-3')));
+    final drinkCard = find.byKey(const ValueKey('drink-3'));
+    final addButton = find.descendant(
+      of: drinkCard,
+      matching: find.byTooltip('Add to basket'),
+    );
+    await tester.tap(addButton);
     await tester.pumpAndSettle();
     expect(find.text('1'), findsOneWidget);
     expect(find.text('Strawberry Milk Special'), findsWidgets);
-
-    await tester.tap(find.byTooltip('Increase Strawberry Milk Special'));
+    await tester.tap(addButton);
     await tester.pumpAndSettle();
 
     expect(cart.itemCount, 2);
@@ -194,7 +177,7 @@ void main() {
     addTearDown(cart.dispose);
     await pumpScreen(tester, _VendingApi(), cart);
 
-    final cards = find.byType(DrinkCard);
+    final cards = find.byType(ProductCard);
     expect(cards, findsWidgets);
     for (final card in tester.widgetList<Widget>(cards)) {
       final rect = tester.getRect(find.byWidget(card));
@@ -219,7 +202,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Strawberry Milk Special'), findsOneWidget);
     expect(tester.takeException(), isNull);
-    for (final card in tester.widgetList<Widget>(find.byType(DrinkCard))) {
+    for (final card in tester.widgetList<Widget>(find.byType(ProductCard))) {
       final rect = tester.getRect(find.byWidget(card));
       expect(rect.left, greaterThanOrEqualTo(0));
       expect(rect.right, lessThanOrEqualTo(440));
@@ -240,11 +223,11 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('drink-category-Milk')));
       await tester.pumpAndSettle();
 
-      final info = find.ancestor(
+      final card = find.ancestor(
         of: find.text('Strawberry Milk Special'),
-        matching: find.byType(DrinkInfoPlate),
+        matching: find.byType(ProductCard),
       );
-      final theme = Theme.of(tester.element(info));
+      final theme = Theme.of(tester.element(card));
       final isDark = brightness == Brightness.dark;
       expect(
         tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
@@ -253,33 +236,24 @@ void main() {
       final name = find.text('Strawberry Milk Special');
       expect(
           tester.widget<Text>(name).style?.color, theme.colorScheme.onSurface);
-      final card = tester.widget<AnimatedContainer>(
-        find
-            .ancestor(
-              of: info,
-              matching: find.byType(AnimatedContainer),
-            )
-            .first,
-      );
-      expect(
-        (card.decoration! as BoxDecoration).color,
-        theme.colorScheme.surface,
-      );
       expect(tester.takeException(), isNull);
     });
   }
 
-  testWidgets('greys out sold-out drinks and disables add control',
-      (tester) async {
+  testWidgets('sold-out drinks cannot be added to the cart', (tester) async {
     final cart = CartProvider();
     addTearDown(cart.dispose);
     await pumpScreen(tester, _VendingApi(), cart);
 
-    final soldOutButton = tester.widget<FilledButton>(
-      find.byKey(const ValueKey('sold-out-drink-drink-0')),
+    final drinkCard = find.byKey(const ValueKey('drink-0'));
+    final unavailableButton = find.descendant(
+      of: drinkCard,
+      matching: find.byTooltip('Unavailable'),
     );
-    expect(soldOutButton.onPressed, isNull);
-    expect(find.text('Sold out'), findsNWidgets(2));
+    expect(unavailableButton, findsOneWidget);
+    await tester.tap(unavailableButton);
+    await tester.pumpAndSettle();
+    expect(cart.itemCount, 0);
     expect(tester.takeException(), isNull);
   });
 

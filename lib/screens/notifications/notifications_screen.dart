@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/constants.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/cart_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../services/api_service.dart';
@@ -25,10 +26,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   bool _pushAvailable = false;
   bool _pushBusy = false;
   bool _clearingNotifications = false;
+  bool _markAllReadStarted = false;
   String? _error;
   String? _preferencesWarning;
-  Map<String, bool> _notificationPreferences =
-      NotificationPreferences.defaults;
+  Map<String, bool> _notificationPreferences = NotificationPreferences.defaults;
   String? _loadedUserId;
   final Set<String> _deletingNotificationIds = {};
   int _loadRevision = 0;
@@ -48,6 +49,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       _pushBusy = false;
       _pushAvailable = false;
       _clearingNotifications = false;
+      _markAllReadStarted = false;
       _error = null;
       _deletingNotificationIds.clear();
       if (userId != null) {
@@ -75,8 +77,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       _error = null;
     });
     try {
-      final response =
-          await context.read<ApiService>().get('/account/notifications');
+      final api = context.read<ApiService>();
+      if (!_markAllReadStarted) {
+        await api.patch('/account/notifications/read-all', const {});
+        _markAllReadStarted = true;
+      }
+      final response = await api.get('/account/notifications');
       if (response is! Map<String, dynamic> || response['data'] is! List) {
         throw StateError('The server returned invalid notification data.');
       }
@@ -91,8 +97,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       try {
         notificationPreferences = await NotificationPreferences.load();
       } catch (error) {
-        preferencesWarning =
-            error.toString().replaceFirst('Exception: ', '');
+        preferencesWarning = error.toString().replaceFirst('Exception: ', '');
       }
       if (!mounted ||
           revision != _loadRevision ||
@@ -149,6 +154,28 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _handleNotificationTap(
+    Map<String, dynamic> notification,
+  ) async {
+    await _markAsRead(notification);
+    if (!mounted) return;
+    final metadata = notification['metadata'];
+    final rawCouponCode =
+        metadata is Map<String, dynamic> ? metadata['couponCode'] : null;
+    if (rawCouponCode is! String || rawCouponCode.trim().isEmpty) return;
+
+    final couponCode = rawCouponCode.trim().toUpperCase();
+    if (!RegExp(r'^[A-Z0-9][A-Z0-9_-]{2,39}$').hasMatch(couponCode)) return;
+    context.read<CartProvider>().suggestCouponCode(couponCode);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Coupon $couponCode added to your cart. It will be validated at checkout.',
+        ),
+      ),
+    );
   }
 
   Future<void> _deleteNotification(Map<String, dynamic> notification) async {
@@ -506,7 +533,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                               for (final notification in visibleNotifications)
                                 _NotificationTile(
                                   notification: notification,
-                                  onTap: () => _markAsRead(notification),
+                                  onTap: () =>
+                                      _handleNotificationTap(notification),
                                   isDeleting: _deletingNotificationIds
                                       .contains(notification['id']?.toString()),
                                   onDelete: () =>
@@ -775,7 +803,8 @@ class _FilteredNotificationsEmpty extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              context.tr('Change notification preferences to see more activity.'),
+              context
+                  .tr('Change notification preferences to see more activity.'),
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: AppConstants.textMuted,

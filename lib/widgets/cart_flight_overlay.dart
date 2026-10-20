@@ -145,6 +145,8 @@ class _ProductFlightState extends State<_ProductFlight>
                         height: rect.height,
                         fit: BoxFit.contain,
                         borderRadius: BorderRadius.zero,
+                        backgroundColor: Colors.white,
+                        imageWidthFactor: .77,
                       ),
                     ),
                   ),

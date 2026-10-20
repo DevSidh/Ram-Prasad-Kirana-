@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -39,12 +40,14 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     with WidgetsBindingObserver {
   Timer? _refreshTimer;
   GoogleMapController? _mapController;
+  BitmapDescriptor? _riderMarkerIcon;
   String? _refreshError;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(_loadRiderMarkerIcon());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_refreshOrder());
     });
@@ -52,6 +55,33 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
       const Duration(seconds: 20),
       (_) => unawaited(_refreshOrder()),
     );
+  }
+
+  Future<void> _loadRiderMarkerIcon() async {
+    try {
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      const logicalSize = Size(96, 124);
+      canvas.scale(2);
+      const painter = _DeliveryBikePinPainter();
+      painter.paint(canvas, logicalSize);
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(192, 248);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
+      if (data == null) {
+        throw StateError('Could not encode the delivery rider map marker.');
+      }
+      final descriptor = BitmapDescriptor.bytes(
+        data.buffer.asUint8List(),
+        width: 48,
+        height: 62,
+      );
+      if (mounted) setState(() => _riderMarkerIcon = descriptor);
+    } catch (error, stackTrace) {
+      debugPrint(
+          'Could not create the delivery rider map marker: $error\n$stackTrace');
+    }
   }
 
   @override
@@ -288,9 +318,10 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                                 Marker(
                                   markerId: const MarkerId('delivery-rider'),
                                   position: riderLocation,
-                                  icon: BitmapDescriptor.defaultMarkerWithHue(
-                                    BitmapDescriptor.hueAzure,
-                                  ),
+                                  icon: _riderMarkerIcon ??
+                                      BitmapDescriptor.defaultMarkerWithHue(
+                                        BitmapDescriptor.hueGreen,
+                                      ),
                                   infoWindow: const InfoWindow(
                                     title: 'Delivery rider · live location',
                                   ),
@@ -316,60 +347,60 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                           child: _MapStatusPill(
                             icon: Icons.route_rounded,
                             label: riderLocation == null
-                                  ? (order.status.toUpperCase() ==
-                                          'OUT_FOR_DELIVERY'
-                                      ? 'Waiting for rider location'
-                                      : 'Store to delivery address')
-                                  : 'Delivery rider · live',
-                              theme: theme,
-                            ),
+                                ? (order.status.toUpperCase() ==
+                                        'OUT_FOR_DELIVERY'
+                                    ? 'Waiting for rider location'
+                                    : 'Store to delivery address')
+                                : 'Delivery rider · live',
+                            theme: theme,
+                          ),
                         ),
                         if (destination != null && !kIsWeb)
-                            Positioned(
-                              right: 12,
-                              bottom: 12,
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  _MapControlButton(
-                                    tooltip: 'Zoom in',
-                                    icon: Icons.add_rounded,
-                                    theme: theme,
-                                    onPressed: () => _zoomMap(true),
+                          Positioned(
+                            right: 12,
+                            bottom: 12,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _MapControlButton(
+                                  tooltip: 'Zoom in',
+                                  icon: Icons.add_rounded,
+                                  theme: theme,
+                                  onPressed: () => _zoomMap(true),
+                                ),
+                                const SizedBox(height: 8),
+                                _MapControlButton(
+                                  tooltip: 'Zoom out',
+                                  icon: Icons.remove_rounded,
+                                  theme: theme,
+                                  onPressed: () => _zoomMap(false),
+                                ),
+                                const SizedBox(height: 8),
+                                _MapControlButton(
+                                  tooltip: 'Show store, rider and address',
+                                  icon: Icons.center_focus_strong_rounded,
+                                  theme: theme,
+                                  onPressed: () => _fitMapToMarkers(
+                                    destination,
+                                    riderLocation: riderLocation,
                                   ),
-                                  const SizedBox(height: 8),
-                                  _MapControlButton(
-                                    tooltip: 'Zoom out',
-                                    icon: Icons.remove_rounded,
-                                    theme: theme,
-                                    onPressed: () => _zoomMap(false),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  _MapControlButton(
-                                    tooltip: 'Show store, rider and address',
-                                    icon: Icons.center_focus_strong_rounded,
-                                    theme: theme,
-                                    onPressed: () => _fitMapToMarkers(
-                                      destination,
-                                      riderLocation: riderLocation,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
+                          ),
                         if (order.status.toUpperCase() == 'OUT_FOR_DELIVERY' &&
-                              riderLocation == null)
-                            Positioned(
-                              left: 16,
-                              right: 72,
-                              bottom: 16,
-                              child: _MapStatusPill(
-                                icon: Icons.location_searching_rounded,
-                                label:
-                                    'Live location appears when the delivery partner shares it.',
-                                theme: theme,
-                              ),
+                            riderLocation == null)
+                          Positioned(
+                            left: 16,
+                            right: 72,
+                            bottom: 16,
+                            child: _MapStatusPill(
+                              icon: Icons.location_searching_rounded,
+                              label:
+                                  'Live location appears when the delivery partner shares it.',
+                              theme: theme,
                             ),
+                          ),
                       ],
                     ),
                   ),
@@ -912,4 +943,59 @@ class _TrackingCard extends StatelessWidget {
           child: child,
         ),
       );
+}
+
+class _DeliveryBikePinPainter extends CustomPainter {
+  const _DeliveryBikePinPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final pin = Path()
+      ..moveTo(48, 121)
+      ..cubicTo(41, 107, 8, 74, 8, 45)
+      ..cubicTo(8, 22, 26, 4, 48, 4)
+      ..cubicTo(70, 4, 88, 22, 88, 45)
+      ..cubicTo(88, 74, 55, 107, 48, 121)
+      ..close();
+    canvas.drawShadow(pin, const Color(0x88000000), 4, true);
+    canvas.drawPath(pin, Paint()..color = const Color(0xFF167A4A));
+    canvas.drawCircle(
+      const Offset(48, 44),
+      30,
+      Paint()..color = Colors.white,
+    );
+
+    final bikePaint = Paint()
+      ..color = const Color(0xFF173C2B)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawCircle(const Offset(31, 52), 9, bikePaint);
+    canvas.drawCircle(const Offset(65, 52), 9, bikePaint);
+    final frame = Path()
+      ..moveTo(31, 52)
+      ..lineTo(42, 34)
+      ..lineTo(50, 52)
+      ..lineTo(31, 52)
+      ..moveTo(42, 34)
+      ..lineTo(57, 34)
+      ..lineTo(65, 52)
+      ..lineTo(50, 52)
+      ..moveTo(57, 34)
+      ..lineTo(62, 29)
+      ..moveTo(39, 31)
+      ..lineTo(45, 31);
+    canvas.drawPath(frame, bikePaint);
+    canvas.drawCircle(
+      const Offset(50, 52),
+      2.5,
+      Paint()
+        ..color = const Color(0xFF173C2B)
+        ..style = PaintingStyle.fill,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _DeliveryBikePinPainter oldDelegate) => false;
 }

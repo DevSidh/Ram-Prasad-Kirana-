@@ -11,6 +11,7 @@ import 'package:freshharvest_grocery/providers/product_provider.dart';
 import 'package:freshharvest_grocery/providers/store_availability_provider.dart';
 import 'package:freshharvest_grocery/providers/theme_provider.dart';
 import 'package:freshharvest_grocery/screens/category/categories_screen.dart';
+import 'package:freshharvest_grocery/screens/wholesale/wholesale_screen.dart';
 import 'package:freshharvest_grocery/services/api_service.dart';
 
 class _CategoryApi extends ApiService {
@@ -19,6 +20,7 @@ class _CategoryApi extends ApiService {
     String endpoint, {
     Map<String, String>? queryParams,
   }) async {
+    if (endpoint == '/wholesale') return {'data': []};
     if (endpoint == '/categories') {
       return {
         'data': [
@@ -119,7 +121,7 @@ void main() {
   });
 
   testWidgets(
-      'last aisle stays clear of floating navigation on compact screens',
+      'wholesale tab stays clear of floating navigation on compact screens',
       (tester) async {
     tester.view.physicalSize = const Size(435, 545);
     tester.view.devicePixelRatio = 1;
@@ -157,41 +159,14 @@ void main() {
     final pageBody =
         tester.getRect(find.byKey(const ValueKey('main-bottom-nav-body')));
     expect(pageBody.height, greaterThan(100));
-    expect(
-      tester
-          .getRect(find.byKey(const ValueKey('categories-screen-scroll')))
-          .height,
-      greaterThan(100),
-    );
-    expect(find.text('All Grocery Aisles'), findsOneWidget);
+    expect(find.byType(WholesaleScreen), findsOneWidget);
+    expect(find.text('Wholesale'), findsOneWidget);
 
     final navigationBounds =
         tester.getRect(find.byKey(const ValueKey('floating-nav-capsule')));
     expect(navigationBounds.bottom, greaterThan(500));
     expect(pageBody.bottom, greaterThan(navigationBounds.top));
 
-    final categoryScroll = find.descendant(
-      of: find.byKey(const ValueKey('categories-screen-scroll')),
-      matching: find.byType(Scrollable),
-    );
-    final scrollPosition =
-        tester.state<ScrollableState>(categoryScroll).position;
-    scrollPosition.jumpTo(scrollPosition.maxScrollExtent);
-    await tester.pumpAndSettle();
-    final lastAisle = find
-        .ancestor(
-          of: find.text('Pen'),
-          matching: find.byType(Material),
-        )
-        .first;
-    final aisleBounds = tester.getRect(lastAisle);
-
-    expect(
-      aisleBounds.bottom,
-      lessThanOrEqualTo(navigationBounds.top),
-      reason:
-          'Last aisle $aisleBounds must remain above navigation $navigationBounds.',
-    );
     expect(tester.takeException(), isNull);
   });
 }

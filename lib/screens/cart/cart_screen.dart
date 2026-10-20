@@ -218,6 +218,9 @@ class _CartScreenState extends State<CartScreen> {
                                             ProductThumbnail(
                                               imageUrl: item.product.imageUrl,
                                               size: 72,
+                                              fit: BoxFit.contain,
+                                              backgroundColor: Colors.white,
+                                              imageWidthFactor: .77,
                                             ),
                                             const SizedBox(width: 12),
                                             Expanded(
@@ -287,6 +290,9 @@ class _CartScreenState extends State<CartScreen> {
                                         ProductThumbnail(
                                           imageUrl: item.product.imageUrl,
                                           size: 72,
+                                          fit: BoxFit.contain,
+                                          backgroundColor: Colors.white,
+                                          imageWidthFactor: .77,
                                         ),
                                         const SizedBox(width: 12),
                                         Expanded(

@@ -333,7 +333,8 @@ class _AdminApi extends ApiService {
     uploadedFields = fields;
     uploadedFileName = fileName;
     uploadedBytes = bytes;
-    if (endpoint == '/admin/uploads/images') {
+    if (endpoint == '/admin/uploads/images' ||
+        endpoint == '/admin/uploads/product-images') {
       return {'url': '/api/v1/images/asset-1'};
     }
     return {
@@ -633,6 +634,7 @@ void main() {
     );
 
     expect(api.uploadedFileName, 'product.png');
+    expect(api.uploadedEndpoint, '/admin/uploads/product-images');
     expect(api.uploadedBytes, bytes);
     expect(
       url,

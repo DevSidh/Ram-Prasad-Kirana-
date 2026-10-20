@@ -1,12 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/responsive_layout.dart';
 import '../../models/product.dart';
-import '../../providers/cart_provider.dart';
 import '../../services/api_service.dart';
+import '../../widgets/product_card.dart';
 import 'drinks_menu_section.dart';
 
 class VendingMachineScreen extends StatefulWidget {
@@ -27,9 +27,7 @@ class _VendingMachineScreenState extends State<VendingMachineScreen> {
   ];
 
   final _scrollController = ScrollController();
-  final Map<String, GlobalKey> _drinkKeys = {};
   List<Product> _drinks = const [];
-  Product? _selectedDrink;
   String _selectedCategory = 'All';
   String? _error;
   bool _loading = true;
@@ -106,13 +104,8 @@ class _VendingMachineScreenState extends State<VendingMachineScreen> {
           .take(18)
           .toList(growable: false);
       if (!mounted) return;
-      final retainedSelection = products.where(
-        (product) => product.id == _selectedDrink?.id && product.stock > 0,
-      );
       setState(() {
         _drinks = products;
-        _selectedDrink =
-            retainedSelection.isEmpty ? null : retainedSelection.first;
         _loading = false;
         _error = null;
       });
@@ -143,43 +136,6 @@ class _VendingMachineScreenState extends State<VendingMachineScreen> {
     return products;
   }
 
-  void _selectDrink(Product product) {
-    if (product.stock <= 0) return;
-    unawaited(HapticFeedback.selectionClick());
-    setState(() {
-      _selectedDrink = product;
-    });
-    final key = _drinkKeys[product.id];
-    final targetContext = key?.currentContext;
-    if (targetContext != null) {
-      unawaited(
-        Scrollable.ensureVisible(
-          targetContext,
-          duration: const Duration(milliseconds: 320),
-          curve: Curves.easeOutCubic,
-          alignment: .12,
-        ),
-      );
-    }
-  }
-
-  void _addDrinkToCart(Product product) {
-    if (product.stock <= 0) return;
-    try {
-      context.read<CartProvider>().addItem(product);
-      unawaited(HapticFeedback.mediumImpact());
-    } catch (error) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error.toString().replaceFirst('Bad state: ', '')),
-        ),
-      );
-    }
-  }
-
-  GlobalKey _keyFor(Product product) =>
-      _drinkKeys.putIfAbsent(product.id, GlobalKey.new);
-
   @override
   void dispose() {
     _scrollController.dispose();
@@ -189,13 +145,6 @@ class _VendingMachineScreenState extends State<VendingMachineScreen> {
   @override
   Widget build(BuildContext context) {
     final drinks = _visibleDrinks;
-    final featured = _selectedCategory == 'All' &&
-            drinks.isNotEmpty &&
-            drinks.first.isBestSeller
-        ? drinks.first
-        : null;
-    final regularDrinks =
-        featured == null ? drinks : drinks.skip(1).toList(growable: false);
     final media = MediaQuery.of(context);
     final textScale = media.textScaler.scale(1).clamp(1.0, 1.2).toDouble();
     final theme = Theme.of(context);
@@ -296,54 +245,25 @@ class _VendingMachineScreenState extends State<VendingMachineScreen> {
                   ),
                 )
               else ...[
-                if (featured != null)
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                    sliver: SliverToBoxAdapter(
-                      child: DrinkCard(
-                        key: _keyFor(featured),
-                        drink: Drink.fromProduct(
-                            featured, drinks.indexOf(featured)),
-                        featured: true,
-                        selected: featured.id == _selectedDrink?.id,
-                        onSelect: _selectDrink,
-                        onAdd: _addDrinkToCart,
-                      ),
-                    ),
-                  ),
                 SliverPadding(
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    featured == null ? 16 : 12,
-                    16,
-                    24,
-                  ),
-                  sliver: SliverGrid(
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      childAspectRatio: .60,
-                    ),
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final product = regularDrinks[index];
-                        return DrinkCard(
-                          key: _keyFor(product),
-                          drink: Drink.fromProduct(
-                            product,
-                            _drinks.indexOf(product),
-                          ),
-                          featured: false,
-                          selected: product.id == _selectedDrink?.id,
-                          onSelect: _selectDrink,
-                          onAdd: _addDrinkToCart,
-                        );
-                      },
-                      childCount: regularDrinks.length,
-                      addAutomaticKeepAlives: false,
-                      addRepaintBoundaries: true,
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                  sliver: SliverLayoutBuilder(
+                    builder: (context, constraints) => SliverGrid.builder(
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: responsiveGridCrossAxisCount(
+                          availableWidth: constraints.crossAxisExtent,
+                          minTileWidth: 128,
+                        ),
+                        mainAxisExtent: 220 * textScale,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                      ),
+                      itemCount: drinks.length,
+                      itemBuilder: (context, index) => ProductCard(
+                        key: ValueKey(drinks[index].id),
+                        product: drinks[index],
+                        compact: true,
+                      ),
                     ),
                   ),
                 ),

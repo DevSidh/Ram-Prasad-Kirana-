@@ -72,9 +72,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                 size: 280,
                 width: double.infinity,
                 height: 280,
-                fit: BoxFit.cover,
+                fit: BoxFit.contain,
                 borderRadius: BorderRadius.zero,
                 fallbackIcon: Icons.shopping_basket_outlined,
+                backgroundColor: Colors.white,
+                imageWidthFactor: .77,
               ),
             ),
 

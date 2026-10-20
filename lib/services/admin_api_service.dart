@@ -10,6 +10,39 @@ class AdminApiService {
 
   AdminApiService(this._api);
 
+  Future<AdminBroadcastResult> broadcastNotification({
+    required String title,
+    required String body,
+    String? couponCode,
+  }) async {
+    final response = _asMap(await _api.post('/admin/notifications/broadcast', {
+      'title': title.trim(),
+      'body': body.trim(),
+      if (couponCode != null && couponCode.trim().isNotEmpty)
+        'couponCode': couponCode.trim().toUpperCase(),
+    }));
+    final recipientCount = response['recipientCount'];
+    final notificationsCreated = response['notificationsCreated'];
+    final pushDelivery = response['pushDelivery'];
+    if (recipientCount is! int ||
+        notificationsCreated is! int ||
+        pushDelivery is! Map<String, dynamic> ||
+        pushDelivery['available'] is! bool ||
+        pushDelivery['sent'] is! int ||
+        pushDelivery['failed'] is! int ||
+        (pushDelivery['error'] != null && pushDelivery['error'] is! String)) {
+      throw Exception('The server returned an invalid broadcast result.');
+    }
+    return AdminBroadcastResult(
+      recipientCount: recipientCount,
+      notificationsCreated: notificationsCreated,
+      pushAvailable: pushDelivery['available'] as bool,
+      pushSent: pushDelivery['sent'] as int,
+      pushFailed: pushDelivery['failed'] as int,
+      pushError: pushDelivery['error'] as String?,
+    );
+  }
+
   Future<AdminDashboard> getDashboard() async {
     return AdminDashboard.fromJson(_asMap(await _api.get('/admin/dashboard')));
   }
@@ -529,12 +562,24 @@ class AdminApiService {
   }
 
   Future<String> uploadProductImage(Uint8List bytes, String fileName) async {
-    return uploadImage(bytes, fileName);
+    return _uploadImage(
+      bytes,
+      fileName,
+      endpoint: '/admin/uploads/product-images',
+    );
   }
 
   Future<String> uploadImage(Uint8List bytes, String fileName) async {
+    return _uploadImage(bytes, fileName, endpoint: '/admin/uploads/images');
+  }
+
+  Future<String> _uploadImage(
+    Uint8List bytes,
+    String fileName, {
+    required String endpoint,
+  }) async {
     final response = _asMap(await _api.postFile(
-      '/admin/uploads/images',
+      endpoint,
       fieldName: 'image',
       bytes: bytes,
       fileName: fileName,
@@ -545,6 +590,24 @@ class AdminApiService {
     }
     return Uri.parse(_api.baseUrl).resolve(path).toString();
   }
+}
+
+class AdminBroadcastResult {
+  final int recipientCount;
+  final int notificationsCreated;
+  final bool pushAvailable;
+  final int pushSent;
+  final int pushFailed;
+  final String? pushError;
+
+  const AdminBroadcastResult({
+    required this.recipientCount,
+    required this.notificationsCreated,
+    required this.pushAvailable,
+    required this.pushSent,
+    required this.pushFailed,
+    this.pushError,
+  });
 }
 
 class AdminProductPage {

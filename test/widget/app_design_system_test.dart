@@ -8,6 +8,45 @@ import 'package:freshharvest_grocery/core/widgets/app_widgets.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  testWidgets('shimmer responds when reduced-motion preference changes',
+      (tester) async {
+    Future<void> pumpShimmer({required bool disableAnimations}) {
+      return tester.pumpWidget(
+        MaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData(disableAnimations: disableAnimations),
+            child: const Scaffold(
+              body: ShimmerBox(width: 180, height: 24),
+            ),
+          ),
+        ),
+      );
+    }
+
+    await pumpShimmer(disableAnimations: false);
+    final shimmerBuilder = find.descendant(
+      of: find.byType(ShimmerBox),
+      matching: find.byType(AnimatedBuilder),
+    );
+    var shimmerAnimation = tester.widget<AnimatedBuilder>(
+      shimmerBuilder,
+    );
+    expect((shimmerAnimation.animation as AnimationController).isAnimating,
+        isTrue);
+    expect(find.byType(ShaderMask), findsOneWidget);
+
+    await pumpShimmer(disableAnimations: true);
+    expect(shimmerBuilder, findsNothing);
+    expect(find.byType(ShaderMask), findsNothing);
+
+    await pumpShimmer(disableAnimations: false);
+    shimmerAnimation = tester.widget<AnimatedBuilder>(
+      shimmerBuilder,
+    );
+    expect((shimmerAnimation.animation as AnimationController).isAnimating,
+        isTrue);
+  });
+
   for (final isDark in [true, false]) {
     testWidgets(
       'shared design widgets render and respond in ${isDark ? 'dark' : 'light'} theme',

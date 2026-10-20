@@ -5,8 +5,29 @@ import { createAccountRouter } from '../src/routes/account.js';
 
 let deleteWhere: { userId: string; id?: string } | undefined;
 let deleteCalls = 0;
+let updateReadWhere: { userId: string; id?: string; isRead?: boolean } | undefined;
+let updateReadCalls = 0;
 const prisma = {
   notification: {
+    findMany: async () => [
+      { id: 'notification-1', isRead: false },
+      { id: 'notification-2', isRead: true },
+    ],
+    count: async ({ where }: {
+      where: { userId: string; isRead: boolean };
+    }) => {
+      assert.deepEqual(where, { userId: 'customer-1', isRead: false });
+      return 3;
+    },
+    updateMany: async ({
+      where,
+    }: {
+      where: { userId: string; id?: string; isRead?: boolean };
+    }) => {
+      updateReadCalls++;
+      updateReadWhere = where;
+      return { count: 3 };
+    },
     deleteMany: async ({
       where,
     }: {
@@ -43,6 +64,37 @@ async function run(): Promise<void> {
     const endpoint =
       `http://127.0.0.1:${address.port}/account/notifications`;
 
+    const list = await fetch(endpoint, {
+      headers: { 'x-test-user': 'customer-1' },
+    });
+    assert.equal(list.status, 200);
+    const listBody = await list.json() as {
+      data: Array<{ id: string }>;
+      unreadCount: number;
+    };
+    assert.deepEqual(listBody.data.map(({ id }) => id), [
+      'notification-1',
+      'notification-2',
+    ]);
+    assert.equal(listBody.unreadCount, 3);
+
+    const markAllRead = await fetch(`${endpoint}/read-all`, {
+      method: 'PATCH',
+      headers: { 'x-test-user': 'customer-1' },
+    });
+    assert.equal(markAllRead.status, 204);
+    assert.equal(updateReadCalls, 1);
+    assert.deepEqual(updateReadWhere, {
+      userId: 'customer-1',
+      isRead: false,
+    });
+
+    const unauthorizedRead = await fetch(`${endpoint}/read-all`, {
+      method: 'PATCH',
+    });
+    assert.equal(unauthorizedRead.status, 401);
+    assert.equal(updateReadCalls, 1);
+
     const unauthorized = await fetch(endpoint, { method: 'DELETE' });
     assert.equal(unauthorized.status, 401);
     assert.equal(deleteCalls, 0);
@@ -74,7 +126,7 @@ async function run(): Promise<void> {
       id: 'notification-1',
       userId: 'customer-2',
     });
-    console.log('Account notification deletion tests passed.');
+    console.log('Account notification read and deletion tests passed.');
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => error ? reject(error) : resolve());

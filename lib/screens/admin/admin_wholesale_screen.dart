@@ -282,8 +282,10 @@ class _WholesaleItemCard extends StatelessWidget {
           ProductThumbnail(
             imageUrl: item.imageUrl ?? '',
             size: 64,
-            fit: BoxFit.cover,
+            fit: BoxFit.contain,
             borderRadius: BorderRadius.circular(12),
+            backgroundColor: Colors.white,
+            imageWidthFactor: .77,
           ),
           const SizedBox(width: 12),
           Expanded(

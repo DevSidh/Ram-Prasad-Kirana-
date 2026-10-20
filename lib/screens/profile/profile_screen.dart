@@ -11,6 +11,8 @@ import '../../providers/product_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../services/secure_login_service.dart';
+import '../../services/api_service.dart';
+import '../../widgets/unread_notification_indicator.dart';
 import '../product/product_list_screen.dart';
 import '../order/my_orders_screen.dart';
 import '../auth/login_screen.dart';
@@ -35,6 +37,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _uploadingAvatar = false;
   bool _deletingAccount = false;
+  int _notificationRefreshToken = 0;
 
   Future<bool> _ensureSignedIn() async {
     final auth = context.read<AuthProvider>();
@@ -57,6 +60,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
       context,
       MaterialPageRoute<void>(builder: builder),
     );
+  }
+
+  Future<void> _openNotifications() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => const NotificationsScreen(),
+      ),
+    );
+    if (mounted) setState(() => _notificationRefreshToken++);
   }
 
   Future<void> _logOut(AuthProvider auth) async {
@@ -663,9 +676,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           const Divider(height: 1),
                           ListTile(
-                            leading: const Icon(
-                              Icons.notifications_active_outlined,
-                              color: AppConstants.primary,
+                            leading: UnreadNotificationIndicator(
+                              api: context.read<ApiService?>(),
+                              userId: user?.id,
+                              refreshToken: _notificationRefreshToken,
+                              child: const Icon(
+                                Icons.notifications_active_outlined,
+                                color: AppConstants.primary,
+                              ),
                             ),
                             title: Text(
                               context.tr('Notifications'),
@@ -675,12 +693,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                             ),
                             trailing: const Icon(Icons.chevron_right, size: 20),
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const NotificationsScreen(),
-                              ),
-                            ),
+                            onTap: _openNotifications,
                           ),
                           const Divider(height: 1),
                           ListTile(

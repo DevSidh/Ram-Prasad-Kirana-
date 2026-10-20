@@ -17,6 +17,10 @@ import { createPasswordResetRouter } from './routes/password-reset.js';
 import { createPublicLegalRouter } from './routes/public-legal.js';
 import { sendPushToUser } from './services/push-notifications.js';
 import { getUploadsDirectory } from './services/image-upload.js';
+import {
+  getNormalizedProductImage,
+  getNormalizedWholesaleImage,
+} from './services/product-image.js';
 import { identityAlreadyInUse, normalizeEmail, normalizePhone } from './services/user-identity.js';
 import { findAdminByPassword } from './services/admin-login.js';
 import { orderInput } from './schemas/order.js';
@@ -654,8 +658,16 @@ app.get('/api/v1/products/:id/image', async (req: Request, res: Response) => {
     if (!product?.imageData || !product.imageMimeType) {
       return res.status(404).json({ error: 'Product image not found.' });
     }
+    if (req.query.original === '1') {
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return res.type(product.imageMimeType).send(product.imageData);
+    }
+    const normalized = await getNormalizedProductImage(prisma, req.params.id);
+    if (!normalized) {
+      return res.status(404).json({ error: 'Product image not found.' });
+    }
     res.setHeader('Cache-Control', 'public, max-age=86400');
-    return res.type(product.imageMimeType).send(product.imageData);
+    return res.type(normalized.mimeType).send(normalized.data);
   } catch (error) {
     console.error('Product image lookup failed:', error);
     return res.status(500).json({ error: 'Unable to load this product image.' });
@@ -743,8 +755,16 @@ app.get('/api/v1/wholesale/:id/image', async (req: Request, res: Response) => {
     if (!item?.imageData || !item.imageMimeType) {
       return res.status(404).json({ error: 'Wholesale item image not found.' });
     }
+    if (req.query.original === '1') {
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return res.type(item.imageMimeType).send(Buffer.from(item.imageData));
+    }
+    const normalized = await getNormalizedWholesaleImage(prisma, req.params.id);
+    if (!normalized) {
+      return res.status(404).json({ error: 'Wholesale item image not found.' });
+    }
     res.setHeader('Cache-Control', 'public, max-age=86400');
-    return res.type(item.imageMimeType).send(Buffer.from(item.imageData));
+    return res.type(normalized.mimeType).send(normalized.data);
   } catch (error) {
     console.error('Wholesale item image lookup failed:', error);
     return res.status(500).json({ error: 'Unable to load this wholesale image.' });
@@ -755,13 +775,20 @@ app.get('/api/v1/images/:id', async (req: Request, res: Response) => {
   try {
     const image = await prisma.storedImage.findUnique({
       where: { id: req.params.id },
-      select: { imageData: true, mimeType: true },
+      select: {
+        imageData: true,
+        mimeType: true,
+        normalizedImageData: true,
+        normalizedMimeType: true,
+      },
     });
     if (!image) {
       return res.status(404).json({ error: 'Image not found.' });
     }
     res.setHeader('Cache-Control', 'public, max-age=86400');
-    return res.type(image.mimeType).send(Buffer.from(image.imageData));
+    return res
+      .type(image.normalizedMimeType ?? image.mimeType)
+      .send(Buffer.from(image.normalizedImageData ?? image.imageData));
   } catch (error) {
     console.error('Stored image lookup failed:', error);
     return res.status(500).json({ error: 'Unable to load this image.' });

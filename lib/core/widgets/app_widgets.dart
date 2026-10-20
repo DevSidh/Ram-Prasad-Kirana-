@@ -554,6 +554,7 @@ class ShimmerBox extends StatefulWidget {
 class _ShimmerBoxState extends State<ShimmerBox>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  bool? _animationsDisabled;
 
   @override
   void initState() {
@@ -562,8 +563,17 @@ class _ShimmerBoxState extends State<ShimmerBox>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     );
-    if (!WidgetsBinding
-        .instance.platformDispatcher.accessibilityFeatures.disableAnimations) {
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final animationsDisabled = MediaQuery.disableAnimationsOf(context);
+    if (_animationsDisabled == animationsDisabled) return;
+    _animationsDisabled = animationsDisabled;
+    if (animationsDisabled) {
+      _controller.stop();
+    } else {
       _controller.repeat();
     }
   }
@@ -577,6 +587,15 @@ class _ShimmerBoxState extends State<ShimmerBox>
   @override
   Widget build(BuildContext context) {
     final base = Theme.of(context).colorScheme.surface;
+    if (_animationsDisabled ?? false) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: base,
+          borderRadius: widget.borderRadius,
+        ),
+        child: SizedBox(width: widget.width, height: widget.height),
+      );
+    }
     final highlight = AppThemeExtension.of(context).surfaceGlass;
     return AnimatedBuilder(
       animation: _controller,

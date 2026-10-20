@@ -13,7 +13,11 @@ import {
   validateProductSalePrice,
   validateProductUnit,
 } from '../services/product-validation.js';
-import { sendPushToUser } from '../services/push-notifications.js';
+import { sendPushToUser, sendPushToUsers } from '../services/push-notifications.js';
+import {
+  normalizeProductImage,
+  type NormalizedProductImage,
+} from '../services/product-image.js';
 import { identityAlreadyInUse, normalizeEmail, normalizePhone } from '../services/user-identity.js';
 import {
   DEFAULT_WEEKLY_HOURS,
@@ -362,6 +366,36 @@ function invalidInput(res: Response, error: z.ZodError): void {
   });
 }
 
+async function prepareProductImageUpload(
+  file: Express.Multer.File | undefined,
+  res: Response,
+  context: string,
+): Promise<{
+  originalData: Buffer;
+  originalMimeType: string;
+  normalized: NormalizedProductImage;
+} | null> {
+  if (!file) return null;
+  const originalMimeType = getImageMimeType(file.buffer);
+  if (!originalMimeType) {
+    res.status(400).json({ error: 'Use a valid JPEG, PNG, or WebP image.' });
+    return null;
+  }
+  try {
+    return {
+      originalData: file.buffer,
+      originalMimeType,
+      normalized: await normalizeProductImage(file.buffer, originalMimeType),
+    };
+  } catch (error) {
+    console.error(`${context} image normalization failed:`, error);
+    res.status(422).json({
+      error: 'This product image could not be processed. The previous image was not changed.',
+    });
+    return null;
+  }
+}
+
 function parseRecordId(value: string, res: Response): string | undefined {
   const parsed = recordIdInput.safeParse(value);
   if (!parsed.success) {
@@ -543,6 +577,120 @@ export function createAdminRouter(
     } catch (error) {
       console.error('Admin image upload failed:', error);
       return res.status(500).json({ error: 'Unable to save this product image.' });
+    }
+  });
+
+  router.post('/uploads/product-images', receiveSingleImage, async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'Choose an image to upload.' });
+    const mimeType = getImageMimeType(req.file.buffer);
+    if (!mimeType) {
+      return res.status(400).json({ error: 'Use a valid JPEG, PNG, or WebP image.' });
+    }
+    try {
+      const normalized = await normalizeProductImage(req.file.buffer, mimeType);
+      const image = await prisma.storedImage.create({
+        data: {
+          imageData: req.file.buffer,
+          mimeType,
+          normalizedImageData: normalized.data,
+          normalizedMimeType: normalized.mimeType,
+        },
+        select: { id: true },
+      });
+      return res.status(201).json({ url: `/api/v1/images/${image.id}` });
+    } catch (error) {
+      console.error('Admin product image normalization failed:', error);
+      return res.status(422).json({
+        error: 'This product image could not be normalized. The original upload was not saved.',
+      });
+    }
+  });
+
+  router.post('/notifications/broadcast', async (req, res) => {
+    const parsed = z.object({
+      title: z.string().trim().min(1).max(120),
+      body: z.string().trim().min(1).max(1000),
+      couponCode: z.string().trim().toUpperCase().min(3).max(40)
+        .regex(/^[A-Z0-9][A-Z0-9_-]*$/)
+        .optional(),
+    }).strict().safeParse(req.body);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+
+    try {
+      if (parsed.data.couponCode) {
+        const coupon = await prisma.coupon.findUnique({
+          where: { code: parsed.data.couponCode },
+          select: {
+            isActive: true,
+            expiresAt: true,
+            usageLimit: true,
+            usedCount: true,
+          },
+        });
+        if (!coupon ||
+            !coupon.isActive ||
+            (coupon.expiresAt !== null && coupon.expiresAt <= new Date()) ||
+            (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit)) {
+          return res.status(400).json({ error: 'That coupon is not currently available.' });
+        }
+      }
+      const recipients = await prisma.user.findMany({
+        where: { isActive: true },
+        select: { id: true },
+      });
+      await prisma.$transaction(async (tx) => {
+        for (let offset = 0; offset < recipients.length; offset += 500) {
+          const batch = recipients.slice(offset, offset + 500);
+          await tx.notification.createMany({
+            data: batch.map(({ id }) => ({
+              userId: id,
+              type: 'PROMOTIONAL',
+              title: parsed.data.title,
+              body: parsed.data.body,
+              ...(parsed.data.couponCode
+                ? { metadata: { couponCode: parsed.data.couponCode } }
+                : {}),
+            })),
+          });
+        }
+      });
+
+      let pushDelivery: {
+        available: boolean;
+        sent: number;
+        failed: number;
+        error?: string;
+      } = { available: false, sent: 0, failed: 0 };
+      try {
+        pushDelivery = await sendPushToUsers(
+          prisma,
+          recipients.map(({ id }) => id),
+          parsed.data.title,
+          parsed.data.body,
+          parsed.data.couponCode
+            ? { couponCode: parsed.data.couponCode }
+            : {},
+        );
+      } catch (error) {
+        console.error('Admin broadcast push delivery failed:', error);
+        pushDelivery = {
+          available: true,
+          sent: 0,
+          failed: 0,
+          error: 'Push delivery could not be completed; in-app alerts were saved.',
+        };
+      }
+
+      return res.status(201).json({
+        recipientCount: recipients.length,
+        notificationsCreated: recipients.length,
+        pushDelivery,
+      });
+    } catch (error) {
+      console.error('Admin notification broadcast failed:', error);
+      return res.status(500).json({
+        error: 'Unable to send this announcement. No push delivery was attempted.',
+      });
     }
   });
 
@@ -1630,20 +1778,24 @@ export function createAdminRouter(
     if (!body) return res.status(400).json({ error: 'Wholesale item fields are required.' });
     const parsed = createWholesaleItemInput.safeParse(body);
     if (!parsed.success) return invalidInput(res, parsed.error);
-    const imageMimeType = req.file ? getImageMimeType(req.file.buffer) : null;
-    if (req.file && !imageMimeType) {
-      return res.status(400).json({ error: 'Use a valid JPEG, PNG, or WebP image.' });
-    }
+    const imageUpload = await prepareProductImageUpload(
+      req.file,
+      res,
+      'Wholesale item',
+    );
+    if (req.file && !imageUpload) return;
     try {
       const id = randomUUID();
       const item = await prisma.wholesaleItem.create({
         data: {
           id,
           ...parsed.data,
-          ...(req.file && imageMimeType
+          ...(imageUpload
             ? {
-                imageData: req.file.buffer,
-                imageMimeType,
+                imageData: imageUpload.originalData,
+                imageMimeType: imageUpload.originalMimeType,
+                normalizedImageData: imageUpload.normalized.data,
+                normalizedMimeType: imageUpload.normalized.mimeType,
                 imageUrl: `/api/v1/wholesale/${id}/image`,
               }
             : {}),
@@ -1664,23 +1816,32 @@ export function createAdminRouter(
     if (!body) return res.status(400).json({ error: 'Wholesale item fields are required.' });
     const parsed = updateWholesaleItemInput.safeParse(body);
     if (!parsed.success) return invalidInput(res, parsed.error);
-    const imageMimeType = req.file ? getImageMimeType(req.file.buffer) : null;
-    if (req.file && !imageMimeType) {
-      return res.status(400).json({ error: 'Use a valid JPEG, PNG, or WebP image.' });
-    }
+    const imageUpload = await prepareProductImageUpload(
+      req.file,
+      res,
+      'Wholesale item',
+    );
+    if (req.file && !imageUpload) return;
     try {
       const item = await prisma.wholesaleItem.update({
         where: { id },
         data: {
           ...parsed.data,
-          ...(req.file && imageMimeType
+          ...(imageUpload
             ? {
-                imageData: req.file.buffer,
-                imageMimeType,
+                imageData: imageUpload.originalData,
+                imageMimeType: imageUpload.originalMimeType,
+                normalizedImageData: imageUpload.normalized.data,
+                normalizedMimeType: imageUpload.normalized.mimeType,
                 imageUrl: `/api/v1/wholesale/${id}/image`,
               }
             : parsed.data.imageUrl === null
-              ? { imageData: null, imageMimeType: null }
+              ? {
+                  imageData: null,
+                  imageMimeType: null,
+                  normalizedImageData: null,
+                  normalizedMimeType: null,
+                }
               : {}),
         },
         select: wholesaleItemSelect,
@@ -1797,12 +1958,12 @@ export function createAdminRouter(
     if (data.price <= 0) return res.status(400).json({ error: 'Price must be greater than zero' });
     const salePriceError = validateProductSalePrice(data.price, data.originalPrice);
     if (salePriceError) return res.status(400).json({ error: salePriceError });
-    const imageMimeType = req.file
-      ? getImageMimeType(req.file.buffer)
-      : null;
-    if (req.file && !imageMimeType) {
-      return res.status(400).json({ error: 'Use a valid JPEG, PNG, or WebP image.' });
-    }
+    const imageUpload = await prepareProductImageUpload(
+      req.file,
+      res,
+      'Product',
+    );
+    if (req.file && !imageUpload) return;
 
     try {
       const category = await prisma.category.findUnique({
@@ -1820,15 +1981,17 @@ export function createAdminRouter(
         const created = await tx.product.create({
           data: {
             ...data,
-            ...(req.file && imageMimeType
+            ...(imageUpload
               ? {
-                  imageData: req.file.buffer,
-                  imageMimeType,
+                  imageData: imageUpload.originalData,
+                  imageMimeType: imageUpload.originalMimeType,
+                  normalizedImageData: imageUpload.normalized.data,
+                  normalizedMimeType: imageUpload.normalized.mimeType,
                 }
               : {}),
           },
         });
-        if (req.file && imageMimeType) {
+        if (imageUpload) {
           await tx.product.update({
             where: { id: created.id },
             data: { imageUrl: `/api/v1/products/${created.id}/image` },
@@ -1868,12 +2031,12 @@ export function createAdminRouter(
     if (data.price !== undefined && data.price <= 0) {
       return res.status(400).json({ error: 'Price must be greater than zero' });
     }
-    const imageMimeType = req.file
-      ? getImageMimeType(req.file.buffer)
-      : null;
-    if (req.file && !imageMimeType) {
-      return res.status(400).json({ error: 'Use a valid JPEG, PNG, or WebP image.' });
-    }
+    const imageUpload = await prepareProductImageUpload(
+      req.file,
+      res,
+      'Product',
+    );
+    if (req.file && !imageUpload) return;
 
     try {
       const currentProduct = await prisma.product.findUnique({
@@ -1926,14 +2089,21 @@ export function createAdminRouter(
             where: { id },
             data: {
               ...data,
-              ...(req.file && imageMimeType
+              ...(imageUpload
                 ? {
-                    imageData: req.file.buffer,
-                    imageMimeType,
+                    imageData: imageUpload.originalData,
+                    imageMimeType: imageUpload.originalMimeType,
+                    normalizedImageData: imageUpload.normalized.data,
+                    normalizedMimeType: imageUpload.normalized.mimeType,
                     imageUrl: `/api/v1/products/${id}/image`,
                   }
                 : data.imageUrl === null
-                  ? { imageData: null, imageMimeType: null }
+                  ? {
+                      imageData: null,
+                      imageMimeType: null,
+                      normalizedImageData: null,
+                      normalizedMimeType: null,
+                    }
                   : {}),
             },
           });

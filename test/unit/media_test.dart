@@ -60,6 +60,18 @@ void main() {
       expect(resolveProductImageUrl(imageUrl), imageUrl);
     });
 
+    test('requests the original image only for the featured product carousel',
+        () {
+      expect(
+        Uri.parse(originalCarouselProductImageUrl(
+          'https://store.example/api/v1/products/p-1/image?v=42',
+        )).queryParameters,
+        {'v': '42', 'original': '1'},
+      );
+      const artworkUrl = 'https://cdn.example.com/promo/banner.webp';
+      expect(originalCarouselProductImageUrl(artworkUrl), artworkUrl);
+    });
+
     test('rewrites saved localhost uploads to the configured API host', () {
       final apiUri = Uri.parse(AppConstants.apiBaseUrl);
       final expectedUrl = apiUri

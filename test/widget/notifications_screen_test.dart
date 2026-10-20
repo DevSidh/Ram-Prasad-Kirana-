@@ -58,13 +58,18 @@ class _NotificationsApi extends ApiService {
     Map<String, dynamic> body,
   ) async {
     patchedEndpoint = endpoint;
+    if (endpoint == '/account/notifications/read-all') {
+      for (final notification in notifications) {
+        notification['isRead'] = true;
+      }
+    }
   }
 }
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('notification delete confirms and does not mark it read',
+  testWidgets('opening notifications marks all read before deleting',
       (tester) async {
     SharedPreferences.setMockInitialValues({
       AppConstants.keyToken: 'test-token',
@@ -104,7 +109,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.deletedEndpoint, '/account/notifications/notification-1');
-    expect(api.patchedEndpoint, isNull);
+    expect(api.patchedEndpoint, '/account/notifications/read-all');
     expect(api.notifications, isEmpty);
     expect(find.text('Order update'), findsNothing);
     expect(find.text('Nothing new yet'), findsOneWidget);

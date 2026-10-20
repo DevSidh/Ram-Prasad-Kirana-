@@ -7,6 +7,7 @@ import '../../providers/product_provider.dart';
 import '../../services/api_service.dart';
 import '../auth/login_screen.dart';
 import 'admin_categories_screen.dart';
+import 'admin_announcements_screen.dart';
 import 'admin_coupons_screen.dart';
 import 'admin_customers_screen.dart';
 import 'admin_dashboard_screen.dart';
@@ -35,6 +36,7 @@ class _AdminShellState extends State<AdminShell> {
     'Orders',
     'Delivery',
     'Customers',
+    'Announcements',
     'Products',
     'Vending drinks',
     'Wholesale',
@@ -60,6 +62,7 @@ class _AdminShellState extends State<AdminShell> {
       AdminOrdersScreen(api: api),
       AdminDeliveryPeopleScreen(api: api),
       AdminCustomersScreen(api: api),
+      AdminAnnouncementsScreen(api: api),
       AdminProductsScreen(api: api),
       AdminProductsScreen(api: api, vendingOnly: true),
       AdminWholesaleScreen(api: api),
@@ -290,6 +293,11 @@ class _AdminShellState extends State<AdminShell> {
       label: Text('Customers'),
     ),
     NavigationRailDestination(
+      icon: Icon(Icons.campaign_outlined),
+      selectedIcon: Icon(Icons.campaign_rounded),
+      label: Text('Announcements'),
+    ),
+    NavigationRailDestination(
       icon: Icon(Icons.inventory_2_outlined),
       selectedIcon: Icon(Icons.inventory_2_rounded),
       label: Text('Products'),
@@ -341,6 +349,7 @@ class _AdminShellState extends State<AdminShell> {
     Icons.receipt_long_outlined,
     Icons.local_shipping_outlined,
     Icons.people_outline_rounded,
+    Icons.campaign_outlined,
     Icons.inventory_2_outlined,
     Icons.local_drink_outlined,
     Icons.storefront_outlined,
@@ -357,6 +366,7 @@ class _AdminShellState extends State<AdminShell> {
     Icons.receipt_long_rounded,
     Icons.local_shipping_rounded,
     Icons.people_rounded,
+    Icons.campaign_rounded,
     Icons.inventory_2_rounded,
     Icons.local_drink_rounded,
     Icons.storefront_rounded,

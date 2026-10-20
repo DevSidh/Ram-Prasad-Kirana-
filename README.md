@@ -74,7 +74,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-android-
 Use `-Artifact appbundle` for a Google Play Store AAB. Flutter uses the
 `version` in `pubspec.yaml` as the Android version name and build number. Name
 shared APKs with the store name and version, for example
-`Ram-Prasad-General-Store-v2.0.8.apk`. The APK is written to
+`Ram-Prasad-General-Store-v2.0.10.apk`. The APK is written to
 `build/app/outputs/flutter-apk/app-release.apk`; the AAB is written to
 `build/app/outputs/bundle/release/app-release.aab`.
 
@@ -92,7 +92,9 @@ Before tagging a release:
    `20261026000000_email_verification` migration after a verified backup and
    configure SMTP on the backend before publishing. Do not publish the app
    until these endpoints and email delivery are live.
-2. Add the repository variable `API_BASE_URL` with the deployed production HTTPS API URL.
+2. Set the repository variable `API_BASE_URL` to
+   `https://ram-prasad-kirana-backend.onrender.com/api/v1` so release builds
+   connect to the deployed backend.
 3. Add these repository Actions secrets:
    - `ANDROID_KEYSTORE_BASE64`: your private Android release keystore encoded as one Base64 string.
    - `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`: the credentials for that keystore.
@@ -134,6 +136,15 @@ The post-login offer popup reads eligible, active percentage coupons with a
 discount cap and fixed-amount coupons from `GET /api/v1/coupons/offer`. The
 backend returns the saved coupon type, value, minimum order, and expiry; the app
 does not invent offer values or calculate the discount locally.
+
+On Home, the gift button opens the Coupons page, which combines the active
+store offer with coupon codes included in the signed-in customer's
+notifications. Codes are suggestions only and are revalidated by the backend
+at checkout; the application does not currently have a separate per-user
+coupon-wallet table. Opening Notifications marks the account's unread items as
+read. Customers can create an order invoice PDF from **My Orders → Download
+invoice PDF**; the Android print/save screen can save a copy for later.
+Invoices show Nepalese rupees and Nepal Standard Time.
 
 Store administrators can configure recurring opening hours and immediately pause or resume online ordering from **Admin → Store hours**. Hours use Nepal Standard Time (`Asia/Kathmandu`); closed days and a paused store are enforced by the backend as well as shown in the customer app. The migration seeds an always-open schedule to preserve existing checkout behavior; configure the actual weekly hours in the admin panel after applying the `20261018000000_store_hours` Prisma migration and before relying on automatic closing.
 

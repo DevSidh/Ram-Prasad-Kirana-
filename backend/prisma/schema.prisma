@@ -116,6 +116,8 @@ model Product {
   imageUrl                 String?
   imageData                Bytes?
   imageMimeType            String?
+  normalizedImageData      Bytes?
+  normalizedMimeType       String?
   unitLabel                String           @default("1 pc")
   isWholesale              Boolean          @default(false)
   wholesalePrice           Decimal?
@@ -158,6 +160,8 @@ model WholesaleItem {
   imageUrl        String?
   imageData       Bytes?
   imageMimeType   String?
+  normalizedImageData Bytes?
+  normalizedMimeType  String?
   unitLabel       String      @default("1 pc")
   isActive        Boolean     @default(true)
   createdAt       DateTime    @default(now())
@@ -172,10 +176,12 @@ model WholesaleItem {
 }
 
 model StoredImage {
-  id        String   @id @default(cuid())
-  imageData Bytes
-  mimeType  String
-  createdAt DateTime @default(now())
+  id                  String   @id @default(cuid())
+  imageData           Bytes
+  mimeType            String
+  normalizedImageData Bytes?
+  normalizedMimeType  String?
+  createdAt           DateTime @default(now())
 }
 
 model Inventory {

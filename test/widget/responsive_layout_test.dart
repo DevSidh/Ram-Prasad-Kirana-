@@ -234,7 +234,7 @@ void main() {
         reason: 'Initial screen should fit a viewport width of $width pixels.',
       );
 
-      for (final label in ['Categories', 'Search', 'Cart', 'Profile']) {
+      for (final label in ['Wholesale', 'Search', 'Cart', 'Profile']) {
         await tester.tap(find.byKey(ValueKey('nav-tab-$label')));
         await tester.pump(const Duration(milliseconds: 400));
         final layoutError = tester.takeException();

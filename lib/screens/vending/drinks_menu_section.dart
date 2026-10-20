@@ -381,41 +381,38 @@ class DrinkStage extends StatelessWidget {
                         height: artSize,
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(12),
-                          child: ColoredBox(
-                            color: Colors.white,
-                            child: Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: disabled
-                                  ? ColorFiltered(
-                                      colorFilter: const ColorFilter.matrix([
-                                        .2126,
-                                        .7152,
-                                        .0722,
-                                        0,
-                                        0,
-                                        .2126,
-                                        .7152,
-                                        .0722,
-                                        0,
-                                        0,
-                                        .2126,
-                                        .7152,
-                                        .0722,
-                                        0,
-                                        0,
-                                        0,
-                                        0,
-                                        0,
-                                        1,
-                                        0,
-                                      ]),
-                                      child: Opacity(
-                                        opacity: .68,
-                                        child: _DrinkProductArt(drink: drink),
-                                      ),
-                                    )
-                                  : _DrinkProductArt(drink: drink),
-                            ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: disabled
+                                ? ColorFiltered(
+                                    colorFilter: const ColorFilter.matrix([
+                                      .2126,
+                                      .7152,
+                                      .0722,
+                                      0,
+                                      0,
+                                      .2126,
+                                      .7152,
+                                      .0722,
+                                      0,
+                                      0,
+                                      .2126,
+                                      .7152,
+                                      .0722,
+                                      0,
+                                      0,
+                                      0,
+                                      0,
+                                      0,
+                                      1,
+                                      0,
+                                    ]),
+                                    child: Opacity(
+                                      opacity: .68,
+                                      child: _DrinkProductArt(drink: drink),
+                                    ),
+                                  )
+                                : _DrinkProductArt(drink: drink),
                           ),
                         ),
                       ),

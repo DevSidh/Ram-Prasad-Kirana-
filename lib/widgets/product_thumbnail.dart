@@ -14,6 +14,8 @@ class ProductThumbnail extends StatefulWidget {
   final BoxFit fit;
   final BorderRadius borderRadius;
   final IconData fallbackIcon;
+  final Color backgroundColor;
+  final double imageWidthFactor;
 
   const ProductThumbnail({
     super.key,
@@ -24,6 +26,8 @@ class ProductThumbnail extends StatefulWidget {
     this.fit = BoxFit.contain,
     this.borderRadius = const BorderRadius.all(Radius.circular(10)),
     this.fallbackIcon = Icons.shopping_basket_outlined,
+    this.backgroundColor = Colors.transparent,
+    this.imageWidthFactor = 1,
   });
 
   @override
@@ -70,8 +74,15 @@ class _ProductThumbnailState extends State<ProductThumbnail> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+        final availableWidth = imageWidth.isFinite
+            ? imageWidth
+            : constraints.maxWidth.isFinite
+                ? constraints.maxWidth
+                : widget.size;
+        final photoWidth =
+            availableWidth * widget.imageWidthFactor.clamp(0.1, 1.0).toDouble();
         final cacheWidth = _cacheDimension(
-          imageWidth,
+          photoWidth,
           constraints.maxWidth,
           pixelRatio,
         );
@@ -85,9 +96,11 @@ class _ProductThumbnailState extends State<ProductThumbnail> {
           targetWidth: cacheWidth,
         );
         final fallback = Container(
-          width: imageWidth,
+          width: photoWidth,
           height: imageHeight,
-          color: AppConstants.primaryLight,
+          color: widget.backgroundColor == Colors.transparent
+              ? AppConstants.primaryLight
+              : widget.backgroundColor,
           alignment: Alignment.center,
           child: Icon(
             widget.fallbackIcon,
@@ -97,36 +110,45 @@ class _ProductThumbnailState extends State<ProductThumbnail> {
         );
         return ClipRRect(
           borderRadius: widget.borderRadius,
-          child: url.isEmpty
-              ? fallback
-              : CachedNetworkImage(
-                  key: ValueKey('$url-$_retryCount'),
-                  imageUrl: url,
-                  imageRenderMethodForWeb: kIsWeb
-                      ? ImageRenderMethodForWeb.HttpGet
-                      : ImageRenderMethodForWeb.HtmlImage,
-                  width: imageWidth,
-                  height: imageHeight,
-                  memCacheWidth: cacheWidth,
-                  memCacheHeight: cacheHeight,
-                  fit: widget.fit,
-                  fadeInDuration: Duration.zero,
-                  fadeOutDuration: Duration.zero,
-                  placeholder: (_, __) => fallback,
-                  errorWidget: (_, failedUrl, error) {
-                    FlutterError.reportError(
-                      FlutterErrorDetails(
-                        exception: error,
-                        library: 'product image',
-                        context: ErrorDescription(
-                          'while loading a remote product thumbnail',
-                        ),
+          child: ColoredBox(
+            color: widget.backgroundColor,
+            child: Center(
+              child: SizedBox(
+                width: photoWidth,
+                height: imageHeight,
+                child: url.isEmpty
+                    ? fallback
+                    : CachedNetworkImage(
+                        key: ValueKey('$url-$_retryCount'),
+                        imageUrl: url,
+                        imageRenderMethodForWeb: kIsWeb
+                            ? ImageRenderMethodForWeb.HttpGet
+                            : ImageRenderMethodForWeb.HtmlImage,
+                        width: photoWidth,
+                        height: imageHeight,
+                        memCacheWidth: cacheWidth,
+                        memCacheHeight: cacheHeight,
+                        fit: widget.fit,
+                        fadeInDuration: Duration.zero,
+                        fadeOutDuration: Duration.zero,
+                        placeholder: (_, __) => fallback,
+                        errorWidget: (_, failedUrl, error) {
+                          FlutterError.reportError(
+                            FlutterErrorDetails(
+                              exception: error,
+                              library: 'product image',
+                              context: ErrorDescription(
+                                'while loading a remote product thumbnail',
+                              ),
+                            ),
+                          );
+                          _retryAfterFailure(failedUrl);
+                          return fallback;
+                        },
                       ),
-                    );
-                    _retryAfterFailure(failedUrl);
-                    return fallback;
-                  },
-                ),
+              ),
+            ),
+          ),
         );
       },
     );

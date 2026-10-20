@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants.dart';
+import '../../core/media.dart';
 import '../../core/responsive_layout.dart';
 import '../../core/theme/app_theme_extension.dart';
 import '../../core/widgets/app_widgets.dart';
@@ -25,8 +26,11 @@ import '../../widgets/frosted_panel.dart';
 import '../../widgets/product_thumbnail.dart';
 import '../../widgets/product_quick_view.dart';
 import '../../widgets/cart_flight_overlay.dart';
-import '../../widgets/home_greeting_video.dart';
+import '../../widgets/home_greeting_diya.dart';
+import '../../widgets/home_diwali_greeting.dart';
 import '../../widgets/offer_popup.dart';
+import '../../widgets/store_animation.dart';
+import '../../widgets/unread_notification_indicator.dart';
 import '../product/product_list_screen.dart';
 import '../search/search_screen.dart' show showSearchOverlay;
 import '../profile/address_book_screen.dart';
@@ -34,6 +38,7 @@ import '../notifications/notifications_screen.dart';
 import '../auth/login_screen.dart';
 import '../order/my_orders_screen.dart';
 import '../wholesale/wholesale_screen.dart';
+import '../coupons/coupons_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -42,12 +47,19 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
   final ValueNotifier<double> _scrollOffset = ValueNotifier(0);
   final Map<String, GlobalKey> _categoryChipKeys = {};
   bool _offersOnly = false;
   bool _offerPopupCheckStarted = false;
+  int _notificationRefreshToken = 0;
+  late final ProductProvider _recoveryProductProvider;
+  late final StoreAvailabilityProvider _recoveryAvailabilityProvider;
+  Timer? _backendRecoveryTimer;
+  int _backendRecoveryAttempt = 0;
+  bool _backendRecoveryInProgress = false;
+  bool _appIsForeground = true;
 
   String _locationTitle = 'Delivery to Home';
   String _locationSubtitle = 'Janakpur, Madhesh Province';
@@ -55,11 +67,80 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _recoveryProductProvider = context.read<ProductProvider>();
+    _recoveryAvailabilityProvider = context.read<StoreAvailabilityProvider>();
+    _recoveryProductProvider.addListener(_handleBackendStatusChanged);
+    _recoveryAvailabilityProvider.addListener(_handleBackendStatusChanged);
     _scrollController.addListener(_handleScroll);
-    unawaited(context.read<StoreAvailabilityProvider>().refresh());
+    unawaited(_recoveryAvailabilityProvider.refresh());
+    _handleBackendStatusChanged();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_checkAndShowOffer());
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appIsForeground = state == AppLifecycleState.resumed;
+    if (!_appIsForeground) {
+      _backendRecoveryTimer?.cancel();
+      _backendRecoveryTimer = null;
+      return;
+    }
+    _handleBackendStatusChanged();
+  }
+
+  void _handleBackendStatusChanged() {
+    if (!mounted) return;
+    final hasBackendError = _recoveryProductProvider.errorMessage != null ||
+        _recoveryAvailabilityProvider.errorMessage != null;
+    if (!hasBackendError) {
+      _backendRecoveryTimer?.cancel();
+      _backendRecoveryTimer = null;
+      if (!_backendRecoveryInProgress) _backendRecoveryAttempt = 0;
+      return;
+    }
+    if (!_appIsForeground ||
+        _backendRecoveryInProgress ||
+        _backendRecoveryTimer != null) {
+      return;
+    }
+
+    const retryDelays = [30, 60, 120, 240, 300];
+    final delay = Duration(
+      seconds:
+          retryDelays[_backendRecoveryAttempt.clamp(0, retryDelays.length - 1)],
+    );
+    _backendRecoveryAttempt =
+        (_backendRecoveryAttempt + 1).clamp(0, retryDelays.length - 1);
+    _backendRecoveryTimer = Timer(delay, () {
+      _backendRecoveryTimer = null;
+      if (!mounted || !_appIsForeground) return;
+      _backendRecoveryInProgress = true;
+      unawaited(
+        Future.wait<void>([
+          _recoveryProductProvider.loadCatalog(),
+          _recoveryAvailabilityProvider.refresh(),
+        ]).whenComplete(() {
+          _backendRecoveryInProgress = false;
+          if (!mounted) return;
+          if (_recoveryProductProvider.errorMessage == null &&
+              _recoveryAvailabilityProvider.errorMessage == null) {
+            _backendRecoveryAttempt = 0;
+          } else {
+            _handleBackendStatusChanged();
+          }
+        }),
+      );
+    });
+  }
+
+  Future<void> _openCoupons() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(builder: (_) => const CouponsScreen()),
+    );
   }
 
   Future<void> _checkAndShowOffer() async {
@@ -154,6 +235,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _backendRecoveryTimer?.cancel();
+    _recoveryProductProvider.removeListener(_handleBackendStatusChanged);
+    _recoveryAvailabilityProvider.removeListener(_handleBackendStatusChanged);
     _scrollController
       ..removeListener(_handleScroll)
       ..dispose();
@@ -469,21 +554,47 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 12),
                   const SizedBox(
                     width: 58,
                     height: 54,
-                    child: HomeGreetingVideo(),
+                    child: HomeGreetingDiya(),
                   ),
-                  CircleIconButton(
-                    icon: Icons.notifications_none_rounded,
-                    tooltip: context.tr('Notifications'),
-                    size: 42,
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const NotificationsScreen(),
-                      ),
+                  IconButton(
+                    tooltip: 'Claim an available coupon',
+                    onPressed: _openCoupons,
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 42,
+                      height: 42,
+                    ),
+                    icon: const StoreAnimation(
+                      assetPath: 'animations/gift_premium.lottie',
+                      size: 34,
+                      semanticLabel: 'Gift coupon animation',
+                      loop: false,
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  UnreadNotificationIndicator(
+                    api: context.read<ApiService>(),
+                    userId: context.read<AuthProvider>().currentUser?.id,
+                    refreshToken: _notificationRefreshToken,
+                    child: CircleIconButton(
+                      icon: Icons.notifications_none_rounded,
+                      tooltip: context.tr('Notifications'),
+                      size: 42,
+                      onPressed: () async {
+                        await Navigator.push<void>(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const NotificationsScreen(),
+                          ),
+                        );
+                        if (mounted) {
+                          setState(() => _notificationRefreshToken++);
+                        }
+                      },
                     ),
                   ),
                 ],
@@ -587,6 +698,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            HomeDiwaliGreeting(
+                              key: ValueKey(
+                                'diwali-greeting-${user?.id ?? 'guest'}',
+                              ),
+                            ),
                             _buildCollapsingHeader(
                               greeting,
                               userName,
@@ -1052,7 +1168,7 @@ class _FeaturedProductCarousel extends StatefulWidget {
 class _FeaturedProductCarouselState extends State<_FeaturedProductCarousel> {
   static const _autoAdvanceInterval = Duration(seconds: 4);
 
-  final PageController _pageController = PageController(viewportFraction: .86);
+  final PageController _pageController = PageController(viewportFraction: .83);
   Timer? _autoAdvanceTimer;
   int _currentPage = 0;
   bool _reduceMotion = false;
@@ -1558,19 +1674,19 @@ class _FeaturedProductSlideState extends State<_FeaturedProductSlide>
                                   height: constraints.maxHeight * .64,
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(18),
-                                    child: ColoredBox(
-                                      color: Colors.white,
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(5),
-                                        child: ProductThumbnail(
-                                          key: _imageKey,
-                                          imageUrl: product.imageUrl,
-                                          size: constraints.maxWidth * .30,
-                                          width: constraints.maxWidth * .30,
-                                          height: constraints.maxHeight * .62,
-                                          fit: BoxFit.contain,
-                                          borderRadius: BorderRadius.zero,
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(5),
+                                      child: ProductThumbnail(
+                                        key: _imageKey,
+                                        imageUrl:
+                                            originalCarouselProductImageUrl(
+                                          product.imageUrl,
                                         ),
+                                        size: constraints.maxWidth * .30,
+                                        width: constraints.maxWidth * .30,
+                                        height: constraints.maxHeight * .62,
+                                        fit: BoxFit.contain,
+                                        borderRadius: BorderRadius.zero,
                                       ),
                                     ),
                                   ),

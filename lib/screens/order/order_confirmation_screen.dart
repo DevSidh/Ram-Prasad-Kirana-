@@ -216,6 +216,9 @@ class _OrderItemRow extends StatelessWidget {
             ProductThumbnail(
               imageUrl: item.product.imageUrl,
               size: 52,
+              fit: BoxFit.contain,
+              backgroundColor: Colors.white,
+              imageWidthFactor: .77,
             ),
             const SizedBox(width: 12),
             Expanded(

@@ -91,12 +91,14 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({
+      'home_diwali_greeting_lottie_v2_seen_guest': true,
+    });
   });
 
   testWidgets('carousel arrow advances and featured products open quick view',
       (tester) async {
-    tester.view.physicalSize = const Size(430, 1000);
+    tester.view.physicalSize = const Size(430, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -163,8 +165,6 @@ void main() {
     expect(searchOpacity('home-search-pinned'), 0);
     expect(find.text('Shop by categories'), findsOneWidget);
     expect(find.text('Cheap'), findsOneWidget);
-    expect(find.text('Everyday rice'), findsNothing);
-    expect(find.byType(SliverGrid), findsOneWidget);
     expect(
       tester
           .widget<Text>(
@@ -186,6 +186,15 @@ void main() {
     );
     expect(tester.getSize(find.byType(PageView)).height, 260);
     expect(
+      find.descendant(
+        of: find.byType(PageView),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is ColoredBox && widget.color == Colors.white,
+        ),
+      ),
+      findsNothing,
+    );
+    expect(
       find.byKey(const ValueKey('featured-discount-badge-apples')),
       findsOneWidget,
     );
@@ -198,6 +207,7 @@ void main() {
     expect(searchOpacity('home-search-inline'), 0);
     expect(searchOpacity('home-search-pinned'), 1);
     expect(find.text('Everyday rice'), findsOneWidget);
+    expect(find.byType(SliverGrid), findsOneWidget);
     await tester.drag(find.byType(CustomScrollView), const Offset(0, 700));
     await tester.pump(const Duration(seconds: 1));
 
@@ -233,6 +243,13 @@ void main() {
       findsNothing,
     );
 
+    await tester.ensureVisible(
+      find.descendant(
+        of: find.byType(PageView),
+        matching: find.text('Sweet oranges'),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
     await tester.tap(
       find.descendant(
         of: find.byType(PageView),

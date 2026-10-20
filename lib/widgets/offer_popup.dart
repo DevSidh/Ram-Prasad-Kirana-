@@ -3,15 +3,13 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:video_player/video_player.dart';
 
 import '../models/store_offer.dart';
-import 'white_matte_video_filter.dart';
+import 'store_animation.dart';
 
-const _offerGold = Color(0xFFFFC72C);
-const _offerSaffron = Color(0xFFD94A06);
-const _offerInk = Color(0xFF241A5C);
-const _offerPurple = Color(0xFF3F2080);
+const _offerSaffron = Color(0xFFE8812A);
+const _offerInk = Color(0xFF2D1A52);
+const _offerPurple = Color(0xFF6B45AD);
 
 class OfferPopup extends StatelessWidget {
   final StoreOffer offer;
@@ -23,8 +21,8 @@ class OfferPopup extends StatelessWidget {
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Close festival offer',
-      barrierColor: Colors.black.withValues(alpha: .74),
-      transitionDuration: const Duration(milliseconds: 550),
+      barrierColor: const Color(0xAD140822),
+      transitionDuration: const Duration(milliseconds: 450),
       pageBuilder: (context, animation, secondaryAnimation) =>
           OfferPopup(offer: offer),
       transitionBuilder: (context, animation, secondaryAnimation, child) {
@@ -49,8 +47,10 @@ class OfferPopup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.sizeOf(context).height;
-    final videoHeight = (screenHeight * .18).clamp(105.0, 168.0).toDouble();
-    final bottomHeight = (screenHeight * .25).clamp(150.0, 230.0).toDouble();
+    final heroHeight = (screenHeight * .31).clamp(130.0, 220.0).toDouble();
+    final saleBannerWidth = (screenHeight * .24).clamp(150.0, 205.0).toDouble();
+    final saleBannerHeight = saleBannerWidth * (120 / 145);
+    final diyaSize = (screenHeight * .13).clamp(66.0, 92.0).toDouble();
     final disableAnimations = MediaQuery.disableAnimationsOf(context);
     final offerDescription = offer.discountType == OfferDiscountType.percentage
         ? '${offer.percent}% off up to Rs. ${offer.maxDiscount}'
@@ -66,47 +66,64 @@ class OfferPopup extends StatelessWidget {
             builder: (context, constraints) {
               final dialogHeight = math.min(
                 constraints.maxHeight,
-                videoHeight + bottomHeight * .3 + 440,
+                screenHeight * .88,
               );
               return ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxWidth: 360,
+                  maxWidth: 340,
                   maxHeight: constraints.maxHeight,
                 ),
                 child: SizedBox(
                   height: dialogHeight,
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(32),
+                    borderRadius: BorderRadius.circular(28),
                     child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [Color(0xFFFFFAF0), Color(0xFFFFE8C4)],
-                        ),
-                        border: Border.all(color: _offerGold, width: 3),
-                        borderRadius: BorderRadius.circular(32),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Color(0x73000000),
+                            blurRadius: 60,
+                            offset: Offset(0, 24),
+                          ),
+                        ],
                       ),
                       child: Stack(
                         children: [
-                          Positioned(
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            height: bottomHeight,
-                            child: OfferBottomAnimation(height: bottomHeight),
-                          ),
-                          Positioned.fill(
-                            child: TwinklingSparkles(
-                              disableAnimations: disableAnimations,
-                            ),
-                          ),
                           SingleChildScrollView(
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const _MarigoldGarland(),
-                                OfferTopVideo(height: videoHeight),
+                                SizedBox(
+                                  height: heroHeight,
+                                  child: Image.asset(
+                                    'assets/images/diwali_popup_hero.jpg',
+                                    width: double.infinity,
+                                    fit: BoxFit.contain,
+                                    alignment: Alignment.center,
+                                    errorBuilder: (_, error, stackTrace) {
+                                      debugPrint(
+                                        'Could not load Diwali rangoli artwork: $error',
+                                      );
+                                      return const SizedBox.shrink();
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                SizedBox(
+                                  key: const ValueKey('diwali-sale-banner'),
+                                  width: saleBannerWidth,
+                                  height: saleBannerHeight,
+                                  child: Center(
+                                    child: StoreAnimation(
+                                      assetPath: 'animations/diwali_text.lottie',
+                                      size: saleBannerHeight,
+                                      semanticLabel:
+                                          'Animated Happy Diwali greeting',
+                                      loop: true,
+                                    ),
+                                  ),
+                                ),
                                 OfferMiddle(
                                   offer: offer,
                                   onClaim: () =>
@@ -115,6 +132,40 @@ class OfferPopup extends StatelessWidget {
                                       Navigator.of(context).pop(false),
                                   disableAnimations: disableAnimations,
                                 ),
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(20, 0, 20, 0),
+                                  child: Text(
+                                    offer.discountType ==
+                                            OfferDiscountType.percentage
+                                        ? 'Maximum discount Rs. ${offer.maxDiscount}. Valid during Diwali.'
+                                        : offer.minOrderAmount > 0
+                                            ? 'Save Rs. ${offer.amount} on orders over Rs. ${offer.minOrderAmount}.'
+                                            : 'Save Rs. ${offer.amount} with this Diwali offer.',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: Color(0xFF6A5A8A),
+                                      fontSize: 11,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: 80,
+                                  height: diyaSize,
+                                  child: Image.asset(
+                                    'assets/images/diwali_popup_diya.gif',
+                                    fit: BoxFit.contain,
+                                    gaplessPlayback: true,
+                                    errorBuilder: (_, error, stackTrace) {
+                                      debugPrint(
+                                        'Could not load Diwali diya animation: $error',
+                                      );
+                                      return const SizedBox.shrink();
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
                               ],
                             ),
                           ),
@@ -154,75 +205,6 @@ class OfferPopup extends StatelessWidget {
   }
 }
 
-class OfferTopVideo extends StatefulWidget {
-  final double height;
-
-  const OfferTopVideo({super.key, required this.height});
-
-  @override
-  State<OfferTopVideo> createState() => _OfferTopVideoState();
-}
-
-class _OfferTopVideoState extends State<OfferTopVideo> {
-  late final VideoPlayerController _controller;
-  bool _initialized = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = VideoPlayerController.asset('assets/videos/diwali_sale.mp4');
-    _initialize();
-  }
-
-  Future<void> _initialize() async {
-    try {
-      await _controller.initialize();
-      await _controller.setVolume(0);
-      await _controller.setLooping(true);
-      await _controller.play();
-      if (mounted) setState(() => _initialized = true);
-    } catch (error, stackTrace) {
-      debugPrint(
-          'Unable to play the festival offer video: $error\n$stackTrace');
-    }
-  }
-
-  @override
-  void dispose() {
-    unawaited(_pauseAndDispose());
-    super.dispose();
-  }
-
-  Future<void> _pauseAndDispose() async {
-    try {
-      await _controller.pause();
-    } catch (error, stackTrace) {
-      debugPrint(
-          'Unable to pause the festival offer video: $error\n$stackTrace');
-    }
-    await _controller.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_initialized) return SizedBox(height: widget.height);
-    return SizedBox(
-      height: widget.height,
-      child: Center(
-        child: AspectRatio(
-          aspectRatio: _controller.value.aspectRatio,
-          child: ClipRect(
-            child: ColorFiltered(
-              colorFilter: whiteMatteVideoFilter,
-              child: VideoPlayer(_controller),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class OfferMiddle extends StatelessWidget {
   final StoreOffer offer;
   final VoidCallback onClaim;
@@ -241,8 +223,6 @@ class OfferMiddle extends StatelessWidget {
   Widget build(BuildContext context) {
     final textScale =
         MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.2).toDouble();
-    final bottomHeight =
-        (MediaQuery.sizeOf(context).height * .25).clamp(150.0, 230.0);
     final isPercentage = offer.discountType == OfferDiscountType.percentage;
     final headline = isPercentage ? '${offer.percent}%' : 'Rs. ${offer.amount}';
     final benefitDescription = isPercentage
@@ -250,27 +230,15 @@ class OfferMiddle extends StatelessWidget {
         : offer.minOrderAmount > 0
             ? 'off orders over Rs. ${offer.minOrderAmount}'
             : 'off your order';
-    final claimLabel =
-        'Claim ${isPercentage ? '${offer.percent}%' : 'Rs. ${offer.amount}'} OFF';
     return MediaQuery(
       data: MediaQuery.of(context).copyWith(
         textScaler: TextScaler.linear(textScale),
       ),
       child: Padding(
-        padding: EdgeInsets.fromLTRB(22, 2, 22, bottomHeight * .3 + 14),
+        padding: const EdgeInsets.fromLTRB(22, 0, 22, 0),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'FESTIVAL SPECIAL',
-              style: TextStyle(
-                color: Color(0xFF8A5A00),
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 2.6,
-              ),
-            ),
-            const SizedBox(height: 5),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -281,17 +249,11 @@ class OfferMiddle extends StatelessWidget {
                       headline,
                       maxLines: 1,
                       style: const TextStyle(
-                        fontSize: 76,
+                        fontSize: 58,
                         height: .98,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w800,
                         color: _offerPurple,
-                        shadows: [
-                          Shadow(
-                            color: _offerGold,
-                            offset: Offset(3, 3),
-                            blurRadius: 0,
-                          ),
-                        ],
+                        letterSpacing: -2,
                       ),
                     ),
                   ),
@@ -302,24 +264,18 @@ class OfferMiddle extends StatelessWidget {
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: _offerSaffron,
-                      borderRadius: BorderRadius.circular(8),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0xFF9C3204),
-                          offset: Offset(0, 3),
-                        ),
-                      ],
+                      borderRadius: BorderRadius.circular(999),
                     ),
                     child: const Padding(
                       padding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 4,
+                        horizontal: 20,
+                        vertical: 7,
                       ),
                       child: Text(
                         'OFF',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 20,
+                          fontSize: 16,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -329,15 +285,25 @@ class OfferMiddle extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 5),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                benefitDescription,
-                maxLines: 1,
-                style: const TextStyle(
-                  color: _offerInk,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: _offerSaffron,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 7),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    benefitDescription,
+                    maxLines: 1,
+                    style: const TextStyle(
+                      color: Color(0xFF2A1240),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -349,7 +315,7 @@ class OfferMiddle extends StatelessWidget {
             ],
             const SizedBox(height: 8),
             _ClaimButton(
-              label: claimLabel,
+              label: 'Claim offer',
               onPressed: onClaim,
               disableAnimations: disableAnimations,
             ),
@@ -563,139 +529,6 @@ class _OfferCountdownState extends State<OfferCountdown> {
   }
 }
 
-class OfferBottomAnimation extends StatelessWidget {
-  final double height;
-
-  const OfferBottomAnimation({super.key, required this.height});
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: ExcludeSemantics(
-        child: Image.asset(
-          'assets/images/anar_transparent.webp',
-          height: height,
-          fit: BoxFit.contain,
-          alignment: Alignment.bottomCenter,
-          gaplessPlayback: true,
-        ),
-      ),
-    );
-  }
-}
-
-class TwinklingSparkles extends StatefulWidget {
-  final bool disableAnimations;
-
-  const TwinklingSparkles({super.key, required this.disableAnimations});
-
-  @override
-  State<TwinklingSparkles> createState() => _TwinklingSparklesState();
-}
-
-class _TwinklingSparklesState extends State<TwinklingSparkles>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 2600),
-  );
-
-  static const _sparklePositions = <(double, double, double)>[
-    (.12, 42, 0),
-    (.82, 72, .8),
-    (.05, .44, 1.4),
-    (.91, .51, .4),
-    (.24, .65, 1.1),
-    (.73, .72, .2),
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    if (!widget.disableAnimations) _controller.repeat(reverse: true);
-  }
-
-  @override
-  void didUpdateWidget(covariant TwinklingSparkles oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.disableAnimations) {
-      _controller
-        ..stop()
-        ..value = 0;
-    } else if (!_controller.isAnimating) {
-      _controller.repeat(reverse: true);
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: ExcludeSemantics(
-        child: LayoutBuilder(
-          builder: (context, constraints) => AnimatedBuilder(
-            animation: _controller,
-            builder: (context, _) => Stack(
-              children: [
-                for (var index = 0; index < _sparklePositions.length; index++)
-                  _Sparkle(
-                    left: constraints.maxWidth * _sparklePositions[index].$1,
-                    top: _sparklePositions[index].$2 <= 1
-                        ? MediaQuery.sizeOf(context).height *
-                            _sparklePositions[index].$2
-                        : _sparklePositions[index].$2,
-                    progress: widget.disableAnimations
-                        ? 0
-                        : (_controller.value + _sparklePositions[index].$3) % 1,
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Sparkle extends StatelessWidget {
-  final double left;
-  final double top;
-  final double progress;
-
-  const _Sparkle({
-    required this.left,
-    required this.top,
-    required this.progress,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final twinkle = (math.sin(progress * 2 * math.pi) + 1) / 2;
-    final scale = .5 + .6 * twinkle;
-    final opacity = .3 + .7 * twinkle;
-    return Positioned(
-      left: left,
-      top: top,
-      child: Transform.scale(
-        scale: scale,
-        child: Opacity(
-          opacity: opacity,
-          child: const Icon(
-            Icons.auto_awesome,
-            color: _offerGold,
-            size: 14,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _ClaimButton extends StatefulWidget {
   final String label;
   final VoidCallback onPressed;
@@ -761,7 +594,9 @@ class _ClaimButtonState extends State<_ClaimButton>
             style: FilledButton.styleFrom(
               foregroundColor: Colors.white,
               backgroundColor: _offerPurple,
-              shape: const StadiumBorder(),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
               textStyle: const TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.w800,
@@ -773,33 +608,4 @@ class _ClaimButtonState extends State<_ClaimButton>
       ),
     );
   }
-}
-
-class _MarigoldGarland extends StatelessWidget {
-  const _MarigoldGarland();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 20,
-      width: double.infinity,
-      child: CustomPaint(
-        painter: _GarlandPainter(),
-      ),
-    );
-  }
-}
-
-class _GarlandPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..style = PaintingStyle.fill;
-    for (var x = 10.0, index = 0; x < size.width; x += 20, index++) {
-      paint.color = index.isEven ? _offerSaffron : _offerGold;
-      canvas.drawCircle(Offset(x, 9), 6, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

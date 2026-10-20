@@ -1,7 +1,7 @@
 name: freshharvest_grocery
 description: "A production-grade grocery shopping & delivery mobile application built with Flutter & Material 3."
 publish_to: 'none'
-version: 2.0.8+10
+version: 2.0.10+12
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
@@ -46,6 +46,8 @@ dependencies:
   url_launcher: ^6.3.3
   dotlottie_flutter: ^0.1.7
   video_player: ^2.14.1
+  pdf: ^3.13.1
+  printing: ^5.15.1
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -56,8 +58,9 @@ flutter:
 
   assets:
     - assets/images/
+    - assets/images/home_diya.webp
+    - assets/images/diwali_popup_sale_banner.png
     - assets/icons/
     - assets/animations/
     - assets/onboarding/
     - assets/videos/dia.mp4
-    - assets/videos/diwali_sale.mp4

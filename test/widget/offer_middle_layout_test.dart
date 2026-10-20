@@ -33,9 +33,16 @@ void main() {
       ));
       await tester.pump(const Duration(milliseconds: 50));
 
-      expect(find.text('FESTIVAL SPECIAL'), findsOneWidget);
       expect(find.text('50%'), findsOneWidget);
       expect(find.text('FESTIVAL50'), findsOneWidget);
+      final saleBanner = find.byKey(const ValueKey('diwali-sale-banner'));
+      expect(saleBanner, findsOneWidget);
+      expect(
+        find.byKey(
+          const ValueKey('store-animation-animations/diwali_text.lottie'),
+        ),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     });
   }
@@ -70,7 +77,7 @@ void main() {
 
     expect(find.text('Rs. 50'), findsOneWidget);
     expect(find.text('off your order'), findsOneWidget);
-    expect(find.text('Claim Rs. 50 OFF'), findsOneWidget);
+    expect(find.text('Claim offer'), findsOneWidget);
     expect(find.text('DIWALI50'), findsOneWidget);
     expect(find.textContaining('%'), findsNothing);
     expect(tester.takeException(), isNull);
