@@ -45,10 +45,36 @@ assert.deepEqual(
   {
     id: 'offer-1',
     enabled: true,
+    discountType: 'PERCENTAGE',
     percent: 15,
     maxDiscount: 200,
+    amount: null,
     code: 'SAVE15',
     endsAt: '2027-01-01T00:00:00.000Z',
+    minOrderAmount: 500,
+  },
+);
+assert.deepEqual(
+  toPublicCouponOffer({
+    ...baseCoupon,
+    discountType: 'FIXED',
+    discountPercent: null,
+    discountAmount: 50,
+    minOrderAmount: 0,
+    maxDiscount: null,
+    id: 'diwali-offer',
+    code: 'DIWALI50',
+  }, now),
+  {
+    id: 'diwali-offer',
+    enabled: true,
+    discountType: 'FIXED',
+    percent: null,
+    maxDiscount: null,
+    amount: 50,
+    code: 'DIWALI50',
+    endsAt: '2027-01-01T00:00:00.000Z',
+    minOrderAmount: 0,
   },
 );
 assert.equal(

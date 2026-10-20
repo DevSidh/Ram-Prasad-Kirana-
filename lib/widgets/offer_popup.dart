@@ -52,11 +52,13 @@ class OfferPopup extends StatelessWidget {
     final videoHeight = (screenHeight * .18).clamp(105.0, 168.0).toDouble();
     final bottomHeight = (screenHeight * .25).clamp(150.0, 230.0).toDouble();
     final disableAnimations = MediaQuery.disableAnimationsOf(context);
+    final offerDescription = offer.discountType == OfferDiscountType.percentage
+        ? '${offer.percent}% off up to Rs. ${offer.maxDiscount}'
+        : 'Rs. ${offer.amount} off';
 
     return Semantics(
       container: true,
-      label:
-          'Festival special offer: ${offer.percent}% off up to Rs. ${offer.maxDiscount}. Coupon ${offer.code}.',
+      label: 'Festival special offer: $offerDescription. Coupon ${offer.code}.',
       child: SafeArea(
         minimum: const EdgeInsets.all(12),
         child: Center(
@@ -241,6 +243,15 @@ class OfferMiddle extends StatelessWidget {
         MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.2).toDouble();
     final bottomHeight =
         (MediaQuery.sizeOf(context).height * .25).clamp(150.0, 230.0);
+    final isPercentage = offer.discountType == OfferDiscountType.percentage;
+    final headline = isPercentage ? '${offer.percent}%' : 'Rs. ${offer.amount}';
+    final benefitDescription = isPercentage
+        ? 'up to Rs. ${offer.maxDiscount}'
+        : offer.minOrderAmount > 0
+            ? 'off orders over Rs. ${offer.minOrderAmount}'
+            : 'off your order';
+    final claimLabel =
+        'Claim ${isPercentage ? '${offer.percent}%' : 'Rs. ${offer.amount}'} OFF';
     return MediaQuery(
       data: MediaQuery.of(context).copyWith(
         textScaler: TextScaler.linear(textScale),
@@ -267,7 +278,7 @@ class OfferMiddle extends StatelessWidget {
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     child: Text(
-                      '${offer.percent}%',
+                      headline,
                       maxLines: 1,
                       style: const TextStyle(
                         fontSize: 76,
@@ -321,7 +332,7 @@ class OfferMiddle extends StatelessWidget {
             FittedBox(
               fit: BoxFit.scaleDown,
               child: Text(
-                'up to Rs. ${offer.maxDiscount}',
+                benefitDescription,
                 maxLines: 1,
                 style: const TextStyle(
                   color: _offerInk,
@@ -338,7 +349,7 @@ class OfferMiddle extends StatelessWidget {
             ],
             const SizedBox(height: 8),
             _ClaimButton(
-              label: 'Claim ${offer.percent}% OFF',
+              label: claimLabel,
               onPressed: onClaim,
               disableAnimations: disableAnimations,
             ),

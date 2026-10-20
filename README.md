@@ -74,7 +74,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-android-
 Use `-Artifact appbundle` for a Google Play Store AAB. Flutter uses the
 `version` in `pubspec.yaml` as the Android version name and build number. Name
 shared APKs with the store name and version, for example
-`Ram-Prasad-General-Store-v2.0.7.apk`. The APK is written to
+`Ram-Prasad-General-Store-v2.0.8.apk`. The APK is written to
 `build/app/outputs/flutter-apk/app-release.apk`; the AAB is written to
 `build/app/outputs/bundle/release/app-release.aab`.
 
@@ -130,10 +130,10 @@ npm install
 
 Do not run `prisma migrate dev`, `prisma db push`, or a database reset as part of routine startup. Product sale prices use `price`, with `originalPrice` shown as the crossed-out former price. Admins can create percentage or fixed-amount coupons with a minimum retail subtotal, optional discount cap, redemption limit, and expiry; checkout revalidates each code in the order transaction. Coupon discounts exclude wholesale-priced items, including in mixed baskets. Product units are stored with the catalog record.
 
-The post-login offer popup reads eligible, active percentage coupons from
-`GET /api/v1/coupons/offer`. Deploy the backend release containing this route
-before expecting the popup to appear in production; the app does not invent
-offer values or calculate the discount locally.
+The post-login offer popup reads eligible, active percentage coupons with a
+discount cap and fixed-amount coupons from `GET /api/v1/coupons/offer`. The
+backend returns the saved coupon type, value, minimum order, and expiry; the app
+does not invent offer values or calculate the discount locally.
 
 Store administrators can configure recurring opening hours and immediately pause or resume online ordering from **Admin → Store hours**. Hours use Nepal Standard Time (`Asia/Kathmandu`); closed days and a paused store are enforced by the backend as well as shown in the customer app. The migration seeds an always-open schedule to preserve existing checkout behavior; configure the actual weekly hours in the admin panel after applying the `20261018000000_store_hours` Prisma migration and before relying on automatic closing.
 

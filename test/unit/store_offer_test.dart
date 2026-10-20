@@ -18,8 +18,11 @@ void main() {
   test('parses the backend offer fields and rejects expired offers', () {
     final offer = StoreOffer.fromJson({
       'enabled': true,
+      'discountType': 'PERCENTAGE',
       'percent': 15,
       'maxDiscount': '200',
+      'amount': null,
+      'minOrderAmount': 500,
       'code': 'save15',
       'id': 'coupon-1',
       'endsAt': '2026-10-21T00:00:00.000Z',
@@ -30,6 +33,26 @@ void main() {
     expect(offer.code, 'SAVE15');
     expect(offer.isAvailableAt(DateTime.utc(2026, 10, 20)), isTrue);
     expect(offer.isAvailableAt(DateTime.utc(2026, 10, 22)), isFalse);
+  });
+
+  test('parses fixed-amount offers without presenting them as percentages', () {
+    final offer = StoreOffer.fromJson({
+      'enabled': true,
+      'discountType': 'FIXED',
+      'percent': null,
+      'maxDiscount': null,
+      'amount': 50,
+      'minOrderAmount': 0,
+      'code': 'diwali50',
+      'id': 'coupon-diwali',
+      'endsAt': null,
+    });
+
+    expect(offer.discountType, OfferDiscountType.fixed);
+    expect(offer.amount, 50);
+    expect(offer.percent, isNull);
+    expect(offer.minOrderAmount, 0);
+    expect(offer.code, 'DIWALI50');
   });
 
   test('stores each offer id against the local date it was shown', () async {

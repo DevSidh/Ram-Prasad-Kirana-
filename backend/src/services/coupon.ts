@@ -14,14 +14,28 @@ type CouponCheck =
   | { valid: true; discount: number; message: string }
   | { valid: false; discount: 0; message: string };
 
-export interface PublicCouponOffer {
+interface PublicCouponOfferBase {
   id: string;
   enabled: true;
-  percent: number;
-  maxDiscount: number;
   code: string;
   endsAt: string | null;
 }
+
+export type PublicCouponOffer =
+  | (PublicCouponOfferBase & {
+      discountType: 'PERCENTAGE';
+      percent: number;
+      maxDiscount: number;
+      amount: null;
+      minOrderAmount: number;
+    })
+  | (PublicCouponOfferBase & {
+      discountType: 'FIXED';
+      percent: null;
+      maxDiscount: null;
+      amount: number;
+      minOrderAmount: number;
+    });
 
 export function toPublicCouponOffer(
   coupon: CouponForValidation & { id: string; code: string },
@@ -29,32 +43,51 @@ export function toPublicCouponOffer(
 ): PublicCouponOffer | null {
   if (
     !coupon.isActive ||
-    coupon.discountType !== 'PERCENTAGE' ||
     (coupon.expiresAt !== null && coupon.expiresAt <= now) ||
     (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit)
   ) {
     return null;
   }
 
-  const percent = numericValue(coupon.discountPercent);
-  const maxDiscount = numericValue(coupon.maxDiscount);
-  if (
-    percent === null ||
-    percent <= 0 ||
-    percent > 100 ||
-    maxDiscount === null ||
-    maxDiscount <= 0
-  ) {
-    return null;
-  }
+  const minOrderAmount = numericValue(coupon.minOrderAmount);
+  if (minOrderAmount === null || minOrderAmount < 0) return null;
 
-  return {
+  const base = {
     id: coupon.id,
-    enabled: true,
-    percent: Math.round(percent),
-    maxDiscount: Math.round(maxDiscount),
+    enabled: true as const,
     code: coupon.code,
     endsAt: coupon.expiresAt?.toISOString() ?? null,
+    minOrderAmount: Math.round(minOrderAmount),
+  };
+  if (coupon.discountType === 'PERCENTAGE') {
+    const percent = numericValue(coupon.discountPercent);
+    const maxDiscount = numericValue(coupon.maxDiscount);
+    if (
+      percent === null ||
+      percent <= 0 ||
+      percent > 100 ||
+      maxDiscount === null ||
+      maxDiscount <= 0
+    ) {
+      return null;
+    }
+    return {
+      ...base,
+      discountType: 'PERCENTAGE',
+      percent: Math.round(percent),
+      maxDiscount: Math.round(maxDiscount),
+      amount: null,
+    };
+  }
+
+  const amount = numericValue(coupon.discountAmount);
+  if (amount === null || amount <= 0) return null;
+  return {
+    ...base,
+    discountType: 'FIXED',
+    percent: null,
+    maxDiscount: null,
+    amount: Math.round(amount),
   };
 }
 

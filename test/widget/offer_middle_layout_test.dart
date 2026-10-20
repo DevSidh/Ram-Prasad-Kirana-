@@ -39,4 +39,40 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('shows fixed-value coupon details accurately', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    const offer = StoreOffer(
+      enabled: true,
+      discountType: OfferDiscountType.fixed,
+      amount: 50,
+      minOrderAmount: 0,
+      code: 'DIWALI50',
+      id: 'coupon-diwali',
+      endsAt: null,
+    );
+    await tester.pumpWidget(const MaterialApp(
+      home: Scaffold(
+        body: MediaQuery(
+          data: MediaQueryData(
+            size: Size(360, 640),
+            disableAnimations: true,
+          ),
+          child: OfferPopup(offer: offer),
+        ),
+      ),
+    ));
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('Rs. 50'), findsOneWidget);
+    expect(find.text('off your order'), findsOneWidget);
+    expect(find.text('Claim Rs. 50 OFF'), findsOneWidget);
+    expect(find.text('DIWALI50'), findsOneWidget);
+    expect(find.textContaining('%'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }

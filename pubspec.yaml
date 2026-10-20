@@ -1,7 +1,7 @@
 name: freshharvest_grocery
 description: "A production-grade grocery shopping & delivery mobile application built with Flutter & Material 3."
 publish_to: 'none'
-version: 2.0.7+9
+version: 2.0.8+10
 
 environment:
   sdk: '>=3.2.0 <4.0.0'

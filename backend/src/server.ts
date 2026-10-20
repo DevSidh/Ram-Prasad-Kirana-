@@ -1308,7 +1308,6 @@ app.get('/api/v1/coupons/offer', async (_req: Request, res: Response) => {
     const coupons = await prisma.coupon.findMany({
       where: {
         isActive: true,
-        discountType: 'PERCENTAGE',
         OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
       },
       select: {
