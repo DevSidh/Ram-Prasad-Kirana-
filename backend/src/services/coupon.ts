@@ -14,6 +14,50 @@ type CouponCheck =
   | { valid: true; discount: number; message: string }
   | { valid: false; discount: 0; message: string };
 
+export interface PublicCouponOffer {
+  id: string;
+  enabled: true;
+  percent: number;
+  maxDiscount: number;
+  code: string;
+  endsAt: string | null;
+}
+
+export function toPublicCouponOffer(
+  coupon: CouponForValidation & { id: string; code: string },
+  now: Date = new Date(),
+): PublicCouponOffer | null {
+  if (
+    !coupon.isActive ||
+    coupon.discountType !== 'PERCENTAGE' ||
+    (coupon.expiresAt !== null && coupon.expiresAt <= now) ||
+    (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit)
+  ) {
+    return null;
+  }
+
+  const percent = numericValue(coupon.discountPercent);
+  const maxDiscount = numericValue(coupon.maxDiscount);
+  if (
+    percent === null ||
+    percent <= 0 ||
+    percent > 100 ||
+    maxDiscount === null ||
+    maxDiscount <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    id: coupon.id,
+    enabled: true,
+    percent: Math.round(percent),
+    maxDiscount: Math.round(maxDiscount),
+    code: coupon.code,
+    endsAt: coupon.expiresAt?.toISOString() ?? null,
+  };
+}
+
 function numericValue(
   value: number | string | { toNumber(): number } | null,
 ): number | null {

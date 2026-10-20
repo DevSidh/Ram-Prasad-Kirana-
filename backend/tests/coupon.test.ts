@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { checkCoupon } from '../src/services/coupon.js';
+import { checkCoupon, toPublicCouponOffer } from '../src/services/coupon.js';
 
 const baseCoupon = {
   isActive: true,
@@ -40,5 +40,30 @@ assert.equal(
   100,
   'Fixed discounts cannot reduce an order subtotal below zero.',
 );
+assert.deepEqual(
+  toPublicCouponOffer({ ...baseCoupon, id: 'offer-1', code: 'SAVE15' }, now),
+  {
+    id: 'offer-1',
+    enabled: true,
+    percent: 15,
+    maxDiscount: 200,
+    code: 'SAVE15',
+    endsAt: '2027-01-01T00:00:00.000Z',
+  },
+);
+assert.equal(
+  toPublicCouponOffer(
+    { ...baseCoupon, id: 'expired', code: 'EXPIRED', expiresAt: now },
+    now,
+  ),
+  null,
+);
+assert.equal(
+  toPublicCouponOffer(
+    { ...baseCoupon, id: 'used', code: 'USED', usedCount: 3 },
+    now,
+  ),
+  null,
+);
 
-console.log('Coupon eligibility and discount tests passed.');
+console.log('Coupon eligibility, discount, and public-offer tests passed.');

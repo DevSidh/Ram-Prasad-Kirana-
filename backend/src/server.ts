@@ -23,7 +23,7 @@ import { orderInput } from './schemas/order.js';
 import { InventoryService } from './services/inventory.js';
 import { canCustomerCancelOrder } from './services/order-cancellation.js';
 import { orderCartCleanupWhere } from './services/order-cart-cleanup.js';
-import { checkCoupon } from './services/coupon.js';
+import { checkCoupon, toPublicCouponOffer } from './services/coupon.js';
 import {
   CUSTOMER_CATALOG_CATEGORY_FILTER,
   CUSTOMER_CATALOG_PRODUCT_FILTER,
@@ -1299,6 +1299,40 @@ app.get('/api/v1/orders/:id', authenticateToken, async (req: Request, res: Respo
   } catch (error) {
     console.error('Order lookup failed:', error);
     return res.status(500).json({ error: 'Unable to load this order.' });
+  }
+});
+
+app.get('/api/v1/coupons/offer', async (_req: Request, res: Response) => {
+  try {
+    const now = new Date();
+    const coupons = await prisma.coupon.findMany({
+      where: {
+        isActive: true,
+        discountType: 'PERCENTAGE',
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+      },
+      select: {
+        id: true,
+        code: true,
+        isActive: true,
+        discountType: true,
+        discountPercent: true,
+        discountAmount: true,
+        minOrderAmount: true,
+        maxDiscount: true,
+        usageLimit: true,
+        usedCount: true,
+        expiresAt: true,
+      },
+      orderBy: [{ createdAt: 'desc' }, { code: 'asc' }],
+    });
+    const offer = coupons
+      .map((coupon) => toPublicCouponOffer(coupon, now))
+      .find((candidate) => candidate !== null) ?? null;
+    return res.json({ offer });
+  } catch (error) {
+    console.error('Public coupon offer lookup failed:', error);
+    return res.status(500).json({ error: 'Unable to load the current offer.' });
   }
 });
 
