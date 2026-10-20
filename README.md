@@ -1,301 +1,489 @@
-# Ram Prasad General Store — Grocery Shopping & Delivery App
+# Ram Prasad General Store
 
-A mobile application built using **Flutter + Dart** with Material 3 and a **Node.js + TypeScript + CockroachDB + Prisma ORM** backend.
+Ram Prasad General Store is a grocery shopping and delivery application for
+Janakpur, Nepal. The repository contains a Flutter client for Android, iOS, and
+web, plus a REST API built with Node.js, TypeScript, Express, Prisma, and
+CockroachDB.
 
----
+The Flutter app is the customer and staff interface. The backend is the
+authoritative source for accounts, product availability, prices, coupons,
+inventory, delivery rules, and orders. The app must be configured with the URL
+of a running backend to load live data.
 
-## 📱 Mobile Architecture (`/lib`, `/android`, `/ios`)
+## Contents
 
-The mobile application is built natively for **Android 8+** and **iOS 14+** using Flutter:
+- [Features](#features)
+- [How the application works](#how-the-application-works)
+- [Repository layout](#repository-layout)
+- [Requirements](#requirements)
+- [Run locally](#run-locally)
+- [Backend configuration](#backend-configuration)
+- [Maps and push notifications](#maps-and-push-notifications)
+- [Database migrations](#database-migrations)
+- [Build and publish Android](#build-and-publish-android)
+- [Tests and quality checks](#tests-and-quality-checks)
+- [Operational notes and current limitations](#operational-notes-and-current-limitations)
+- [Troubleshooting](#troubleshooting)
+- [Security](#security)
 
+## Features
+
+### Customer app
+
+- Browse categories and live products; search, sort, and filter the catalog.
+- View featured products, offers, product details, stock, and product images.
+- Save products to a wishlist and keep account data synchronized after login.
+- Add retail or wholesale items to the cart, review availability, and check out.
+- Save delivery addresses, including a map pin and delivery instructions.
+- View order history and status, cancel eligible orders, and follow delivery
+  progress.
+- Review in-app notifications. Opening the Notifications screen marks existing
+  notifications as read; new notifications can show an unread indicator.
+- Open Coupons from the Home gift button to see the current store offer and
+  coupon codes included in account notifications.
+- Save an order invoice as a PDF using the device's print/save interface.
+- Choose the available light or dark appearance and supported app language.
+- Browse vending drinks from the dedicated Vending destination. These are
+  regular catalog items and use the existing cart and order flow.
+
+### Store administration
+
+The authenticated Admin area includes:
+
+- Dashboard and order management.
+- Delivery staff and customer management.
+- Product and category editing, including vending products and wholesale items.
+- Homepage showcase selection and product SKU tools.
+- Coupon and promotion management.
+- Store opening hours and order availability controls.
+- Low-stock review and inventory restocking.
+- Admin announcements/notifications for customers.
+
+Product and order actions are sent to the backend; administrative changes are
+not local-only UI state.
+
+### Delivery staff
+
+Delivery accounts enter a dedicated delivery panel. The backend limits delivery
+endpoints to authenticated delivery staff. The panel supports assigned work and
+delivery-status operations provided by the API.
+
+## How the application works
+
+```text
+Flutter app
+  ├─ Screens and reusable widgets
+  ├─ Provider state (authentication, products, cart, orders, settings)
+  └─ ApiService ── HTTPS/HTTP + bearer token ──┐
+                                               v
+                                    Express REST API
+                                      ├─ Validation and auth
+                                      ├─ Business rules/services
+                                      └─ Prisma ORM
+                                               |
+                                               v
+                                          CockroachDB
 ```
-grocery_app/
-│
+
+- `ApiService` sends API requests. Authenticated requests use the signed-in
+  user's bearer token.
+- Providers own client-side state and notify only the screens that depend on
+  the changed state. Product catalog data can be cached on the device; the
+  backend remains authoritative for checkout and inventory.
+- The backend validates requests, enforces account roles, and performs
+  transactional work such as order placement and inventory reservation.
+- Prisma models and versioned migrations define the database schema. Apply
+  required migrations before releasing backend code that depends on them.
+- Image URLs and image records are served through the API. Product thumbnails
+  use cached network loading and size-aware decoding; transparent product
+  uploads are normalized by backend image-processing code while original
+  image data remains available.
+- The main customer navigation preserves visited tabs and their state. Admin
+  and delivery users are routed to role-specific shells after authentication.
+
+## Repository layout
+
+```text
+.
+├── android/                 Android app and Gradle configuration
+├── ios/                     iOS Runner and platform configuration
+├── web/                     Flutter web entry point and web configuration
+├── assets/                  Images, icons, animations, and other app assets
 ├── lib/
-│   ├── core/           # Constants, Material 3 Light/Dark Theme, Colors
-│   ├── config/         # App environment configurations
-│   ├── models/         # User, Product, Category, CartItem, Order, Address
-│   ├── services/       # ApiService (HTTP client with JWT headers)
-│   ├── repositories/   # Data repositories
-│   ├── providers/      # AuthProvider, ProductProvider, CartProvider, OrderProvider
-│   ├── screens/        # Splash, Onboarding, Auth, Home, Category, PDP, Cart, Checkout, Tracking, Orders, Profile
-│   ├── widgets/        # ProductCard, CustomButton, EmptyState
-│   ├── navigation/     # MainBottomNav and the existing customer destinations
-│   └── main.dart       # App entry point with MultiProvider
-│
-├── android/            # Native Gradle, AndroidManifest.xml, Kotlin MainActivity
-├── ios/                # Native Runner, Info.plist, AppDelegate.swift, Podfile
-├── test/               # Flutter Unit & Widget tests
-└── backend/            # Node.js + TypeScript + CockroachDB + Prisma REST API
+│   ├── core/                App constants, themes, responsive and shared UI
+│   ├── models/              Product, user, order, address, and other models
+│   ├── navigation/          Customer navigation and role-based routing
+│   ├── providers/           Client state and API-backed state management
+│   ├── screens/             Customer, admin, authentication, and delivery UI
+│   ├── services/            API, notifications, location, and invoice services
+│   └── widgets/              Reusable product, image, motion, and UI widgets
+├── test/
+│   ├── unit/                Dart model, provider, and service tests
+│   └── widget/              Flutter widget and interaction tests
+├── backend/
+│   ├── prisma/              CockroachDB schema, migrations, and seed code
+│   ├── src/
+│   │   ├── middleware/      Authentication and request middleware
+│   │   ├── routes/          Account, admin, delivery, and auth route modules
+│   │   ├── schemas/         Request validation schemas
+│   │   └── services/        Business, image, email, inventory, and payment logic
+│   └── tests/               Backend integration and service tests
+└── scripts/                 Release/build helper scripts
 ```
 
----
+## Requirements
 
-## 🚀 How to Run the Flutter Mobile App
+- Flutter SDK and Dart compatible with the constraints in `pubspec.yaml`.
+- Android Studio/Android SDK for Android builds; Xcode and CocoaPods for iOS.
+- Node.js and npm for the backend.
+- A CockroachDB database for backend development or deployment.
+- Git for version control and release tags.
 
-### Prerequisites
-- Flutter SDK `>=3.16.0`
-- Android Studio / Xcode
+Check the Flutter version with `flutter --version` and the Node/npm versions
+with `node --version` and `npm --version`.
 
-### 1. Install Dependencies
-```bash
-flutter pub get
-```
+## Run locally
 
-### 2. Run on Connected Device / Emulator
-```bash
-flutter run
-```
+### 1. Configure and start the backend
 
-The API is a separate backend process; it does not run inside the Android app. Start it on the development computer with `npm.cmd --prefix backend run dev` on Windows (or `cd backend && npm run dev` elsewhere). It listens on `0.0.0.0` so devices on the local network can reach it. The web app and iOS simulator use `localhost`; the Android emulator uses `10.0.2.2` to reach the development computer. A physical phone must use the computer's reachable LAN IP or the deployed HTTPS API URL, for example `flutter run -d <device-id> --dart-define=API_BASE_URL=http://192.168.1.20:4000/api/v1`. Keep the phone and computer on the same network and allow the backend port through the computer firewall. Login errors now identify the API URL if the server cannot be reached.
+Create a private `backend/.env` file using `backend/.env.example` as a list of
+the backend settings. At minimum, configure:
 
-Saving a delivery address does not require a Maps API key; customers can enter address details manually. Android and iOS use the native Google Maps SDK; Chrome uses the Maps JavaScript API and needs its own key. For Android, add `googleMapsApiKey=YOUR_RESTRICTED_KEY` to `android/local.properties` (the build also accepts `MAPS_API_KEY`) and restrict it to package `com.freshharvest.grocery_app` plus the signing certificate SHA-1. For iOS, set `GOOGLE_MAPS_API_KEY` in the Runner target's Xcode build settings and restrict it to the iOS bundle ID. For Chrome, copy `web/maps-config.example.js` to `web/maps-config.js`, set a separate key with Maps JavaScript API enabled, and restrict it to your site's HTTP referrers. The web picker is enabled by default; `--dart-define=GOOGLE_MAPS_CONFIGURED=false` can disable it explicitly. Never commit keys. Without a valid key enabled for the platform, the map tiles cannot load; manual address entry remains available.
+- `DATABASE_URL`: CockroachDB connection string.
+- `AUTH_SECRET`: a private random secret of at least 32 characters.
+- `PORT`: defaults to `4000`.
+- `NODE_ENV`: use `development` for local development.
 
-Orders require a saved map pin within a 10 km straight-line radius of the store. Set `DELIVERY_SERVICE_RADIUS_KM` in the backend environment to override the 10 km default. Customer categories whose name or slug contains “rice,” “vegetable,” or “dairy” are hidden in full, including mixed categories such as “Fruits & Vegetables” and “Dairy & Eggs.”
+Set optional services only when using their features; see
+[Backend configuration](#backend-configuration). Do not commit `.env` files.
 
-New customer accounts must verify their email with the six-digit code sent through
-the configured SMTP server before signing in. Existing accounts remain verified.
-Phone numbers are not collected at registration; changes to a saved phone number
-remain unavailable until SMS verification is configured for the deployment.
-Configure the SMTP environment variables listed in `backend/.env.example` in the
-backend host's secret manager. Email delivery requires a working mail provider;
-the local `.env` file is not deployed with the app.
-
-### 3. Build a Production Android APK or App Bundle
-
-Release builds must embed the deployed backend's HTTPS API URL. Do not build
-with bare `flutter build apk --release` or `flutter build appbundle --release`.
-On Windows, use the release script after configuring Android signing:
+From the repository root, open a terminal in `backend`, install dependencies,
+generate the Prisma client, and start the API:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-android-release.ps1 -ApiBaseUrl "https://YOUR-DEPLOYED-API-HOST/api/v1" -Artifact apk
-```
-
-Use `-Artifact appbundle` for a Google Play Store AAB. Flutter uses the
-`version` in `pubspec.yaml` as the Android version name and build number. Name
-shared APKs with the store name and version, for example
-`Ram-Prasad-General-Store-v2.0.10.apk`. The APK is written to
-`build/app/outputs/flutter-apk/app-release.apk`; the AAB is written to
-`build/app/outputs/bundle/release/app-release.aab`.
-
-### Publish a Signed Android APK on GitHub
-
-Android installs an `.apk`; `.exe` files are for Windows. The GitHub Actions workflow at `.github/workflows/android-release.yml` builds a signed APK and attaches it to a GitHub Release when you push a version tag such as `v1.0.1`.
-
-Before tagging a release:
-
-1. Deploy the backend changes first. Confirm the public pages
-   `https://YOUR-API-HOST/privacy-policy` and
-   `https://YOUR-API-HOST/account-deletion` return HTTP 200, and that the
-   deployed API includes `POST /api/v1/account/delete-account` and
-   `/api/v1/auth/email-verification/{request,confirm}`. Apply the
-   `20261026000000_email_verification` migration after a verified backup and
-   configure SMTP on the backend before publishing. Do not publish the app
-   until these endpoints and email delivery are live.
-2. Set the repository variable `API_BASE_URL` to
-   `https://ram-prasad-kirana-backend.onrender.com/api/v1` so release builds
-   connect to the deployed backend.
-3. Add these repository Actions secrets:
-   - `ANDROID_KEYSTORE_BASE64`: your private Android release keystore encoded as one Base64 string.
-   - `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`: the credentials for that keystore.
-   - `MAPS_API_KEY`: a restricted Android Maps key; restrict it to this app's package and release certificate SHA-1.
-4. If you do not already have a release keystore, create one outside the repository in PowerShell. Keep the passwords private and back up the keystore:
-
-```powershell
-keytool -genkeypair -v -keystore "$HOME\upload-keystore.jks" -storetype JKS -keyalg RSA -keysize 2048 -validity 10000 -alias upload
-keytool -list -v -keystore "$HOME\upload-keystore.jks" -alias upload
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("$HOME\upload-keystore.jks")) | Set-Clipboard
-```
-
-Use the displayed SHA-1 certificate fingerprint when restricting the Android Maps key. Paste the clipboard value into the `ANDROID_KEYSTORE_BASE64` secret, and enter the keystore and alias passwords into their respective secrets.
-5. Push your code to the GitHub repository, then create and push a new version tag:
-
-```bash
-git tag v1.0.1
-git push origin v1.0.1
-```
-
-The workflow creates a GitHub Release with `app-release.apk` attached. Keep the keystore and its passwords backed up securely; losing them prevents publishing future updates under the same Android signing identity. Never commit the keystore, encoded keystore, or signing credentials.
-
----
-
-## 🖥️ Backend REST API & Database Setup (`/backend`)
-
-The backend is built with **Node.js, TypeScript, Express, CockroachDB, and Prisma ORM**.
-
-### 1. Setup Environment
-Configure `backend/.env` with the CockroachDB connection string and a private `AUTH_SECRET` of at least 32 characters. For Flutter web deployments, also set `CORS_ORIGINS` to the exact HTTPS web-app origin(s), separated by commas. Production mode blocks browser origins that are not listed:
-```bash
-cd backend
+Set-Location backend
 npm install
-```
-
-Do not run `prisma migrate dev`, `prisma db push`, or a database reset as part of routine startup. Product sale prices use `price`, with `originalPrice` shown as the crossed-out former price. Admins can create percentage or fixed-amount coupons with a minimum retail subtotal, optional discount cap, redemption limit, and expiry; checkout revalidates each code in the order transaction. Coupon discounts exclude wholesale-priced items, including in mixed baskets. Product units are stored with the catalog record.
-
-The post-login offer popup reads eligible, active percentage coupons with a
-discount cap and fixed-amount coupons from `GET /api/v1/coupons/offer`. The
-backend returns the saved coupon type, value, minimum order, and expiry; the app
-does not invent offer values or calculate the discount locally.
-
-On Home, the gift button opens the Coupons page, which combines the active
-store offer with coupon codes included in the signed-in customer's
-notifications. Codes are suggestions only and are revalidated by the backend
-at checkout; the application does not currently have a separate per-user
-coupon-wallet table. Opening Notifications marks the account's unread items as
-read. Customers can create an order invoice PDF from **My Orders → Download
-invoice PDF**; the Android print/save screen can save a copy for later.
-Invoices show Nepalese rupees and Nepal Standard Time.
-
-Store administrators can configure recurring opening hours and immediately pause or resume online ordering from **Admin → Store hours**. Hours use Nepal Standard Time (`Asia/Kathmandu`); closed days and a paused store are enforced by the backend as well as shown in the customer app. The migration seeds an always-open schedule to preserve existing checkout behavior; configure the actual weekly hours in the admin panel after applying the `20261018000000_store_hours` Prisma migration and before relying on automatic closing.
-
-Run `npm run prisma:migrate:deploy` from `backend` as part of each backend release before starting code that uses new Prisma fields or tables. This includes the store-hours migration, which is required for the public availability check and its customer banner to work.
-
-For email one-time-code password resets, also configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` in the backend's local environment. Use an app password for the sending mailbox; do not commit it. The reset code expires after 10 minutes and is limited to five verification attempts.
-
-New product images uploaded from the admin product editor or showcase are validated JPEG, PNG, or WebP files (up to 5 MB) and stored in the database so every device receives the same image. Profile photos are also stored in the database. New generic admin image uploads use database-backed image records rather than Render's ephemeral filesystem. Older image URLs and bundled fallback thumbnails remain supported when their referenced files still exist. Files previously written to Render's ephemeral filesystem cannot be restored after they disappear; re-upload those images through the admin panel.
-
-Delivery addresses, cart contents, saved items, profile photos, order history, cancellations, and in-app notifications are tied to the signed-in account. Cart and saved-item changes sync to the backend so they are restored after signing out and back in, including on another device. Customers can crop a square profile photo in the app before uploading it as a PNG; uploaded images must be JPEG, PNG, or WebP and are limited to 5 MB. Checkout does not store payment credentials; only Cash on Delivery is currently available. The store confirms delivery timing after checkout; a specific delivery window is not booked.
-
-Road-distance delivery pricing uses the Google Maps Routes API from the backend, never from the mobile app. Enable Routes API and billing in Google Cloud, then add `GOOGLE_MAPS_ROUTES_API_KEY` as a private backend/Render environment secret and restrict the key to Routes API. Never put this key in Flutter build definitions or source control. Customers must select a map pin for the delivery address. The tariff is Rs 20 for the first started kilometre and Rs 10 for each additional started kilometre (for example, 1 km = Rs 20, just over 1 km = Rs 30, and just over 2 km = Rs 40); the old free-delivery-by-subtotal rule no longer applies.
-
-Customer and delivery-account email addresses are stored lowercase, and phone numbers are stored as digits only. Registration, profile updates, and delivery-account creation check existing values even when older phone records use punctuation; existing duplicate accounts are not automatically deleted or merged.
-
-Push notifications require Firebase app settings at build time and platform setup (including Android/iOS app registration and APNs for iOS). Pass the client values with `--dart-define` at build/run time: `FIREBASE_API_KEY`, `FIREBASE_APP_ID`, `FIREBASE_MESSAGING_SENDER_ID`, `FIREBASE_PROJECT_ID`, plus the applicable optional values `FIREBASE_AUTH_DOMAIN`, `FIREBASE_STORAGE_BUCKET`, `FIREBASE_IOS_BUNDLE_ID`, and `FIREBASE_WEB_VAPID_KEY`. Configure the server's Firebase service-account JSON only in the backend's private environment as `FIREBASE_SERVICE_ACCOUNT_JSON`; do not place service-account secrets in the Flutter app or commit them. In-app order and delivery-assignment notifications work without Firebase; configured delivery push alerts contain only order/delivery identifiers, while customer contact, location, and payment details remain available through the authenticated delivery API.
-
-The profile-photo and device-token migrations have been deployed to the configured database after backup confirmation. The pending `20261016000000_product_shared_image_and_units` migration adds database-backed product images and the product unit label. Apply pending migrations as a release step after a verified database backup and before deploying the backend version that uses these fields. For another environment, follow the same backup-first process; CockroachDB clusters with schema-locked tables may need those locks temporarily disabled during migration, then restored. Do not run `prisma migrate dev` or reset the database in production.
-
-### 2. Create the Store Admin Account
-
-Set `ADMIN_NAME`, `ADMIN_USERNAME`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` in the local environment, then run:
-```bash
-npm run admin:create
-```
-
-The command hashes the password and creates an `ADMIN` user in the configured database. The API must also have matching `ADMIN_USERNAME` and `ADMIN_EMAIL` values at runtime; admin sign-in accepts either the configured username or email. Use a unique email; the command will fail rather than promote or overwrite an existing account. Keep the password in local environment configuration only, use a strong unique password, and never commit it.
-
-### 3. Add the General-Store Starter Categories
-
-```bash
-npm run categories:seed
-```
-
-This safely creates the Dal & Pulses, Cooking Oil, Biscuits, Personal Care, Stationery, Household, and other general-store categories if they are missing. It does not delete or overwrite categories.
-
-### 4. Run Backend Checks
-```bash
-npm test
-```
-
-### 5. Start Backend Server
-```bash
+npm run prisma:generate
 npm run dev
 ```
-Server runs on port `4000`.
 
-### Container Deployment
+The API listens on port `4000` by default. Check `http://localhost:4000/health`
+to confirm the server and database are reachable.
 
-The backend provides a Docker runtime image and a separate `migrate` build target. Configure `DATABASE_URL`, `AUTH_SECRET` (at least 32 random characters), `NODE_ENV=production`, and `PORT` in the hosting provider's secret/environment settings; never copy `.env` into the image. For admin sign-in, configure `ADMIN_USERNAME` and `ADMIN_EMAIL` for the admin account.
+### 2. Configure and start Flutter
 
-After the hosted database backup is confirmed and before deploying a new backend version, build and run the one-off migration image:
-
-```powershell
-docker build --target migrate -t ram-prasad-store-migrate:release ./backend
-docker run --rm --env-file backend/.env ram-prasad-store-migrate:release
-```
-
-Only continue if Prisma reports that migrations completed or that there are no pending migrations. Then build and deploy the runtime image:
-
-#### Recovering the failed delivery migration
-
-The delivery migrations are retry-safe after partial application. For a CockroachDB cluster where any affected table has `schema_locked = true`, run each applicable statement separately in the SQL console before retrying; do not combine these statements in a transaction:
-
-```sql
-ALTER TABLE "User" SET (schema_locked = false);
-ALTER TABLE "Delivery" SET (schema_locked = false);
-ALTER TABLE "DeliveryStatusHistory" SET (schema_locked = false);
-```
-
-After confirming a database backup, mark the previously failed migration as rolled back so Prisma can retry its now-idempotent SQL, then deploy all pending migrations:
+In another terminal, from the repository root:
 
 ```powershell
-Push-Location backend
-npx prisma migrate resolve --rolled-back 20261012000000_delivery_staff_panel
-npx prisma migrate deploy
-Pop-Location
+flutter pub get
+flutter run --dart-define=API_BASE_URL=http://localhost:4000/api/v1
 ```
 
-If `migrate resolve` reports that the migration is not in a failed state, do not force the resolution; inspect `npx prisma migrate status` and only deploy if the migration is pending. After all schema changes complete, restore the CockroachDB schema locks in separate statements:
+For Android emulators, use `10.0.2.2` to reach the host computer:
 
-```sql
-ALTER TABLE "User" SET (schema_locked = true);
-ALTER TABLE "Delivery" SET (schema_locked = true);
-ALTER TABLE "DeliveryStatusHistory" SET (schema_locked = true);
+```powershell
+flutter run --dart-define=API_BASE_URL=http://10.0.2.2:4000/api/v1
 ```
 
-#### Recovering a failed user token-version migration
+For a physical Android phone, use the development computer's reachable LAN
+address and make sure the phone and computer are on the same network:
 
-If `20261014000000_user_token_version` fails because the `User` table is schema-locked, first check the migration status and confirm that the `tokenVersion` column was not added:
-
-```sql
-SELECT column_name
-FROM information_schema.columns
-WHERE table_name = 'User' AND column_name = 'tokenVersion';
+```powershell
+flutter run -d <device-id> --dart-define=API_BASE_URL=http://192.168.1.20:4000/api/v1
 ```
 
-If the column is absent and the migration is listed as failed, unlock only the affected table in the CockroachDB SQL console:
+Replace the example LAN address with the computer's actual address and allow
+the backend port through the local firewall. Release builds require a deployed
+HTTPS API URL; the app rejects localhost and other non-production release URLs.
 
-```sql
-ALTER TABLE "User" SET (schema_locked = false);
-```
+### 3. Create an admin and starter categories
 
-Then mark that failed migration as rolled back and retry deployment:
+Set `ADMIN_NAME`, `ADMIN_USERNAME`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` in the
+private backend environment. Then run:
 
 ```powershell
 Push-Location backend
-.\node_modules\.bin\prisma.cmd migrate resolve --rolled-back 20261014000000_user_token_version
-.\node_modules\.bin\prisma.cmd migrate deploy
+npm run admin:create
+npm run categories:seed
 Pop-Location
 ```
 
-After Prisma confirms that migrations completed or are up to date, restore the lock:
+Admin creation does not promote or overwrite an existing account. The category
+seed command adds missing starter categories without deleting existing ones.
 
-```sql
-ALTER TABLE "User" SET (schema_locked = true);
-```
+## Backend configuration
 
-If the column already exists, do not mark the migration rolled back or retry blindly; inspect the migration status and database state first. Keep a verified backup and do not run these recovery steps against a different database than the intended deployment target.
+The full variable list is in [backend/.env.example](./backend/.env.example).
+Configure secrets in the host's secret manager for production, not in source
+control.
+
+| Setting | Purpose |
+| --- | --- |
+| `DATABASE_URL` | CockroachDB connection and TLS options. |
+| `AUTH_SECRET` | JWT signing secret; use a unique value of at least 32 characters. |
+| `JWT_EXPIRES_IN` | Token lifetime; defaults to `7d`. |
+| `PORT` | HTTP listener port; defaults to `4000`. |
+| `NODE_ENV` | Runtime environment; production applies stricter CORS behavior. |
+| `CORS_ORIGINS` | Exact browser origins allowed in production, comma-separated. Needed for web, not native Android/iOS requests. |
+| `ADMIN_NAME`, `ADMIN_USERNAME`, `ADMIN_EMAIL` | Admin account creation and configured admin login identity. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Email delivery for verification and password-reset codes. |
+| `GOOGLE_MAPS_ROUTES_API_KEY` | Backend-only Routes API key for road-distance delivery pricing and routes. |
+| `DELIVERY_SERVICE_RADIUS_KM` | Delivery service radius; defaults to 10 km. |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | Optional backend credential for Firebase push delivery. |
+
+Do not copy development values into production. Use a TLS-enabled CockroachDB
+connection, a unique authentication secret, the hosting provider's assigned
+port, and exact browser origins. Keep API keys and service-account credentials
+private.
+
+### API areas
+
+The API is versioned under `/api/v1`. Important areas include:
+
+- Authentication and email verification: `/auth/register`, `/auth/login`, and
+  `/auth/email-verification`.
+- Catalog and images: `/categories`, `/products`, `/wholesale`, and image
+  endpoints.
+- Store status and offers: `/store/availability` and `/coupons/offer`.
+- Customer account: `/account`, including saved cart, notifications, and
+  profile-related operations.
+- Orders: `/orders`, including authenticated order history, detail, and
+  eligible cancellation.
+- Role-protected administration: `/admin`.
+- Role-protected delivery operations: `/delivery`.
+- Public health check: `/health` and `/api/v1/health`.
+
+Consult the route implementations in `backend/src` for request and response
+schemas; this list is a navigation overview, not a substitute for API
+specifications.
+
+## Maps and push notifications
+
+### Maps and delivery
+
+Customers can enter delivery address details without a Maps key, but a saved
+map pin is required to place an order. Android and iOS use native Google Maps
+SDK configuration. Chrome uses a separate Maps JavaScript key. Restrict each
+key to its platform and application/site.
+
+- Android: add `googleMapsApiKey` to the ignored `android/local.properties`
+  file (the build also accepts `MAPS_API_KEY`) and restrict the key to the app
+  package and signing certificate.
+- iOS: configure `GOOGLE_MAPS_API_KEY` in the Runner target's Xcode build
+  settings, restricted to the app's bundle ID.
+- Web: copy `web/maps-config.example.js` to `web/maps-config.js`, configure a
+  restricted browser key, and limit it to the site's referrers.
+
+Road routes and road-distance delivery pricing are calculated by the backend
+using the Routes API key. Never place that key in the Flutter app. The default
+service radius is 10 km and can be changed with `DELIVERY_SERVICE_RADIUS_KM`.
+The customer tracking route is not a claim of live courier GPS tracking.
+
+### Email
+
+Registration verification and password resets require a functioning SMTP
+provider. Configure the SMTP variables in the private backend environment.
+Codes are time-limited and attempt-limited. If email delivery is not configured,
+those flows cannot complete successfully.
+
+### Firebase push notifications
+
+In-app notifications do not require Firebase. For push delivery, configure the
+Firebase app for each target platform, including APNs for iOS, and pass the
+client configuration at build/run time using Dart defines:
+
+- Required client values: `FIREBASE_API_KEY`, `FIREBASE_APP_ID`,
+  `FIREBASE_MESSAGING_SENDER_ID`, and `FIREBASE_PROJECT_ID`.
+- Optional client values where applicable: `FIREBASE_AUTH_DOMAIN`,
+  `FIREBASE_STORAGE_BUCKET`, `FIREBASE_IOS_BUNDLE_ID`, and
+  `FIREBASE_WEB_VAPID_KEY`.
+- Backend service-account JSON: `FIREBASE_SERVICE_ACCOUNT_JSON`, stored only
+  in the backend secret manager.
+
+Do not embed Firebase Admin credentials or private keys in the mobile client.
+
+## Database migrations
+
+The Prisma schema is `backend/prisma/schema.prisma`; migration SQL is in
+`backend/prisma/migrations`. For a local development database, apply committed
+migrations with:
 
 ```powershell
-docker build -t ram-prasad-store-api:release ./backend
+Push-Location backend
+npm run prisma:migrate:deploy
+Pop-Location
 ```
 
-Configure the host to run the image on the assigned `PORT` and use `/health` as its readiness check. The health endpoint verifies CockroachDB connectivity and returns HTTP 503 if the database is unavailable. Run migrations as a single release step, not concurrently in every app replica.
+For production:
 
-For production, set `NODE_ENV=production`, a CockroachDB TLS connection string, a unique `AUTH_SECRET` (at least 32 characters), and the assigned `PORT` in the hosting provider's secret/configuration manager. Set `CORS_ORIGINS` to the exact HTTPS origin(s) only when the Flutter web client needs browser access; native Android/iOS requests do not send browser origins. Configure SMTP credentials for password-reset and registration email verification. Keep `backend/.env` out of deployment artifacts and do not copy the local development values from `.env.example` into production.
+1. Confirm the target database and take/verify a backup.
+2. Inspect migration status and review the pending SQL.
+3. Apply migrations as a single release step, not concurrently from every API
+   replica.
+4. Deploy backend code that depends on the new schema only after the migration
+   succeeds.
+5. Verify health and the affected application flow.
 
-### Android Release
+The release helper checks migration status without changing the database by
+default. Pass its `-ApplyMigrations` option only when you explicitly intend it
+to deploy migrations against the configured database. Never run `prisma
+migrate reset` or `prisma db push` against production. If a migration fails,
+inspect both Prisma migration state and the actual database schema before
+retrying; do not mark it rolled back or rerun SQL blindly.
 
-Use a supported JDK for the Android Gradle Plugin (JDK 17 is recommended for this project), install Android SDK command-line tools, and accept the Android SDK licenses. Before the first Play Store upload, create and safely back up an upload keystore with `keytool`; never commit the keystore or its passwords. Place a `key.properties` file at `android/key.properties` with `storeFile`, `storePassword`, `keyAlias`, and `keyPassword`. The release Gradle configuration intentionally does not use Android's debug key.
+The product-image normalization migration adds optional normalized-image
+columns. Apply it before deploying backend code that reads or writes those
+fields. Existing original image data is retained by the normalization design;
+do not delete originals as a migration shortcut.
 
-After the backend is publicly deployed with HTTPS, build with its API URL:
+## Build and publish Android
+
+### Local release build
+
+Configure Android release signing first. Keep the upload keystore and
+`android/key.properties` private and out of source control. The repository
+script validates the HTTPS API URL, signing configuration, Prisma schema,
+backend build/tests, Flutter analysis/tests, and migration status before
+building.
+
+From PowerShell:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-android-release.ps1 -ApiBaseUrl "https://YOUR-API-HOST/api/v1"
+.\scripts\build-android-release.ps1 `
+  -ApiBaseUrl "https://YOUR-DEPLOYED-API-HOST/api/v1" `
+  -Artifact apk
 ```
 
-The script validates and generates Prisma Client, builds/tests the backend and Flutter app, verifies migration status without changing the database, and builds a signed Android App Bundle. The API URL must be the real deployed HTTPS URL; the release app rejects localhost and non-HTTPS URLs. Build an APK instead with `-Artifact apk`. Apply schema changes as a separate release step after a verified backup; pass `-ApplyMigrations` only when you explicitly intend this script to run `prisma migrate deploy` against the configured database.
+For a Google Play App Bundle, use `-Artifact appbundle` (the default). Artifacts:
 
-### Admin Panel Status
+- APK: `build/app/outputs/flutter-apk/app-release.apk`
+- AAB: `build/app/outputs/bundle/release/app-release.aab`
 
-The admin shell provides database-backed dashboard metrics, product/category management, homepage showcase controls, catalog-wide SKU tools, promotion management, store hours, restocking, and order management. Set each product's low-stock threshold in **Products**; **Restock** lists active items at or below that level, including out-of-stock items, and records received quantities in inventory history with the logged-in admin staff member and timestamp. Existing products retain the previous threshold of 10 after the `20261019000000_low_stock_threshold` migration. Apply `20261020000000_restock_receipt_staff` to link new receipt records to staff accounts; older receipts remain visible without staff attribution. Use **Vending drinks** to add or edit regular catalog products and select **Show in vending machine**; these drinks use the same product stock, cart, and checkout flow as other items. Apply the `20261025000000_product_vending_drink` migration before deploying this option. The customer Vending tab shows a responsive Drinks menu populated from live vending products, with category filters, stock and sold-out states, and a best-seller feature card. Selecting an available drink reveals quantity controls and adds the selected amount to the regular cart and checkout flow. The app starts loading its product catalog during the animated startup screen. Select active products in **Showcase** to include them in the customer's automatically rotating product carousel; each slide uses the product's saved name, category, image, and price. Edit an item's SKU in **SKUs** using the suggested `category-productname-quantity` pattern (for example, `pulses-masoor-dal-1kg`). Admins can assign delivery staff, update order status, and set or clear a future delivery date and time for open orders. Apply `20261022000000_order_delivery_schedule` before deploying that delivery-time feature. Customer tracking shows the road route from the store to the saved delivery address when the backend Routes API is configured; it does not claim to show live courier GPS. Customers can review and mark in-app order notifications as read; Firebase push delivery is enabled only after the app and server credentials are configured as described above. Online eSewa/Khalti payment verification is not implemented, so new online-payment orders are rejected until a gateway is integrated.
+The version name and build number come from `version` in `pubspec.yaml`.
+Increment them appropriately before a new distribution. Do not share an APK
+built with a local or placeholder API URL.
 
----
+### GitHub release
 
-## 🔒 Security Notes
+The Android release workflow is configured to build a signed APK when a
+version tag is pushed. Set the repository variable `API_BASE_URL` to the
+deployed HTTPS API base URL and configure these Actions secrets:
 
-- Passwords are stored as bcrypt hashes. Admin APIs require a valid bearer token and verify the user's active status and `ADMIN` role against CockroachDB.
-- Password resets increment the user's token version, immediately revoking previously issued access tokens. Apply the `20261014000000_user_token_version` migration before deploying this backend version.
-- Inventory reservation uses a conditional atomic database update; admin stock edits are transactional and recorded in inventory history.
-- Apply the `20261019000000_low_stock_threshold` and `20261020000000_restock_receipt_staff` migrations before deploying the restock queue and staff-linked receipt history.
-- Keep database and authentication secrets on the backend and out of Flutter source.
-- Checkout currently supports Cash on Delivery only. The API rejects eSewa, Khalti, and card orders until a real server-side payment integration is deployed; do not treat a client-provided payment result as successful.
+- `ANDROID_KEYSTORE_BASE64`
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+- `MAPS_API_KEY` (a restricted Android Maps key; required by the workflow)
+
+Create a release tag on the intended commit and push it:
+
+```powershell
+git status
+git tag -a v3.0.0 -m "Ram Prasad General Store v3.0.0"
+git push origin v3.0.0
+```
+
+Use a unique tag that does not already exist. Pushing a tag triggers the
+repository's configured release workflow; check the GitHub Actions run and
+attach/verify the APK on the resulting GitHub Release. A GitHub tag/release
+does not itself deploy the backend. Preserve the same signing identity for all
+Android updates; losing the keystore can prevent future upgrades.
+
+## Tests and quality checks
+
+From the Flutter project root:
+
+```powershell
+flutter analyze
+flutter test
+```
+
+From the backend folder:
+
+```powershell
+Push-Location backend
+npm install
+npm run prisma:generate
+npm run build
+npm test
+Pop-Location
+```
+
+The Flutter tests cover providers, API services, widgets, navigation, and
+important shopping flows. Backend tests cover API behavior and business rules.
+Use a non-production test database and test credentials; do not run
+development/test setup commands against production data.
+
+For performance claims, measure a profile/release build on representative
+physical devices with Flutter DevTools. Frame rate depends on device refresh
+rate, OS policy, thermal state, and workload; do not claim a fixed 120 FPS
+without measurements.
+
+## Operational notes and current limitations
+
+- Cash on Delivery is the currently supported checkout payment method.
+  eSewa/Khalti/card payment verification is not implemented; do not mark an
+  online payment successful based only on client input.
+- Coupon codes shown in the Coupons screen are suggestions from the current
+  store offer and customer notifications. Checkout validates eligibility on
+  the backend. There is not currently a separate per-user coupon-wallet model.
+- The invoice PDF uses NPR and Nepal Standard Time. On Android, **Download
+  invoice PDF** opens the system print/save flow; the user chooses where to
+  save it. A store PAN/VAT number is not shown unless configured in the
+  application data.
+- In-app notifications work independently of Firebase push. Push alerts require
+  the client and backend Firebase setup described above.
+- Product images uploaded from the admin workflow are validated and stored
+  using the existing backend image-storage design. Image-processing failures
+  should not replace the preserved source image.
+- Product, store-hours, delivery, coupon, and inventory rules are enforced by
+  the backend; the app should not be treated as the authority for those values.
+- Store hours must be configured in the Admin area after the store-hours
+  migration is applied. Closed/paused ordering is enforced by the API.
+- Delivery service is limited by the configured radius. A map pin is required
+  at checkout; typing an address alone is not sufficient.
+
+## Troubleshooting
+
+### The app says the backend is unavailable
+
+1. Confirm the backend process is running and `/health` returns HTTP 200.
+2. Confirm the Flutter `API_BASE_URL` points to the correct host and ends with
+   `/api/v1`.
+3. For Android emulator-to-host networking use `10.0.2.2`, not `localhost`.
+4. For a physical phone, use the computer's LAN address and check Wi-Fi and
+   firewall access.
+5. For a release app, use the deployed HTTPS URL and rebuild; API URLs are
+   compiled into the app.
+6. Check backend logs and database connectivity if the health check fails.
+
+### Map tiles do not load
+
+Verify the platform-specific Maps key, enabled Maps APIs, billing, package/bundle
+restrictions, and signing certificate restrictions. Manual address entry is
+still available, but ordering requires a map pin.
+
+### Email verification/reset codes do not arrive
+
+Check SMTP host, port, TLS mode, mailbox credentials, sender policy, and
+backend mail logs. These flows require a working mail provider.
+
+### A migration fails
+
+Stop before retrying. Confirm which database the backend is connected to,
+inspect `prisma migrate status`, review the migration error, and compare the
+database schema with the migration SQL. Take a backup before recovery. Some
+CockroachDB deployments may have schema-lock policies; follow a verified,
+environment-specific recovery procedure rather than applying generic SQL.
+
+## Security
+
+- Store production secrets in the backend hosting provider's secret manager.
+- Never commit `.env`, keystores, signing passwords, Firebase Admin credentials,
+  SMTP passwords, database URLs, or private API keys.
+- Use HTTPS for deployed APIs and restrict Maps keys to the relevant platform.
+- The backend hashes account passwords and protects account, admin, and
+  delivery operations with authenticated role checks.
+- Use least-privilege database and cloud credentials, and take verified
+  backups before schema migrations.
+- Do not put payment secrets or trusted payment decisions in the Flutter app.
