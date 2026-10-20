@@ -98,6 +98,7 @@ void main() {
   testWidgets('cart refreshes its palette when the theme changes',
       (tester) async {
     final themeProvider = ThemeProvider();
+    await themeProvider.setDarkMode(true);
     final cartProvider = CartProvider();
     addTearDown(themeProvider.dispose);
     addTearDown(cartProvider.dispose);

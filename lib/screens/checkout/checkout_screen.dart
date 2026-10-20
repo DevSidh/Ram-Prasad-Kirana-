@@ -44,6 +44,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String? _couponMessage;
   bool _couponIsValid = false;
   bool _isValidatingCoupon = false;
+  String? _autoAppliedSuggestedCode;
   String _deliveryOption = 'instant';
   DateTime? _scheduledDeliveryAt;
 
@@ -65,6 +66,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   @override
   void initState() {
     super.initState();
+    final suggestedCode = context.read<CartProvider>().suggestedCouponCode;
+    if (suggestedCode != null) _couponController.text = suggestedCode;
     unawaited(_loadAddresses());
   }
 
@@ -244,6 +247,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             'The store returned an invalid coupon discount.');
       }
       if (!mounted) return;
+      context.read<CartProvider>().clearSuggestedCouponCode(code);
       setState(() {
         _couponMessage = quote.message;
         _couponIsValid = quote.valid;
@@ -661,6 +665,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Widget build(BuildContext context) {
     final cart = Provider.of<CartProvider>(context);
     final couponEligibleSubtotal = _couponEligibleSubtotal(cart);
+    final suggestedCode = cart.suggestedCouponCode;
+    if (suggestedCode != null &&
+        couponEligibleSubtotal > 0 &&
+        _autoAppliedSuggestedCode != suggestedCode) {
+      _autoAppliedSuggestedCode = suggestedCode;
+      _couponController.text = suggestedCode;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_applyCoupon());
+      });
+    }
     context.watch<ThemeProvider?>();
     final tokens = AppThemeExtension.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;

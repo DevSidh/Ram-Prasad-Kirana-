@@ -18,11 +18,15 @@ import '../../providers/theme_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../services/address_service.dart';
 import '../../services/api_service.dart';
+import '../../services/offer_service.dart';
+import '../../services/shown_today_store.dart';
 import '../../widgets/product_card.dart';
 import '../../widgets/frosted_panel.dart';
 import '../../widgets/product_thumbnail.dart';
 import '../../widgets/product_quick_view.dart';
 import '../../widgets/cart_flight_overlay.dart';
+import '../../widgets/home_greeting_video.dart';
+import '../../widgets/offer_popup.dart';
 import '../product/product_list_screen.dart';
 import '../search/search_screen.dart' show showSearchOverlay;
 import '../profile/address_book_screen.dart';
@@ -43,6 +47,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final ValueNotifier<double> _scrollOffset = ValueNotifier(0);
   final Map<String, GlobalKey> _categoryChipKeys = {};
   bool _offersOnly = false;
+  bool _offerPopupCheckStarted = false;
 
   String _locationTitle = 'Delivery to Home';
   String _locationSubtitle = 'Janakpur, Madhesh Province';
@@ -52,6 +57,50 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _scrollController.addListener(_handleScroll);
     unawaited(context.read<StoreAvailabilityProvider>().refresh());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_checkAndShowOffer());
+    });
+  }
+
+  Future<void> _checkAndShowOffer() async {
+    if (_offerPopupCheckStarted) return;
+    final authProvider = context.read<AuthProvider>();
+    if (!authProvider.isAuthenticated ||
+        authProvider.currentUser?.role.toUpperCase() != 'CUSTOMER') {
+      return;
+    }
+    _offerPopupCheckStarted = true;
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      if (!mounted) return;
+
+      final offer =
+          await OfferService(context.read<ApiService>()).getActiveOffer();
+      if (offer == null) return;
+      final now = DateTime.now();
+      if (!offer.isAvailableAt(now)) return;
+
+      final shownToday = ShownTodayStore(preferences);
+      if (await shownToday.wasShownToday(offer.id, now: now)) {
+        await preferences.remove(ShownTodayStore.loginOfferPendingKey);
+        return;
+      }
+      await shownToday.markShownToday(offer.id, now: now);
+      await preferences.remove(ShownTodayStore.loginOfferPendingKey);
+      if (!mounted) return;
+
+      final claimed = await OfferPopup.show(context, offer);
+      if (claimed != true || !mounted) return;
+      context.read<CartProvider>().suggestCouponCode(offer.code);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Coupon ${offer.code} applied to your cart')),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Unable to show the login offer: $error\n$stackTrace');
+    } finally {
+      _offerPopupCheckStarted = false;
+    }
   }
 
   Future<void> _refreshHome(ProductProvider products) async {
@@ -59,6 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
       products.loadCatalog(),
       context.read<StoreAvailabilityProvider>().refresh(),
     ]);
+    if (mounted) unawaited(_checkAndShowOffer());
   }
 
   void _handleScroll() {
@@ -424,6 +474,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     ),
+                  ),
+                  const SizedBox(width: 6),
+                  const SizedBox(
+                    width: 58,
+                    height: 54,
+                    child: HomeGreetingVideo(),
                   ),
                   CircleIconButton(
                     icon: Icons.notifications_none_rounded,
@@ -1002,7 +1058,7 @@ class _FeaturedProductCarousel extends StatefulWidget {
 class _FeaturedProductCarouselState extends State<_FeaturedProductCarousel> {
   static const _autoAdvanceInterval = Duration(seconds: 4);
 
-  final PageController _pageController = PageController();
+  final PageController _pageController = PageController(viewportFraction: .86);
   Timer? _autoAdvanceTimer;
   int _currentPage = 0;
   bool _reduceMotion = false;
@@ -1128,8 +1184,7 @@ class _FeaturedProductCarouselState extends State<_FeaturedProductCarousel> {
         else ...[
           LayoutBuilder(
             builder: (context, constraints) {
-              final slideHeight =
-                  (constraints.maxWidth * 0.51).clamp(216.0, 232.0);
+              const slideHeight = 260.0;
               return SizedBox(
                 height: slideHeight,
                 child: Listener(
@@ -1150,13 +1205,22 @@ class _FeaturedProductCarouselState extends State<_FeaturedProductCarousel> {
                       setState(() => _currentPage = page);
                       _startAutoAdvance();
                     },
-                    itemBuilder: (context, index) => _FeaturedProductSlide(
-                      key: ValueKey(widget.products[index].id),
-                      product: widget.products[index],
-                      onTap: () => showProductQuickView(
-                        context,
-                        widget.products[index],
-                        cartTargetKey: CartFlightTarget.maybeOf(context),
+                    itemBuilder: (context, index) => AnimatedScale(
+                      scale: index == _currentPage ? 1 : .95,
+                      duration: const Duration(milliseconds: 260),
+                      curve: Curves.easeOutCubic,
+                      child: AnimatedOpacity(
+                        opacity: index == _currentPage ? 1 : .8,
+                        duration: const Duration(milliseconds: 260),
+                        child: _FeaturedProductSlide(
+                          key: ValueKey(widget.products[index].id),
+                          product: widget.products[index],
+                          onTap: () => showProductQuickView(
+                            context,
+                            widget.products[index],
+                            cartTargetKey: CartFlightTarget.maybeOf(context),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -1215,8 +1279,35 @@ class _FeaturedProductSlide extends StatefulWidget {
   State<_FeaturedProductSlide> createState() => _FeaturedProductSlideState();
 }
 
-class _FeaturedProductSlideState extends State<_FeaturedProductSlide> {
+class _FeaturedProductSlideState extends State<_FeaturedProductSlide>
+    with SingleTickerProviderStateMixin {
   final GlobalKey _imageKey = GlobalKey();
+  late final AnimationController _floatController = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 3),
+  );
+  bool _reduceMotion = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _floatController.repeat(reverse: true);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    if (_reduceMotion == reduceMotion) return;
+    _reduceMotion = reduceMotion;
+    if (_reduceMotion) {
+      _floatController
+        ..stop()
+        ..value = .5;
+    } else {
+      _floatController.repeat(reverse: true);
+    }
+  }
 
   void _addToCart() {
     final product = widget.product;
@@ -1235,18 +1326,33 @@ class _FeaturedProductSlideState extends State<_FeaturedProductSlide> {
   }
 
   @override
+  void dispose() {
+    _floatController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final product = widget.product;
-    final theme = Theme.of(context);
     final tokens = AppThemeExtension.of(context);
     final quantity = context.select<CartProvider, int>(
-        (cart) => cart.itemForProduct(product.id)?.quantity ?? 0);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(24),
+      (cart) => cart.itemForProduct(product.id)?.quantity ?? 0,
+    );
+    final hasDiscount =
+        product.originalPrice != null && product.originalPrice! > product.price;
+    final saveAmount = hasDiscount ? product.originalPrice! - product.price : 0;
+    final discountPercent =
+        hasDiscount ? ((saveAmount / product.originalPrice!) * 100).round() : 0;
+    final media = MediaQuery.of(context);
+    final textScale = media.textScaler.scale(1).clamp(1.0, 1.2).toDouble();
+    final glowColor = _featuredGlow(product);
+
+    return MediaQuery(
+      data: media.copyWith(textScaler: TextScaler.linear(textScale)),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(30),
             child: Material(
               color: tokens.featuredStart,
               child: InkWell(
@@ -1254,156 +1360,226 @@ class _FeaturedProductSlideState extends State<_FeaturedProductSlide> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    DecoratedBox(
+                    const DecoratedBox(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
-                          colors: [tokens.featuredEnd, tokens.featuredStart],
+                          colors: [Color(0xFF0B3D20), Color(0xFF15733A)],
                         ),
                       ),
                     ),
                     Positioned(
-                      right: 0,
-                      top: 0,
-                      bottom: 0,
-                      width: constraints.maxWidth * 0.46,
-                      child: ClipRect(
-                        child: ProductThumbnail(
-                          key: _imageKey,
-                          imageUrl: product.imageUrl,
-                          size: constraints.maxWidth * 0.46,
-                          width: constraints.maxWidth * 0.46,
-                          height: constraints.maxHeight,
-                          fit: BoxFit.contain,
-                          borderRadius: BorderRadius.zero,
-                        ),
-                      ),
-                    ),
-                    Positioned.fill(
+                      right: 16,
+                      top: 24,
+                      width: constraints.maxWidth * .42,
+                      height: constraints.maxWidth * .42,
                       child: DecoratedBox(
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                            stops: const [0, 0.53, 1],
+                          shape: BoxShape.circle,
+                          gradient: RadialGradient(
                             colors: [
-                              tokens.featuredStart,
-                              tokens.featuredStart.withValues(alpha: .95),
-                              tokens.featuredStart.withValues(alpha: 0),
+                              glowColor.withValues(alpha: .48),
+                              glowColor.withValues(alpha: .12),
+                              glowColor.withValues(alpha: 0),
                             ],
                           ),
                         ),
                       ),
                     ),
                     Positioned(
-                      left: 17,
-                      top: 11,
-                      bottom: 11,
-                      width: constraints.maxWidth * 0.56,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      right: -38,
+                      top: -52,
+                      child: IgnorePointer(
+                        child: Container(
+                          width: 152,
+                          height: 152,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: .09),
+                              width: 1.2,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 17, 13, 17),
+                      child: Row(
                         children: [
-                          Text(
-                            context
-                                .tr(product.categoryName ?? 'Featured pick')
-                                .toUpperCase(),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: tokens.accentAmber,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.8,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            product.name,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 22,
-                              height: 1.08,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: -0.3,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            product.weight,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.8),
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 5),
-                          Wrap(
-                            spacing: 7,
-                            runSpacing: 2,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              if (product.originalPrice != null &&
-                                  product.originalPrice! > product.price) ...[
-                                Text(
-                                  '${AppConstants.currencySymbol}${product.originalPrice!.toStringAsFixed(0)}',
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.78),
-                                    fontSize: 11,
-                                    decoration: TextDecoration.lineThrough,
-                                    decorationColor: Colors.white,
+                          Expanded(
+                            flex: 56,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Flexible(
+                                  child: Align(
+                                    alignment: Alignment.topLeft,
+                                    child: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(
+                                          alpha: .23,
+                                        ),
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 6,
+                                        ),
+                                        child: Text(
+                                          context
+                                              .tr(product.categoryName ??
+                                                  'Featured pick')
+                                              .toUpperCase(),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: tokens.accentAmber,
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: 1,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ],
-                              Text(
-                                '${AppConstants.currencySymbol}${product.price.toStringAsFixed(0)}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w800,
+                                const SizedBox(height: 7),
+                                Text(
+                                  product.name,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 24,
+                                    height: 1.05,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: -.45,
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 5),
-                          Material(
-                            color: tokens.accentAmber,
-                            borderRadius: BorderRadius.circular(24),
-                            child: InkWell(
-                              onTap: product.stock > 0 ? _addToCart : null,
-                              borderRadius: BorderRadius.circular(24),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 8,
+                                const SizedBox(height: 4),
+                                Text(
+                                  product.weight,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: .72),
+                                    fontSize: 12,
+                                  ),
                                 ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 3,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
-                                    Icon(
-                                      product.stock > 0
-                                          ? Icons.add_rounded
-                                          : Icons.remove_shopping_cart_outlined,
-                                      color: tokens.featuredStart,
-                                      size: 18,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      product.stock > 0
-                                          ? quantity == 0
-                                              ? context.tr('Add')
-                                              : '$quantity · ${context.tr('Add')}'
-                                          : context.tr('Unavailable'),
-                                      style:
-                                          theme.textTheme.labelLarge?.copyWith(
-                                        color: tokens.featuredStart,
-                                        fontWeight: FontWeight.w800,
+                                    if (hasDiscount)
+                                      _CrossedPrice(
+                                        label: _formatFeaturedPrice(
+                                          product.originalPrice!,
+                                        ),
+                                        key: ValueKey(
+                                          'featured-old-price-${product.id}',
+                                        ),
+                                      ),
+                                    FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        _formatFeaturedPrice(product.price),
+                                        key: ValueKey(
+                                          'featured-sale-price-${product.id}',
+                                        ),
+                                        maxLines: 1,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 28,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: -.5,
+                                        ),
                                       ),
                                     ),
                                   ],
+                                ),
+                                if (hasDiscount) ...[
+                                  const SizedBox(height: 5),
+                                  DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF7CFF9E),
+                                      borderRadius: BorderRadius.circular(18),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 9,
+                                        vertical: 5,
+                                      ),
+                                      child: Text(
+                                        'Save ${_formatFeaturedPrice(saveAmount)}',
+                                        key: ValueKey(
+                                          'featured-savings-${product.id}',
+                                        ),
+                                        style: const TextStyle(
+                                          color: Color(0xFF03210F),
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                const Spacer(),
+                                _FeaturedCartControl(
+                                  quantity: quantity,
+                                  available: product.stock > 0,
+                                  onAdd: _addToCart,
+                                  onDecrease: () => context
+                                      .read<CartProvider>()
+                                      .updateQuantity(
+                                        product.id,
+                                        quantity - 1,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            flex: 44,
+                            child: AnimatedBuilder(
+                              animation: _floatController,
+                              builder: (context, child) {
+                                final offset = _reduceMotion
+                                    ? 0.0
+                                    : -8 + 16 * _floatController.value;
+                                return Transform.translate(
+                                  offset: Offset(0, offset),
+                                  child: child,
+                                );
+                              },
+                              child: Transform.rotate(
+                                angle: -.12,
+                                child: SizedBox(
+                                  width: constraints.maxWidth * .32,
+                                  height: constraints.maxHeight * .64,
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(18),
+                                    child: ColoredBox(
+                                      color: Colors.white,
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(5),
+                                        child: ProductThumbnail(
+                                          key: _imageKey,
+                                          imageUrl: product.imageUrl,
+                                          size: constraints.maxWidth * .30,
+                                          width: constraints.maxWidth * .30,
+                                          height: constraints.maxHeight * .62,
+                                          fit: BoxFit.contain,
+                                          borderRadius: BorderRadius.zero,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
@@ -1411,13 +1587,226 @@ class _FeaturedProductSlideState extends State<_FeaturedProductSlide> {
                         ],
                       ),
                     ),
+                    if (hasDiscount)
+                      Positioned(
+                        right: 11,
+                        top: 11,
+                        child: _DiscountBadge(
+                          percent: discountPercent,
+                          productId: product.id,
+                        ),
+                      ),
                   ],
                 ),
               ),
             ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+Color _featuredGlow(Product product) {
+  final category = '${product.categoryName ?? ''} ${product.categorySlug ?? ''}'
+      .toLowerCase();
+  if (category.contains('fruit') || category.contains('fresh')) {
+    return const Color(0xFFFFC766);
+  }
+  if (category.contains('drink') || category.contains('beverage')) {
+    return const Color(0xFF6AD8FF);
+  }
+  return const Color(0xFF7CFF9E);
+}
+
+String _formatFeaturedPrice(num amount) =>
+    '${AppConstants.currencySymbol}${amount.toStringAsFixed(0)}';
+
+class _CrossedPrice extends StatelessWidget {
+  final String label;
+
+  const _CrossedPrice({super.key, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      foregroundPainter: const _CrossPricePainter(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: .68),
+            fontSize: 12,
+            decoration: TextDecoration.lineThrough,
+            decorationColor: Colors.white.withValues(alpha: .55),
           ),
-        );
-      },
+        ),
+      ),
+    );
+  }
+}
+
+class _CrossPricePainter extends CustomPainter {
+  const _CrossPricePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFFFF7A6B)
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      Offset(0, size.height * .22),
+      Offset(size.width, size.height * .78),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(0, size.height * .78),
+      Offset(size.width, size.height * .22),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _CrossPricePainter oldDelegate) => false;
+}
+
+class _DiscountBadge extends StatelessWidget {
+  final int percent;
+  final String productId;
+
+  const _DiscountBadge({
+    required this.percent,
+    required this.productId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFE5322D),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+        child: Text(
+          '$percent% OFF',
+          key: ValueKey('featured-discount-badge-$productId'),
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FeaturedCartControl extends StatelessWidget {
+  final int quantity;
+  final bool available;
+  final VoidCallback onAdd;
+  final VoidCallback onDecrease;
+
+  const _FeaturedCartControl({
+    required this.quantity,
+    required this.available,
+    required this.onAdd,
+    required this.onDecrease,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppThemeExtension.of(context);
+    if (!available) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: .25),
+          borderRadius: BorderRadius.circular(22),
+        ),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          child: Text(
+            'Unavailable',
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      );
+    }
+    if (quantity == 0) {
+      return SizedBox(
+        height: 44,
+        child: FilledButton.icon(
+          key: const ValueKey('featured-add-button'),
+          onPressed: onAdd,
+          icon: const Icon(Icons.add_rounded, size: 18),
+          label: Text(context.tr('Add')),
+          style: FilledButton.styleFrom(
+            backgroundColor: tokens.accentAmber,
+            foregroundColor: const Color(0xFF12391F),
+            padding: const EdgeInsets.symmetric(horizontal: 13),
+            shape: const StadiumBorder(),
+            elevation: 3,
+            shadowColor: const Color(0x99FFC72C),
+            textStyle: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+        ),
+      );
+    }
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: tokens.accentAmber,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x55FFC72C),
+            blurRadius: 12,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox.square(
+            dimension: 44,
+            child: IconButton(
+              tooltip: 'Decrease quantity',
+              onPressed: onDecrease,
+              padding: EdgeInsets.zero,
+              icon: const Icon(Icons.remove_rounded, size: 18),
+              color: const Color(0xFF12391F),
+            ),
+          ),
+          SizedBox(
+            width: 22,
+            child: Text(
+              '$quantity',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF12391F),
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          SizedBox.square(
+            dimension: 44,
+            child: IconButton(
+              tooltip: 'Increase quantity',
+              onPressed: onAdd,
+              padding: EdgeInsets.zero,
+              icon: const Icon(Icons.add_rounded, size: 18),
+              color: const Color(0xFF12391F),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

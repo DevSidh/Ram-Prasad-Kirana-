@@ -33,7 +33,7 @@ String resolveProductImageUrl(String imageUrl) {
     fragment: null,
   );
   final path = uri.path.startsWith('/') ? uri.path : '/${uri.path}';
-  return origin.resolve(path).toString();
+  return origin.resolveUri(uri.replace(path: path)).toString();
 }
 
 bool _isLocalImageHost(String host) {

@@ -2,11 +2,13 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/constants.dart';
 import '../../core/media.dart';
 import '../../core/product_sku.dart';
 import '../../models/admin_models.dart';
+import '../../providers/product_provider.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
 import '../../widgets/store_animation.dart';
@@ -83,6 +85,8 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
 
   Future<void> _editProduct([AdminProduct? product]) async {
     if (_categories.where((category) => category.isActive).isEmpty) return;
+    final productProvider =
+        Provider.of<ProductProvider?>(context, listen: false);
     final saved = await showDialog<bool>(
       context: context,
       builder: (_) => _ProductFormDialog(
@@ -92,7 +96,11 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
         vendingOnly: widget.vendingOnly,
       ),
     );
-    if (saved == true) _load(page: _page);
+    if (!mounted) return;
+    if (saved == true) {
+      _load(page: _page);
+      await productProvider?.loadCatalog();
+    }
   }
 
   Future<void> _setActive(AdminProduct product, bool isActive) async {
@@ -279,6 +287,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
   String? _error;
   String _weightUnit = 'g';
   String _volumeUnit = 'ml';
+  late bool _isBestSeller;
 
   List<AdminCategory> get _availableCategories {
     final active =
@@ -324,6 +333,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
     super.initState();
     final product = widget.product;
     _isVendingDrink = product?.isVendingDrink ?? widget.vendingOnly;
+    _isBestSeller = product?.isBestSeller ?? false;
     _nameController = TextEditingController(text: product?.name ?? '');
     _brandController = TextEditingController(text: product?.brand ?? '');
     _skuController = TextEditingController(text: product?.sku ?? '');
@@ -414,6 +424,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
           : _originController.text.trim(),
       'unitLabel': '${_unitAmountController.text.trim()} $_selectedUnitSuffix',
       'isVendingDrink': _isVendingDrink,
+      if (widget.vendingOnly) 'isBestSeller': _isBestSeller,
     };
     final stock = int.parse(_stockController.text.trim());
 
@@ -583,6 +594,16 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                   value: _isVendingDrink,
                   onChanged: (value) => setState(() => _isVendingDrink = value),
                 ),
+                if (widget.vendingOnly)
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Show as featured drink'),
+                    subtitle: const Text(
+                      'Display this drink in the large card at the top of the menu.',
+                    ),
+                    value: _isBestSeller,
+                    onChanged: (value) => setState(() => _isBestSeller = value),
+                  ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -699,7 +720,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                                     optimizedProductImageUrl(
                                       widget.product!.imageUrl!,
                                     ),
-                                    fit: BoxFit.cover,
+                                    fit: BoxFit.contain,
                                     errorBuilder: (_, __, ___) => const Icon(
                                       Icons.broken_image_outlined,
                                     ),
@@ -769,8 +790,9 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
                   decoration: const InputDecoration(
-                    labelText: 'Original price (optional)',
-                    helperText: 'Enter this only when offering a discount.',
+                    labelText: 'Before price / MRP (optional)',
+                    helperText:
+                        'Shown crossed out beside the sale price on featured cards.',
                   ),
                   validator: (value) {
                     final text = value?.trim() ?? '';
@@ -970,7 +992,7 @@ class _ProductImage extends StatelessWidget {
                 color: AppConstants.primary)
             : Image.network(
                 optimizedProductImageUrl(imageUrl),
-                fit: BoxFit.cover,
+                fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) => const Icon(
                     Icons.broken_image_outlined,
                     color: AppConstants.primary),

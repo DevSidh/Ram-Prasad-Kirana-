@@ -20,7 +20,7 @@ grocery_app/
 │   ├── providers/      # AuthProvider, ProductProvider, CartProvider, OrderProvider
 │   ├── screens/        # Splash, Onboarding, Auth, Home, Category, PDP, Cart, Checkout, Tracking, Orders, Profile
 │   ├── widgets/        # ProductCard, CustomButton, EmptyState
-│   ├── navigation/     # MainBottomNav (5 destinations: Home, Categories, Search, Cart, Profile)
+│   ├── navigation/     # MainBottomNav and the existing customer destinations
 │   └── main.dart       # App entry point with MultiProvider
 │
 ├── android/            # Native Gradle, AndroidManifest.xml, Kotlin MainActivity
@@ -74,7 +74,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-android-
 Use `-Artifact appbundle` for a Google Play Store AAB. Flutter uses the
 `version` in `pubspec.yaml` as the Android version name and build number. Name
 shared APKs with the store name and version, for example
-`Ram-Prasad-General-Store-v2.0.4.apk`. The APK is written to
+`Ram-Prasad-General-Store-v2.0.7.apk`. The APK is written to
 `build/app/outputs/flutter-apk/app-release.apk`; the AAB is written to
 `build/app/outputs/bundle/release/app-release.aab`.
 
@@ -129,6 +129,11 @@ npm install
 ```
 
 Do not run `prisma migrate dev`, `prisma db push`, or a database reset as part of routine startup. Product sale prices use `price`, with `originalPrice` shown as the crossed-out former price. Admins can create percentage or fixed-amount coupons with a minimum retail subtotal, optional discount cap, redemption limit, and expiry; checkout revalidates each code in the order transaction. Coupon discounts exclude wholesale-priced items, including in mixed baskets. Product units are stored with the catalog record.
+
+The post-login offer popup reads eligible, active percentage coupons from
+`GET /api/v1/coupons/offer`. Deploy the backend release containing this route
+before expecting the popup to appear in production; the app does not invent
+offer values or calculate the discount locally.
 
 Store administrators can configure recurring opening hours and immediately pause or resume online ordering from **Admin → Store hours**. Hours use Nepal Standard Time (`Asia/Kathmandu`); closed days and a paused store are enforced by the backend as well as shown in the customer app. The migration seeds an always-open schedule to preserve existing checkout behavior; configure the actual weekly hours in the admin panel after applying the `20261018000000_store_hours` Prisma migration and before relying on automatic closing.
 
@@ -271,7 +276,7 @@ The script validates and generates Prisma Client, builds/tests the backend and F
 
 ### Admin Panel Status
 
-The admin shell provides database-backed dashboard metrics, product/category management, homepage showcase controls, catalog-wide SKU tools, promotion management, store hours, restocking, and order management. Set each product's low-stock threshold in **Products**; **Restock** lists active items at or below that level, including out-of-stock items, and records received quantities in inventory history with the logged-in admin staff member and timestamp. Existing products retain the previous threshold of 10 after the `20261019000000_low_stock_threshold` migration. Apply `20261020000000_restock_receipt_staff` to link new receipt records to staff accounts; older receipts remain visible without staff attribution. Use **Vending drinks** to add or edit regular catalog products and select **Show in vending machine**; these drinks use the same product stock, cart, and checkout flow as other items. Apply the `20261025000000_product_vending_drink` migration before deploying this option. Select active products in **Showcase** to include them in the customer's automatically rotating product carousel; each slide uses the product's saved name, category, image, and price. Edit an item's SKU in **SKUs** using the suggested `category-productname-quantity` pattern (for example, `pulses-masoor-dal-1kg`). Admins can assign delivery staff, update order status, and set or clear a future delivery date and time for open orders. Apply `20261022000000_order_delivery_schedule` before deploying that delivery-time feature. Customer tracking shows the road route from the store to the saved delivery address when the backend Routes API is configured; it does not claim to show live courier GPS. Customers can review and mark in-app order notifications as read; Firebase push delivery is enabled only after the app and server credentials are configured as described above. Online eSewa/Khalti payment verification is not implemented, so new online-payment orders are rejected until a gateway is integrated.
+The admin shell provides database-backed dashboard metrics, product/category management, homepage showcase controls, catalog-wide SKU tools, promotion management, store hours, restocking, and order management. Set each product's low-stock threshold in **Products**; **Restock** lists active items at or below that level, including out-of-stock items, and records received quantities in inventory history with the logged-in admin staff member and timestamp. Existing products retain the previous threshold of 10 after the `20261019000000_low_stock_threshold` migration. Apply `20261020000000_restock_receipt_staff` to link new receipt records to staff accounts; older receipts remain visible without staff attribution. Use **Vending drinks** to add or edit regular catalog products and select **Show in vending machine**; these drinks use the same product stock, cart, and checkout flow as other items. Apply the `20261025000000_product_vending_drink` migration before deploying this option. The customer Vending tab shows a responsive Drinks menu populated from live vending products, with category filters, stock and sold-out states, and a best-seller feature card. Selecting an available drink reveals quantity controls and adds the selected amount to the regular cart and checkout flow. The app starts loading its product catalog during the animated startup screen. Select active products in **Showcase** to include them in the customer's automatically rotating product carousel; each slide uses the product's saved name, category, image, and price. Edit an item's SKU in **SKUs** using the suggested `category-productname-quantity` pattern (for example, `pulses-masoor-dal-1kg`). Admins can assign delivery staff, update order status, and set or clear a future delivery date and time for open orders. Apply `20261022000000_order_delivery_schedule` before deploying that delivery-time feature. Customer tracking shows the road route from the store to the saved delivery address when the backend Routes API is configured; it does not claim to show live courier GPS. Customers can review and mark in-app order notifications as read; Firebase push delivery is enabled only after the app and server credentials are configured as described above. Online eSewa/Khalti payment verification is not implemented, so new online-payment orders are rejected until a gateway is integrated.
 
 ---
 

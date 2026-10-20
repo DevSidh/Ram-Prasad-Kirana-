@@ -202,7 +202,7 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Discount codes customers can apply at checkout.',
+                    'Add an active percentage code with a maximum discount to show the festival popup after sign-in.',
                     style: TextStyle(
                       color: AppConstants.textMuted,
                       fontSize: 12,

@@ -99,36 +99,33 @@ class _ProductThumbnailState extends State<ProductThumbnail> {
           borderRadius: widget.borderRadius,
           child: url.isEmpty
               ? fallback
-              : ColoredBox(
-                  color: AppConstants.surfaceLight,
-                  child: CachedNetworkImage(
-                    key: ValueKey('$url-$_retryCount'),
-                    imageUrl: url,
-                    imageRenderMethodForWeb: kIsWeb
-                        ? ImageRenderMethodForWeb.HttpGet
-                        : ImageRenderMethodForWeb.HtmlImage,
-                    width: imageWidth,
-                    height: imageHeight,
-                    memCacheWidth: cacheWidth,
-                    memCacheHeight: cacheHeight,
-                    fit: widget.fit,
-                    fadeInDuration: Duration.zero,
-                    fadeOutDuration: Duration.zero,
-                    placeholder: (_, __) => fallback,
-                    errorWidget: (_, failedUrl, error) {
-                      FlutterError.reportError(
-                        FlutterErrorDetails(
-                          exception: error,
-                          library: 'product image',
-                          context: ErrorDescription(
-                            'while loading a remote product thumbnail',
-                          ),
+              : CachedNetworkImage(
+                  key: ValueKey('$url-$_retryCount'),
+                  imageUrl: url,
+                  imageRenderMethodForWeb: kIsWeb
+                      ? ImageRenderMethodForWeb.HttpGet
+                      : ImageRenderMethodForWeb.HtmlImage,
+                  width: imageWidth,
+                  height: imageHeight,
+                  memCacheWidth: cacheWidth,
+                  memCacheHeight: cacheHeight,
+                  fit: widget.fit,
+                  fadeInDuration: Duration.zero,
+                  fadeOutDuration: Duration.zero,
+                  placeholder: (_, __) => fallback,
+                  errorWidget: (_, failedUrl, error) {
+                    FlutterError.reportError(
+                      FlutterErrorDetails(
+                        exception: error,
+                        library: 'product image',
+                        context: ErrorDescription(
+                          'while loading a remote product thumbnail',
                         ),
-                      );
-                      _retryAfterFailure(failedUrl);
-                      return fallback;
-                    },
-                  ),
+                      ),
+                    );
+                    _retryAfterFailure(failedUrl);
+                    return fallback;
+                  },
                 ),
         );
       },
@@ -143,8 +140,9 @@ class _ProductThumbnailState extends State<ProductThumbnail> {
             : widget.size.isFinite
                 ? widget.size
                 : 1.0;
-    final safeDimension =
-        logicalDimension > 0 && logicalDimension.isFinite ? logicalDimension : 1.0;
+    final safeDimension = logicalDimension > 0 && logicalDimension.isFinite
+        ? logicalDimension
+        : 1.0;
     final safePixelRatio =
         pixelRatio > 0 && pixelRatio.isFinite ? pixelRatio : 1.0;
     final scaledDimension = safeDimension * safePixelRatio;

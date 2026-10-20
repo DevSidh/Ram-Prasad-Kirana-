@@ -40,6 +40,21 @@ void main() {
       );
     });
 
+    test('resolves versioned backend image paths without dropping cache keys',
+        () {
+      final expected = Uri.parse(AppConstants.apiBaseUrl)
+          .replace(path: '/', query: null, fragment: null)
+          .resolve('/api/v1/products/p-1/image?v=1730000000000')
+          .toString();
+
+      expect(
+        optimizedProductImageUrl(
+          '/api/v1/products/p-1/image?v=1730000000000',
+        ),
+        expected,
+      );
+    });
+
     test('keeps absolute image URLs intact', () {
       const imageUrl = 'https://cdn.example.com/items/apples.webp';
       expect(resolveProductImageUrl(imageUrl), imageUrl);

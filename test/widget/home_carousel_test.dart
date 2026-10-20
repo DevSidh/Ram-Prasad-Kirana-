@@ -184,14 +184,22 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(tester.getSize(find.byType(PageView)).height, lessThan(244));
+    expect(tester.getSize(find.byType(PageView)).height, 260);
+    expect(
+      find.byKey(const ValueKey('featured-discount-badge-apples')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('featured-savings-apples')),
+      findsOneWidget,
+    );
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -700));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 1));
     expect(searchOpacity('home-search-inline'), 0);
     expect(searchOpacity('home-search-pinned'), 1);
     expect(find.text('Everyday rice'), findsOneWidget);
     await tester.drag(find.byType(CustomScrollView), const Offset(0, 700));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 1));
 
     final pageController =
         tester.widget<PageView>(find.byType(PageView)).controller!;
@@ -208,6 +216,22 @@ void main() {
     await tester.pump(const Duration(seconds: 4));
     await tester.pump(const Duration(milliseconds: 350));
     expect(pageController.page, 1);
+    expect(
+      find.byKey(const ValueKey('featured-sale-price-oranges')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('featured-old-price-oranges')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('featured-savings-oranges')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('featured-discount-badge-oranges')),
+      findsNothing,
+    );
 
     await tester.tap(
       find.descendant(
@@ -232,9 +256,13 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     expect(pageController.page, 0);
 
-    for (final size in [const Size(360, 800), const Size(412, 915)]) {
+    for (final size in [
+      const Size(360, 800),
+      const Size(412, 915),
+      const Size(440, 956),
+    ]) {
       tester.view.physicalSize = size;
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 100));
       expect(tester.takeException(), isNull);
     }
   });

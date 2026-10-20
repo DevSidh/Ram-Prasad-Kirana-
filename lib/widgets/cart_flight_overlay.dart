@@ -136,12 +136,16 @@ class _ProductFlightState extends State<_ProductFlight>
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(10),
-                    child: ProductThumbnail(
-                      imageUrl: widget.product.imageUrl,
-                      size: rect.width,
-                      width: rect.width,
-                      height: rect.height,
-                      fit: BoxFit.cover,
+                    child: ColoredBox(
+                      color: Colors.white,
+                      child: ProductThumbnail(
+                        imageUrl: widget.product.imageUrl,
+                        size: rect.width,
+                        width: rect.width,
+                        height: rect.height,
+                        fit: BoxFit.contain,
+                        borderRadius: BorderRadius.zero,
+                      ),
                     ),
                   ),
                 ),

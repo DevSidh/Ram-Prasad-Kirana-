@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants.dart';
 import '../providers/auth_provider.dart';
+import '../providers/product_provider.dart';
 import 'onboarding_screen.dart';
 import 'auth/login_screen.dart';
 import '../navigation/app_shell_route.dart';
@@ -21,13 +22,19 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _prepareStartup() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final productProvider = Provider.of<ProductProvider>(
+      context,
+      listen: false,
+    );
     final results = await Future.wait<dynamic>([
       authProvider.sessionReady,
       SharedPreferences.getInstance(),
+      productProvider
+          .loadCatalog()
+          .timeout(const Duration(seconds: 3), onTimeout: () {}),
     ]);
     final prefs = results[1] as SharedPreferences;
-    _onboardingSeen =
-        prefs.getBool(AppConstants.keyOnboardingSeen) ?? false;
+    _onboardingSeen = prefs.getBool(AppConstants.keyOnboardingSeen) ?? false;
   }
 
   void _onLoadingFinished(Object? error) {

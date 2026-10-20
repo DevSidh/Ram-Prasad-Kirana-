@@ -4,8 +4,26 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:freshharvest_grocery/providers/auth_provider.dart';
+import 'package:freshharvest_grocery/providers/product_provider.dart';
 import 'package:freshharvest_grocery/screens/splash_screen.dart';
 import 'package:freshharvest_grocery/services/api_service.dart';
+
+class _StartupApi extends ApiService {
+  @override
+  Future<dynamic> get(
+    String endpoint, {
+    Map<String, String>? queryParams,
+  }) async {
+    if (endpoint == '/categories') return {'data': []};
+    if (endpoint == '/products') {
+      return {
+        'data': [],
+        'pagination': {'limit': 100, 'total': 0},
+      };
+    }
+    throw StateError('Unexpected startup endpoint $endpoint');
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -14,11 +32,16 @@ void main() {
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     final auth = AuthProvider(apiService: ApiService());
+    final products = ProductProvider(apiService: _StartupApi());
     addTearDown(auth.dispose);
+    addTearDown(products.dispose);
 
     await tester.pumpWidget(
-      ChangeNotifierProvider<AuthProvider>.value(
-        value: auth,
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(value: auth),
+          ChangeNotifierProvider<ProductProvider>.value(value: products),
+        ],
         child: const MaterialApp(
           home: MediaQuery(
             data: MediaQueryData(size: Size.zero),

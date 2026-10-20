@@ -357,7 +357,7 @@ void main() {
           )
           .first,
     );
-    expect(cartScaffold.backgroundColor, const Color(0xFF07100D));
+    expect(cartScaffold.backgroundColor, const Color(0xFFF6FAF7));
     expect(cartScaffold.extendBody, isTrue);
     expect(cartScaffold.extendBodyBehindAppBar, isTrue);
     expect(cartScaffold.bottomNavigationBar, isNull);

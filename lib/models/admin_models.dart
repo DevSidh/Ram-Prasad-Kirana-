@@ -164,6 +164,7 @@ class AdminProduct {
   final bool isActive;
   final bool isFeatured;
   final bool isVendingDrink;
+  final bool isBestSeller;
 
   const AdminProduct({
     required this.id,
@@ -187,6 +188,7 @@ class AdminProduct {
     required this.isActive,
     required this.isFeatured,
     this.isVendingDrink = false,
+    this.isBestSeller = false,
   });
 
   factory AdminProduct.fromJson(Map<String, dynamic> json) {
@@ -228,6 +230,7 @@ class AdminProduct {
       isActive: json['isActive'] as bool? ?? true,
       isFeatured: json['isFeatured'] as bool? ?? false,
       isVendingDrink: json['isVendingDrink'] as bool? ?? false,
+      isBestSeller: json['isBestSeller'] as bool? ?? false,
     );
   }
 
@@ -235,6 +238,7 @@ class AdminProduct {
     String? sku,
     bool? isFeatured,
     bool? isVendingDrink,
+    bool? isBestSeller,
     String? imageUrl,
     double? price,
     double? originalPrice,
@@ -263,6 +267,7 @@ class AdminProduct {
       isActive: isActive,
       isFeatured: isFeatured ?? this.isFeatured,
       isVendingDrink: isVendingDrink ?? this.isVendingDrink,
+      isBestSeller: isBestSeller ?? this.isBestSeller,
     );
   }
 }

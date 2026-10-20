@@ -15,6 +15,7 @@ class CartProvider extends ChangeNotifier {
   bool _disposed = false;
   String? _syncError;
   bool _syncErrorFromSave = false;
+  String? _suggestedCouponCode;
   Timer? _saveDebounce;
   int _revision = 0;
   Future<void> _syncQueue = Future<void>.value();
@@ -41,6 +42,7 @@ class CartProvider extends ChangeNotifier {
                 (!item.product.isWholesale ||
                     item.product.wholesalePrice == null));
       });
+  String? get suggestedCouponCode => _suggestedCouponCode;
 
   double get subtotal =>
       _items.values.fold(0.0, (sum, item) => sum + item.totalPrice);
@@ -57,6 +59,7 @@ class CartProvider extends ChangeNotifier {
     _accountUserId = userId;
     final revision = ++_revision;
     _items.clear();
+    _suggestedCouponCode = null;
     _localOverridesDuringLoad.clear();
     _clearDuringLoad = false;
     _saveDebounce?.cancel();
@@ -261,7 +264,27 @@ class CartProvider extends ChangeNotifier {
 
   void clearCart() {
     _items.clear();
+    _suggestedCouponCode = null;
     _markChanged(clearAll: true);
+  }
+
+  void suggestCouponCode(String code) {
+    final normalizedCode = code.trim().toUpperCase();
+    if (normalizedCode.isEmpty || normalizedCode == _suggestedCouponCode) {
+      return;
+    }
+    _suggestedCouponCode = normalizedCode;
+    notifyListeners();
+  }
+
+  void clearSuggestedCouponCode([String? expectedCode]) {
+    if (expectedCode != null &&
+        _suggestedCouponCode != expectedCode.trim().toUpperCase()) {
+      return;
+    }
+    if (_suggestedCouponCode == null) return;
+    _suggestedCouponCode = null;
+    notifyListeners();
   }
 
   void _markChanged({String? key, bool clearAll = false}) {

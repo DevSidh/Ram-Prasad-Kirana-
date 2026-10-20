@@ -8,11 +8,12 @@ import '../core/constants.dart';
 class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   static const _preferenceKey = 'app_theme_mode';
 
-  ThemeMode _themeMode = ThemeMode.dark;
+  ThemeMode _themeMode = ThemeMode.light;
   int _changeRevision = 0;
 
   ThemeProvider() {
     WidgetsBinding.instance.addObserver(this);
+    AppConstants.setDarkTheme(isDarkMode);
     unawaited(_loadSavedTheme());
   }
 
@@ -29,7 +30,14 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
       setThemeMode(isDark ? ThemeMode.dark : ThemeMode.light);
 
   Future<void> setThemeMode(ThemeMode mode) async {
-    if (_themeMode == mode) return;
+    if (_themeMode == mode) {
+      final revision = ++_changeRevision;
+      final preferences = await SharedPreferences.getInstance();
+      if (revision == _changeRevision) {
+        await preferences.setString(_preferenceKey, mode.name);
+      }
+      return;
+    }
 
     final revision = ++_changeRevision;
     _themeMode = mode;

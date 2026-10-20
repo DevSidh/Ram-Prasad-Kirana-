@@ -15,12 +15,15 @@ void main() {
         'price': '125.50',
         'inventory': {'totalStock': 14, 'reservedStock': 2},
         'isActive': true,
+        'isBestSeller': true,
       });
 
       expect(product.price, 125.5);
       expect(product.stock, 14);
       expect(product.categoryName, 'Staples');
       expect(product.isActive, isTrue);
+      expect(product.isBestSeller, isTrue);
+      expect(product.copyWith(isVendingDrink: true).isBestSeller, isTrue);
     });
   });
 
