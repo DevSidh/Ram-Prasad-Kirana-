@@ -81,12 +81,6 @@ class _HomeScreenState extends State<HomeScreen> {
       final now = DateTime.now();
       if (!offer.isAvailableAt(now)) return;
 
-      final shownToday = ShownTodayStore(preferences);
-      if (await shownToday.wasShownToday(offer.id, now: now)) {
-        await preferences.remove(ShownTodayStore.loginOfferPendingKey);
-        return;
-      }
-      await shownToday.markShownToday(offer.id, now: now);
       await preferences.remove(ShownTodayStore.loginOfferPendingKey);
       if (!mounted) return;
 
