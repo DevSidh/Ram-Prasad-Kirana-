@@ -231,7 +231,7 @@ control.
 | `NODE_ENV` | Runtime environment; production applies stricter CORS behavior. |
 | `CORS_ORIGINS` | Exact browser origins allowed in production, comma-separated. Needed for web, not native Android/iOS requests. |
 | `ADMIN_NAME`, `ADMIN_USERNAME`, `ADMIN_EMAIL` | Admin account creation and configured admin login identity. |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Gmail SMTP settings. Use `smtp.gmail.com`, port `465`, `SMTP_SECURE=true`, the Gmail address for both user/sender, and a Google App Password. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Gmail SMTP settings. Use `smtp.gmail.com`, port `587`, `SMTP_SECURE=false` (STARTTLS required), the Gmail address for both user/sender, and a Google App Password. |
 | `GOOGLE_MAPS_ROUTES_API_KEY` | Backend-only Routes API key for road-distance delivery pricing and routes. |
 | `GOOGLE_MAPS_PLACES_API_KEY` | Backend-only Places API key for authenticated location autocomplete and place details. |
 | `DELIVERY_SERVICE_RADIUS_KM` | Delivery service radius; defaults to 10 km. |
@@ -294,8 +294,9 @@ Firebase on both the app and backend for push delivery.
 ### Email
 
 Registration verification and password resets use Gmail SMTP. Configure
-`SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=465`, `SMTP_SECURE=true`, and use the same
-Gmail address for `SMTP_USER` and `SMTP_FROM`. `SMTP_PASS` must be a Google App
+`SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`, `SMTP_SECURE=false`, and use the same
+Gmail address for `SMTP_USER` and `SMTP_FROM`. Port 587 upgrades to TLS with
+STARTTLS, which the backend requires. `SMTP_PASS` must be a Google App
 Password; enable 2-Step Verification before creating one. Resolve the SMTP host
 to IPv4 while retaining the hostname for TLS certificate verification. Put the
 App Password only in the deployment host's secret settings, then redeploy.
@@ -482,7 +483,7 @@ still available, but ordering requires a map pin.
 
 ### Email verification/reset codes do not arrive
 
-Confirm the backend uses `smtp.gmail.com` on port `465` with implicit TLS,
+Confirm the backend uses `smtp.gmail.com` on port `587` with STARTTLS required,
 `SMTP_USER` and `SMTP_FROM` set to the Gmail account, and `SMTP_PASS` set to its
 Google App Password. Check backend logs for safe SMTP error codes. A timeout or
 unreachable network code indicates hosting egress/connectivity, not a bad OTP.

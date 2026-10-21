@@ -58,7 +58,7 @@ export function getSmtpConfiguration(
 ): SmtpConfiguration | null {
   const host = env.SMTP_HOST?.trim();
   const configuredPort = env.SMTP_PORT?.trim();
-  const port = configuredPort ? Number(configuredPort) : 465;
+  const port = configuredPort ? Number(configuredPort) : 587;
   const user = env.SMTP_USER?.trim();
   const password = env.SMTP_PASS;
   const from = env.SMTP_FROM?.trim();
@@ -103,7 +103,7 @@ export function getEmailDeliveryFailureDetails(error: StoreEmailDeliveryError): 
     ? 'Gmail rejected the SMTP credentials. Use a Google App Password and verify the Gmail sender address.'
     : error.code === 'ETIMEDOUT' || error.code === 'ENETUNREACH' ||
         error.code === 'ECONNECTION' || error.code === 'ESOCKET'
-      ? 'The app server cannot reach Gmail SMTP. Check outbound SMTP access and port 465 in the hosting service.'
+      ? 'The app server cannot reach Gmail SMTP. Check outbound SMTP access and the configured SMTP port in the hosting service.'
       : 'Gmail SMTP is unavailable. Check the SMTP settings and try again.';
 
   return {
@@ -148,6 +148,7 @@ export function createSmtpEmailSender(
         host: address,
         port: config.port,
         secure: config.secure,
+        requireTLS: !config.secure,
         auth: { user: config.user, pass: config.password },
         tls: { servername: config.host },
         connectionTimeout: 15_000,

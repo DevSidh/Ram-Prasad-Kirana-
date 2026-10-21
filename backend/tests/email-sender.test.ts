@@ -10,8 +10,8 @@ import {
 
 const gmailEnvironment: NodeJS.ProcessEnv = {
   SMTP_HOST: ' smtp.gmail.com ',
-  SMTP_PORT: '465',
-  SMTP_SECURE: 'true',
+  SMTP_PORT: '587',
+  SMTP_SECURE: 'false',
   SMTP_USER: 'store@example.com',
   SMTP_PASS: 'private-app-password',
   SMTP_FROM: 'Ram Prasad General Store <store@example.com>',
@@ -19,8 +19,8 @@ const gmailEnvironment: NodeJS.ProcessEnv = {
 
 assert.deepEqual(getSmtpConfiguration(gmailEnvironment), {
   host: 'smtp.gmail.com',
-  port: 465,
-  secure: true,
+  port: 587,
+  secure: false,
   user: 'store@example.com',
   password: 'private-app-password',
   from: 'Ram Prasad General Store <store@example.com>',
@@ -45,6 +45,16 @@ assert.equal(
   getSmtpConfiguration({ SMTP_HOST: 'smtp.gmail.com' }),
   null,
   'username, app password, and sender are required',
+);
+assert.equal(
+  getSmtpConfiguration({
+    SMTP_HOST: 'smtp.gmail.com',
+    SMTP_USER: 'store@example.com',
+    SMTP_PASS: 'private-app-password',
+    SMTP_FROM: 'store@example.com',
+  })?.port,
+  587,
+  'Gmail defaults to STARTTLS submission port',
 );
 assert.ok(createStoreEmailSender(gmailEnvironment));
 assert.equal(createStoreEmailSender({}), null);
@@ -82,6 +92,7 @@ async function run(): Promise<void> {
     new StoreEmailDeliveryError('ETIMEDOUT'),
   );
   assert.match(timeoutFailure.message, /cannot reach Gmail SMTP/);
+  assert.match(timeoutFailure.message, /configured SMTP port/);
   assert.deepEqual(timeoutFailure.diagnostic, {
     provider: 'smtp',
     code: 'ETIMEDOUT',
