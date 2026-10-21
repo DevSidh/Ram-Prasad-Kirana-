@@ -2,198 +2,177 @@ import { Router, type RequestHandler } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 
-const autocompleteInput = z.object({
+const autocompleteQuery = z.object({
   input: z.string().trim().min(3).max(200),
-  sessionToken: z.string().uuid().optional(),
-  locationBias: z.object({
-    latitude: z.number().finite().min(-90).max(90),
-    longitude: z.number().finite().min(-180).max(180),
-  }).strict().optional(),
-}).strict();
+  latitude: z.coerce.number().finite().min(-90).max(90).optional(),
+  longitude: z.coerce.number().finite().min(-180).max(180).optional(),
+  languageCode: z.enum(['en', 'ne']).default('en'),
+}).strict().refine(
+  ({ latitude, longitude }) =>
+    (latitude === undefined) === (longitude === undefined),
+  { message: 'Latitude and longitude must be provided together.' },
+);
 
-const detailsInput = z.object({
-  placeId: z.string().trim().min(1).max(300),
-  sessionToken: z.string().uuid().optional(),
-}).strict();
+type GoogleFetch = typeof fetch;
 
-interface GooglePlaceComponent {
-  longText?: string;
-  shortText?: string;
-  types?: string[];
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-interface GooglePlaceDetails {
-  formattedAddress?: string;
-  location?: { latitude?: number; longitude?: number };
-  addressComponents?: GooglePlaceComponent[];
-  displayName?: { text?: string };
+function apiKey(): string | undefined {
+  return process.env.GOOGLE_MAPS_PLACES_API_KEY?.trim();
 }
 
-type FetchGoogle = typeof fetch;
-
-function fieldValue(
-  components: GooglePlaceComponent[],
-  ...types: string[]
-): string {
-  for (const type of types) {
-    const value = components.find((component) => component.types?.includes(type))
-      ?.longText;
-    if (value?.trim()) return value.trim();
-  }
-  return '';
+function googleHeaders(key: string, fieldMask?: string): HeadersInit {
+  return {
+    'Content-Type': 'application/json',
+    'X-Goog-Api-Key': key,
+    ...(fieldMask ? { 'X-Goog-FieldMask': fieldMask } : {}),
+  };
 }
 
 export function createPlacesRouter(
-  apiKey: string | undefined = process.env.GOOGLE_MAPS_PLACES_API_KEY,
-  authenticateToken?: RequestHandler,
-  fetchGoogle: FetchGoogle = fetch,
+  authenticateToken: RequestHandler,
+  getApiKey: () => string | undefined = apiKey,
+  googleFetch: GoogleFetch = fetch,
 ): Router {
   const router = Router();
-  const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 60,
+  router.use(rateLimit({
+    windowMs: 60_000,
+    limit: 30,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many place searches. Please wait and try again.' },
-  });
-  if (authenticateToken) router.use(authenticateToken);
-  router.use(limiter);
+  }));
+  router.use(authenticateToken);
 
-  router.post('/autocomplete', async (req, res) => {
-    const parsed = autocompleteInput.safeParse(req.body);
+  router.get('/autocomplete', async (req, res) => {
+    const parsed = autocompleteQuery.safeParse(req.query);
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Enter at least three characters to search.' });
+      return res.status(400).json({ error: 'Enter a valid place search.' });
     }
-    if (!apiKey?.trim()) {
-      return res.status(503).json({ error: 'Place search is not configured on the server.' });
+    const key = getApiKey();
+    if (!key) {
+      return res.status(503).json({ error: 'Place search is not configured.' });
     }
 
+    const { input, latitude, longitude, languageCode } = parsed.data;
     try {
-      const response = await fetchGoogle(
+      const response = await googleFetch(
         'https://places.googleapis.com/v1/places:autocomplete',
         {
           method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'x-goog-api-key': apiKey,
-          },
+          headers: googleHeaders(key),
           body: JSON.stringify({
-            input: parsed.data.input,
-            languageCode: 'en',
+            input,
+            languageCode,
             includedRegionCodes: ['np'],
-            locationBias: {
-              circle: {
-                center: parsed.data.locationBias ?? {
-                  latitude: 26.728,
-                  longitude: 85.925,
-                },
-                radius: 50_000,
-              },
-            },
-            ...(parsed.data.sessionToken
-              ? { sessionToken: parsed.data.sessionToken }
+            ...(latitude !== undefined && longitude !== undefined
+              ? {
+                  locationBias: {
+                    circle: {
+                      center: { latitude, longitude },
+                      radius: 10_000,
+                    },
+                  },
+                }
               : {}),
           }),
-          signal: AbortSignal.timeout(8_000),
+          signal: AbortSignal.timeout(8000),
         },
       );
       if (!response.ok) {
-        console.error('Google Places autocomplete returned HTTP', response.status);
-        return res.status(502).json({ error: 'Place search is temporarily unavailable.' });
+        console.error('Google Places autocomplete failed with status:', response.status);
+        return res.status(502).json({
+          error: 'Place search is temporarily unavailable.',
+        });
       }
 
-      const body = await response.json() as {
-        suggestions?: Array<{
-          placePrediction?: {
-            placeId?: string;
-            text?: { text?: string };
-            structuredFormat?: {
-              mainText?: { text?: string };
-              secondaryText?: { text?: string };
-            };
-          };
-        }>;
-      };
-      const suggestions = (body.suggestions ?? [])
-        .flatMap((suggestion) => {
-          const prediction = suggestion.placePrediction;
-          const placeId = prediction?.placeId?.trim();
-          const label = prediction?.text?.text?.trim();
-          if (!placeId || !label) return [];
-          return [{
-            placeId,
-            label,
-            primaryText: prediction?.structuredFormat?.mainText?.text?.trim() || label,
-            secondaryText:
-              prediction?.structuredFormat?.secondaryText?.text?.trim() || '',
-          }];
-        })
-        .slice(0, 5);
+      const payload: unknown = await response.json();
+      const suggestions = isRecord(payload) && Array.isArray(payload.suggestions)
+        ? payload.suggestions.flatMap((entry) => {
+            if (!isRecord(entry) || !isRecord(entry.placePrediction)) return [];
+            const prediction = entry.placePrediction;
+            const text = isRecord(prediction.text) ? prediction.text.text : null;
+            const placeId = prediction.placeId;
+            return typeof text === 'string' && typeof placeId === 'string'
+              ? [{ placeId, description: text }]
+              : [];
+          })
+        : [];
       return res.json({ suggestions });
     } catch (error) {
       console.error('Google Places autocomplete request failed:', error);
-      return res.status(502).json({ error: 'Place search is temporarily unavailable.' });
+      return res.status(502).json({
+        error: 'Place search is temporarily unavailable.',
+      });
     }
   });
 
-  router.post('/details', async (req, res) => {
-    const parsed = detailsInput.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ error: 'Choose a valid place from the search results.' });
+  router.get('/:placeId', async (req, res) => {
+    const placeId = z.string().trim().min(1).max(512).safeParse(req.params.placeId);
+    if (!placeId.success) {
+      return res.status(400).json({ error: 'Enter a valid place.' });
     }
-    if (!apiKey?.trim()) {
-      return res.status(503).json({ error: 'Place search is not configured on the server.' });
+    const key = getApiKey();
+    if (!key) {
+      return res.status(503).json({ error: 'Place search is not configured.' });
     }
 
     try {
-      const url = new URL(
-        `https://places.googleapis.com/v1/places/${encodeURIComponent(parsed.data.placeId)}`,
-      );
-      url.searchParams.set('languageCode', 'en');
-      if (parsed.data.sessionToken) {
-        url.searchParams.set('sessionToken', parsed.data.sessionToken);
-      }
-      const response = await fetchGoogle(url, {
-        headers: {
-          'x-goog-api-key': apiKey,
-          'x-goog-fieldmask':
-            'formattedAddress,location,addressComponents,displayName',
+      const response = await googleFetch(
+        `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId.data)}`,
+        {
+          headers: googleHeaders(
+            key,
+            'location,formattedAddress,displayName',
+          ),
+          signal: AbortSignal.timeout(8000),
         },
-        signal: AbortSignal.timeout(8_000),
-      });
+      );
       if (!response.ok) {
-        console.error('Google Places details returned HTTP', response.status);
-        return res.status(502).json({ error: 'Place details are temporarily unavailable.' });
+        console.error('Google Place details failed with status:', response.status);
+        return res.status(502).json({
+          error: 'Place details are temporarily unavailable.',
+        });
       }
 
-      const place = await response.json() as GooglePlaceDetails;
-      const latitude = place.location?.latitude;
-      const longitude = place.location?.longitude;
-      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-        return res.status(502).json({ error: 'Google did not return a valid location.' });
+      const payload: unknown = await response.json();
+      const location = isRecord(payload) && isRecord(payload.location)
+        ? payload.location
+        : null;
+      const latitude = location?.latitude;
+      const longitude = location?.longitude;
+      if (
+        typeof latitude !== 'number' ||
+        !Number.isFinite(latitude) ||
+        typeof longitude !== 'number' ||
+        !Number.isFinite(longitude)
+      ) {
+        return res.status(502).json({
+          error: 'The selected place has no usable map location.',
+        });
       }
-
-      const components = place.addressComponents ?? [];
+      const formattedAddress = isRecord(payload) &&
+          typeof payload.formattedAddress === 'string'
+        ? payload.formattedAddress
+        : '';
+      const displayName = isRecord(payload) && isRecord(payload.displayName) &&
+          typeof payload.displayName.text === 'string'
+        ? payload.displayName.text
+        : '';
       return res.json({
-        placeId: parsed.data.placeId,
-        label: place.formattedAddress ?? place.displayName?.text ?? '',
-        street: [
-          fieldValue(components, 'street_number'),
-          fieldValue(components, 'route', 'premise', 'sublocality', 'neighborhood'),
-        ].filter(Boolean).join(' '),
-        city: fieldValue(
-          components,
-          'locality',
-          'postal_town',
-          'administrative_area_level_2',
-        ),
-        province: fieldValue(components, 'administrative_area_level_1'),
-        latitude,
-        longitude,
+        place: {
+          latitude,
+          longitude,
+          label: formattedAddress || displayName,
+        },
       });
     } catch (error) {
-      console.error('Google Places details request failed:', error);
-      return res.status(502).json({ error: 'Place details are temporarily unavailable.' });
+      console.error('Google Place details request failed:', error);
+      return res.status(502).json({
+        error: 'Place details are temporarily unavailable.',
+      });
     }
   });
 

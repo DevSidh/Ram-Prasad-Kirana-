@@ -1,100 +1,96 @@
 import assert from 'node:assert/strict';
 import express from 'express';
+import type { RequestHandler } from 'express';
 import { createPlacesRouter } from '../src/routes/places.js';
 
+let googlePayload: unknown = {};
+let lastGoogleRequest: { url: string; init?: RequestInit } | undefined;
+const googleFetch: typeof fetch = async (input, init) => {
+  lastGoogleRequest = { url: input.toString(), init };
+  return new Response(JSON.stringify(googlePayload), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+};
+const authenticate: RequestHandler = (_req, _res, next) => next();
+const app = express();
+app.use('/places', createPlacesRouter(
+  authenticate,
+  () => 'test-places-key',
+  googleFetch,
+));
+
 async function run(): Promise<void> {
-  const requests: Array<{ url: string; init?: RequestInit }> = [];
-  const fakeFetch: typeof fetch = async (input, init) => {
-    const url = input instanceof URL ? input.toString() : input.toString();
-    requests.push({ url, init });
-    if (url.endsWith('/places:autocomplete')) {
-      return new Response(JSON.stringify({
-        suggestions: [{
-          placePrediction: {
-            placeId: 'ChIJplace-id',
-            text: { text: 'Janakpur, Nepal' },
-            structuredFormat: {
-              mainText: { text: 'Janakpur' },
-              secondaryText: { text: 'Nepal' },
-            },
-          },
-        }],
-      }), { status: 200 });
-    }
-    return new Response(JSON.stringify({
-      formattedAddress: 'Janakpur, Nepal',
-      location: { latitude: 26.728, longitude: 85.925 },
-      addressComponents: [
-        { longText: 'Janakpur', types: ['locality'] },
-        { longText: 'Madhesh Province', types: ['administrative_area_level_1'] },
-      ],
-    }), { status: 200 });
-  };
-
-  const app = express();
-  app.use(express.json());
-  app.use('/places', createPlacesRouter('server-secret-key', undefined, fakeFetch));
   const server = app.listen(0);
-
   try {
     await new Promise<void>((resolve) => server.once('listening', resolve));
     const address = server.address();
     assert(address && typeof address !== 'string');
-    const endpoint = `http://127.0.0.1:${address.port}/places`;
-    const sessionToken = 'f0f8fad5-9fb7-48d9-9e7e-3f1b4a9834c7';
+    const baseUrl = `http://127.0.0.1:${address.port}/places`;
 
-    const autocomplete = await fetch(`${endpoint}/autocomplete`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        input: 'Janakpur',
-        sessionToken,
-        locationBias: { latitude: 26.728, longitude: 85.925 },
-      }),
-    });
-    assert.equal(autocomplete.status, 200);
-    assert.deepEqual(await autocomplete.json(), {
+    googlePayload = {
+      suggestions: [
+        {
+          placePrediction: {
+            placeId: 'place-123',
+            text: { text: 'Main Road, Janakpur' },
+          },
+        },
+        { queryPrediction: { text: { text: 'ignored result' } } },
+      ],
+    };
+    const suggestionsResponse = await fetch(
+      `${baseUrl}/autocomplete?input=Main%20Road&latitude=26.72&longitude=85.92&languageCode=ne`,
+    );
+    assert.equal(suggestionsResponse.status, 200);
+    assert.deepEqual(await suggestionsResponse.json(), {
       suggestions: [{
-        placeId: 'ChIJplace-id',
-        label: 'Janakpur, Nepal',
-        primaryText: 'Janakpur',
-        secondaryText: 'Nepal',
+        placeId: 'place-123',
+        description: 'Main Road, Janakpur',
       }],
     });
-    const autocompleteRequest = requests[0];
-    assert.equal(autocompleteRequest.init?.method, 'POST');
     assert.equal(
-      (autocompleteRequest.init?.headers as Record<string, string>)['x-goog-api-key'],
-      'server-secret-key',
+      lastGoogleRequest?.url,
+      'https://places.googleapis.com/v1/places:autocomplete',
     );
     assert.equal(
-      JSON.parse(String(autocompleteRequest.init?.body)).sessionToken,
-      sessionToken,
+      new Headers(lastGoogleRequest?.init?.headers).get('X-Goog-Api-Key'),
+      'test-places-key',
+    );
+    const autocompleteBody = JSON.parse(
+      lastGoogleRequest?.init?.body?.toString() ?? '{}',
+    ) as Record<string, unknown>;
+    assert.equal(autocompleteBody.languageCode, 'ne');
+    assert.deepEqual(autocompleteBody.includedRegionCodes, ['np']);
+    assert.equal(
+      (autocompleteBody.locationBias as {
+        circle: { center: { latitude: number } };
+      }).circle.center.latitude,
+      26.72,
     );
 
-    const details = await fetch(`${endpoint}/details`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ placeId: 'ChIJplace-id', sessionToken }),
+    googlePayload = {
+      location: { latitude: 26.728, longitude: 85.925 },
+      formattedAddress: 'Main Road, Janakpur, Nepal',
+      displayName: { text: 'Main Road' },
+    };
+    const detailsResponse = await fetch(`${baseUrl}/place-123`);
+    assert.equal(detailsResponse.status, 200);
+    assert.deepEqual(await detailsResponse.json(), {
+      place: {
+        latitude: 26.728,
+        longitude: 85.925,
+        label: 'Main Road, Janakpur, Nepal',
+      },
     });
-    assert.equal(details.status, 200);
-    assert.deepEqual(await details.json(), {
-      placeId: 'ChIJplace-id',
-      label: 'Janakpur, Nepal',
-      street: '',
-      city: 'Janakpur',
-      province: 'Madhesh Province',
-      latitude: 26.728,
-      longitude: 85.925,
-    });
+    assert.equal(
+      new Headers(lastGoogleRequest?.init?.headers).get('X-Goog-FieldMask'),
+      'location,formattedAddress,displayName',
+    );
 
-    const invalid = await fetch(`${endpoint}/autocomplete`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ input: 'x' }),
-    });
-    assert.equal(invalid.status, 400);
-    console.log('Places autocomplete and details tests passed.');
+    const invalidResponse = await fetch(`${baseUrl}/autocomplete?input=ab`);
+    assert.equal(invalidResponse.status, 400);
+    console.log('Places API route tests passed.');
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => error ? reject(error) : resolve());
