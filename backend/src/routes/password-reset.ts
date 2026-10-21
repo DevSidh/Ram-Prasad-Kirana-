@@ -4,7 +4,12 @@ import { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import type { PrismaClient } from '@prisma/client';
-import { createSmtpEmailSender } from '../services/email-sender.js';
+import {
+  createStoreEmailSender,
+  getEmailDeliveryFailureDetails,
+  getSafeErrorMetadata,
+  StoreEmailDeliveryError,
+} from '../services/email-sender.js';
 
 const emailSchema = z.string().trim().email().max(254).transform((email) => email.toLowerCase());
 const requestSchema = z.object({ email: emailSchema }).strict();
@@ -21,8 +26,8 @@ class InvalidResetCodeError extends Error {}
 
 type SendResetCode = (email: string, code: string) => Promise<void>;
 
-function createSmtpSender(): SendResetCode | null {
-  const sendEmail = createSmtpEmailSender();
+function createResetCodeSender(): SendResetCode | null {
+  const sendEmail = createStoreEmailSender();
   if (!sendEmail) return null;
   return async (email, code) => {
     await sendEmail({
@@ -35,7 +40,7 @@ function createSmtpSender(): SendResetCode | null {
 
 export function createPasswordResetRouter(
   prisma: PrismaClient,
-  sendResetCode: SendResetCode | null = createSmtpSender(),
+  sendResetCode: SendResetCode | null = createResetCodeSender(),
 ): Router {
   const router = Router();
   const requestLimiter = rateLimit({
@@ -83,6 +88,16 @@ export function createPasswordResetRouter(
           await sendResetCode(email, code);
         } catch (error) {
           await prisma.passwordResetOtp.deleteMany({ where: { email, otpHash } });
+          if (error instanceof StoreEmailDeliveryError) {
+            const failure = getEmailDeliveryFailureDetails(error);
+            console.error(
+              'Password reset email provider failure:',
+              failure.diagnostic,
+            );
+            return res.status(failure.statusCode).json({
+              error: failure.message,
+            });
+          }
           throw error;
         }
       }
@@ -91,8 +106,13 @@ export function createPasswordResetRouter(
         message: 'If an active account matches that email, a reset code has been sent.',
       });
     } catch (error) {
-      console.error('Password reset code delivery failed:', error);
-      return res.status(500).json({ error: 'Unable to send a reset code right now.' });
+      console.error(
+        'Password reset request failed:',
+        getSafeErrorMetadata(error),
+      );
+      return res.status(500).json({
+        error: 'Unable to process password reset right now. Check the server logs.',
+      });
     }
   });
 
