@@ -146,14 +146,14 @@ class DeliverySummary {
   final int assigned;
   final int inProgress;
   final int deliveredToday;
-  final double cashToCollect;
+  final double cashCollectedToday;
   final double cashToHandOver;
 
   const DeliverySummary({
     required this.assigned,
     required this.inProgress,
     required this.deliveredToday,
-    required this.cashToCollect,
+    required this.cashCollectedToday,
     required this.cashToHandOver,
   });
 
@@ -162,7 +162,7 @@ class DeliverySummary {
       assigned: _integer(json?['assigned']),
       inProgress: _integer(json?['inProgress']),
       deliveredToday: _integer(json?['deliveredToday']),
-      cashToCollect: _number(json?['cashToCollect']),
+      cashCollectedToday: _number(json?['cashCollectedToday']),
       cashToHandOver: _number(json?['cashToHandOver']),
     );
   }

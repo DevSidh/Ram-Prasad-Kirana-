@@ -167,6 +167,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   isLoading: authProvider.isLoading,
                   onPressed: _handleRegister,
                 ),
+                if (authProvider.errorMessage != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    authProvider.errorMessage!,
+                    key: const Key('registration-error'),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

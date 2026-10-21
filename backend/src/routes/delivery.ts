@@ -1,6 +1,7 @@
 import { Router, type RequestHandler, type Response } from 'express';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { z } from 'zod';
+import { getLocalDayRange } from '../services/local-day.js';
 import { sendPushToUser } from '../services/push-notifications.js';
 
 const assignmentQuery = z.object({
@@ -57,80 +58,102 @@ export function createDeliveryRouter(
     if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
 
     try {
-      const deliveries = await prisma.delivery.findMany({
-        where: {
-          deliveryPersonId: userId,
-          ...(parsed.data.status ? { status: parsed.data.status } : {}),
-        },
-        orderBy: [{ status: 'asc' }, { assignedAt: 'desc' }],
-        select: {
-          id: true,
-          status: true,
-          assignedAt: true,
-          pickedUpAt: true,
-          deliveredAt: true,
-          cashCollected: true,
-          cashCollectedAt: true,
-          cashHandedOver: true,
-          cashHandedOverAt: true,
-          statusHistory: {
-            orderBy: { createdAt: 'desc' },
-            take: 5,
-            select: { status: true, note: true, createdAt: true },
+      const { start: todayStart, end: tomorrowStart } = getLocalDayRange();
+      const riderWhere = { deliveryPersonId: userId };
+      const [
+        deliveries,
+        cashToHandOver,
+        assigned,
+        inProgress,
+        deliveredToday,
+        cashCollectedToday,
+      ] = await Promise.all([
+        prisma.delivery.findMany({
+          where: {
+            ...riderWhere,
+            ...(parsed.data.status ? { status: parsed.data.status } : {}),
           },
-          order: {
-            select: {
-              id: true,
-              orderNumber: true,
-              status: true,
-              paymentMethod: true,
-              paymentStatus: true,
-              total: true,
-              shippingName: true,
-              shippingPhone: true,
-              shippingAddress: true,
-              shippingCity: true,
-              shippingDistrict: true,
-              shippingProvince: true,
-              shippingPostalCode: true,
-              notes: true,
-              createdAt: true,
-              user: { select: { name: true, phone: true } },
-              address: { select: { latitude: true, longitude: true } },
-              payments: {
-                where: { status: 'COMPLETED' },
-                select: { amount: true },
-              },
-              items: {
-                select: { productName: true, quantity: true },
+          orderBy: [{ status: 'asc' }, { assignedAt: 'desc' }],
+          take: 100,
+          select: {
+            id: true,
+            status: true,
+            assignedAt: true,
+            pickedUpAt: true,
+            deliveredAt: true,
+            cashCollected: true,
+            cashCollectedAt: true,
+            cashHandedOver: true,
+            cashHandedOverAt: true,
+            statusHistory: {
+              orderBy: { createdAt: 'desc' },
+              take: 5,
+              select: { status: true, note: true, createdAt: true },
+            },
+            order: {
+              select: {
+                id: true,
+                orderNumber: true,
+                status: true,
+                paymentMethod: true,
+                paymentStatus: true,
+                total: true,
+                shippingName: true,
+                shippingPhone: true,
+                shippingAddress: true,
+                shippingCity: true,
+                shippingDistrict: true,
+                shippingProvince: true,
+                shippingPostalCode: true,
+                notes: true,
+                createdAt: true,
+                user: { select: { name: true, phone: true } },
+                address: { select: { latitude: true, longitude: true } },
+                payments: {
+                  where: { status: 'COMPLETED' },
+                  select: { amount: true },
+                },
+                items: {
+                  select: { productName: true, quantity: true },
+                },
               },
             },
           },
-        },
-      });
-      const todayStart = new Date(
-        Math.floor((Date.now() + 345 * 60 * 1000) / 86_400_000) *
-          86_400_000 -
-          345 * 60 * 1000,
-      );
-      const cashToHandOver = await prisma.delivery.aggregate({
-        where: {
-          deliveryPersonId: userId,
-          status: 'DELIVERED',
-          cashCollected: { gt: 0 },
-          cashHandedOverAt: null,
-          cashCollectedAt: { gte: todayStart },
-        },
-        _sum: { cashCollected: true },
-      });
-      const assigned = deliveries.filter((delivery) =>
-        ['ASSIGNED', 'ACCEPTED'].includes(delivery.status)).length;
-      const inProgress = deliveries.filter((delivery) =>
-        ['PICKED_UP', 'OUT_FOR_DELIVERY'].includes(delivery.status)).length;
-      const deliveredToday = deliveries.filter((delivery) =>
-        delivery.status === 'DELIVERED' &&
-        delivery.deliveredAt !== null &&
-        delivery.deliveredAt >= todayStart).length;
+        }),
+        prisma.delivery.aggregate({
+          where: {
+            ...riderWhere,
+            status: 'DELIVERED',
+            cashCollected: { gt: 0 },
+            cashHandedOverAt: null,
+          },
+          _sum: { cashCollected: true },
+        }),
+        prisma.delivery.count({
+          where: { ...riderWhere, status: { in: ['ASSIGNED', 'ACCEPTED'] } },
+        }),
+        prisma.delivery.count({
+          where: {
+            ...riderWhere,
+            status: { in: ['PICKED_UP', 'OUT_FOR_DELIVERY'] },
+          },
+        }),
+        prisma.delivery.count({
+          where: {
+            ...riderWhere,
+            status: 'DELIVERED',
+            deliveredAt: { gte: todayStart, lt: tomorrowStart },
+          },
+        }),
+        prisma.delivery.aggregate({
+          where: {
+            ...riderWhere,
+            status: 'DELIVERED',
+            deliveredAt: { gte: todayStart, lt: tomorrowStart },
+          },
+          _sum: { cashCollected: true },
+        }),
+      ]);
 
       return res.json({
         assignments: deliveries.map((delivery) => {
@@ -190,20 +213,7 @@ export function createDeliveryRouter(
           assigned,
           inProgress,
           deliveredToday,
-          cashToCollect: deliveries
-            .filter((delivery) =>
-              !['DELIVERED', 'DECLINED', 'FAILED', 'CANCELLED'].includes(delivery.status))
-            .reduce((sum, delivery) => {
-              const paidOnline = delivery.order.payments.reduce(
-                (paid, payment) => paid + Number(payment.amount),
-                0,
-              );
-              return sum + calculateCashDue(
-                Number(delivery.order.total),
-                paidOnline,
-                delivery.order.paymentMethod,
-              );
-            }, 0),
+          cashCollectedToday: Number(cashCollectedToday._sum.cashCollected ?? 0),
           cashToHandOver: Number(cashToHandOver._sum.cashCollected ?? 0),
         },
       });
@@ -452,32 +462,27 @@ export function createDeliveryRouter(
         const notificationType = status === 'DELIVERED'
           ? 'ORDER_DELIVERED'
           : 'ORDER_OUT_FOR_DELIVERY';
-        const notificationTitle =
-          status === 'DELIVERED' ? 'Order delivered' : 'Order on the way';
-        const notificationBody = status === 'DELIVERED'
-          ? `Order ${result.orderNumber} has been delivered.`
-          : `Order ${result.orderNumber} has been picked up for delivery.`;
         await prisma.notification.create({
           data: {
             userId: result.customerId,
             type: notificationType,
-            title: notificationTitle,
-            body: notificationBody,
+            title: status === 'DELIVERED' ? 'Order delivered' : 'Order on the way',
+            body: status === 'DELIVERED'
+              ? `Order ${result.orderNumber} has been delivered.`
+              : `Order ${result.orderNumber} has been picked up for delivery.`,
             metadata: { orderId: result.orderId },
           },
-        })
-          .then(() => status === 'OUT_FOR_DELIVERY'
-            ? sendPushToUser(
-              prisma,
-              result.customerId,
-              notificationTitle,
-              notificationBody,
-              { orderId: result.orderId },
-            )
-            : undefined)
-          .catch((error: unknown) => {
-            console.error(`Unable to notify customer about delivery ${result.orderId}:`, error);
-          });
+        }).then(() => sendPushToUser(
+          prisma,
+          result.customerId,
+          status === 'DELIVERED' ? 'Order delivered' : 'Order on the way',
+          status === 'DELIVERED'
+            ? `Order ${result.orderNumber} has been delivered.`
+            : `Order ${result.orderNumber} has been picked up for delivery.`,
+          { orderId: result.orderId },
+        )).catch((error: unknown) => {
+          console.error(`Unable to notify customer about delivery ${result.orderId}:`, error);
+        });
       }
       return res.json({ message: 'Delivery updated.', status });
     } catch (error) {

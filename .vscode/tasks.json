@@ -4,7 +4,7 @@
 		{
 			"label": "Flutter tests",
 			"type": "shell",
-			"command": "flutter test test/unit/cart_test.dart test/unit/inventory_test.dart",
+			"command": "flutter test test/unit/cart_test.dart test/unit/inventory_test.dart test/unit/delivery_api_service_test.dart test/widget/address_book_test.dart",
 			"isBackground": false,
 			"problemMatcher": [],
 			"group": "test"
@@ -12,7 +12,7 @@
 		{
 			"label": "Backend concurrency test",
 			"type": "shell",
-			"command": "cd backend && npm test",
+			"command": "Set-Location backend; npm test",
 			"isBackground": false,
 			"problemMatcher": [],
 			"group": "test"
@@ -170,6 +170,392 @@
 				"$env:ADMIN_USERNAME='ramprasad_store'; $env:ADMIN_EMAIL='ramprasad_store@admin.local'; npm.cmd --prefix backend run dev"
 			],
 			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Install FastStore debug APK",
+			"type": "shell",
+			"command": "flutter install --device-id RZCY11PM4NT --use-application-binary build/app/outputs/flutter-apk/app-debug.apk",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Validate email and loader changes",
+			"type": "shell",
+			"command": "Set-Location backend; npm run build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npx tsx tests/email-sender.test.ts; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Set-Location ..; flutter test test/widget/scooter_loading_screen_test.dart test/unit/api_service_test.dart test/widget/register_screen_test.dart",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Build and analyze FastStore update",
+			"type": "shell",
+			"command": "flutter analyze lib/widgets/scooter_loading_screen.dart test/widget/scooter_loading_screen_test.dart; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; flutter build apk --debug --dart-define=API_BASE_URL=https://ram-prasad-kirana-backend.onrender.com/api/v1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; flutter devices --device-timeout 5",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Build and install release APK",
+			"type": "shell",
+			"command": "$devices = flutter devices --device-timeout 10; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $devices; if (($devices | Out-String) -notmatch 'RZCY11PM4NT') { Write-Error 'Expected user device RZCY11PM4NT is not connected.'; exit 1 }; flutter build apk --release --dart-define=API_BASE_URL=https://ram-prasad-kirana-backend.onrender.com/api/v1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $apk = 'build/app/outputs/flutter-apk/app-release.apk'; if (-not (Test-Path $apk)) { Write-Error 'Release APK artifact was not created.'; exit 1 }; Get-Item $apk | Select-Object FullName, Length; flutter install --device-id RZCY11PM4NT --use-application-binary $apk; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; adb -s RZCY11PM4NT shell monkey -p com.freshharvest.grocery_app -c android.intent.category.LAUNCHER 1",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Inspect FastStore email issue on device",
+			"type": "shell",
+			"command": "$device='RZCY11PM4NT'; Write-Output 'FOREGROUND_ACTIVITY'; adb -s $device shell dumpsys activity activities | Select-String 'mResumedActivity|topResumedActivity' | Select-Object -Last 2; Write-Output 'RECENT_APP_ERRORS'; adb -s $device logcat -d -t 1200 -s Flutter:V AndroidRuntime:E | Select-String -Pattern 'email|verification|register|Exception|Error|Dio|Socket|HTTP|ApiService' | Select-Object -Last 80",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Locate Android device tools",
+			"type": "shell",
+			"command": "Write-Output \"ANDROID_HOME=$env:ANDROID_HOME\"; Write-Output \"ANDROID_SDK_ROOT=$env:ANDROID_SDK_ROOT\"; where.exe adb 2>$null; flutter doctor -v",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Capture FastStore phone screen",
+			"type": "shell",
+			"command": "$adb='C:\\Users\\Siddhant\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe'; Write-Output 'FOREGROUND'; & $adb -s RZCY11PM4NT shell dumpsys activity activities | Select-String 'mResumedActivity|topResumedActivity' | Select-Object -Last 2; Write-Output 'APP_INSTALLED'; & $adb -s RZCY11PM4NT shell pm path com.freshharvest.grocery_app; & $adb -s RZCY11PM4NT shell screencap -p /sdcard/faststore-current-screen.png; & $adb -s RZCY11PM4NT pull /sdcard/faststore-current-screen.png build\\faststore-current-screen.png; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Get-Item build\\faststore-current-screen.png | Select-Object FullName,Length; & $adb -s RZCY11PM4NT shell rm /sdcard/faststore-current-screen.png",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Remove temporary device screenshot",
+			"type": "shell",
+			"command": "$path='build\\faststore-current-screen.png'; if (Test-Path $path) { Remove-Item -LiteralPath $path -Force }; if (Test-Path $path) { Write-Error 'Temporary screenshot could not be removed.'; exit 1 }; Write-Output 'Temporary screenshot removed.'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Check email fix deployment state",
+			"type": "shell",
+			"command": "git status --short; git branch --show-current; git log -1 --oneline; git remote -v",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Inspect SMTP working tree",
+			"type": "shell",
+			"command": "git status --short backend/src/services/email-sender.ts backend/tests/email-sender.test.ts backend/src/routes/email-verification.ts backend/src/routes/password-reset.ts backend/package.json; git log -1 --oneline",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Build and test SMTP delivery changes",
+			"type": "shell",
+			"command": "Set-Location backend; npm run build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npx tsx tests/email-sender.test.ts; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npm test",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Review SMTP-only diff",
+			"type": "shell",
+			"command": "git diff --check -- backend/src/services/email-sender.ts backend/tests/email-sender.test.ts backend/.env.example README.md; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; git diff -- backend/src/services/email-sender.ts backend/tests/email-sender.test.ts backend/.env.example README.md",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify SMTP file changes",
+			"type": "shell",
+			"command": "git diff --check -- backend/src/services/email-sender.ts backend/tests/email-sender.test.ts backend/.env.example README.md; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; git diff --unified=2 -- backend/src/services/email-sender.ts backend/tests/email-sender.test.ts backend/.env.example README.md | Select-String -Pattern '^[+-].*(SMTP|email|smtp|SendGrid|sendgrid)' | Select-Object -First 100",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Release readiness Flutter analyze and tests",
+			"type": "shell",
+			"command": "flutter analyze; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; flutter test",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Inspect release configuration safely",
+			"type": "shell",
+			"command": "git status --short; git branch --show-current; git log -1 --oneline; Write-Output '--- Android release config files ---'; Get-Item android\\app\\upload-keystore.jks,android\\key.properties -ErrorAction SilentlyContinue | Select-Object Name,Length; Write-Output '--- Signing config presence (values redacted) ---'; $props=Get-Content android\\key.properties | ForEach-Object { ($_ -split '=',2)[0] }; $props; Write-Output '--- Flutter package ---'; Select-String -Path pubspec.yaml -Pattern '^name:|^version:'; Write-Output '--- Package application id ---'; Select-String -Path android\\app\\build.gradle -Pattern 'applicationId|applicationIdSuffix|signingConfig'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Release readiness backend build and tests",
+			"type": "shell",
+			"command": "Set-Location backend; npm run build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npm test",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Build final production release APK",
+			"type": "shell",
+			"command": "flutter build apk --release --dart-define=API_BASE_URL=https://ram-prasad-kirana-backend.onrender.com/api/v1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $apk='build\\app\\outputs\\flutter-apk\\app-release.apk'; if (-not (Test-Path $apk)) { Write-Error 'Release APK not found after successful build.'; exit 1 }; Get-Item $apk | Select-Object FullName,Length",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Inspect production migration and app metadata",
+			"type": "shell",
+			"command": "Write-Output '--- Flutter app metadata ---'; Get-Content pubspec.yaml | Select-String -Pattern '^name:|^version:'; Write-Output '--- Android package/signing (non-secret) ---'; Get-Content android\\app\\build.gradle | Select-String -Pattern 'namespace|applicationId|applicationIdSuffix|signingConfig'; Write-Output '--- Migration files ---'; Get-ChildItem backend\\prisma\\migrations -Directory | Select-Object -ExpandProperty Name; Write-Output '--- Production migrations configured on start ---'; Get-Content backend\\package.json | Select-String -Pattern 'prestart|prisma:migrate:deploy|\"start\"'; Write-Output '--- SMTP code and test modified status ---'; git status --short backend\\src\\services\\email-sender.ts backend\\tests\\email-sender.test.ts backend\\prisma\\migrations backend\\package.json",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Retry signed release APK",
+			"type": "shell",
+			"command": "flutter build apk --release --dart-define=API_BASE_URL=https://ram-prasad-kirana-backend.onrender.com/api/v1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $apk='build\\app\\outputs\\flutter-apk\\app-release.apk'; if (-not (Test-Path $apk)) { Write-Error 'Release APK was not created.'; exit 1 }; Get-Item $apk | Select-Object FullName,Length; flutter install --device-id RZCY11PM4NT --use-application-binary $apk; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; & 'C:\\Users\\Siddhant\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe' -s RZCY11PM4NT shell monkey -p com.freshharvest.grocery_app -c android.intent.category.LAUNCHER 1",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Validate signing and install release APK",
+			"type": "shell",
+			"command": "$adb='C:\\Users\\Siddhant\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe'; flutter build apk --release --dart-define=API_BASE_URL=https://ram-prasad-kirana-backend.onrender.com/api/v1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $apk='build\\app\\outputs\\flutter-apk\\app-release.apk'; if (-not (Test-Path $apk)) { Write-Error 'Release APK was not created.'; exit 1 }; Get-Item $apk | Select-Object FullName,Length; flutter install --device-id RZCY11PM4NT --use-application-binary $apk; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; & $adb -s RZCY11PM4NT shell monkey -p com.freshharvest.grocery_app -c android.intent.category.LAUNCHER 1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; & $adb -s RZCY11PM4NT shell pm path com.freshharvest.grocery_app",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Recheck Gmail SMTP backend",
+			"type": "shell",
+			"command": "Set-Location backend; npm run build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npm test",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Verify Gmail SMTP backend all tests",
+			"type": "shell",
+			"command": "Set-Location backend; npm run build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npm test",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Check email release diff formatting",
+			"type": "shell",
+			"command": "git diff --check -- backend/src/services/email-sender.ts backend/tests/email-sender.test.ts backend/tests/email-verification.test.ts backend/tests/password-reset.test.ts backend/.env.example .env.example README.md; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Output 'Whitespace check passed.'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Recheck Gmail SMTP backend suite",
+			"type": "shell",
+			"command": "Set-Location backend; npm run build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npm test",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Install release APK on device",
+			"type": "shell",
+			"command": "$apkCandidates = @('build\\app\\outputs\\flutter-apk\\app-release.apk', 'android\\app\\build\\outputs\\apk\\release\\app-release.apk'); $apk = $apkCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1; if (-not $apk) { Write-Error 'Release APK not found in the expected output locations.'; exit 2 }; Write-Output \"APK found: $((Resolve-Path $apk).Path)\"; adb devices; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $devices = adb devices | Select-String '\\sdevice$'; if (-not $devices) { Write-Error 'No authorized Android device detected. Connect the phone, enable USB debugging, and accept the USB debugging prompt.'; exit 3 }; adb install -r $apk; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Output 'APK installed successfully.'",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Locate Android platform tools",
+			"type": "shell",
+			"command": "$candidates = @(); if ($env:ANDROID_HOME) { $candidates += (Join-Path $env:ANDROID_HOME 'platform-tools\\adb.exe') }; if ($env:ANDROID_SDK_ROOT) { $candidates += (Join-Path $env:ANDROID_SDK_ROOT 'platform-tools\\adb.exe') }; $candidates += @(\"$env:LOCALAPPDATA\\Android\\Sdk\\platform-tools\\adb.exe\", 'C:\\Android\\platform-tools\\adb.exe'); $adb = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1; if (-not $adb) { Write-Output 'ADB executable not found in environment-configured or common Android SDK locations.'; exit 4 }; Write-Output \"ADB found: $adb\"; & $adb devices; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $devices = & $adb devices | Select-String '\\sdevice$'; if (-not $devices) { Write-Error 'No authorized device attached.'; exit 3 }; & $adb install -r 'build\\app\\outputs\\flutter-apk\\app-release.apk'; exit $LASTEXITCODE",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Find ADB and install APK",
+			"type": "shell",
+			"command": "$candidates = @(); if ($env:ANDROID_HOME) { $candidates += (Join-Path $env:ANDROID_HOME 'platform-tools\\adb.exe') }; if ($env:ANDROID_SDK_ROOT) { $candidates += (Join-Path $env:ANDROID_SDK_ROOT 'platform-tools\\adb.exe') }; if ($env:LOCALAPPDATA) { $candidates += (Join-Path $env:LOCALAPPDATA 'Android\\Sdk\\platform-tools\\adb.exe') }; $candidates += 'C:\\Android\\platform-tools\\adb.exe'; $adb = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1; if (-not $adb) { Write-Output 'ADB executable not found in environment-configured or common Android SDK locations.'; exit 4 }; Write-Output \"ADB found: $adb\"; & $adb devices; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $devices = & $adb devices | Select-String '\\sdevice$'; if (-not $devices) { Write-Error 'No authorized device attached.'; exit 3 }; & $adb install -r 'build\\app\\outputs\\flutter-apk\\app-release.apk'; exit $LASTEXITCODE",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Diagnose Android launch screen",
+			"type": "shell",
+			"command": "$adb = Join-Path $env:LOCALAPPDATA 'Android\\Sdk\\platform-tools\\adb.exe'; $gradle = Get-Content 'android\\app\\build.gradle'; $match = $gradle | Select-String 'applicationId\\s+[\"'']([^\"'']+)[\"'']' | Select-Object -First 1; if (-not $match) { Write-Error 'Could not determine Android applicationId.'; exit 2 }; $package = [regex]::Match($match.Line, 'applicationId\\s+[\"'']([^\"'']+)[\"'']').Groups[1].Value; Write-Output \"Package: $package\"; & $adb logcat -c; & $adb shell monkey -p $package 1; Start-Sleep -Seconds 10; & $adb logcat -d -v time -t 1000 | Select-String -Pattern 'FATAL EXCEPTION|AndroidRuntime|Flutter|flutter|Exception|Error|Unable to|failed|Failed' | Select-Object -Last 100",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Capture app startup crash logs",
+			"type": "shell",
+			"command": "$adb = Join-Path $env:LOCALAPPDATA 'Android\\Sdk\\platform-tools\\adb.exe'; $package = 'com.freshharvest.grocery_app'; & $adb logcat -c; & $adb shell monkey -p $package 1; Start-Sleep -Seconds 12; & $adb logcat -d -v time -t 1500 | Select-String -Pattern 'FATAL EXCEPTION|AndroidRuntime|Flutter|flutter|Exception|Error|Unable to|failed|Failed|E/flutter|I/flutter' | Select-Object -Last 150",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Inspect app activity and Flutter logs",
+			"type": "shell",
+			"command": "$adb = Join-Path $env:LOCALAPPDATA 'Android\\Sdk\\platform-tools\\adb.exe'; $package='com.freshharvest.grocery_app'; Write-Output 'Installed package:'; & $adb shell pm path $package; Write-Output 'Running process:'; & $adb shell pidof $package; Write-Output 'Resumed activity:'; & $adb shell dumpsys activity activities | Select-String -Pattern 'mResumedActivity|topResumedActivity'; Write-Output 'Flutter/app log entries:'; & $adb logcat -d -v time -t 1000 | Select-String -Pattern 'FlutterJNI|flutter\\s*:|DartVM|DartExecutor|FlutterActivity|com\\.freshharvest\\.grocery_app|FATAL EXCEPTION' | Select-Object -Last 120",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Confirm startup exception",
+			"type": "shell",
+			"command": "$adb = Join-Path $env:LOCALAPPDATA 'Android\\Sdk\\platform-tools\\adb.exe'; $package='com.freshharvest.grocery_app'; & $adb logcat -c; & $adb shell am force-stop $package; & $adb shell monkey -p $package 1; Start-Sleep -Seconds 8; $pidText = (& $adb shell pidof $package | Out-String).Trim(); Write-Output \"App PID: $pidText\"; if ($pidText) { & $adb logcat -d --pid=$pidText -v time | Select-Object -Last 200 }; Write-Output 'Relevant system errors:'; & $adb logcat -d -v time -t 1200 | Select-String -Pattern 'FATAL EXCEPTION|AndroidRuntime|FlutterJNI|DartVM|DartExecutor|Unable to load|StateError|API_BASE_URL|com\\.freshharvest\\.grocery_app' | Select-Object -Last 100",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Build and install corrected APK",
+			"type": "shell",
+			"command": "$ErrorActionPreference = 'Stop'; $apiBaseUrl = 'https://ram-prasad-kirana-backend.onrender.com/api/v1'; flutter build apk --release \"--dart-define=API_BASE_URL=$apiBaseUrl\"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $apk = 'build\\app\\outputs\\flutter-apk\\app-release.apk'; if (-not (Test-Path $apk)) { Write-Error \"Build completed but APK not found at $apk\"; exit 2 }; $adb = Join-Path $env:LOCALAPPDATA 'Android\\Sdk\\platform-tools\\adb.exe'; if (-not (Test-Path $adb)) { Write-Error 'Android Debug Bridge is not installed at the standard SDK path.'; exit 3 }; & $adb devices; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $devices = & $adb devices | Select-String '\\sdevice$'; if (-not $devices) { Write-Error 'No authorized Android device connected.'; exit 4 }; & $adb install -r $apk; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Output \"Installed corrected APK: $((Resolve-Path $apk).Path)\"",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Verify installed app startup",
+			"type": "shell",
+			"command": "$adb = Join-Path $env:LOCALAPPDATA 'Android\\Sdk\\platform-tools\\adb.exe'; $package='com.freshharvest.grocery_app'; & $adb shell am force-stop $package; & $adb logcat -c; & $adb shell monkey -p $package 1; Start-Sleep -Seconds 8; $pidText = (& $adb shell pidof $package | Out-String).Trim(); if (-not $pidText) { Write-Error 'App process did not remain running after launch.'; & $adb logcat -d -v time -t 1200 | Select-String -Pattern 'FATAL EXCEPTION|AndroidRuntime|E/flutter|StateError|API_BASE_URL' | Select-Object -Last 80; exit 2 }; Write-Output \"App process running: $pidText\"; & $adb shell uiautomator dump /sdcard/faststore-window.xml; $window = & $adb shell cat /sdcard/faststore-window.xml; Write-Output 'Visible UI text:'; [regex]::Matches(($window -join ''), 'text=\"([^\"]*)\"') | ForEach-Object { $_.Groups[1].Value } | Where-Object { $_ } | Select-Object -First 30; Write-Output 'Startup errors:'; & $adb logcat -d -v time -t 1200 | Select-String -Pattern 'FATAL EXCEPTION|AndroidRuntime|E/flutter|StateError|API_BASE_URL' | Select-Object -Last 50",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Confirm visible app screen",
+			"type": "shell",
+			"command": "$adb = Join-Path $env:LOCALAPPDATA 'Android\\Sdk\\platform-tools\\adb.exe'; $xmlText = (& $adb shell cat /sdcard/faststore-window.xml | Out-String).Trim(); try { [xml]$ui = $xmlText; $nodes = $ui.SelectNodes('//*[@text]'); Write-Output 'Visible labels:'; foreach ($node in $nodes) { $value = $node.GetAttribute('text'); if ($value) { Write-Output $value } } } catch { Write-Error 'Could not parse Android UI hierarchy.'; exit 2 }; Write-Output 'App process:'; & $adb shell pidof com.freshharvest.grocery_app",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Read verification error on device",
+			"type": "shell",
+			"command": "$adb = Join-Path $env:LOCALAPPDATA 'Android\\Sdk\\platform-tools\\adb.exe'; Write-Output 'App process:'; & $adb shell pidof com.freshharvest.grocery_app; & $adb shell uiautomator dump /sdcard/faststore-current.xml; $xmlText = (& $adb shell cat /sdcard/faststore-current.xml | Out-String).Trim(); [xml]$ui = $xmlText; Write-Output 'Visible screen text:'; foreach ($node in $ui.SelectNodes('//*[@text]')) { $value = $node.GetAttribute('text'); if ($value) { Write-Output $value } }; Write-Output 'Recent app errors:'; & $adb logcat -d -v time -t 1200 | Select-String -Pattern 'Email verification|SMTP|Gmail|verification|DioException|SocketException|E/flutter|Exception|HTTP' | Select-Object -Last 100",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Read verification error screen safely",
+			"type": "shell",
+			"command": "$adb = Join-Path $env:LOCALAPPDATA 'Android\\Sdk\\platform-tools\\adb.exe'; & $adb shell uiautomator dump /sdcard/faststore-error.xml | Out-Null; $xmlText = (& $adb shell cat /sdcard/faststore-error.xml | Out-String).Trim(); [xml]$ui = $xmlText; $texts = foreach ($node in $ui.SelectNodes('//*[@text]')) { $value = $node.GetAttribute('text'); if ($value -match 'error|failed|verify|verification|sent|server|Gmail|SMTP|email|try again|503|502|404') { $value } }; if ($texts) { Write-Output 'Relevant visible text:'; $texts | ForEach-Object { Write-Output $_ } } else { Write-Output 'No verification/error text is exposed by the active Android accessibility hierarchy.' }; Write-Output 'Foreground activity:'; & $adb shell dumpsys activity activities | Select-String -Pattern 'topResumedActivity'; Write-Output 'App process:'; & $adb shell pidof com.freshharvest.grocery_app",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Inspect deployment changes",
+			"type": "shell",
+			"command": "Write-Output 'Branch and latest commit:'; git branch --show-current; git rev-parse --short HEAD; Write-Output 'Relevant local changes:'; git status --short -- backend/src/services/email-sender.ts backend/src/routes/email-verification.ts backend/src/server.ts backend/tests/email-sender.test.ts backend/tests/email-verification.test.ts backend/tests/password-reset.test.ts backend/.env.example; Write-Output 'Remote tracking:'; git status -sb",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Review email deployment diff",
+			"type": "shell",
+			"command": "$files = @('.env.example','README.md','backend/.env.example','backend/src/services/email-sender.ts','backend/src/routes/email-verification.ts','backend/src/server.ts','backend/tests/email-sender.test.ts','backend/tests/email-verification.test.ts','backend/tests/password-reset.test.ts'); Write-Output 'Email-scoped diff summary:'; git diff --stat -- $files; Write-Output 'Changed paths:'; git diff --name-only -- $files; Write-Output 'Whitespace validation:'; git diff --check -- $files; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Output 'Current branch:'; git branch --show-current; Write-Output 'Remote:'; git remote -v | Select-Object -First 2; Write-Output 'Ignored credentials file status:'; git check-ignore android/key.properties",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Final backend email tests",
+			"type": "shell",
+			"command": "Set-Location backend; npm run build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npm test",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Inspect email-only changes",
+			"type": "shell",
+			"command": "git diff -- .env.example README.md backend/.env.example backend/src/services/email-sender.ts backend/src/routes/email-verification.ts backend/src/server.ts backend/tests/email-sender.test.ts backend/tests/email-verification.test.ts backend/tests/password-reset.test.ts",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Remove exposed SMTP credential",
+			"type": "shell",
+			"command": "@'\nconst fs = require('fs');\nconst path = '.env.example';\nconst content = fs.readFileSync(path, 'utf8');\nconst updated = content.replace(/^(SMTP_PASS\\s*=\\s*).*$/m, '$1\"YOUR_GOOGLE_APP_PASSWORD\"');\nif (updated === content) throw new Error('SMTP_PASS setting was not found; no file changed.');\nfs.writeFileSync(path, updated);\nconsole.log('Replaced SMTP_PASS value with a placeholder. Credential content was not printed.');\n'@ | node",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Stage and commit SMTP fix",
+			"type": "shell",
+			"command": "$ErrorActionPreference = 'Stop'; $exampleLines = Get-Content '.env.example' | Select-String '^SMTP_(HOST|PORT|SECURE|USER|PASS|FROM)='; Write-Output 'Sanitized root SMTP example:'; $exampleLines | ForEach-Object { if ($_ -match '^SMTP_PASS=') { if ($_ -notmatch 'YOUR_GOOGLE_APP_PASSWORD') { throw 'SMTP_PASS is not a safe placeholder.' }; Write-Output 'SMTP_PASS placeholder verified.' } else { Write-Output $_.Line } }; $files = @('.env.example','README.md','backend/.env.example','backend/src/services/email-sender.ts','backend/src/routes/email-verification.ts','backend/src/server.ts','backend/tests/email-sender.test.ts','backend/tests/email-verification.test.ts','backend/tests/password-reset.test.ts'); git add -- $files; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; git diff --cached --check; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Output 'Staged email-only paths:'; git diff --cached --name-only; Write-Output 'Confirm staged app password value is placeholder:'; $staged = git show :'.env.example' | Select-String '^SMTP_PASS='; if ($staged -notmatch 'YOUR_GOOGLE_APP_PASSWORD') { throw 'Staged SMTP_PASS is not a placeholder; stopping before commit.' }; git commit -m 'Fix Gmail SMTP email verification delivery' -m 'Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>'; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Output 'Created focused email-only commit.'; git show --stat --oneline --no-renames HEAD",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Push email SMTP fix",
+			"type": "shell",
+			"command": "git push origin main; exit $LASTEXITCODE",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Capture current phone screen",
+			"type": "shell",
+			"command": "$adb = Join-Path $env:LOCALAPPDATA 'Android\\Sdk\\platform-tools\\adb.exe'; & $adb shell screencap -p /sdcard/faststore-current-screen.png; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; & $adb pull /sdcard/faststore-current-screen.png \"$env:TEMP\\faststore-current-screen.png\"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Output 'Captured current device screen.'",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Confirm email deployment commit",
+			"type": "shell",
+			"command": "Write-Output 'Current commit and upstream:'; git rev-parse --short HEAD; git rev-parse --short origin/main; Write-Output 'Email-specific files still modified:'; git status --short -- .env.example README.md backend/.env.example backend/src/services/email-sender.ts backend/src/routes/email-verification.ts backend/src/routes/password-reset.ts backend/src/server.ts backend/tests/email-sender.test.ts backend/tests/email-verification.test.ts backend/tests/password-reset.test.ts; Write-Output 'Protected credential file ignored:'; git check-ignore android/key.properties",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Review password reset changes",
+			"type": "shell",
+			"command": "git diff -- backend/src/routes/password-reset.ts",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Deploy password-reset email fix",
+			"type": "shell",
+			"command": "git add -- backend/src/routes/password-reset.ts; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; git diff --cached --check; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Output 'Staged paths:'; git diff --cached --name-only; git commit -m 'Report Gmail SMTP failures for password reset' -m 'Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>'; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; git push origin main; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Output 'Password reset email fix pushed to origin/main.'; git rev-parse --short HEAD",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Reproduce backend build error",
+			"type": "shell",
+			"command": "Set-Location backend; npm run build",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Test backend deployment fix",
+			"type": "shell",
+			"command": "Set-Location backend; npm run build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npx tsx tests/places.test.ts; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npx tsx tests/password-reset.test.ts; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npx tsx tests/email-verification.test.ts; exit $LASTEXITCODE",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Commit Places compatibility fix",
+			"type": "shell",
+			"command": "$files=@('backend/src/routes/places.ts','backend/tests/places.test.ts'); git add -- $files; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; git diff --cached --check; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Output 'Staged paths:'; git diff --cached --name-only; git commit -m 'Align Places router auth middleware signature' -m 'Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>'; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; git push origin main; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; git rev-parse --short HEAD",
+			"isBackground": false,
 			"problemMatcher": [],
 			"group": "build"
 		}

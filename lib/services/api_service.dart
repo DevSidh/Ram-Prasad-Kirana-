@@ -6,13 +6,25 @@ import 'package:http/http.dart' as http;
 import '../core/constants.dart';
 
 class ApiService {
+  static const Duration _defaultRequestTimeout = Duration(seconds: 60);
+  static const Duration _defaultUploadTimeout = Duration(seconds: 120);
+
   final String baseUrl;
   final http.Client _client;
+  final Duration _requestTimeout;
+  final Duration _uploadTimeout;
   String? _authToken;
 
-  ApiService({String? baseUrl, http.Client? client})
+  ApiService({
+    String? baseUrl,
+    http.Client? client,
+    Duration requestTimeout = _defaultRequestTimeout,
+    Duration uploadTimeout = _defaultUploadTimeout,
+  })
       : baseUrl = baseUrl ?? AppConstants.apiBaseUrl,
-        _client = client ?? http.Client();
+        _client = client ?? http.Client(),
+        _requestTimeout = requestTimeout,
+        _uploadTimeout = uploadTimeout;
 
   void setAuthToken(String token) {
     _authToken = token;
@@ -55,17 +67,15 @@ class ApiService {
       }
       final response = await _client
           .get(uri, headers: _headers())
-          .timeout(const Duration(seconds: 10));
+          .timeout(_requestTimeout);
       return _processResponse(response);
     } on ApiResponseException {
       rethrow;
     } on TimeoutException {
-      throw Exception(
-        'The store server at $baseUrl did not respond. Check the server and network connection.',
-      );
+      throw _timeoutException('GET', endpoint, _requestTimeout);
     } catch (e) {
       throw Exception(
-        'Could not reach the store server at $baseUrl. Start the backend or set API_BASE_URL to a reachable server.',
+        'Could not reach the store server at $baseUrl for GET $endpoint: $e',
       );
     }
   }
@@ -75,17 +85,15 @@ class ApiService {
       final uri = Uri.parse('$baseUrl$endpoint');
       final response = await _client
           .post(uri, headers: _headers(), body: jsonEncode(body))
-          .timeout(const Duration(seconds: 15));
+          .timeout(_requestTimeout);
       return _processResponse(response);
     } on ApiResponseException {
       rethrow;
     } on TimeoutException {
-      throw Exception(
-        'The store server at $baseUrl did not respond. Check the server and network connection.',
-      );
+      throw _timeoutException('POST', endpoint, _requestTimeout);
     } catch (e) {
       throw Exception(
-        'Could not reach the store server at $baseUrl. Start the backend or set API_BASE_URL to a reachable server.',
+        'Could not reach the store server at $baseUrl for POST $endpoint: $e',
       );
     }
   }
@@ -120,18 +128,18 @@ class ApiService {
         filename: fileName,
       ));
       final streamed =
-          await _client.send(request).timeout(const Duration(seconds: 30));
+          await _client.send(request).timeout(_uploadTimeout);
       final response = await http.Response.fromStream(streamed)
-          .timeout(const Duration(seconds: 30));
+          .timeout(_uploadTimeout);
       return _processResponse(response);
     } on ApiResponseException {
       rethrow;
     } on TimeoutException {
-      throw Exception(
-          'Image upload timed out. Check the server and network connection.');
+      throw _timeoutException(method, endpoint, _uploadTimeout);
     } catch (error) {
       throw Exception(
-          'Could not reach the store server at $baseUrl for image upload.');
+        'Could not reach the store server at $baseUrl for $method $endpoint: $error',
+      );
     }
   }
 
@@ -140,17 +148,15 @@ class ApiService {
       final uri = Uri.parse('$baseUrl$endpoint');
       final response = await _client
           .patch(uri, headers: _headers(), body: jsonEncode(body))
-          .timeout(const Duration(seconds: 15));
+          .timeout(_requestTimeout);
       return _processResponse(response);
     } on ApiResponseException {
       rethrow;
     } on TimeoutException {
-      throw Exception(
-        'The store server at $baseUrl did not respond. Check the server and network connection.',
-      );
+      throw _timeoutException('PATCH', endpoint, _requestTimeout);
     } catch (e) {
       throw Exception(
-        'Could not reach the store server at $baseUrl. Start the backend or set API_BASE_URL to a reachable server.',
+        'Could not reach the store server at $baseUrl for PATCH $endpoint: $e',
       );
     }
   }
@@ -160,17 +166,15 @@ class ApiService {
       final uri = Uri.parse('$baseUrl$endpoint');
       final response = await _client
           .put(uri, headers: _headers(), body: jsonEncode(body))
-          .timeout(const Duration(seconds: 15));
+          .timeout(_requestTimeout);
       return _processResponse(response);
     } on ApiResponseException {
       rethrow;
     } on TimeoutException {
-      throw Exception(
-        'The store server at $baseUrl did not respond. Check the server and network connection.',
-      );
+      throw _timeoutException('PUT', endpoint, _requestTimeout);
     } catch (e) {
       throw Exception(
-        'Could not reach the store server at $baseUrl. Start the backend or set API_BASE_URL to a reachable server.',
+        'Could not reach the store server at $baseUrl for PUT $endpoint: $e',
       );
     }
   }
@@ -187,20 +191,29 @@ class ApiService {
             headers: _headers(),
             body: body == null ? null : jsonEncode(body),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(_requestTimeout);
       return _processResponse(response);
     } on ApiResponseException {
       rethrow;
     } on TimeoutException {
-      throw Exception(
-        'The store server at $baseUrl did not respond. Check the server and network connection.',
-      );
+      throw _timeoutException('DELETE', endpoint, _requestTimeout);
     } catch (e) {
       throw Exception(
-        'Could not reach the store server at $baseUrl. Start the backend or set API_BASE_URL to a reachable server.',
+        'Could not reach the store server at $baseUrl for DELETE $endpoint: $e',
       );
     }
   }
+
+  Exception _timeoutException(
+    String method,
+    String endpoint,
+    Duration timeout,
+  ) =>
+      Exception(
+        'Request $method $endpoint to $baseUrl timed out after '
+        "${timeout.inSeconds} seconds. Check the phone's internet connection "
+        'and try again.',
+      );
 
   dynamic _processResponse(http.Response response) {
     if (response.statusCode >= 200 && response.statusCode < 300) {

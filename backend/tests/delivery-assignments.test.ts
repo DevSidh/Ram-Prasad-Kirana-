@@ -50,6 +50,7 @@ const records = [
   deliveryRecord,
   {
     id: 'delivery-2',
+    deliveryPersonId: 'rider-2',
     status: 'ASSIGNED',
     assignedAt: date,
     pickedUpAt: null,
@@ -97,14 +98,50 @@ const prisma = {
           : 'delivery-2'),
       );
     },
-    aggregate: async () => ({
-      _sum: {
-        cashCollected: deliveryRecord.status === 'DELIVERED' &&
-            deliveryRecord.cashHandedOverAt === null
-          ? deliveryRecord.cashCollected
-          : 0,
-      },
-    }),
+    aggregate: async ({ where }: { where: Record<string, unknown> }) => {
+      const deliveredAt = deliveryRecord.deliveredAt;
+      const dateRange = where.deliveredAt as
+        | { gte: Date; lt: Date }
+        | undefined;
+      const deliveredInRange = deliveryRecord.status === 'DELIVERED' &&
+        deliveredAt !== null &&
+        dateRange !== undefined &&
+        deliveredAt >= dateRange.gte &&
+        deliveredAt < dateRange.lt;
+      return {
+        _sum: {
+          cashCollected: dateRange
+            ? deliveredInRange ? deliveryRecord.cashCollected : 0
+            : deliveryRecord.status === 'DELIVERED' &&
+                deliveryRecord.cashHandedOverAt === null
+              ? deliveryRecord.cashCollected
+              : 0,
+        },
+      };
+    },
+    count: async ({ where }: { where: Record<string, unknown> }) => {
+      if (where.status === 'DELIVERED') {
+        const dateRange = where.deliveredAt as
+          | { gte: Date; lt: Date }
+          | undefined;
+        return deliveryRecord.status === 'DELIVERED' &&
+            deliveryRecord.deliveredAt !== null &&
+            dateRange !== undefined &&
+            deliveryRecord.deliveredAt >= dateRange.gte &&
+            deliveryRecord.deliveredAt < dateRange.lt
+          ? 1
+          : 0;
+      }
+      if (
+        typeof where.status === 'object' &&
+        where.status !== null &&
+        'in' in where.status &&
+        Array.isArray(where.status.in)
+      ) {
+        return where.status.in.includes('ASSIGNED') ? 101 : 7;
+      }
+      return 0;
+    },
     findFirst: async ({ where }: { where: { id: string; deliveryPersonId: string } }) =>
       deliveryRecord.id === where.id &&
         deliveryRecord.deliveryPersonId === where.deliveryPersonId
@@ -196,7 +233,12 @@ async function run(): Promise<void> {
           items: Array<{ name: string; quantity: number }>;
         };
       }>;
-      summary: { cashToCollect: number };
+      summary: {
+        assigned: number;
+        inProgress: number;
+        deliveredToday: number;
+        cashCollectedToday: number;
+      };
     };
     assert.deepEqual(riderBody.assignments.map(({ order }) => order.orderNumber), ['FH-1001']);
     assert.equal(riderBody.assignments[0].order.cashDue, 1250);
@@ -206,7 +248,10 @@ async function run(): Promise<void> {
     assert.equal(riderBody.assignments[0].order.latitude, 26.728);
     assert.equal(riderBody.assignments[0].order.longitude, 85.925);
     assert.deepEqual(riderBody.assignments[0].order.items, [{ name: 'Rice', quantity: 2 }]);
-    assert.equal(riderBody.summary.cashToCollect, 1250);
+    assert.equal(riderBody.summary.cashCollectedToday, 0);
+    assert.equal(riderBody.summary.assigned, 101);
+    assert.equal(riderBody.summary.inProgress, 7);
+    assert.equal(riderBody.summary.deliveredToday, 0);
     assert.equal(lastWhere?.deliveryPersonId, 'rider-1');
     assert.equal((await request('customer-1')).status, 403);
 
@@ -266,10 +311,16 @@ async function run(): Promise<void> {
     assert.equal(deliveryRecord.cashCollected, 1250);
     const deliveredOverview = await request('rider-1');
     const deliveredBody = await deliveredOverview.json() as {
-      summary: { cashToHandOver: number };
+      summary: {
+        cashToHandOver: number;
+        cashCollectedToday: number;
+        deliveredToday: number;
+      };
       assignments: Array<{ cashHandedOver: number; cashHandedOverAt: string | null }>;
     };
     assert.equal(deliveredBody.summary.cashToHandOver, 1250);
+    assert.equal(deliveredBody.summary.cashCollectedToday, 1250);
+    assert.equal(deliveredBody.summary.deliveredToday, 1);
     assert.equal(deliveredBody.assignments[0].cashHandedOver, 0);
     assert.equal(deliveredBody.assignments[0].cashHandedOverAt, null);
 

@@ -38,7 +38,6 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen>
   bool _availabilitySaving = false;
   bool _publishingLocation = false;
   String? _locationError;
-  Duration _locationRetryDelay = const Duration(seconds: 20);
 
   static const _filters = <(String?, String)>[
     (null, 'All'),
@@ -103,11 +102,7 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen>
         _page = results[1] as DeliveryAssignmentPage;
         _loading = false;
         _error = null;
-        _locationError = null;
-        _locationRetryDelay = const Duration(seconds: 20);
       });
-      _locationTimer?.cancel();
-      _locationTimer = null;
       _syncLiveLocation();
     } catch (error) {
       if (!mounted) return;
@@ -129,6 +124,10 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen>
     }
     if (_locationTimer != null) return;
     unawaited(_publishLiveLocations());
+    _locationTimer = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => unawaited(_publishLiveLocations()),
+    );
   }
 
   Future<void> _publishLiveLocations() async {
@@ -159,26 +158,6 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen>
       }
     } finally {
       _publishingLocation = false;
-      if (mounted &&
-          (_page?.assignments ?? const <DeliveryAssignment>[]).any(
-            (assignment) => assignment.status == 'OUT_FOR_DELIVERY',
-          )) {
-        final delay = _locationError == null
-            ? const Duration(seconds: 20)
-            : _locationRetryDelay;
-        _locationTimer = Timer(delay, () {
-          _locationTimer = null;
-          _syncLiveLocation();
-        });
-        if (_locationError != null) {
-          _locationRetryDelay = Duration(
-            seconds:
-                (_locationRetryDelay.inSeconds * 2).clamp(20, 120).toInt(),
-          );
-        } else {
-          _locationRetryDelay = const Duration(seconds: 20);
-        }
-      }
     }
   }
 
@@ -589,7 +568,7 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen>
             ],
           ),
           const SizedBox(height: 14),
-          _CashDueCard(amount: summary?.cashToCollect ?? 0),
+          _CashDueCard(amount: summary?.cashCollectedToday ?? 0),
           if ((summary?.cashToHandOver ?? 0) > 0) ...[
             const SizedBox(height: 8),
             _CashHandoverDueCard(amount: summary!.cashToHandOver),
@@ -917,7 +896,7 @@ class _CashDueCard extends StatelessWidget {
           const SizedBox(width: 11),
           const Expanded(
             child: Text(
-              'Customer cash to collect',
+              'Cash collected today',
               style: TextStyle(fontWeight: FontWeight.w700),
             ),
           ),

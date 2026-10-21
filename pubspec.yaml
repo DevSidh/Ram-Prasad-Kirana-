@@ -66,7 +66,7 @@ flutter:
     - assets/onboarding/
     - assets/videos/dia.mp4
 
-flutter_icons:
+flutter_launcher_icons:
   android: true
   ios: false
   image_path: "assets/icons/faststore-icon.png"

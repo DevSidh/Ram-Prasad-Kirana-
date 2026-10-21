@@ -317,7 +317,7 @@ app.post('/api/v1/auth/register', async (req: Request, res: Response) => {
   const { fullName, email, phone, password } = req.body;
 
   if (typeof fullName !== 'string' || typeof email !== 'string' ||
-      typeof phone !== 'string' || typeof password !== 'string') {
+    typeof phone !== 'string' || typeof password !== 'string') {
     return res.status(400).json({
       error: 'Full name, email, phone number and password are required',
     });
@@ -681,7 +681,7 @@ app.get('/api/v1/wholesale', async (req: Request, res: Response) => {
     ? req.query.search.trim().slice(0, 200)
     : '';
   if (!Number.isInteger(page) || page < 1 ||
-      !Number.isInteger(limit) || limit < 1 || limit > 100) {
+    !Number.isInteger(limit) || limit < 1 || limit > 100) {
     return res.status(400).json({ error: 'Invalid wholesale catalog pagination.' });
   }
   try {

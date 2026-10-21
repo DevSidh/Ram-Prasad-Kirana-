@@ -61,4 +61,33 @@ void main() {
     );
     client.close();
   });
+
+  test('timeout errors identify the request that exceeded its deadline',
+      () async {
+    final client = MockClient((request) async {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      return http.Response(jsonEncode({'ok': true}), 200);
+    });
+    final api = ApiService(
+      baseUrl: 'https://store.example/api/v1',
+      client: client,
+      requestTimeout: const Duration(milliseconds: 1),
+    );
+
+    await expectLater(
+      api.get('/products'),
+      throwsA(
+        isA<Exception>().having(
+          (error) => error.toString(),
+          'message',
+          allOf(
+            contains('GET /products'),
+            contains('https://store.example/api/v1'),
+            contains('timed out after 0 seconds'),
+          ),
+        ),
+      ),
+    );
+    client.close();
+  });
 }

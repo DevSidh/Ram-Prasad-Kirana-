@@ -14,6 +14,7 @@ import {
   validateProductUnit,
 } from '../services/product-validation.js';
 import { sendPushToUser, sendPushToUsers } from '../services/push-notifications.js';
+import { getLocalDayRange } from '../services/local-day.js';
 import {
   normalizeProductImage,
   type NormalizedProductImage,
@@ -751,8 +752,7 @@ export function createAdminRouter(
 
   router.get('/dashboard', async (_req, res) => {
     try {
-      const today = new Date();
-      today.setUTCHours(0, 0, 0, 0);
+      const { start: todayStart, end: tomorrowStart } = getLocalDayRange();
       const [
         totalProducts,
         activeProducts,
@@ -781,7 +781,10 @@ export function createAdminRouter(
         prisma.user.count({ where: { role: 'CUSTOMER' } }),
         prisma.order.groupBy({ by: ['status'], _count: { _all: true } }),
         prisma.order.aggregate({
-          where: { createdAt: { gte: today }, status: { not: 'CANCELLED' } },
+          where: {
+            createdAt: { gte: todayStart, lt: tomorrowStart },
+            status: { not: 'CANCELLED' },
+          },
           _sum: { total: true },
         }),
         prisma.order.aggregate({
@@ -1599,15 +1602,23 @@ export function createAdminRouter(
       } as const;
       const notificationType = notificationTypes[status as keyof typeof notificationTypes];
       if (notificationType) {
+        const title = `Order ${status.replaceAll('_', ' ').toLowerCase()}`;
+        const body = `Order ${result.orderNumber} is now ${status.replaceAll('_', ' ').toLowerCase()}.`;
         await prisma.notification.create({
           data: {
             userId: result.userId,
             type: notificationType,
-            title: `Order ${status.replaceAll('_', ' ').toLowerCase()}`,
-            body: `Order ${result.orderNumber} is now ${status.replaceAll('_', ' ').toLowerCase()}.`,
+            title,
+            body,
             metadata: { orderId: id },
           },
-        }).catch((error: unknown) => {
+        }).then(() => sendPushToUser(
+          prisma,
+          result.userId,
+          title,
+          body,
+          { orderId: id },
+        )).catch((error: unknown) => {
           console.error(`Unable to notify customer about order ${id}:`, error);
         });
       }

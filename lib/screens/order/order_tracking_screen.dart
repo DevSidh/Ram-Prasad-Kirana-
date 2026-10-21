@@ -349,19 +349,14 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                           Positioned(
                             right: 12,
                             bottom: 12,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                _MapControlButton(
-                                  tooltip: 'Show store, rider and address',
-                                  icon: Icons.center_focus_strong_rounded,
-                                  theme: theme,
-                                  onPressed: () => _fitMapToMarkers(
-                                    destination,
-                                    riderLocation: riderLocation,
-                                  ),
-                                ),
-                              ],
+                            child: _MapControlButton(
+                              tooltip: 'Show store, rider and address',
+                              icon: Icons.center_focus_strong_rounded,
+                              theme: theme,
+                              onPressed: () => _fitMapToMarkers(
+                                destination,
+                                riderLocation: riderLocation,
+                              ),
                             ),
                           ),
                         if (order.status.toUpperCase() == 'OUT_FOR_DELIVERY' &&

@@ -154,6 +154,8 @@ class AppLanguageProvider extends ChangeNotifier {
         'खोज्न ठाउँ, सडक वा क्षेत्र लेख्नुहोस्।',
     'No matching places found. Try a nearby landmark.':
         'मिल्दो ठाउँ भेटिएन। नजिकको चिनारी खोज्नुहोस्।',
+    'Place suggestions are unavailable.': 'ठाउँका सुझावहरू उपलब्ध छैनन्।',
+    'Finding nearby suggestions…': 'नजिकका ठाउँका सुझावहरू खोज्दै...',
     'Could not search this place. Check your connection and try again.':
         'यो ठाउँ खोज्न सकिएन। इन्टरनेट जाँचेर फेरि प्रयास गर्नुहोस्।',
     'This location appears to be outside our Janakpur delivery area.':

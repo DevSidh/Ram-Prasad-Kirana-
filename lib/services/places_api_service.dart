@@ -1,108 +1,97 @@
-import 'package:uuid/uuid.dart';
-
 import 'api_service.dart';
 
 class PlaceSuggestion {
   final String placeId;
-  final String label;
-  final String primaryText;
-  final String secondaryText;
+  final String description;
 
   const PlaceSuggestion({
     required this.placeId,
-    required this.label,
-    required this.primaryText,
-    required this.secondaryText,
+    required this.description,
   });
-
-  factory PlaceSuggestion.fromJson(Map<String, dynamic> json) {
-    final placeId = json['placeId'];
-    final label = json['label'];
-    if (placeId is! String || label is! String) {
-      throw const FormatException('The place search returned an invalid result.');
-    }
-    return PlaceSuggestion(
-      placeId: placeId,
-      label: label,
-      primaryText: json['primaryText'] as String? ?? label,
-      secondaryText: json['secondaryText'] as String? ?? '',
-    );
-  }
 }
 
 class PlaceDetails {
-  final String label;
-  final String street;
-  final String city;
-  final String province;
   final double latitude;
   final double longitude;
+  final String label;
 
   const PlaceDetails({
-    required this.label,
-    required this.street,
-    required this.city,
-    required this.province,
     required this.latitude,
     required this.longitude,
+    required this.label,
   });
-
-  factory PlaceDetails.fromJson(Map<String, dynamic> json) {
-    final latitude = json['latitude'];
-    final longitude = json['longitude'];
-    if (latitude is! num || longitude is! num) {
-      throw const FormatException('The place search returned invalid coordinates.');
-    }
-    return PlaceDetails(
-      label: json['label'] as String? ?? '',
-      street: json['street'] as String? ?? '',
-      city: json['city'] as String? ?? '',
-      province: json['province'] as String? ?? '',
-      latitude: latitude.toDouble(),
-      longitude: longitude.toDouble(),
-    );
-  }
 }
 
 class PlacesApiService {
   final ApiService _api;
-  final Uuid _uuid;
 
-  PlacesApiService(this._api, {Uuid? uuid}) : _uuid = uuid ?? const Uuid();
+  const PlacesApiService(this._api);
 
-  String createSessionToken() => _uuid.v4();
-
-  Future<List<PlaceSuggestion>> autocomplete(
-    String input, {
-    required String sessionToken,
-    required double latitude,
-    required double longitude,
+  Future<List<PlaceSuggestion>> autocomplete({
+    required String input,
+    required String languageCode,
+    double? latitude,
+    double? longitude,
   }) async {
-    final response = await _api.post('/places/autocomplete', {
-      'input': input,
-      'sessionToken': sessionToken,
-      'locationBias': {'latitude': latitude, 'longitude': longitude},
-    });
-    if (response is! Map<String, dynamic> || response['suggestions'] is! List) {
-      throw const FormatException('The place search returned invalid suggestions.');
+    if ((latitude == null) != (longitude == null)) {
+      throw ArgumentError('Latitude and longitude must be supplied together.');
     }
-    return (response['suggestions'] as List)
-        .whereType<Map<String, dynamic>>()
-        .map(PlaceSuggestion.fromJson)
-        .toList(growable: false);
+
+    final response = await _api.get(
+      '/places/autocomplete',
+      queryParams: {
+        'input': input,
+        'languageCode': languageCode,
+        if (latitude != null && longitude != null) ...{
+          'latitude': '$latitude',
+          'longitude': '$longitude',
+        },
+      },
+    );
+    if (response is! Map || response['suggestions'] is! List) {
+      throw const FormatException('The server returned invalid place suggestions.');
+    }
+
+    final suggestions = <PlaceSuggestion>[];
+    for (final entry in response['suggestions'] as List) {
+      if (entry is! Map) continue;
+      final placeId = entry['placeId'];
+      final description = entry['description'];
+      if (placeId is String && description is String) {
+        suggestions.add(PlaceSuggestion(
+          placeId: placeId,
+          description: description,
+        ));
+      }
+    }
+    return suggestions;
   }
 
-  Future<PlaceDetails> getDetails(
-    String placeId, {
-    required String sessionToken,
-  }) async {
-    final response = await _api.post('/places/details', {
-      'placeId': placeId,
-      'sessionToken': sessionToken,
-    });
-    if (response is! Map<String, dynamic>) {
-      throw const FormatException('The place search returned invalid details.');
+  Future<PlaceDetails> getDetails(String placeId) async {
+    final response = await _api.get(
+      '/places/${Uri.encodeComponent(placeId)}',
+    );
+    if (response is! Map || response['place'] is! Map) {
+      throw const FormatException('The server returned invalid place details.');
     }
-    return PlaceDetails.fromJson(response);
+
+    final place = response['place'] as Map;
+    final latitude = place['latitude'];
+    final longitude = place['longitude'];
+    if (latitude is! num ||
+        !latitude.isFinite ||
+        latitude < -90 ||
+        latitude > 90 ||
+        longitude is! num ||
+        !longitude.isFinite ||
+        longitude < -180 ||
+        longitude > 180) {
+      throw const FormatException('The selected place has no valid map location.');
+    }
+    return PlaceDetails(
+      latitude: latitude.toDouble(),
+      longitude: longitude.toDouble(),
+      label: place['label'] is String ? place['label'] as String : '',
+    );
   }
 }

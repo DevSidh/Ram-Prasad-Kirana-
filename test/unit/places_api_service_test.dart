@@ -2,76 +2,105 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:freshharvest_grocery/services/api_service.dart';
 import 'package:freshharvest_grocery/services/places_api_service.dart';
 
-class _PlacesApi extends ApiService {
-  _PlacesApi() : super(baseUrl: 'https://store.example/api/v1');
+class _FakeApiService extends ApiService {
+  final List<dynamic> responses;
+  final requests = <(String, Map<String, String>?)>[];
 
-  final requests = <(String, Map<String, dynamic>)>[];
+  _FakeApiService(this.responses);
 
   @override
-  Future<dynamic> post(String endpoint, Map<String, dynamic> body) async {
-    requests.add((endpoint, body));
-    if (endpoint == '/places/autocomplete') {
-      return {
-        'suggestions': [
-          {
-            'placeId': 'ChIJplace-id',
-            'label': 'Janakpur, Nepal',
-            'primaryText': 'Janakpur',
-            'secondaryText': 'Nepal',
-          },
-        ],
-      };
-    }
-    return {
-      'placeId': 'ChIJplace-id',
-      'label': 'Janakpur, Nepal',
-      'street': 'Main Road',
-      'city': 'Janakpur',
-      'province': 'Madhesh Province',
-      'latitude': 26.728,
-      'longitude': 85.925,
-    };
+  Future<dynamic> get(
+    String endpoint, {
+    Map<String, String>? queryParams,
+  }) async {
+    requests.add((endpoint, queryParams));
+    return responses.removeAt(0);
   }
 }
 
 void main() {
-  test('uses Places autocomplete, session, and nearby map coordinates',
-      () async {
-    final api = _PlacesApi();
+  test('autocomplete sends locale and map-bias coordinates', () async {
+    final api = _FakeApiService([
+      {
+        'suggestions': [
+          {
+            'placeId': 'place-123',
+            'description': 'Main Road, Janakpur',
+          },
+          {'placeId': 12, 'description': 'Ignored malformed result'},
+        ],
+      },
+    ]);
     final service = PlacesApiService(api);
-    final sessionToken = service.createSessionToken();
 
     final suggestions = await service.autocomplete(
-      'Janakpur',
-      sessionToken: sessionToken,
-      latitude: 26.728,
-      longitude: 85.925,
+      input: 'Main Road',
+      languageCode: 'ne',
+      latitude: 26.72,
+      longitude: 85.92,
     );
 
-    expect(suggestions.single.placeId, 'ChIJplace-id');
-    expect(suggestions.single.label, 'Janakpur, Nepal');
+    expect(suggestions, hasLength(1));
+    expect(suggestions.single.placeId, 'place-123');
+    expect(suggestions.single.description, 'Main Road, Janakpur');
     expect(api.requests.single.$1, '/places/autocomplete');
-    expect(api.requests.single.$2['sessionToken'], sessionToken);
-    expect(api.requests.single.$2['locationBias'], {
-      'latitude': 26.728,
-      'longitude': 85.925,
+    expect(api.requests.single.$2, {
+      'input': 'Main Road',
+      'languageCode': 'ne',
+      'latitude': '26.72',
+      'longitude': '85.92',
     });
   });
 
-  test('parses coordinates and address components from place details',
+  test('place details validate coordinates and preserve the address label',
       () async {
-    final api = _PlacesApi();
+    final api = _FakeApiService([
+      {
+        'place': {
+          'latitude': 26.728,
+          'longitude': 85.925,
+          'label': 'Main Road, Janakpur, Nepal',
+        },
+      },
+    ]);
     final service = PlacesApiService(api);
 
-    final details = await service.getDetails(
-      'ChIJplace-id',
-      sessionToken: service.createSessionToken(),
+    final place = await service.getDetails('place/123');
+
+    expect(api.requests.single.$1, '/places/place%2F123');
+    expect(place.latitude, 26.728);
+    expect(place.longitude, 85.925);
+    expect(place.label, 'Main Road, Janakpur, Nepal');
+  });
+
+  test('malformed suggestions and invalid coordinates fail explicitly',
+      () async {
+    final malformedSuggestions = PlacesApiService(
+      _FakeApiService([
+        {'suggestions': null},
+      ]),
+    );
+    await expectLater(
+      malformedSuggestions.autocomplete(
+        input: 'Janakpur',
+        languageCode: 'en',
+      ),
+      throwsFormatException,
     );
 
-    expect(details.street, 'Main Road');
-    expect(details.city, 'Janakpur');
-    expect(details.province, 'Madhesh Province');
-    expect(details.latitude, 26.728);
-    expect(details.longitude, 85.925);
+    final invalidDetails = PlacesApiService(
+      _FakeApiService([
+        {
+          'place': {
+            'latitude': 95,
+            'longitude': 85,
+          },
+        },
+      ]),
+    );
+    await expectLater(
+      invalidDetails.getDetails('place-123'),
+      throwsFormatException,
+    );
   });
 }

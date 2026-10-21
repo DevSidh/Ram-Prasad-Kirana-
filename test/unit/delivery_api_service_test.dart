@@ -49,7 +49,7 @@ class _DeliveryApi extends ApiService {
         'assigned': 1,
         'inProgress': 0,
         'deliveredToday': 0,
-        'cashToCollect': 1250,
+        'cashCollectedToday': 0,
       },
     };
   }
@@ -71,7 +71,7 @@ void main() {
     expect(profile.name, 'Ram');
     expect(profile.isAvailable, isTrue);
     expect(page.summary.assigned, 1);
-    expect(page.summary.cashToCollect, 1250);
+    expect(page.summary.cashCollectedToday, 0);
     expect(page.assignments.single.order.orderNumber, 'FH-1001');
     expect(page.assignments.single.order.customerName, 'Asha');
     expect(page.assignments.single.order.customerPhone, '9800000000');

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowSplashScreenBackground">#16A34A</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/faststore_splash_blank</item>
+    </style>
+</resources>
