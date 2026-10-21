@@ -231,7 +231,7 @@ control.
 | `NODE_ENV` | Runtime environment; production applies stricter CORS behavior. |
 | `CORS_ORIGINS` | Exact browser origins allowed in production, comma-separated. Needed for web, not native Android/iOS requests. |
 | `ADMIN_NAME`, `ADMIN_USERNAME`, `ADMIN_EMAIL` | Admin account creation and configured admin login identity. |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Gmail SMTP settings. Use `smtp.gmail.com`, port `587`, `SMTP_SECURE=false` (STARTTLS required), the Gmail address for both user/sender, and a Google App Password. |
+| `GMAIL_OAUTH_CLIENT_ID`, `GMAIL_OAUTH_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, `GMAIL_USER`, `GMAIL_FROM` | Gmail API OAuth credentials and sender identity for HTTPS email delivery. |
 | `GOOGLE_MAPS_ROUTES_API_KEY` | Backend-only Routes API key for road-distance delivery pricing and routes. |
 | `GOOGLE_MAPS_PLACES_API_KEY` | Backend-only Places API key for authenticated location autocomplete and place details. |
 | `DELIVERY_SERVICE_RADIUS_KM` | Delivery service radius; defaults to 10 km. |
@@ -293,16 +293,28 @@ Firebase on both the app and backend for push delivery.
 
 ### Email
 
-Registration verification and password resets use Gmail SMTP. Configure
-`SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`, `SMTP_SECURE=false`, and use the same
-Gmail address for `SMTP_USER` and `SMTP_FROM`. Port 587 upgrades to TLS with
-STARTTLS, which the backend requires. `SMTP_PASS` must be a Google App
-Password; enable 2-Step Verification before creating one. Resolve the SMTP host
-to IPv4 while retaining the hostname for TLS certificate verification. Put the
-App Password only in the deployment host's secret settings, then redeploy.
-Hosting providers may block SMTP egress; if the server cannot connect to port
-465, resolve that with the hosting provider. Codes are time-limited and
-attempt-limited. Safe SMTP error codes are logged without credentials.
+Registration verification and password resets use the Gmail API over HTTPS,
+avoiding SMTP port restrictions. In Google Cloud, enable the Gmail API and
+configure OAuth consent for the Gmail account that will send mail. Create an
+OAuth client and authorize the `https://www.googleapis.com/auth/gmail.send`
+scope for that account. Set `GMAIL_OAUTH_CLIENT_ID`,
+`GMAIL_OAUTH_CLIENT_SECRET`, and `GMAIL_REFRESH_TOKEN` in the deployment host's
+secret settings. Set `GMAIL_USER` to the authorized Gmail address and
+`GMAIL_FROM` to that address, optionally with a display name. The authenticated
+Google account must be permitted to send using the configured From address.
+
+For a manual refresh-token setup, add
+`https://developers.google.com/oauthplayground` as an authorized redirect URI
+for the OAuth client, open the Google OAuth 2.0 Playground, select **Use your
+own OAuth credentials**, and enter that client ID and secret. Authorize the
+`https://www.googleapis.com/auth/gmail.send` scope as the sender account, then
+exchange the authorization code and copy the refresh token into the deployment
+secret settings. Never commit or share the refresh token or client secret.
+OAuth consent apps left in Testing can issue refresh tokens that expire after
+seven days; use the appropriate published/verified consent configuration for
+ongoing production use. Gmail API calls and email codes are subject to Google's
+quotas and policies. Verification/reset codes remain time-limited and
+attempt-limited; logs include safe provider error codes, not credentials.
 
 ### Firebase push notifications
 
@@ -483,11 +495,13 @@ still available, but ordering requires a map pin.
 
 ### Email verification/reset codes do not arrive
 
-Confirm the backend uses `smtp.gmail.com` on port `587` with STARTTLS required,
-`SMTP_USER` and `SMTP_FROM` set to the Gmail account, and `SMTP_PASS` set to its
-Google App Password. Check backend logs for safe SMTP error codes. A timeout or
-unreachable network code indicates hosting egress/connectivity, not a bad OTP.
-Redeploy the backend after changing code or environment variables.
+Confirm `GMAIL_USER` matches the Google account that authorized the
+`gmail.send` OAuth scope and that `GMAIL_FROM` is an allowed sender. Check the
+backend logs for safe Gmail API error codes. A 401/403 indicates an OAuth,
+authorization, or sender-permission problem; a network timeout indicates
+HTTPS connectivity. Refresh tokens created while the OAuth consent screen is
+in Testing may expire after seven days. Redeploy the backend after changing
+code or environment variables.
 
 ### A migration fails
 
@@ -501,7 +515,8 @@ environment-specific recovery procedure rather than applying generic SQL.
 
 - Store production secrets in the backend hosting provider's secret manager.
 - Never commit `.env`, keystores, signing passwords, Firebase Admin credentials,
-  SMTP passwords, database URLs, or private API keys.
+  Gmail OAuth client secrets and refresh tokens, database URLs, or private API
+  keys.
 - Use HTTPS for deployed APIs and restrict Maps keys to the relevant platform.
 - The backend hashes account passwords and protects account, admin, and
   delivery operations with authenticated role checks.

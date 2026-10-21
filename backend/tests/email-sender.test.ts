@@ -3,102 +3,139 @@ import {
   createStoreEmailSender,
   getEmailDeliveryConfigurationStatus,
   getEmailDeliveryFailureDetails,
-  getSmtpConfiguration,
-  resolveSmtpIpv4,
+  getGmailApiConfiguration,
   StoreEmailDeliveryError,
 } from '../src/services/email-sender.js';
 
 const gmailEnvironment: NodeJS.ProcessEnv = {
-  SMTP_HOST: ' smtp.gmail.com ',
-  SMTP_PORT: '587',
-  SMTP_SECURE: 'false',
-  SMTP_USER: 'store@example.com',
-  SMTP_PASS: 'private-app-password',
-  SMTP_FROM: 'Ram Prasad General Store <store@example.com>',
+  GMAIL_OAUTH_CLIENT_ID: 'client-id',
+  GMAIL_OAUTH_CLIENT_SECRET: 'client-secret',
+  GMAIL_REFRESH_TOKEN: 'refresh-token',
+  GMAIL_USER: 'store@example.com',
+  GMAIL_FROM: 'Ram Prasad General Store <store@example.com>',
 };
 
-assert.deepEqual(getSmtpConfiguration(gmailEnvironment), {
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false,
+assert.deepEqual(getGmailApiConfiguration(gmailEnvironment), {
+  clientId: 'client-id',
+  clientSecret: 'client-secret',
+  refreshToken: 'refresh-token',
   user: 'store@example.com',
-  password: 'private-app-password',
   from: 'Ram Prasad General Store <store@example.com>',
 });
 assert.deepEqual(
   getEmailDeliveryConfigurationStatus(gmailEnvironment),
-  { configured: true, provider: 'smtp' },
+  { configured: true, provider: 'gmail-api' },
+);
+assert.deepEqual(
+  getEmailDeliveryConfigurationStatus({}),
+  { configured: false, provider: 'unconfigured' },
 );
 assert.equal(
-  getEmailDeliveryConfigurationStatus({}).configured,
-  false,
-);
-assert.equal(
-  getSmtpConfiguration({ ...gmailEnvironment, SMTP_PORT: 'not-a-port' }),
+  getGmailApiConfiguration({
+    ...gmailEnvironment,
+    GMAIL_REFRESH_TOKEN: '',
+  }),
   null,
-);
-assert.equal(
-  getSmtpConfiguration({ ...gmailEnvironment, SMTP_SECURE: 'sometimes' }),
-  null,
-);
-assert.equal(
-  getSmtpConfiguration({ SMTP_HOST: 'smtp.gmail.com' }),
-  null,
-  'username, app password, and sender are required',
-);
-assert.equal(
-  getSmtpConfiguration({
-    SMTP_HOST: 'smtp.gmail.com',
-    SMTP_USER: 'store@example.com',
-    SMTP_PASS: 'private-app-password',
-    SMTP_FROM: 'store@example.com',
-  })?.port,
-  587,
-  'Gmail defaults to STARTTLS submission port',
 );
 assert.ok(createStoreEmailSender(gmailEnvironment));
 assert.equal(createStoreEmailSender({}), null);
 
 async function run(): Promise<void> {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  const fakeFetch: typeof fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    requests.push({ url, init });
+    if (url === 'https://oauth2.googleapis.com/token') {
+      return new Response(JSON.stringify({
+        access_token: 'test-access-token',
+        expires_in: 3600,
+      }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ id: 'sent-message-id' }), {
+      status: 200,
+    });
+  };
+  const sendEmail = createStoreEmailSender(gmailEnvironment, fakeFetch);
+  assert.ok(sendEmail);
+  await sendEmail({
+    to: 'customer@example.com',
+    subject: 'Verify your email',
+    text: 'Your code is 123456.',
+  });
+  await sendEmail({
+    to: 'customer@example.com',
+    subject: 'Reset your password',
+    text: 'Your code is 654321.',
+  });
+
+  assert.equal(requests.length, 3, 'access token is reused until expiry');
+  const tokenRequest = requests[0];
+  assert.equal(tokenRequest.url, 'https://oauth2.googleapis.com/token');
+  assert.equal(tokenRequest.init?.method, 'POST');
+  assert.match(String(tokenRequest.init?.body), /grant_type=refresh_token/);
+
+  const sendRequest = requests[1];
   assert.equal(
-    await resolveSmtpIpv4('smtp.gmail.com', async (host) => {
-      assert.equal(host, 'smtp.gmail.com');
-      return ['192.0.2.25', '192.0.2.26'];
-    }),
-    '192.0.2.25',
+    sendRequest.url,
+    'https://gmail.googleapis.com/gmail/v1/users/store%40example.com/messages/send',
   );
-  assert.equal(await resolveSmtpIpv4('192.0.2.25'), '192.0.2.25');
-  await assert.rejects(
-    resolveSmtpIpv4('smtp.gmail.com', async () => []),
-    /did not resolve to an IPv4 address/,
+  assert.equal(sendRequest.init?.method, 'POST');
+  assert.equal(
+    new Headers(sendRequest.init?.headers).get('authorization'),
+    'Bearer test-access-token',
   );
-  await assert.rejects(
-    resolveSmtpIpv4('2001:db8::1'),
-    /must be an IPv4 address/,
+  const body = JSON.parse(String(sendRequest.init?.body)) as { raw: string };
+  const rawEmail = Buffer.from(body.raw, 'base64url').toString('utf8');
+  assert.match(rawEmail, /To: customer@example\.com/);
+  assert.match(rawEmail, /Subject: Verify your email/);
+  const encodedBody = rawEmail.split('\r\n\r\n')[1];
+  assert.ok(encodedBody);
+  assert.equal(
+    Buffer.from(encodedBody, 'base64').toString('utf8'),
+    'Your code is 123456.',
   );
 
   const authFailure = getEmailDeliveryFailureDetails(
-    new StoreEmailDeliveryError('EAUTH', 535),
+    new StoreEmailDeliveryError('EAUTH', 401),
   );
   assert.equal(authFailure.statusCode, 503);
-  assert.match(authFailure.message, /Google App Password/);
+  assert.match(authFailure.message, /OAuth client, refresh token/);
   assert.deepEqual(authFailure.diagnostic, {
-    provider: 'smtp',
+    provider: 'gmail-api',
     code: 'EAUTH',
-    responseCode: 535,
+    responseCode: 401,
   });
 
   const timeoutFailure = getEmailDeliveryFailureDetails(
     new StoreEmailDeliveryError('ETIMEDOUT'),
   );
-  assert.match(timeoutFailure.message, /cannot reach Gmail SMTP/);
-  assert.match(timeoutFailure.message, /configured SMTP port/);
+  assert.match(timeoutFailure.message, /Gmail API over HTTPS/);
   assert.deepEqual(timeoutFailure.diagnostic, {
-    provider: 'smtp',
+    provider: 'gmail-api',
     code: 'ETIMEDOUT',
   });
 
-  console.log('Gmail SMTP configuration and failure tests passed.');
+  const failedFetch: typeof fetch = async () => {
+    throw Object.assign(new Error('Request timed out.'), {
+      code: 'ETIMEDOUT',
+    });
+  };
+  const failingSender = createStoreEmailSender(gmailEnvironment, failedFetch);
+  assert.ok(failingSender);
+  await assert.rejects(
+    failingSender({
+      to: 'customer@example.com',
+      subject: 'Verify your email',
+      text: 'Your code is 123456.',
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof StoreEmailDeliveryError);
+      assert.equal(error.code, 'ETIMEDOUT');
+      return true;
+    },
+  );
+
+  console.log('Gmail API configuration and delivery tests passed.');
 }
 
 void run().catch((error: unknown) => {

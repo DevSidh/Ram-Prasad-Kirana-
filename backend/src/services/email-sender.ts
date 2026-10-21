@@ -1,7 +1,3 @@
-import nodemailer from 'nodemailer';
-import { resolve4 } from 'node:dns/promises';
-import { isIP } from 'node:net';
-
 export interface StoreEmail {
   to: string;
   subject: string;
@@ -10,81 +6,53 @@ export interface StoreEmail {
 
 export type SendStoreEmail = (email: StoreEmail) => Promise<void>;
 
-export interface SmtpConfiguration {
-  host: string;
-  port: number;
-  secure: boolean;
+export interface GmailApiConfiguration {
+  clientId: string;
+  clientSecret: string;
+  refreshToken: string;
   user: string;
-  password: string;
   from: string;
 }
 
 export class StoreEmailDeliveryError extends Error {
   constructor(readonly code?: string, readonly responseCode?: number) {
-    super('The Gmail SMTP provider is unavailable.');
+    super('The Gmail API provider is unavailable.');
     this.name = 'StoreEmailDeliveryError';
   }
 }
 
 export type EmailDeliveryConfigurationStatus = {
   configured: boolean;
-  provider: 'smtp' | 'unconfigured';
+  provider: 'gmail-api' | 'unconfigured';
 };
 
-type ResolveIpv4 = (hostname: string) => Promise<string[]>;
+type Fetch = typeof fetch;
 
-export async function resolveSmtpIpv4(
-  host: string,
-  resolveIpv4: ResolveIpv4 = resolve4,
-): Promise<string> {
-  const addressType = isIP(host);
-  if (addressType === 4) return host;
-  if (addressType === 6) {
-    throw new Error(
-      'The SMTP host must be an IPv4 address or an IPv4-resolvable hostname.',
-    );
-  }
-
-  const addresses = await resolveIpv4(host);
-  const address = addresses[0];
-  if (!address) {
-    throw new Error(`The SMTP host ${host} did not resolve to an IPv4 address.`);
-  }
-  return address;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
-export function getSmtpConfiguration(
+export function getGmailApiConfiguration(
   env: NodeJS.ProcessEnv = process.env,
-): SmtpConfiguration | null {
-  const host = env.SMTP_HOST?.trim();
-  const configuredPort = env.SMTP_PORT?.trim();
-  const port = configuredPort ? Number(configuredPort) : 587;
-  const user = env.SMTP_USER?.trim();
-  const password = env.SMTP_PASS;
-  const from = env.SMTP_FROM?.trim();
-  const secureSetting = env.SMTP_SECURE?.trim().toLowerCase();
+): GmailApiConfiguration | null {
+  const clientId = env.GMAIL_OAUTH_CLIENT_ID?.trim();
+  const clientSecret = env.GMAIL_OAUTH_CLIENT_SECRET?.trim();
+  const refreshToken = env.GMAIL_REFRESH_TOKEN?.trim();
+  const user = env.GMAIL_USER?.trim();
+  const from = env.GMAIL_FROM?.trim();
 
-  if (!host || !Number.isInteger(port) || port < 1 || port > 65535 ||
-      !user || !password?.trim() || !from ||
-      (secureSetting && secureSetting !== 'true' && secureSetting !== 'false')) {
+  if (!clientId || !clientSecret || !refreshToken || !user || !from) {
     return null;
   }
 
-  return {
-    host,
-    port,
-    secure: secureSetting ? secureSetting === 'true' : port === 465,
-    user,
-    password,
-    from,
-  };
+  return { clientId, clientSecret, refreshToken, user, from };
 }
 
 export function getEmailDeliveryConfigurationStatus(
   env: NodeJS.ProcessEnv = process.env,
 ): EmailDeliveryConfigurationStatus {
-  return getSmtpConfiguration(env)
-    ? { configured: true, provider: 'smtp' }
+  return getGmailApiConfiguration(env)
+    ? { configured: true, provider: 'gmail-api' }
     : { configured: false, provider: 'unconfigured' };
 }
 
@@ -92,25 +60,27 @@ export function getEmailDeliveryFailureDetails(error: StoreEmailDeliveryError): 
   statusCode: 503;
   message: string;
   diagnostic: {
-    provider: 'smtp';
+    provider: 'gmail-api';
     code?: string;
     responseCode?: number;
   };
 } {
   const rejectedCredentials = error.code === 'EAUTH' ||
-    error.responseCode === 534 || error.responseCode === 535;
+    error.responseCode === 401 || error.responseCode === 403;
   const message = rejectedCredentials
-    ? 'Gmail rejected the SMTP credentials. Use a Google App Password and verify the Gmail sender address.'
+    ? 'Gmail API authorization failed. Check the OAuth client, refresh token, and Gmail sender account.'
     : error.code === 'ETIMEDOUT' || error.code === 'ENETUNREACH' ||
-        error.code === 'ECONNECTION' || error.code === 'ESOCKET'
-      ? 'The app server cannot reach Gmail SMTP. Check outbound SMTP access and the configured SMTP port in the hosting service.'
-      : 'Gmail SMTP is unavailable. Check the SMTP settings and try again.';
+        error.code === 'ECONNECTION' || error.code === 'ESOCKET' ||
+        error.code === 'ECONNRESET' || error.code === 'EAI_AGAIN' ||
+        error.code === 'ENOTFOUND'
+      ? 'The app server cannot reach the Gmail API over HTTPS. Check outbound HTTPS access in the hosting service.'
+      : 'Gmail API email delivery failed. Check the OAuth configuration and try again.';
 
   return {
     statusCode: 503,
     message,
     diagnostic: {
-      provider: 'smtp',
+      provider: 'gmail-api',
       ...(error.code === undefined ? {} : { code: error.code }),
       ...(error.responseCode === undefined
         ? {}
@@ -134,48 +104,120 @@ export function getSafeErrorMetadata(error: unknown): {
   return { name, ...(code ? { code } : {}) };
 }
 
-export function createSmtpEmailSender(
-  env: NodeJS.ProcessEnv = process.env,
-): SendStoreEmail | null {
-  const config = getSmtpConfiguration(env);
-  if (!config) return null;
+function headerValue(value: string, name: string): string {
+  if (/[\r\n]/.test(value)) {
+    throw new Error(`Invalid newline in email ${name} header.`);
+  }
+  return /^[\x00-\x7F]*$/.test(value)
+    ? value
+    : `=?UTF-8?B?${Buffer.from(value, 'utf8').toString('base64')}?=`;
+}
 
-  return async (email) => {
-    let transport: ReturnType<typeof nodemailer.createTransport> | undefined;
-    try {
-      const address = await resolveSmtpIpv4(config.host);
-      transport = nodemailer.createTransport({
-        host: address,
-        port: config.port,
-        secure: config.secure,
-        requireTLS: !config.secure,
-        auth: { user: config.user, pass: config.password },
-        tls: { servername: config.host },
-        connectionTimeout: 15_000,
-        greetingTimeout: 15_000,
-        socketTimeout: 15_000,
-      });
-      await transport.sendMail({ from: config.from, ...email });
-    } catch (error) {
-      const code = error && typeof error === 'object' && 'code' in error &&
-          typeof error.code === 'string' && /^[A-Z0-9_]+$/.test(error.code)
-        ? error.code
-        : undefined;
-      const responseCode =
-        error && typeof error === 'object' && 'responseCode' in error &&
-            typeof error.responseCode === 'number' &&
-            Number.isInteger(error.responseCode)
-          ? error.responseCode
-          : undefined;
-      throw new StoreEmailDeliveryError(code, responseCode);
-    } finally {
-      transport?.close();
-    }
-  };
+function buildRawMessage(email: StoreEmail, from: string): string {
+  const encodedText = Buffer.from(email.text, 'utf8')
+    .toString('base64')
+    .match(/.{1,76}/g)
+    ?.join('\r\n') ?? '';
+  const message = [
+    `From: ${headerValue(from, 'from')}`,
+    `To: ${headerValue(email.to, 'to')}`,
+    `Subject: ${headerValue(email.subject, 'subject')}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    encodedText,
+  ].join('\r\n');
+
+  return Buffer.from(message, 'utf8').toString('base64url');
+}
+
+async function readJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
 }
 
 export function createStoreEmailSender(
   env: NodeJS.ProcessEnv = process.env,
+  fetcher: Fetch = fetch,
 ): SendStoreEmail | null {
-  return createSmtpEmailSender(env);
+  const config = getGmailApiConfiguration(env);
+  if (!config) return null;
+
+  let accessToken: string | undefined;
+  let accessTokenExpiresAt = 0;
+
+  return async (email) => {
+    try {
+      if (!accessToken || Date.now() >= accessTokenExpiresAt) {
+        const tokenResponse = await fetcher(
+          'https://oauth2.googleapis.com/token',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              client_id: config.clientId,
+              client_secret: config.clientSecret,
+              refresh_token: config.refreshToken,
+              grant_type: 'refresh_token',
+            }),
+            signal: AbortSignal.timeout(15_000),
+          },
+        );
+        const tokenBody = await readJson(tokenResponse);
+        if (!tokenResponse.ok) {
+          throw new StoreEmailDeliveryError(
+            tokenResponse.status === 401 || tokenResponse.status === 403
+              ? 'EAUTH'
+              : 'GMAIL_OAUTH_ERROR',
+            tokenResponse.status,
+          );
+        }
+        if (!isRecord(tokenBody) || typeof tokenBody.access_token !== 'string') {
+          throw new StoreEmailDeliveryError('GMAIL_OAUTH_RESPONSE_INVALID');
+        }
+
+        accessToken = tokenBody.access_token;
+        const expiresIn = typeof tokenBody.expires_in === 'number'
+          ? tokenBody.expires_in
+          : 3600;
+        accessTokenExpiresAt = Date.now() + Math.max(0, expiresIn - 60) * 1000;
+      }
+
+      const sendResponse = await fetcher(
+        `https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(config.user)}/messages/send`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ raw: buildRawMessage(email, config.from) }),
+          signal: AbortSignal.timeout(15_000),
+        },
+      );
+      if (!sendResponse.ok) {
+        throw new StoreEmailDeliveryError(
+          sendResponse.status === 401 || sendResponse.status === 403
+            ? 'EAUTH'
+            : 'GMAIL_API_ERROR',
+          sendResponse.status,
+        );
+      }
+    } catch (error) {
+      if (error instanceof StoreEmailDeliveryError) throw error;
+
+      const code = error && typeof error === 'object' && 'code' in error &&
+          typeof error.code === 'string' && /^[A-Z0-9_]+$/.test(error.code)
+        ? error.code
+        : error instanceof Error &&
+            (error.name === 'TimeoutError' || error.name === 'AbortError')
+          ? 'ETIMEDOUT'
+          : undefined;
+      throw new StoreEmailDeliveryError(code);
+    }
+  };
 }

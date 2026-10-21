@@ -190,7 +190,7 @@ async function run(): Promise<void> {
     );
     assert.equal(failedDelivery.status, 503);
     const failureBody = await failedDelivery.json() as { error: string };
-    assert.match(failureBody.error, /Google App Password/);
+    assert.match(failureBody.error, /OAuth client, refresh token/);
     assert.equal(otp, null, 'failed delivery removes its undeliverable code');
   } finally {
     await new Promise<void>((resolve, reject) => {

@@ -186,7 +186,7 @@ async function run(): Promise<void> {
     );
     assert.equal(failedDelivery.status, 503);
     const failureBody = await failedDelivery.json() as { error: string };
-    assert.match(failureBody.error, /cannot reach Gmail SMTP/);
+    assert.match(failureBody.error, /cannot reach the Gmail API over HTTPS/);
     assert.equal(storedOtp, null, 'failed delivery removes its unusable code');
     console.log('Password reset OTP tests passed.');
   } finally {
