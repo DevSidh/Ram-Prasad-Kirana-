@@ -6,7 +6,10 @@ import { rateLimit } from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import {
-  createSmtpEmailSender,
+  createStoreEmailSender,
+  getEmailDeliveryFailureDetails,
+  getSafeErrorMetadata,
+  StoreEmailDeliveryError,
   type SendStoreEmail,
 } from '../services/email-sender.js';
 
@@ -27,7 +30,7 @@ export function createEmailVerificationRouter(
   prisma: PrismaClient,
   authSecret: string,
   jwtExpiresInSeconds: number,
-  sendEmail: SendStoreEmail | null = createSmtpEmailSender(),
+  sendEmail: SendStoreEmail | null = createStoreEmailSender(),
 ): Router {
   const router = Router();
   const requestLimiter = rateLimit({
@@ -81,6 +84,16 @@ export function createEmailVerificationRouter(
           await prisma.emailVerificationOtp.deleteMany({
             where: { email, otpHash },
           });
+          if (error instanceof StoreEmailDeliveryError) {
+            const failure = getEmailDeliveryFailureDetails(error);
+            console.error(
+              'Email verification provider failure:',
+              failure.diagnostic,
+            );
+            return res.status(failure.statusCode).json({
+              error: failure.message,
+            });
+          }
           throw error;
         }
       }
@@ -89,9 +102,12 @@ export function createEmailVerificationRouter(
         message: 'If this account needs email verification, a code has been sent.',
       });
     } catch (error) {
-      console.error('Email verification code delivery failed:', error);
+      console.error(
+        'Email verification request failed:',
+        getSafeErrorMetadata(error),
+      );
       return res.status(500).json({
-        error: 'Unable to send a verification code right now.',
+        error: 'Unable to process email verification right now. Check the server logs.',
       });
     }
   });

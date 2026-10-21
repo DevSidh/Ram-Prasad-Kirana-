@@ -46,6 +46,7 @@ import {
   DEFAULT_WEEKLY_HOURS,
   getStoreAvailability,
 } from './services/store-hours.js';
+import { getEmailDeliveryConfigurationStatus } from './services/email-sender.js';
 
 dotenv.config();
 
@@ -136,11 +137,8 @@ app.use(
   createDeliveryRouter(prisma, authenticateToken, requireDeliveryPerson),
 );
 app.use('/api/v1/account', createAccountRouter(prisma, authenticateToken));
+app.use('/api/v1/places', createPlacesRouter(authenticateToken));
 app.use('/api/v1/auth/password-reset', createPasswordResetRouter(prisma));
-app.use('/api/v1/places', createPlacesRouter(
-  process.env.GOOGLE_MAPS_PLACES_API_KEY,
-  authenticateToken,
-));
 
 function queueOrderNotification(
   userId: string,
@@ -1454,6 +1452,7 @@ const healthCheck = async (_req: Request, res: Response) => {
       status: 'ok',
       service: 'Ram Prasad General Store API',
       database: 'connected',
+      emailDelivery: getEmailDeliveryConfigurationStatus(),
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
@@ -1462,6 +1461,7 @@ const healthCheck = async (_req: Request, res: Response) => {
       status: 'unavailable',
       service: 'Ram Prasad General Store API',
       database: 'disconnected',
+      emailDelivery: getEmailDeliveryConfigurationStatus(),
       timestamp: new Date().toISOString(),
     });
   }

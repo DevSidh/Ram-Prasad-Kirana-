@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import type { PrismaClient } from '@prisma/client';
 import { createAuthMiddleware } from '../src/middleware/auth.js';
 import { createPasswordResetRouter } from '../src/routes/password-reset.js';
+import { StoreEmailDeliveryError } from '../src/services/email-sender.js';
 
 interface StoredOtp {
   email: string;
@@ -98,6 +99,12 @@ async function run(): Promise<void> {
       deliveredCode = code;
     }),
   );
+  app.use(
+    '/reset-failure',
+    createPasswordResetRouter(prisma, async () => {
+      throw new StoreEmailDeliveryError('ETIMEDOUT');
+    }),
+  );
   app.get('/protected', authenticateToken, (_req, res) => res.sendStatus(204));
 
   const server = app.listen(0);
@@ -168,6 +175,19 @@ async function run(): Promise<void> {
       }),
     });
     assert.equal(replay.status, 400, 'a reset code cannot be reused');
+
+    const failedDelivery = await fetch(
+      `http://127.0.0.1:${address.port}/reset-failure/request`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: 'customer@example.com' }),
+      },
+    );
+    assert.equal(failedDelivery.status, 503);
+    const failureBody = await failedDelivery.json() as { error: string };
+    assert.match(failureBody.error, /cannot reach Gmail SMTP/);
+    assert.equal(storedOtp, null, 'failed delivery removes its unusable code');
     console.log('Password reset OTP tests passed.');
   } finally {
     await new Promise<void>((resolve, reject) => {

@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { createEmailVerificationRouter } from '../src/routes/email-verification.js';
-import type { StoreEmail } from '../src/services/email-sender.js';
+import {
+  StoreEmailDeliveryError,
+  type StoreEmail,
+} from '../src/services/email-sender.js';
 
 interface StoredOtp {
   email: string;
@@ -113,6 +116,17 @@ async function run(): Promise<void> {
       },
     ),
   );
+  app.use(
+    '/verification-failure',
+    createEmailVerificationRouter(
+      fake as unknown as PrismaClient,
+      'email-verification-tests-use-a-random-independent-secret',
+      60 * 60,
+      async () => {
+        throw new StoreEmailDeliveryError('EAUTH', 535);
+      },
+    ),
+  );
   const server = app.listen(0);
 
   try {
@@ -164,6 +178,20 @@ async function run(): Promise<void> {
       body: JSON.stringify({ email: user.email, code: deliveredCode }),
     });
     assert.equal(replay.status, 400);
+
+    emailVerified = false;
+    const failedDelivery = await fetch(
+      `http://127.0.0.1:${address.port}/verification-failure/request`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: user.email }),
+      },
+    );
+    assert.equal(failedDelivery.status, 503);
+    const failureBody = await failedDelivery.json() as { error: string };
+    assert.match(failureBody.error, /Google App Password/);
+    assert.equal(otp, null, 'failed delivery removes its undeliverable code');
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => error ? reject(error) : resolve());

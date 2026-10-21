@@ -95,7 +95,10 @@ Flutter app
 - The backend validates requests, enforces account roles, and performs
   transactional work such as order placement and inventory reservation.
 - Prisma models and versioned migrations define the database schema. Apply
-  required migrations before releasing backend code that depends on them.
+  required migrations before releasing backend code that depends on them. The
+  backend's `npm start` runs `prisma migrate deploy` before starting the API.
+  Keep the production `DATABASE_URL` available to both the build and start
+  commands so pending migrations can be applied during deployment.
 - Image URLs and image records are served through the API. Product thumbnails
   use cached network loading and size-aware decoding; transparent product
   uploads are normalized by backend image-processing code while original
@@ -228,9 +231,9 @@ control.
 | `NODE_ENV` | Runtime environment; production applies stricter CORS behavior. |
 | `CORS_ORIGINS` | Exact browser origins allowed in production, comma-separated. Needed for web, not native Android/iOS requests. |
 | `ADMIN_NAME`, `ADMIN_USERNAME`, `ADMIN_EMAIL` | Admin account creation and configured admin login identity. |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Email delivery for verification and password-reset codes. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Gmail SMTP settings. Use `smtp.gmail.com`, port `465`, `SMTP_SECURE=true`, the Gmail address for both user/sender, and a Google App Password. |
 | `GOOGLE_MAPS_ROUTES_API_KEY` | Backend-only Routes API key for road-distance delivery pricing and routes. |
-| `GOOGLE_MAPS_PLACES_API_KEY` | Backend-only Places API (New) key for delivery-address search and place details. |
+| `GOOGLE_MAPS_PLACES_API_KEY` | Backend-only Places API key for authenticated location autocomplete and place details. |
 | `DELIVERY_SERVICE_RADIUS_KM` | Delivery service radius; defaults to 10 km. |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | Optional backend credential for Firebase push delivery. |
 
@@ -280,14 +283,25 @@ key to its platform and application/site.
 Road routes and road-distance delivery pricing are calculated by the backend
 using the Routes API key. Never place that key in the Flutter app. The default
 service radius is 10 km and can be changed with `DELIVERY_SERVICE_RADIUS_KM`.
-The customer tracking route is not a claim of live courier GPS tracking.
+Location search uses the Places API through the backend, which keeps its key
+out of the app. Enable Places API (New) and billing for that key and configure
+`GOOGLE_MAPS_PLACES_API_KEY` in the backend host. Search is authenticated,
+limited to Nepal, and biased toward the current map selection. Riders publish
+their location while an order is out for delivery; customers see it on the
+tracking map. A push alert is sent when the rider starts delivery. Configure
+Firebase on both the app and backend for push delivery.
 
 ### Email
 
-Registration verification and password resets require a functioning SMTP
-provider. Configure the SMTP variables in the private backend environment.
-Codes are time-limited and attempt-limited. If email delivery is not configured,
-those flows cannot complete successfully.
+Registration verification and password resets use Gmail SMTP. Configure
+`SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=465`, `SMTP_SECURE=true`, and use the same
+Gmail address for `SMTP_USER` and `SMTP_FROM`. `SMTP_PASS` must be a Google App
+Password; enable 2-Step Verification before creating one. Resolve the SMTP host
+to IPv4 while retaining the hostname for TLS certificate verification. Put the
+App Password only in the deployment host's secret settings, then redeploy.
+Hosting providers may block SMTP egress; if the server cannot connect to port
+465, resolve that with the hosting provider. Codes are time-limited and
+attempt-limited. Safe SMTP error codes are logged without credentials.
 
 ### Firebase push notifications
 
@@ -468,8 +482,11 @@ still available, but ordering requires a map pin.
 
 ### Email verification/reset codes do not arrive
 
-Check SMTP host, port, TLS mode, mailbox credentials, sender policy, and
-backend mail logs. These flows require a working mail provider.
+Confirm the backend uses `smtp.gmail.com` on port `465` with implicit TLS,
+`SMTP_USER` and `SMTP_FROM` set to the Gmail account, and `SMTP_PASS` set to its
+Google App Password. Check backend logs for safe SMTP error codes. A timeout or
+unreachable network code indicates hosting egress/connectivity, not a bad OTP.
+Redeploy the backend after changing code or environment variables.
 
 ### A migration fails
 
