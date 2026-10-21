@@ -164,6 +164,7 @@ const couponCreateInput = z.object({
   minOrderAmount: z.number().finite().nonnegative(),
   maxDiscount: z.number().finite().positive().nullable(),
   usageLimit: z.number().int().positive().nullable(),
+  perUserLimit: z.number().int().positive().nullable(),
   expiresAt: z.string().datetime().nullable()
     .transform((value) => value === null ? null : new Date(value)),
 }).strict().superRefine((coupon, context) => {
@@ -337,6 +338,7 @@ function couponResponse(coupon: {
   minOrderAmount: Prisma.Decimal;
   maxDiscount: Prisma.Decimal | null;
   usageLimit: number | null;
+  perUserLimit: number | null;
   usedCount: number;
   isActive: boolean;
   expiresAt: Date | null;

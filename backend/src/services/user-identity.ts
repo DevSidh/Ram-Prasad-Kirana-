@@ -10,6 +10,11 @@ export function normalizePhone(phone: string | null | undefined): string | null 
   return digits.length > 0 ? digits : null;
 }
 
+export function normalizeSignupPhone(phone: string): string | null {
+  const digits = normalizePhone(phone);
+  return digits?.length === 10 ? digits : null;
+}
+
 export async function identityAlreadyInUse(
   prisma: PrismaClient,
   input: { email?: string; phone: string | null; excludeUserId?: string },

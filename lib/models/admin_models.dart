@@ -36,6 +36,7 @@ class AdminCoupon {
   final double minOrderAmount;
   final double? maxDiscount;
   final int? usageLimit;
+  final int? perUserLimit;
   final int usedCount;
   final bool isActive;
   final DateTime? expiresAt;
@@ -49,6 +50,7 @@ class AdminCoupon {
     required this.minOrderAmount,
     required this.maxDiscount,
     required this.usageLimit,
+    required this.perUserLimit,
     required this.usedCount,
     required this.isActive,
     required this.expiresAt,
@@ -85,6 +87,8 @@ class AdminCoupon {
       maxDiscount:
           json['maxDiscount'] == null ? null : _asDouble(json['maxDiscount']),
       usageLimit: json['usageLimit'] == null ? null : _asInt(json['usageLimit']),
+      perUserLimit:
+          json['perUserLimit'] == null ? null : _asInt(json['perUserLimit']),
       usedCount: _asInt(json['usedCount']),
       isActive: isActive,
       expiresAt: expiresAt,

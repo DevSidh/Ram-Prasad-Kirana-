@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants.dart';
-import '../../core/media.dart';
 import '../../core/responsive_layout.dart';
 import '../../core/theme/app_theme_extension.dart';
 import '../../core/widgets/app_widgets.dart';
@@ -561,18 +560,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     child: HomeGreetingDiya(),
                   ),
                   IconButton(
+                    key: const ValueKey('home-coupon-gift-button'),
                     tooltip: 'Claim an available coupon',
                     onPressed: _openCoupons,
                     visualDensity: VisualDensity.compact,
                     constraints: const BoxConstraints.tightFor(
-                      width: 42,
-                      height: 42,
+                      width: 52,
+                      height: 52,
                     ),
-                    icon: const StoreAnimation(
-                      assetPath: 'animations/gift_premium.lottie',
-                      size: 34,
-                      semanticLabel: 'Gift coupon animation',
-                      loop: false,
+                    icon: const IgnorePointer(
+                      child: StoreAnimation(
+                        assetPath: 'animations/gift_premium.lottie',
+                        size: 46,
+                        semanticLabel: 'Gift coupon animation',
+                        loop: false,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 2),
@@ -1519,7 +1521,7 @@ class _FeaturedProductSlideState extends State<_FeaturedProductSlide>
                       child: Row(
                         children: [
                           Expanded(
-                            flex: 56,
+                            flex: 53,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -1655,7 +1657,7 @@ class _FeaturedProductSlideState extends State<_FeaturedProductSlide>
                             ),
                           ),
                           Expanded(
-                            flex: 44,
+                            flex: 47,
                             child: AnimatedBuilder(
                               animation: _floatController,
                               builder: (context, child) {
@@ -1670,7 +1672,7 @@ class _FeaturedProductSlideState extends State<_FeaturedProductSlide>
                               child: Transform.rotate(
                                 angle: -.12,
                                 child: SizedBox(
-                                  width: constraints.maxWidth * .32,
+                                  width: constraints.maxWidth * .36,
                                   height: constraints.maxHeight * .64,
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(18),
@@ -1678,12 +1680,9 @@ class _FeaturedProductSlideState extends State<_FeaturedProductSlide>
                                       padding: const EdgeInsets.all(5),
                                       child: ProductThumbnail(
                                         key: _imageKey,
-                                        imageUrl:
-                                            originalCarouselProductImageUrl(
-                                          product.imageUrl,
-                                        ),
-                                        size: constraints.maxWidth * .30,
-                                        width: constraints.maxWidth * .30,
+                                        imageUrl: product.imageUrl,
+                                        size: constraints.maxWidth * .34,
+                                        width: constraints.maxWidth * .34,
                                         height: constraints.maxHeight * .62,
                                         fit: BoxFit.contain,
                                         borderRadius: BorderRadius.zero,

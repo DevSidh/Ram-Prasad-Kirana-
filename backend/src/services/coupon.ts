@@ -6,6 +6,7 @@ export interface CouponForValidation {
   minOrderAmount: number | string | { toNumber(): number };
   maxDiscount: number | string | { toNumber(): number } | null;
   usageLimit: number | null;
+  perUserLimit?: number | null;
   usedCount: number;
   expiresAt: Date | null;
 }
@@ -103,6 +104,7 @@ export function checkCoupon(
   coupon: CouponForValidation,
   subtotal: number,
   now: Date = new Date(),
+  userUsedCount = 0,
 ): CouponCheck {
   if (!coupon.isActive) {
     return { valid: false, discount: 0, message: 'This coupon is not active.' };
@@ -115,6 +117,16 @@ export function checkCoupon(
       valid: false,
       discount: 0,
       message: 'This coupon has reached its redemption limit.',
+    };
+  }
+  if (
+    coupon.perUserLimit != null &&
+    userUsedCount >= coupon.perUserLimit
+  ) {
+    return {
+      valid: false,
+      discount: 0,
+      message: 'You have reached the redemption limit for this coupon.',
     };
   }
   const minimum = numericValue(coupon.minOrderAmount);

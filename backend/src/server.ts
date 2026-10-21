@@ -14,6 +14,7 @@ import { createAdminRouter } from './routes/admin.js';
 import { createDeliveryRouter } from './routes/delivery.js';
 import { createEmailVerificationRouter } from './routes/email-verification.js';
 import { createPasswordResetRouter } from './routes/password-reset.js';
+import { createPlacesRouter } from './routes/places.js';
 import { createPublicLegalRouter } from './routes/public-legal.js';
 import { sendPushToUser } from './services/push-notifications.js';
 import { getUploadsDirectory } from './services/image-upload.js';
@@ -21,7 +22,11 @@ import {
   getNormalizedProductImage,
   getNormalizedWholesaleImage,
 } from './services/product-image.js';
-import { identityAlreadyInUse, normalizeEmail, normalizePhone } from './services/user-identity.js';
+import {
+  identityAlreadyInUse,
+  normalizeEmail,
+  normalizeSignupPhone,
+} from './services/user-identity.js';
 import { findAdminByPassword } from './services/admin-login.js';
 import { orderInput } from './schemas/order.js';
 import { InventoryService } from './services/inventory.js';
@@ -132,6 +137,10 @@ app.use(
 );
 app.use('/api/v1/account', createAccountRouter(prisma, authenticateToken));
 app.use('/api/v1/auth/password-reset', createPasswordResetRouter(prisma));
+app.use('/api/v1/places', createPlacesRouter(
+  process.env.GOOGLE_MAPS_PLACES_API_KEY,
+  authenticateToken,
+));
 
 function queueOrderNotification(
   userId: string,
@@ -309,13 +318,16 @@ function orderResponse(order: OrderRecord) {
 app.post('/api/v1/auth/register', async (req: Request, res: Response) => {
   const { fullName, email, phone, password } = req.body;
 
-  if (typeof fullName !== 'string' || typeof email !== 'string' || typeof password !== 'string') {
-    return res.status(400).json({ error: 'Full name, email and password are required' });
+  if (typeof fullName !== 'string' || typeof email !== 'string' ||
+      typeof phone !== 'string' || typeof password !== 'string') {
+    return res.status(400).json({
+      error: 'Full name, email, phone number and password are required',
+    });
   }
 
   const normalizedName = fullName.trim();
   const normalizedEmail = normalizeEmail(email);
-  const normalizedPhone = normalizePhone(phone);
+  const normalizedPhone = normalizeSignupPhone(phone);
 
   if (normalizedName.length === 0 || normalizedName.length > 120) {
     return res.status(400).json({ error: 'Full name must be between 1 and 120 characters' });
@@ -324,21 +336,11 @@ app.post('/api/v1/auth/register', async (req: Request, res: Response) => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
     return res.status(400).json({ error: 'A valid email address is required' });
   }
-  if (phone !== undefined && phone !== null && typeof phone !== 'string') {
-    return res.status(400).json({ error: 'Enter a valid phone number' });
-  }
-  if (normalizedPhone) {
-    return res.status(503).json({
-      error: 'Phone numbers can be added after SMS verification is configured.',
-    });
-  }
-
   if (password.length < 8 || password.length > 128) {
     return res.status(400).json({ error: 'Password must be between 8 and 128 characters long' });
   }
-  if (typeof phone === 'string' && phone.trim().length > 0 &&
-    (!normalizedPhone || normalizedPhone.length < 7 || normalizedPhone.length > 30)) {
-    return res.status(400).json({ error: 'Enter a valid phone number' });
+  if (!normalizedPhone) {
+    return res.status(400).json({ error: 'Enter a valid 10-digit phone number' });
   }
 
   try {
@@ -991,7 +993,21 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
             'Coupons do not apply to wholesale-priced items.',
           );
         }
-        const couponCheck = checkCoupon(coupon, couponEligibleSubtotal);
+        const userUsedCount = coupon.perUserLimit === null
+          ? 0
+          : await transaction.order.count({
+            where: {
+              userId,
+              couponCode: coupon.code,
+              status: { not: 'CANCELLED' },
+            },
+          });
+        const couponCheck = checkCoupon(
+          coupon,
+          couponEligibleSubtotal,
+          new Date(),
+          userUsedCount,
+        );
         if (!couponCheck.valid) {
           throw new CouponRejectedError(couponCheck.message);
         }
@@ -1364,6 +1380,7 @@ app.get('/api/v1/coupons/offer', async (_req: Request, res: Response) => {
 
 app.post(
   '/api/v1/coupons/validate',
+  authenticateToken,
   rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 20,
@@ -1388,6 +1405,10 @@ app.post(
     }
 
     try {
+      const userId = res.locals.authenticatedUserId as string | undefined;
+      if (!userId) {
+        return res.status(401).json({ error: 'Authentication is required.' });
+      }
       const coupon = await prisma.coupon.findUnique({
         where: { code: input.data.code },
       });
@@ -1398,7 +1419,21 @@ app.post(
           message: 'That coupon code is not valid.',
         });
       }
-      const result = checkCoupon(coupon, input.data.subtotal);
+      const userUsedCount = coupon.perUserLimit === null
+        ? 0
+        : await prisma.order.count({
+          where: {
+            userId,
+            couponCode: coupon.code,
+            status: { not: 'CANCELLED' },
+          },
+        });
+      const result = checkCoupon(
+        coupon,
+        input.data.subtotal,
+        new Date(),
+        userUsedCount,
+      );
       return res.json({
         valid: result.valid,
         code: result.valid ? coupon.code : null,

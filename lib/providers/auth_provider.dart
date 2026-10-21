@@ -92,7 +92,12 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> register(String fullName, String email, String password) async {
+  Future<bool> register(
+    String fullName,
+    String email,
+    String phone,
+    String password,
+  ) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -101,6 +106,7 @@ class AuthProvider extends ChangeNotifier {
       final response = await _apiService.post('/auth/register', {
         'fullName': fullName.trim(),
         'email': email.trim(),
+        'phone': phone.trim(),
         'password': password,
       });
       if (response is! Map<String, dynamic> ||

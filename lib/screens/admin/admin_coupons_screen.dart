@@ -148,6 +148,15 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
+                  Text(
+                    coupon.perUserLimit == null
+                        ? 'Unlimited uses per customer'
+                        : '${coupon.perUserLimit} use${coupon.perUserLimit == 1 ? '' : 's'} per customer',
+                    style: TextStyle(
+                      color: AppConstants.textMuted,
+                      fontSize: 11,
+                    ),
+                  ),
                   if (coupon.expiresAt != null)
                     Text(
                       'Expires ${MaterialLocalizations.of(context).formatMediumDate(coupon.expiresAt!.toLocal())}',
@@ -288,6 +297,7 @@ class _CouponFormDialogState extends State<_CouponFormDialog> {
   final _minimum = TextEditingController(text: '0');
   final _maximum = TextEditingController();
   final _usageLimit = TextEditingController();
+  final _perUserLimit = TextEditingController();
   String _discountType = 'PERCENTAGE';
   DateTime? _expiresAt;
   bool _saving = false;
@@ -300,6 +310,7 @@ class _CouponFormDialogState extends State<_CouponFormDialog> {
     _minimum.dispose();
     _maximum.dispose();
     _usageLimit.dispose();
+    _perUserLimit.dispose();
     super.dispose();
   }
 
@@ -347,6 +358,9 @@ class _CouponFormDialogState extends State<_CouponFormDialog> {
         'usageLimit': _usageLimit.text.trim().isEmpty
             ? null
             : int.parse(_usageLimit.text.trim()),
+        'perUserLimit': _perUserLimit.text.trim().isEmpty
+            ? null
+            : int.parse(_perUserLimit.text.trim()),
         'expiresAt': _expiresAt
             ?.add(const Duration(hours: 23, minutes: 59, seconds: 59))
             .toUtc()
@@ -475,6 +489,23 @@ class _CouponFormDialogState extends State<_CouponFormDialog> {
                         : null;
                   },
                 ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _perUserLimit,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Uses per customer (optional)',
+                      helperText:
+                          'Limit redemptions per signed-in customer account.',
+                    ),
+                    validator: (value) {
+                      if (value?.trim().isEmpty == true) return null;
+                      final limit = int.tryParse(value!.trim());
+                      return limit == null || limit < 1
+                          ? 'Enter a whole number above zero.'
+                          : null;
+                    },
+                  ),
                 const SizedBox(height: 10),
                 Align(
                   alignment: Alignment.centerLeft,

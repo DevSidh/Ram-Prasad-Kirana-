@@ -28,6 +28,7 @@ class _EmailVerificationApi extends ApiService {
   _EmailVerificationApi() : super(baseUrl: 'https://store.example/api/v1');
 
   final requests = <String>[];
+  final registrationBodies = <Map<String, dynamic>>[];
 
   @override
   Future<dynamic> post(
@@ -36,6 +37,7 @@ class _EmailVerificationApi extends ApiService {
   ) async {
     requests.add(endpoint);
     if (endpoint == '/auth/register') {
+      registrationBodies.add(body);
       return {
         'requiresEmailVerification': true,
         'email': body['email'],
@@ -148,10 +150,13 @@ void main() {
     final registered = await auth.register(
       'New Customer',
       'customer@example.com',
+      '9812345678',
       'a-long-password',
     );
 
     expect(registered, isTrue);
+    expect(api.requests, contains('/auth/register'));
+    expect(api.registrationBodies.single['phone'], '9812345678');
     expect(auth.isAuthenticated, isFalse);
     expect(auth.currentUser, isNull);
     expect(auth.pendingVerificationEmail, 'customer@example.com');

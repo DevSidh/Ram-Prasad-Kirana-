@@ -94,4 +94,49 @@ void main() {
     expect(find.textContaining('Shared with you'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('using a coupon saves it for checkout and returns to the caller',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final api = _CouponsApi();
+    final auth = AuthProvider(apiService: api);
+    final cart = CartProvider(apiService: api);
+    addTearDown(auth.dispose);
+    addTearDown(cart.dispose);
+    await auth.sessionReady;
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<ApiService>.value(value: api),
+          ChangeNotifierProvider<AuthProvider>.value(value: auth),
+          ChangeNotifierProvider<CartProvider>.value(value: cart),
+        ],
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const CouponsScreen(),
+                  ),
+                ),
+                child: const Text('Open coupons'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open coupons'));
+    await tester.pumpAndSettle();
+    expect(find.text('DIWALI50'), findsOneWidget);
+
+    await tester.tap(find.text('Use at checkout'));
+    await tester.pumpAndSettle();
+
+    expect(cart.suggestedCouponCode, 'DIWALI50');
+    expect(find.text('Open coupons'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

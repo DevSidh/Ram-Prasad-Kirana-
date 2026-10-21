@@ -1,6 +1,7 @@
 import { Router, type RequestHandler, type Response } from 'express';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { z } from 'zod';
+import { sendPushToUser } from '../services/push-notifications.js';
 
 const assignmentQuery = z.object({
   status: z.enum([
@@ -62,7 +63,6 @@ export function createDeliveryRouter(
           ...(parsed.data.status ? { status: parsed.data.status } : {}),
         },
         orderBy: [{ status: 'asc' }, { assignedAt: 'desc' }],
-        take: 100,
         select: {
           id: true,
           status: true,
@@ -108,17 +108,21 @@ export function createDeliveryRouter(
           },
         },
       });
+      const todayStart = new Date(
+        Math.floor((Date.now() + 345 * 60 * 1000) / 86_400_000) *
+          86_400_000 -
+          345 * 60 * 1000,
+      );
       const cashToHandOver = await prisma.delivery.aggregate({
         where: {
           deliveryPersonId: userId,
           status: 'DELIVERED',
           cashCollected: { gt: 0 },
           cashHandedOverAt: null,
+          cashCollectedAt: { gte: todayStart },
         },
         _sum: { cashCollected: true },
       });
-      const todayStart = new Date();
-      todayStart.setUTCHours(0, 0, 0, 0);
       const assigned = deliveries.filter((delivery) =>
         ['ASSIGNED', 'ACCEPTED'].includes(delivery.status)).length;
       const inProgress = deliveries.filter((delivery) =>
@@ -448,19 +452,32 @@ export function createDeliveryRouter(
         const notificationType = status === 'DELIVERED'
           ? 'ORDER_DELIVERED'
           : 'ORDER_OUT_FOR_DELIVERY';
+        const notificationTitle =
+          status === 'DELIVERED' ? 'Order delivered' : 'Order on the way';
+        const notificationBody = status === 'DELIVERED'
+          ? `Order ${result.orderNumber} has been delivered.`
+          : `Order ${result.orderNumber} has been picked up for delivery.`;
         await prisma.notification.create({
           data: {
             userId: result.customerId,
             type: notificationType,
-            title: status === 'DELIVERED' ? 'Order delivered' : 'Order on the way',
-            body: status === 'DELIVERED'
-              ? `Order ${result.orderNumber} has been delivered.`
-              : `Order ${result.orderNumber} has been picked up for delivery.`,
+            title: notificationTitle,
+            body: notificationBody,
             metadata: { orderId: result.orderId },
           },
-        }).catch((error: unknown) => {
-          console.error(`Unable to notify customer about delivery ${result.orderId}:`, error);
-        });
+        })
+          .then(() => status === 'OUT_FOR_DELIVERY'
+            ? sendPushToUser(
+              prisma,
+              result.customerId,
+              notificationTitle,
+              notificationBody,
+              { orderId: result.orderId },
+            )
+            : undefined)
+          .catch((error: unknown) => {
+            console.error(`Unable to notify customer about delivery ${result.orderId}:`, error);
+          });
       }
       return res.json({ message: 'Delivery updated.', status });
     } catch (error) {

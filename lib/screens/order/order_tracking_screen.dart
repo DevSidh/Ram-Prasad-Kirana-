@@ -154,16 +154,6 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     );
   }
 
-  void _zoomMap(bool zoomIn) {
-    final controller = _mapController;
-    if (controller == null) return;
-    unawaited(
-      controller.animateCamera(
-        zoomIn ? CameraUpdate.zoomIn() : CameraUpdate.zoomOut(),
-      ),
-    );
-  }
-
   int _currentStepFor(Order order) {
     switch (order.status.toUpperCase()) {
       case 'CONFIRMED':
@@ -362,20 +352,6 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                _MapControlButton(
-                                  tooltip: 'Zoom in',
-                                  icon: Icons.add_rounded,
-                                  theme: theme,
-                                  onPressed: () => _zoomMap(true),
-                                ),
-                                const SizedBox(height: 8),
-                                _MapControlButton(
-                                  tooltip: 'Zoom out',
-                                  icon: Icons.remove_rounded,
-                                  theme: theme,
-                                  onPressed: () => _zoomMap(false),
-                                ),
-                                const SizedBox(height: 8),
                                 _MapControlButton(
                                   tooltip: 'Show store, rider and address',
                                   icon: Icons.center_focus_strong_rounded,

@@ -148,6 +148,11 @@ class _ScooterLoadingScreenState extends State<ScooterLoadingScreen>
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          _AnimatedBrandLogo(
+                            animation: _move,
+                            laps: _laps,
+                          ),
+                          const SizedBox(height: 12),
                           _AnimatedTitle(
                             animation: _move,
                             laps: _laps,
@@ -179,6 +184,90 @@ class _ScooterLoadingScreenState extends State<ScooterLoadingScreen>
       ),
     );
   }
+}
+
+class _AnimatedBrandLogo extends StatelessWidget {
+  final Animation<double> animation;
+  final int laps;
+
+  const _AnimatedBrandLogo({
+    required this.animation,
+    required this.laps,
+  });
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: animation,
+        builder: (context, _) {
+          final phase = (laps + animation.value) * math.pi * 2;
+          final scale = 1 + math.sin(phase) * 0.035;
+          final rotation = math.sin(phase * 0.5) * 0.025;
+          return SizedBox(
+            key: const ValueKey('splash-brand-logo'),
+            width: 112,
+            height: 96,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                CustomPaint(
+                  size: const Size(112, 96),
+                  painter: _LogoFireworksPainter(phase),
+                ),
+                Transform.rotate(
+                  angle: rotation,
+                  child: Transform.scale(
+                    scale: scale,
+                    child: Image.asset(
+                      'assets/icons/faststore-icon.png',
+                      width: 76,
+                      height: 76,
+                      semanticLabel: 'FastStore',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+}
+
+class _LogoFireworksPainter extends CustomPainter {
+  final double phase;
+
+  const _LogoFireworksPainter(this.phase);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const colors = [Color(0xFFFFC21A), Color(0xFFB7EF55), Color(0xFFFFFFFF)];
+    final center = Offset(size.width / 2, size.height / 2);
+    for (var burst = 0; burst < 6; burst++) {
+      final angle = burst * math.pi / 3 + phase * 0.18;
+      final pulse = (math.sin(phase + burst * 1.7) + 1) / 2;
+      final distance = 43 + pulse * 5;
+      final point = center +
+          Offset(math.cos(angle) * distance, math.sin(angle) * distance * 0.72);
+      final rayLength = 2.5 + pulse * 2;
+      final paint = Paint()
+        ..color = colors[burst % colors.length].withValues(
+          alpha: 0.45 + pulse * 0.45,
+        )
+        ..strokeWidth = 1.5
+        ..strokeCap = StrokeCap.round;
+      for (var ray = 0; ray < 4; ray++) {
+        final rayAngle = ray * math.pi / 2 + angle;
+        final offset = Offset(
+          math.cos(rayAngle) * rayLength,
+          math.sin(rayAngle) * rayLength,
+        );
+        canvas.drawLine(point - offset, point + offset, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_LogoFireworksPainter oldDelegate) =>
+      oldDelegate.phase != phase;
 }
 
 class _AnimatedTitle extends StatelessWidget {

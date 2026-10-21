@@ -8,7 +8,9 @@ import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/language_provider.dart';
+import '../../services/api_service.dart';
 import '../../services/location_service.dart';
+import '../../services/places_api_service.dart';
 
 const _googleMapsConfigured =
     bool.fromEnvironment('GOOGLE_MAPS_CONFIGURED', defaultValue: true);
@@ -46,16 +48,23 @@ class AddressMapPicker extends StatefulWidget {
 class _AddressMapPickerState extends State<AddressMapPicker> {
   static const _defaultPosition = LatLng(26.743218, 85.918854);
   final TextEditingController _searchController = TextEditingController();
+  late PlacesApiService _places;
+  bool _placesInitialized = false;
   Timer? _suggestionTimer;
-  List<Placemark> _suggestions = [];
+  List<PlaceSuggestion> _suggestions = [];
   late LatLng _selectedPosition;
+  LatLng? _currentDevicePosition;
+  double? _currentDeviceAccuracy;
   GoogleMapController? _mapController;
   bool _resolvingAddress = false;
   bool _searchingLocation = false;
   bool _gettingCurrentLocation = false;
+  bool _showDeviceLocation = false;
   bool _loadingSuggestions = false;
   int _suggestionRevision = 0;
+  String? _placesSessionToken;
   String? _selectedPlaceLabel;
+  PlaceDetails? _selectedPlaceDetails;
 
   @override
   void initState() {
@@ -64,6 +73,15 @@ class _AddressMapPickerState extends State<AddressMapPicker> {
         widget.initialLatitude != null && widget.initialLongitude != null
             ? LatLng(widget.initialLatitude!, widget.initialLongitude!)
             : _defaultPosition;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_placesInitialized) {
+      _places = PlacesApiService(context.read<ApiService>());
+      _placesInitialized = true;
+    }
   }
 
   @override
@@ -77,6 +95,7 @@ class _AddressMapPickerState extends State<AddressMapPicker> {
     _suggestionTimer?.cancel();
     final query = value.trim();
     if (query.isEmpty) {
+      _placesSessionToken = null;
       setState(() {
         _suggestions = [];
         _loadingSuggestions = false;
@@ -84,6 +103,7 @@ class _AddressMapPickerState extends State<AddressMapPicker> {
       return;
     }
 
+    _placesSessionToken ??= _places.createSessionToken();
     setState(() {
       _suggestions = [];
       _loadingSuggestions = query.length >= 3;
@@ -99,19 +119,19 @@ class _AddressMapPickerState extends State<AddressMapPicker> {
     final revision = ++_suggestionRevision;
     if (mounted) setState(() => _loadingSuggestions = true);
     try {
-      final results = await Geocoding().placemarkFromAddress(query);
+      final results = await _places.autocomplete(
+        query,
+        sessionToken: _placesSessionToken!,
+        latitude: _selectedPosition.latitude,
+        longitude: _selectedPosition.longitude,
+      );
       if (!mounted ||
           revision != _suggestionRevision ||
           _searchController.text.trim() != query) {
         return;
       }
-      final labels = <String>{};
-      final suggestions = results.where((place) {
-        final label = _placemarkLabel(place);
-        return label.isNotEmpty && labels.add(label);
-      }).take(5).toList();
       setState(() {
-        _suggestions = suggestions;
+        _suggestions = results;
         _loadingSuggestions = false;
       });
     } catch (error, stackTrace) {
@@ -125,24 +145,37 @@ class _AddressMapPickerState extends State<AddressMapPicker> {
     }
   }
 
-  String _placemarkLabel(Placemark place) => [
-        place.name,
-        place.street,
-        place.subLocality,
-        place.locality,
-        place.subAdministrativeArea,
-      ]
-          .whereType<String>()
-          .map((part) => part.trim())
-          .where((part) => part.isNotEmpty)
-          .toSet()
-          .join(', ');
-
-  void _selectSuggestion(Placemark place) {
-    final label = _placemarkLabel(place);
-    _searchController.text = label;
-    setState(() => _suggestions = []);
-    _searchLocation();
+  Future<void> _selectSuggestion(PlaceSuggestion suggestion) async {
+    if (_searchingLocation || _resolvingAddress) return;
+    setState(() {
+      _searchingLocation = true;
+      _suggestions = [];
+    });
+    try {
+      final details = await _places.getDetails(
+        suggestion.placeId,
+        sessionToken: _placesSessionToken ?? _places.createSessionToken(),
+      );
+      if (!mounted) return;
+      final position = LatLng(details.latitude, details.longitude);
+      await _moveToPosition(position, zoom: 17);
+      if (!mounted) return;
+      _searchController.text =
+          details.label.isEmpty ? suggestion.label : details.label;
+      setState(() {
+        _selectedPosition = position;
+        _selectedPlaceLabel = _searchController.text;
+        _selectedPlaceDetails = details;
+        _placesSessionToken = null;
+      });
+      FocusScope.of(context).unfocus();
+    } catch (error) {
+      if (mounted) {
+        _showMessage(error.toString().replaceFirst('Exception: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => _searchingLocation = false);
+    }
   }
 
   Future<void> _searchLocation() async {
@@ -152,32 +185,33 @@ class _AddressMapPickerState extends State<AddressMapPicker> {
       _showMessage(context.tr('Enter a place, street, or area to search.'));
       return;
     }
-
+    if (query.length < 3) {
+      _showMessage(context.tr('Enter at least three characters to search.'));
+      return;
+    }
     FocusScope.of(context).unfocus();
     setState(() => _searchingLocation = true);
     try {
-      final matches = await Geocoding().locationFromAddress(query);
+      final sessionToken = _placesSessionToken ?? _places.createSessionToken();
+      final suggestions = await _places.autocomplete(
+        query,
+        sessionToken: sessionToken,
+        latitude: _selectedPosition.latitude,
+        longitude: _selectedPosition.longitude,
+      );
       if (!mounted) return;
-      if (matches.isEmpty) {
+      if (suggestions.isEmpty) {
         _showMessage(
           context.tr('No matching places found. Try a nearby landmark.'),
         );
         return;
       }
-
-      final match = matches.first;
-      final position = LatLng(match.latitude, match.longitude);
-      await _moveToPosition(position, zoom: 16);
-      if (!mounted) return;
-      setState(() {
-        _selectedPosition = position;
-        _selectedPlaceLabel = query;
-      });
-    } catch (_) {
+      _placesSessionToken = sessionToken;
+      if (mounted) setState(() => _searchingLocation = false);
+      await _selectSuggestion(suggestions.first);
+    } catch (error) {
       if (mounted) {
-        _showMessage(context.tr(
-          'Could not search this place. Check your connection and try again.',
-        ));
+        _showMessage(error.toString().replaceFirst('Exception: ', ''));
       }
     } finally {
       if (mounted) setState(() => _searchingLocation = false);
@@ -188,14 +222,18 @@ class _AddressMapPickerState extends State<AddressMapPicker> {
     if (_gettingCurrentLocation || _resolvingAddress) return;
     setState(() => _gettingCurrentLocation = true);
     try {
-      final location = await LocationService().getCurrentLocation();
+      final location = await LocationService().getCurrentCoordinates();
       if (!mounted) return;
       final position = LatLng(location.latitude, location.longitude);
       await _moveToPosition(position, zoom: 17);
       if (!mounted) return;
       setState(() {
         _selectedPosition = position;
-        _selectedPlaceLabel = location.street;
+        _currentDevicePosition = position;
+        _currentDeviceAccuracy = location.accuracyMeters;
+        _showDeviceLocation = true;
+        _selectedPlaceLabel = 'Current location';
+        _selectedPlaceDetails = null;
       });
     } catch (error) {
       if (mounted) {
@@ -218,6 +256,7 @@ class _AddressMapPickerState extends State<AddressMapPicker> {
     setState(() {
       _selectedPosition = position;
       _selectedPlaceLabel = null;
+      _selectedPlaceDetails = null;
     });
   }
 
@@ -229,43 +268,51 @@ class _AddressMapPickerState extends State<AddressMapPicker> {
 
   Future<void> _confirmLocation() async {
     setState(() => _resolvingAddress = true);
-    var street = '';
-    var city = '';
-    var province = '';
+    var street = _selectedPlaceDetails?.street ?? '';
+    var city = _selectedPlaceDetails?.city ?? '';
+    var province = _selectedPlaceDetails?.province ?? '';
 
-    try {
-      final places = await Geocoding().placemarkFromCoordinates(
-        _selectedPosition.latitude,
-        _selectedPosition.longitude,
-      );
-      if (places.isNotEmpty) {
-        final place = places.first;
-        street = [
-          place.name,
-          place.street,
-          place.subLocality,
-          place.locality,
-        ]
-            .whereType<String>()
-            .map((part) => part.trim())
-            .where((part) => part.isNotEmpty)
-            .toSet()
-            .join(', ');
-        city = _firstPlaceName([
-          place.locality,
-          place.subAdministrativeArea,
-          place.administrativeArea,
-        ]);
-        province = _firstPlaceName([
-          place.administrativeArea,
-          place.subAdministrativeArea,
-        ]);
+    if (street.isEmpty || city.isEmpty || province.isEmpty) {
+      try {
+        final places = await Geocoding().placemarkFromCoordinates(
+          _selectedPosition.latitude,
+          _selectedPosition.longitude,
+        );
+        if (places.isNotEmpty) {
+          final place = places.first;
+          street = street.isNotEmpty
+              ? street
+              : [
+                  place.name,
+                  place.street,
+                  place.subLocality,
+                  place.locality,
+                ]
+                  .whereType<String>()
+                  .map((part) => part.trim())
+                  .where((part) => part.isNotEmpty)
+                  .toSet()
+                  .join(', ');
+          city = city.isNotEmpty
+              ? city
+              : _firstPlaceName([
+                  place.locality,
+                  place.subAdministrativeArea,
+                  place.administrativeArea,
+                ]);
+          province = province.isNotEmpty
+              ? province
+              : _firstPlaceName([
+                  place.administrativeArea,
+                  place.subAdministrativeArea,
+                ]);
+        }
+      } catch (_) {
+        if (!mounted) return;
+        _showMessage(
+          'Pin saved, but address details could not be found. Fill them in manually.',
+        );
       }
-    } catch (_) {
-      if (!mounted) return;
-      _showMessage(
-        'Pin saved, but address details could not be found. Fill them in manually.',
-      );
     }
 
     if (!mounted) return;
@@ -381,8 +428,29 @@ class _AddressMapPickerState extends State<AddressMapPicker> {
                       onDragEnd: _setSelectedPosition,
                     ),
                   },
+                  circles: _currentDevicePosition == null
+                      ? const {}
+                      : {
+                          Circle(
+                            circleId:
+                                const CircleId('current-location-accuracy'),
+                            center: _currentDevicePosition!,
+                            radius: (_currentDeviceAccuracy ?? 30)
+                                .clamp(10, 2000)
+                                .toDouble(),
+                            fillColor: Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withValues(alpha: 0.14),
+                            strokeColor: Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withValues(alpha: 0.48),
+                            strokeWidth: 1,
+                          ),
+                        },
                   onTap: _setSelectedPosition,
-                  myLocationEnabled: false,
+                  myLocationEnabled: _showDeviceLocation,
                   myLocationButtonEnabled: false,
                   mapToolbarEnabled: false,
                   zoomControlsEnabled: false,
@@ -499,7 +567,7 @@ class _AddressMapPickerState extends State<AddressMapPicker> {
                                   color: AppConstants.primary,
                                 ),
                                 title: Text(
-                                  _placemarkLabel(place),
+                                  place.label,
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                 ),

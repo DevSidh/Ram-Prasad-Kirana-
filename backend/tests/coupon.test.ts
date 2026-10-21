@@ -9,6 +9,7 @@ const baseCoupon = {
   minOrderAmount: 500,
   maxDiscount: 200,
   usageLimit: 3,
+  perUserLimit: 2,
   usedCount: 1,
   expiresAt: new Date('2027-01-01T00:00:00.000Z'),
 };
@@ -24,6 +25,8 @@ assert.equal(checkCoupon(baseCoupon, 2000, now).discount, 200);
 assert.equal(checkCoupon(baseCoupon, 400, now).valid, false);
 assert.equal(checkCoupon({ ...baseCoupon, isActive: false }, 1000, now).valid, false);
 assert.equal(checkCoupon({ ...baseCoupon, usedCount: 3 }, 1000, now).valid, false);
+assert.equal(checkCoupon(baseCoupon, 1000, now, 2).valid, false);
+assert.equal(checkCoupon(baseCoupon, 1000, now, 1).valid, true);
 assert.equal(
   checkCoupon({ ...baseCoupon, expiresAt: now }, 1000, now).valid,
   false,

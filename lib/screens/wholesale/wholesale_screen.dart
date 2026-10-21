@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -22,18 +24,68 @@ class _WholesaleScreenState extends State<WholesaleScreen> {
   bool _loading = true;
   String? _error;
   String _query = '';
+  bool _requestInFlight = false;
+  bool _observedTabVisibility = false;
+  bool _wasTabVisible = true;
+  DateTime? _lastLoadedAt;
+  Timer? _periodicRefreshTimer;
 
   @override
   void initState() {
     super.initState();
     _loadWholesaleItems();
+    _periodicRefreshTimer = Timer.periodic(
+      const Duration(minutes: 5),
+      (_) {
+        if (!mounted ||
+            !TickerMode.valuesOf(context).enabled ||
+            WidgetsBinding.instance.lifecycleState !=
+                AppLifecycleState.resumed) {
+          return;
+        }
+        unawaited(_refreshIfStale());
+      },
+    );
   }
 
-  Future<void> _loadWholesaleItems() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final isVisible = TickerMode.valuesOf(context).enabled;
+    if (_observedTabVisibility && isVisible && !_wasTabVisible) {
+      unawaited(_refreshIfStale());
+    }
+    _observedTabVisibility = true;
+    _wasTabVisible = isVisible;
+  }
+
+  Future<void> _refreshIfStale() async {
+    if (_lastLoadedAt != null &&
+        DateTime.now().difference(_lastLoadedAt!) <
+            const Duration(minutes: 5)) {
+      return;
+    }
+    await _loadWholesaleItems(showLoading: false);
+  }
+
+  Future<void> _loadWholesaleItems({
+    bool showLoading = true,
+    bool force = false,
+  }) async {
+    if (_requestInFlight) return;
+    if (!force &&
+        _lastLoadedAt != null &&
+        DateTime.now().difference(_lastLoadedAt!) <
+            const Duration(minutes: 5)) {
+      return;
+    }
+    _requestInFlight = true;
+    if (showLoading) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final response = await context.read<ApiService>().get(
         '/wholesale',
@@ -53,18 +105,23 @@ class _WholesaleScreenState extends State<WholesaleScreen> {
       setState(() {
         _products = items;
         _loading = false;
+        _error = null;
       });
+      _lastLoadedAt = DateTime.now();
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _error = error.toString().replaceFirst('Exception: ', '');
         _loading = false;
       });
+    } finally {
+      _requestInFlight = false;
     }
   }
 
   @override
   void dispose() {
+    _periodicRefreshTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -164,7 +221,7 @@ class _WholesaleScreenState extends State<WholesaleScreen> {
                           title: 'Wholesale items could not load',
                           message: _error!,
                           retryLabel: 'Try again',
-                          onRetry: _loadWholesaleItems,
+                          onRetry: () => _loadWholesaleItems(force: true),
                         ),
                       )
                     : products.isEmpty

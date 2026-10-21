@@ -35,11 +35,24 @@ class _VendingMachineScreenState extends State<VendingMachineScreen> {
   bool _observedTabVisibility = false;
   bool _wasTabVisible = true;
   DateTime? _lastLoadedAt;
+  Timer? _periodicRefreshTimer;
 
   @override
   void initState() {
     super.initState();
     _loadDrinks();
+    _periodicRefreshTimer = Timer.periodic(
+      const Duration(minutes: 5),
+      (_) {
+        if (!mounted ||
+            !TickerMode.valuesOf(context).enabled ||
+            WidgetsBinding.instance.lifecycleState !=
+                AppLifecycleState.resumed) {
+          return;
+        }
+        unawaited(_refreshIfStale());
+      },
+    );
   }
 
   @override
@@ -138,6 +151,7 @@ class _VendingMachineScreenState extends State<VendingMachineScreen> {
 
   @override
   void dispose() {
+    _periodicRefreshTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }

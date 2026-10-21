@@ -20,10 +20,12 @@ class CurrentLocation {
 class CurrentCoordinates {
   final double latitude;
   final double longitude;
+  final double accuracyMeters;
 
   const CurrentCoordinates({
     required this.latitude,
     required this.longitude,
+    required this.accuracyMeters,
   });
 }
 
@@ -51,6 +53,7 @@ class LocationService {
     return CurrentCoordinates(
       latitude: position.latitude,
       longitude: position.longitude,
+      accuracyMeters: position.accuracy,
     );
   }
 

@@ -52,6 +52,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.1
+  flutter_launcher_icons: ^0.14.3
 
 flutter:
   uses-material-design: true
@@ -64,3 +65,10 @@ flutter:
     - assets/animations/
     - assets/onboarding/
     - assets/videos/dia.mp4
+
+flutter_icons:
+  android: true
+  ios: false
+  image_path: "assets/icons/faststore-icon.png"
+  adaptive_icon_background: "#16A34A"
+  adaptive_icon_foreground: "assets/icons/faststore-icon.png"

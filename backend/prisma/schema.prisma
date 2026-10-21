@@ -272,6 +272,7 @@ model Order {
 
   @@index([userId])
   @@index([userId, createdAt])
+  @@index([userId, couponCode, status])
   @@index([status])
   @@index([paymentStatus])
   @@index([createdAt])
@@ -479,6 +480,7 @@ model Coupon {
   minOrderAmount  Decimal      @default(0)
   maxDiscount     Decimal?
   usageLimit      Int?
+  perUserLimit    Int?
   usedCount       Int          @default(0)
   isActive        Boolean      @default(true)
   expiresAt       DateTime?

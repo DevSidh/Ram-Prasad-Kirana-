@@ -42,6 +42,19 @@ class _CarouselApi extends ApiService {
         'statusMessage': 'The store is open and accepting orders.',
       };
     }
+    if (endpoint == '/coupons/offer') {
+      return {
+        'offer': {
+          'id': 'offer-1',
+          'enabled': true,
+          'code': 'DIWALI50',
+          'discountType': 'FIXED',
+          'amount': 50,
+          'minOrderAmount': 0,
+          'endsAt': null,
+        },
+      };
+    }
 
     return {
       'data': [
@@ -149,6 +162,17 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
+
+    await tester.tap(find.byKey(const ValueKey('home-coupon-gift-button')));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+    expect(find.text('Coupons'), findsOneWidget);
+    expect(find.text('DIWALI50'), findsOneWidget);
+    await tester.tap(find.text('Use at checkout'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+    expect(cart.suggestedCouponCode, 'DIWALI50');
+    expect(tester.takeException(), isNull);
 
     double searchOpacity(String key) => tester
         .widget<Opacity>(

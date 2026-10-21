@@ -1,11 +1,11 @@
 {
-    "name": "Ram Prasad General Store",
-    "short_name": "Ram Prasad Store",
+    "name": "FastStore",
+    "short_name": "FastStore",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#F9F9FB",
-    "theme_color": "#D97706",
-    "description": "Shop everyday essentials from Ram Prasad General Store in Janakpur.",
+    "theme_color": "#16A34A",
+    "description": "Shop everyday essentials from FastStore in Janakpur.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

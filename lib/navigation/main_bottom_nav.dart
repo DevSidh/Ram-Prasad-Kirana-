@@ -12,6 +12,7 @@ import '../core/widgets/app_widgets.dart';
 import '../providers/language_provider.dart';
 import '../providers/cart_provider.dart';
 import '../providers/product_provider.dart';
+import '../providers/store_availability_provider.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/vending/vending_machine_screen.dart';
 import '../screens/search/search_screen.dart';
@@ -33,6 +34,8 @@ class _MainBottomNavState extends State<MainBottomNav>
   late int _currentIndex;
   final Set<int> _visitedScreens = {0};
   final GlobalKey _cartTargetKey = GlobalKey();
+  Timer? _refreshTimer;
+  bool _refreshInProgress = false;
 
   final List<Widget> _screens = const [
     HomeScreen(),
@@ -49,10 +52,15 @@ class _MainBottomNavState extends State<MainBottomNav>
     _currentIndex = widget.initialIndex;
     _visitedScreens.add(_currentIndex);
     WidgetsBinding.instance.addObserver(this);
+    _refreshTimer = Timer.periodic(
+      const Duration(minutes: 5),
+      (_) => unawaited(_refreshSection(_currentIndex)),
+    );
   }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -60,7 +68,44 @@ class _MainBottomNavState extends State<MainBottomNav>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (mounted && state == AppLifecycleState.resumed) {
-      unawaited(context.read<ProductProvider>().refreshCatalogIfStale());
+      unawaited(_refreshSection(_currentIndex));
+    }
+  }
+
+  Future<void> _refreshSection(int index) async {
+    if (!mounted || _refreshInProgress) return;
+    _refreshInProgress = true;
+    try {
+      final products = context.read<ProductProvider>();
+      switch (index) {
+        case 0:
+          await Future.wait<void>([
+            products.refreshCatalogIfStale(),
+            context.read<StoreAvailabilityProvider>().refresh(),
+          ]);
+          break;
+        case 1:
+        case 2:
+          // Drinks and wholesale own their catalogs and refresh while visible.
+          break;
+        case 3:
+          await Future.wait<void>([
+            products.refreshCatalogIfStale(),
+            products.refreshWishlist(),
+          ]);
+          break;
+        case 4:
+          await context.read<CartProvider>().refreshSavedCart();
+          break;
+        case 5:
+          await products.refreshWishlist();
+          break;
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Unable to refresh navigation section $index: '
+          '$error\n$stackTrace');
+    } finally {
+      _refreshInProgress = false;
     }
   }
 
@@ -72,9 +117,7 @@ class _MainBottomNavState extends State<MainBottomNav>
       _currentIndex = index;
       _visitedScreens.add(index);
     });
-    if (index == 0 || index == 3) {
-      unawaited(context.read<ProductProvider>().refreshCatalogIfStale());
-    }
+    unawaited(_refreshSection(index));
   }
 
   @override

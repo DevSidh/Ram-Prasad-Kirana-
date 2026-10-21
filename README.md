@@ -30,6 +30,8 @@ of a running backend to load live data.
 
 ### Customer app
 
+- Create accounts with a 10-digit phone number and verify the email during
+  signup.
 - Browse categories and live products; search, sort, and filter the catalog.
 - View featured products, offers, product details, stock, and product images.
 - Save products to a wishlist and keep account data synchronized after login.
@@ -228,6 +230,7 @@ control.
 | `ADMIN_NAME`, `ADMIN_USERNAME`, `ADMIN_EMAIL` | Admin account creation and configured admin login identity. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Email delivery for verification and password-reset codes. |
 | `GOOGLE_MAPS_ROUTES_API_KEY` | Backend-only Routes API key for road-distance delivery pricing and routes. |
+| `GOOGLE_MAPS_PLACES_API_KEY` | Backend-only Places API (New) key for delivery-address search and place details. |
 | `DELIVERY_SERVICE_RADIUS_KM` | Delivery service radius; defaults to 10 km. |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | Optional backend credential for Firebase push delivery. |
 

@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'theme/app_colors.dart';
 
@@ -11,17 +10,14 @@ class AppConstants {
   static void setDarkTheme(bool isDark) => _isDarkTheme = isDark;
   static void setThemeOverride(bool? isDark) => _themeOverride = isDark;
 
-  static const String appName = 'Ram Prasad General Store';
-  static const String appTagline = 'Your Trusted Neighborhood General Store';
+  static const String appName = 'FastStore';
+  static const String appTagline = 'Janakpur';
 
   // Base API URL (can be customized via build-time environment variables)
   static String get apiBaseUrl {
     const configuredUrl = String.fromEnvironment('API_BASE_URL');
     if (configuredUrl.isNotEmpty) return configuredUrl;
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      return 'http://10.0.2.2:4000/api/v1';
-    }
-    return 'http://localhost:4000/api/v1';
+    return 'https://ram-prasad-kirana-backend.onrender.com/api/v1';
   }
 
   static void validateApiConfiguration() {
