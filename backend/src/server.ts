@@ -22,6 +22,7 @@ import {
 import { createPasswordResetRouter } from './routes/password-reset.js';
 import { createPlacesRouter } from './routes/places.js';
 import { createPublicLegalRouter } from './routes/public-legal.js';
+import { createReviewRouter } from './routes/reviews.js';
 import { sendPushToUser } from './services/push-notifications.js';
 import { getUploadsDirectory } from './services/image-upload.js';
 import {
@@ -156,6 +157,7 @@ app.use(
   createDeliveryRouter(prisma, authenticateToken, requireDeliveryPerson),
 );
 app.use('/api/v1/account', createAccountRouter(prisma, authenticateToken));
+app.use('/api/v1/reviews', createReviewRouter(prisma, authenticateToken));
 app.use('/api/v1/places', createPlacesRouter(authenticateToken));
 app.use('/api/v1/auth/password-reset', createPasswordResetRouter(prisma));
 
@@ -209,6 +211,8 @@ const orderInclude = {
           categoryId: true,
           price: true,
           minimumQuantity: true,
+          rating: true,
+          reviewCount: true,
           description: true,
           imageUrl: true,
           imageMimeType: true,
@@ -770,6 +774,8 @@ app.get('/api/v1/wholesale', async (req: Request, res: Response) => {
           price: true,
           stock: true,
           minimumQuantity: true,
+          rating: true,
+          reviewCount: true,
           description: true,
           origin: true,
           imageUrl: true,
@@ -784,6 +790,8 @@ app.get('/api/v1/wholesale', async (req: Request, res: Response) => {
       data: items.map(({ imageMimeType, category, ...item }) => ({
         ...item,
         price: Number(item.price),
+        rating: Number(item.rating),
+        reviewCount: item.reviewCount,
         isWholesale: true,
         wholesalePrice: Number(item.price),
         wholesaleMinimumQuantity: item.minimumQuantity,

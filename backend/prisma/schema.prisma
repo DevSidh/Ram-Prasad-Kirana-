@@ -210,12 +210,15 @@ model WholesaleItem {
   normalizedImageData Bytes?
   normalizedMimeType  String?
   unitLabel       String      @default("1 pc")
+  rating          Decimal     @default(0)
+  reviewCount     Int         @default(0)
   isActive        Boolean     @default(true)
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   category        Category    @relation(fields: [categoryId], references: [id])
   cartItems       CartItem[]
   orderItems      OrderItem[]
+  reviews         Review[]
 
   @@index([categoryId])
   @@index([isActive])
@@ -423,18 +426,22 @@ model WishlistItem {
 
 model Review {
   id        String   @id @default(cuid())
-  productId String
+  productId String?
+  wholesaleItemId String?
   userId    String
   rating    Int
   text      String?
   imageUrl  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product   Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+  wholesaleItem WholesaleItem? @relation(fields: [wholesaleItemId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([productId, userId])
+  @@unique([wholesaleItemId, userId])
   @@index([productId])
+  @@index([wholesaleItemId])
   @@index([userId])
 }
 
