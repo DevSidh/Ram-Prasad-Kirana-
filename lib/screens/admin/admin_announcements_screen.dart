@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/constants.dart';
+import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
 
@@ -20,6 +21,11 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
   final _titleController = TextEditingController();
   final _bodyController = TextEditingController();
   final _couponCodeController = TextEditingController();
+  final _customerSearchController = TextEditingController();
+  List<AdminCustomer> _customerResults = const [];
+  String? _selectedCustomerId;
+  String _recipientMode = 'all';
+  bool _searchingCustomers = false;
   bool _sending = false;
   String? _error;
   AdminBroadcastResult? _lastResult;
@@ -29,18 +35,49 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
     _titleController.dispose();
     _bodyController.dispose();
     _couponCodeController.dispose();
+    _customerSearchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _searchCustomers() async {
+    setState(() => _searchingCustomers = true);
+    try {
+      final page = await _adminApi.getCustomers(
+        pageSize: 100,
+        search: _customerSearchController.text,
+      );
+      if (!mounted) return;
+      setState(() {
+        _customerResults =
+            page.customers.where((customer) => customer.isActive).toList();
+        _selectedCustomerId = null;
+        _searchingCustomers = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _searchingCustomers = false;
+        _error = error.toString().replaceFirst('Exception: ', '');
+      });
+    }
   }
 
   Future<void> _sendAnnouncement() async {
     if (_sending || !_formKey.currentState!.validate()) return;
+    if (_recipientMode == 'customer' && _selectedCustomerId == null) {
+      setState(() => _error = 'Search for and select an active customer.');
+      return;
+    }
     final shouldSend = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Send to all active accounts?'),
-        content: const Text(
-          'This announcement will appear in every active account. '
-          'Push notifications are sent when device tokens are available.',
+        title: Text(_recipientMode == 'all'
+            ? 'Send to all active accounts?'
+            : 'Send to selected customer?'),
+        content: Text(
+          _recipientMode == 'all'
+              ? 'This announcement will appear in every active account. Push notifications are sent when device tokens are available.'
+              : 'This announcement will be saved for the selected customer. Push notifications are sent when a device token is available.',
         ),
         actions: [
           TextButton(
@@ -63,11 +100,18 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
       _lastResult = null;
     });
     try {
-      final result = await _adminApi.broadcastNotification(
-        title: _titleController.text,
-        body: _bodyController.text,
-        couponCode: _couponCodeController.text,
-      );
+      final result = _recipientMode == 'all'
+          ? await _adminApi.broadcastNotification(
+              title: _titleController.text,
+              body: _bodyController.text,
+              couponCode: _couponCodeController.text,
+            )
+          : await _adminApi.sendCustomerNotification(
+              userId: _selectedCustomerId!,
+              title: _titleController.text,
+              body: _bodyController.text,
+              couponCode: _couponCodeController.text,
+            );
       if (!mounted) return;
       setState(() {
         _sending = false;
@@ -88,15 +132,14 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
       children: [
         Text(
-          'One message, every account',
+          'Faststore',
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.w800,
               ),
         ),
         const SizedBox(height: 6),
         Text(
-          'Send a store announcement to every active account. '
-          'It will be saved in their in-app notifications.',
+          'Send a promotion or update to all active accounts or one selected customer. Customers see Faststore as the notification title; your announcement title appears in the message.',
           style: TextStyle(color: AppConstants.textMuted, height: 1.4),
         ),
         const SizedBox(height: 18),
@@ -114,6 +157,91 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  DropdownButtonFormField<String>(
+                    initialValue: _recipientMode,
+                    decoration: const InputDecoration(
+                      labelText: 'Recipients',
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'all',
+                        child: Text('All active accounts'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'customer',
+                        child: Text('One customer'),
+                      ),
+                    ],
+                    onChanged: _sending
+                        ? null
+                        : (value) {
+                            if (value == null) return;
+                            setState(() {
+                              _recipientMode = value;
+                              _error = null;
+                            });
+                          },
+                  ),
+                  if (_recipientMode == 'customer') ...[
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _customerSearchController,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (_) => _searchCustomers(),
+                      decoration: InputDecoration(
+                        labelText: 'Find a customer',
+                        hintText: 'Search by customer ID, name, phone or email',
+                        suffixIcon: IconButton(
+                          onPressed:
+                              _searchingCustomers ? null : _searchCustomers,
+                          icon: _searchingCustomers
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.search_rounded),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedCustomerId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Active customer',
+                      ),
+                      items: _customerResults
+                          .map(
+                            (customer) => DropdownMenuItem(
+                              value: customer.id,
+                              child: Text(
+                                '${customer.profileId} · ${customer.name} · ${customer.email}',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _sending
+                          ? null
+                          : (value) =>
+                              setState(() => _selectedCustomerId = value),
+                    ),
+                    if (_customerResults.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          'Search to load active customers.',
+                          style: TextStyle(
+                            color: AppConstants.textMuted,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                  ],
+                  const SizedBox(height: 12),
                   TextFormField(
                     controller: _titleController,
                     maxLength: 120,
@@ -160,7 +288,8 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                     textCapitalization: TextCapitalization.characters,
                     decoration: const InputDecoration(
                       labelText: 'Coupon code (optional)',
-                      hintText: 'Attach a current coupon for customers to claim',
+                      hintText:
+                          'Attach a current coupon for customers to claim',
                       prefixIcon: Icon(Icons.card_giftcard_outlined),
                     ),
                     validator: (value) {
@@ -200,7 +329,11 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                           )
                         : const Icon(Icons.send_rounded),
                     label: Text(
-                      _sending ? 'Sending…' : 'Review and send to all',
+                      _sending
+                          ? 'Sending…'
+                          : _recipientMode == 'all'
+                              ? 'Review and send to all'
+                              : 'Review and send to customer',
                     ),
                     style: FilledButton.styleFrom(
                       minimumSize: const Size.fromHeight(50),
@@ -221,10 +354,11 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
   String _resultMessage(AdminBroadcastResult result) {
     final parts = <String>[
       'Saved for ${result.notificationsCreated} of '
-      '${result.recipientCount} active accounts.',
+          '${result.recipientCount} active accounts.',
     ];
     if (!result.pushAvailable) {
-      parts.add('Push delivery is not configured; in-app notifications are saved.');
+      parts.add(
+          'Push delivery is not configured; in-app notifications are saved.');
     } else if (result.pushError != null) {
       parts.add(result.pushError!);
     } else if (result.pushFailed > 0) {

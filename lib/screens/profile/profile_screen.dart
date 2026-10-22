@@ -1,5 +1,4 @@
 import 'dart:typed_data';
-import 'dart:ui' as ui;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -21,6 +20,7 @@ import 'address_book_screen.dart';
 import 'edit_profile_screen.dart';
 import 'profile_image_crop_screen.dart';
 import 'profile_options_screens.dart';
+import 'buying_streak_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
@@ -303,79 +303,76 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 124),
                   children: [
-                    // Keep the expensive backdrop blur confined to this hero.
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(26),
-                      child: BackdropFilter(
-                        filter: ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: isDark
-                                  ? [
-                                      const Color(0xD9222925),
-                                      const Color(0xC91A201D),
-                                    ]
-                                  : [
-                                      Colors.white.withValues(alpha: 0.74),
-                                      const Color(0xFFE8F8EC)
-                                          .withValues(alpha: 0.68),
-                                    ],
-                            ),
-                            borderRadius: BorderRadius.circular(26),
-                            border: Border.all(
-                              color: isDark
-                                  ? AppConstants.borderLight
-                                      .withValues(alpha: 0.72)
-                                  : Colors.white.withValues(alpha: 0.78),
-                              width: 1.2,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppConstants.primary
-                                    .withValues(alpha: isDark ? 0.13 : 0.1),
-                                blurRadius: 32,
-                                offset: const Offset(0, 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: isDark
+                              ? [
+                                  const Color(0xD9222925),
+                                  const Color(0xC91A201D),
+                                ]
+                              : [
+                                  Colors.white.withValues(alpha: 0.74),
+                                  const Color(0xFFE8F8EC)
+                                      .withValues(alpha: 0.68),
+                                ],
+                        ),
+                        borderRadius: BorderRadius.circular(26),
+                        border: Border.all(
+                          color: isDark
+                              ? AppConstants.borderLight.withValues(alpha: 0.72)
+                              : Colors.white.withValues(alpha: 0.78),
+                          width: 1.2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppConstants.primary
+                                .withValues(alpha: isDark ? 0.13 : 0.1),
+                            blurRadius: 32,
+                            offset: const Offset(0, 12),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 7,
+                                height: 7,
+                                decoration: const BoxDecoration(
+                                  color: AppConstants.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 7),
+                              Expanded(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    context.tr('YOUR STORE ACCOUNT'),
+                                    style: TextStyle(
+                                      color: AppConstants.primaryDark,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 1.05,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ],
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          const SizedBox(height: 18),
+                          Row(
                             children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    width: 7,
-                                    height: 7,
-                                    decoration: const BoxDecoration(
-                                      color: AppConstants.primary,
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 7),
-                                  Expanded(
-                                    child: FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      alignment: Alignment.centerLeft,
-                                      child: Text(
-                                        context.tr('YOUR STORE ACCOUNT'),
-                                        style: TextStyle(
-                                          color: AppConstants.primaryDark,
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w800,
-                                          letterSpacing: 1.05,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 18),
-                              Row(
+                              Column(
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
                                   InkWell(
                                     onTap: _uploadingAvatar || user == null
@@ -462,118 +459,179 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          user?.fullName ??
-                                              context.tr('Guest Customer'),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 19,
-                                            color: AppConstants.textDark,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          user?.email ??
-                                              context.tr(
-                                                'Sign in to manage your account',
-                                              ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            color: AppConstants.textMuted,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  IconButton(
-                                    tooltip: context.tr('Edit profile'),
-                                    onPressed: user == null
-                                        ? null
-                                        : () => Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (_) =>
-                                                    const EditProfileScreen(),
-                                              ),
-                                            ),
-                                    style: IconButton.styleFrom(
-                                      backgroundColor: AppConstants.surfaceLight
-                                          .withValues(alpha: 0.78),
-                                      foregroundColor: AppConstants.primaryDark,
-                                    ),
-                                    icon: const Icon(Icons.edit_outlined),
-                                  ),
-                                ],
-                              ),
-                              if (user == null) ...[
-                                const SizedBox(height: 14),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: FilledButton.icon(
-                                    onPressed: () => Navigator.push(
-                                      context,
-                                      MaterialPageRoute<void>(
-                                        builder: (_) => const LoginScreen(
-                                          returnToCaller: true,
-                                        ),
+                                  if (user?.profileId != null) ...[
+                                    const SizedBox(height: 5),
+                                    Text(
+                                      user!.profileId!,
+                                      style: TextStyle(
+                                        color: AppConstants.textMuted,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: .35,
                                       ),
                                     ),
-                                    icon: const Icon(Icons.login_rounded),
-                                    label: Text(
-                                      context
-                                          .tr('Sign in to manage your account'),
+                                  ],
+                                ],
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      user?.fullName ??
+                                          context.tr('Guest Customer'),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 19,
+                                        color: AppConstants.textDark,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      user?.email ??
+                                          context.tr(
+                                            'Sign in to manage your account',
+                                          ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: AppConstants.textMuted,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: context.tr('Edit profile'),
+                                onPressed: user == null
+                                    ? null
+                                    : () => Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                const EditProfileScreen(),
+                                          ),
+                                        ),
+                                style: IconButton.styleFrom(
+                                  backgroundColor: AppConstants.surfaceLight
+                                      .withValues(alpha: 0.78),
+                                  foregroundColor: AppConstants.primaryDark,
+                                ),
+                                icon: const Icon(Icons.edit_outlined),
+                              ),
+                            ],
+                          ),
+                          if (user == null) ...[
+                            const SizedBox(height: 14),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => const LoginScreen(
+                                      returnToCaller: true,
                                     ),
                                   ),
                                 ),
-                              ],
-                              const SizedBox(height: 22),
-                              Row(
-                                children: [
-                                  _ProfileQuickAction(
-                                    icon: Icons.receipt_long_outlined,
-                                    label: context.tr('Orders'),
-                                    onTap: () => _openAccountSection(
-                                      (_) => const MyOrdersScreen(),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  _ProfileQuickAction(
-                                    icon: Icons.location_on_outlined,
-                                    label: context.tr('Addresses'),
-                                    onTap: () => _openAccountSection(
-                                      (_) => const AddressBookScreen(),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  _ProfileQuickAction(
-                                    icon: Icons.favorite_border,
-                                    label: context.tr('Saved items'),
-                                    onTap: () {
-                                      products.resetCatalogFilters();
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              const ProductListScreen(
-                                            categoryName: 'Saved items',
-                                            favoritesOnly: true,
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ],
+                                icon: const Icon(Icons.login_rounded),
+                                label: Text(
+                                  context.tr('Sign in to manage your account'),
+                                ),
                               ),
+                            ),
+                          ],
+                          const SizedBox(height: 22),
+                          Row(
+                            children: [
+                              _ProfileQuickAction(
+                                icon: Icons.receipt_long_outlined,
+                                label: context.tr('Orders'),
+                                onTap: () => _openAccountSection(
+                                  (_) => const MyOrdersScreen(),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              _ProfileQuickAction(
+                                icon: Icons.location_on_outlined,
+                                label: context.tr('Addresses'),
+                                onTap: () => _openAccountSection(
+                                  (_) => const AddressBookScreen(),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              _ProfileQuickAction(
+                                icon: Icons.favorite_border,
+                                label: context.tr('Saved items'),
+                                onTap: () {
+                                  products.resetCatalogFilters();
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const ProductListScreen(
+                                        categoryName: 'Saved items',
+                                        favoritesOnly: true,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Material(
+                      color: AppConstants.glassSurfaceFor(isDark),
+                      borderRadius: BorderRadius.circular(18),
+                      child: InkWell(
+                        key: const ValueKey('profile-buying-streak'),
+                        borderRadius: BorderRadius.circular(18),
+                        onTap: () => _openAccountSection(
+                          (_) => const BuyingStreakScreen(),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 15,
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.local_fire_department_rounded,
+                                color: Color(0xFFE98228),
+                                size: 28,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      context.tr('Buying day streak'),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      context.tr(
+                                        'See your milestones and claim rewards',
+                                      ),
+                                      style: TextStyle(
+                                        color: AppConstants.textMuted,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const Icon(Icons.chevron_right),
                             ],
                           ),
                         ),

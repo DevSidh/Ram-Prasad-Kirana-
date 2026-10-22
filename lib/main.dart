@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'core/theme.dart';
 import 'core/constants.dart';
 import 'services/api_service.dart';
+import 'services/product_share_link.dart';
 import 'providers/auth_provider.dart';
 import 'providers/product_provider.dart';
 import 'providers/cart_provider.dart';
@@ -13,6 +14,7 @@ import 'providers/theme_provider.dart';
 import 'providers/language_provider.dart';
 import 'providers/store_availability_provider.dart';
 import 'screens/splash_screen.dart';
+import 'screens/product/shared_product_screen.dart';
 import 'widgets/store_animation.dart';
 
 void main() {
@@ -96,6 +98,14 @@ class RamPrasadGeneralStoreApp extends StatelessWidget {
         child: child ?? const SizedBox.shrink(),
       ),
       home: const SplashScreen(),
+      onGenerateRoute: (settings) {
+        final productId = sharedProductIdFromRoute(settings.name);
+        if (productId == null) return null;
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => SharedProductScreen(productId: productId),
+        );
+      },
     );
   }
 }

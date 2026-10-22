@@ -10,6 +10,7 @@ import '../../widgets/custom_button.dart';
 import '../../widgets/auth_surface.dart';
 import 'register_screen.dart';
 import 'forgot_password_screen.dart';
+import 'email_verification_screen.dart';
 import '../../navigation/app_shell_route.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -378,6 +379,22 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
+                if (!widget.isAdminLogin)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      key: const Key('login-email-verification'),
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => EmailVerificationScreen(
+                            email: _emailController.text.trim(),
+                          ),
+                        ),
+                      ),
+                      child: const Text('Verify email address'),
+                    ),
+                  ),
                 const SizedBox(height: 20),
 
                 // Submit Button

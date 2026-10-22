@@ -118,7 +118,7 @@ void main() {
       );
       final capsule = tester.widget<ClipRRect>(capsuleFinder);
       expect(capsule.borderRadius, BorderRadius.circular(40));
-      expect(capsule.child, isA<BackdropFilter>());
+      expect(capsule.child, isA<Container>());
       final decoration = tester
           .widget<Container>(
             find.descendant(
@@ -151,7 +151,7 @@ void main() {
         of: capsuleFinder,
         matching: find.byType(BackdropFilter),
       ),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
       (tester

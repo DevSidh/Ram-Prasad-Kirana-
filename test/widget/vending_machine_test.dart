@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:freshharvest_grocery/providers/cart_provider.dart';
 import 'package:freshharvest_grocery/providers/product_provider.dart';
 import 'package:freshharvest_grocery/screens/vending/vending_machine_screen.dart';
+import 'package:freshharvest_grocery/screens/vending/drinks_menu_section.dart';
 import 'package:freshharvest_grocery/services/api_service.dart';
 import 'package:freshharvest_grocery/widgets/product_card.dart';
 
@@ -136,9 +137,10 @@ void main() {
       'page': '1',
       'limit': '100',
     });
+
     expect(find.text('18 drinks'), findsOneWidget);
-    expect(find.text('Cola'), findsOneWidget);
-    expect(find.text('Strawberry Milk Special'), findsNothing);
+    expect(find.text('Cola'), findsWidgets);
+    expect(find.text('Strawberry Milk Special'), findsOneWidget);
     expect(find.byType(ProductCard), findsWidgets);
     expect(
       tester.widgetList<ProductCard>(find.byType(ProductCard)).every(
@@ -169,6 +171,30 @@ void main() {
 
     expect(cart.itemCount, 2);
     expect(cart.itemList.single.product.name, 'Strawberry Milk Special');
+  });
+
+  testWidgets('shows featured drink first and keeps catalog order below',
+      (tester) async {
+    final cart = CartProvider();
+    addTearDown(cart.dispose);
+    await pumpScreen(tester, _VendingApi(), cart);
+
+    expect(find.byType(DrinkCard), findsOneWidget);
+    expect(find.text('Featured drink'), findsOneWidget);
+    expect(find.text('Cola'), findsNWidgets(2));
+    expect(find.byKey(const ValueKey('drink-0')), findsOneWidget);
+    final gridProducts = tester.widgetList<ProductCard>(
+      find.byType(ProductCard),
+    );
+    expect(gridProducts.first.product.name, 'Cola');
+    final featuredBackground = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('featured-drink-white-stage')),
+    );
+    expect(
+      (featuredBackground.decoration as BoxDecoration).color,
+      Colors.white,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('fits 360x800 and keeps every grid card inside the viewport',
@@ -245,14 +271,7 @@ void main() {
     addTearDown(cart.dispose);
     await pumpScreen(tester, _VendingApi(), cart);
 
-    final drinkCard = find.byKey(const ValueKey('drink-0'));
-    final unavailableButton = find.descendant(
-      of: drinkCard,
-      matching: find.byTooltip('Unavailable'),
-    );
-    expect(unavailableButton, findsOneWidget);
-    await tester.tap(unavailableButton);
-    await tester.pumpAndSettle();
+    expect(find.text('Sold out'), findsWidgets);
     expect(cart.itemCount, 0);
     expect(tester.takeException(), isNull);
   });

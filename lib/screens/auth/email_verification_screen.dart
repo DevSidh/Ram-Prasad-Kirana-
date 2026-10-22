@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -7,8 +9,13 @@ import '../../widgets/auth_surface.dart';
 
 class EmailVerificationScreen extends StatefulWidget {
   final String email;
+  final Uint8List? profileImageBytes;
 
-  const EmailVerificationScreen({super.key, this.email = ''});
+  const EmailVerificationScreen({
+    super.key,
+    this.email = '',
+    this.profileImageBytes,
+  });
 
   @override
   State<EmailVerificationScreen> createState() =>
@@ -79,11 +86,26 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
       setState(() => _error = auth.errorMessage);
       return;
     }
+    String? profileImageError;
+    if (widget.profileImageBytes != null) {
+      try {
+        await auth.updateAvatar(widget.profileImageBytes!, 'profile.png');
+      } catch (error) {
+        debugPrint('Profile image upload after verification failed: $error');
+        profileImageError =
+            'Your email is verified, but the photo could not be uploaded. You can add it later from Profile.';
+      }
+    }
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (_) => appShellForUser(auth.currentUser)),
       (_) => false,
     );
+    if (profileImageError != null) {
+      messenger.showSnackBar(SnackBar(content: Text(profileImageError)));
+    }
   }
 
   @override

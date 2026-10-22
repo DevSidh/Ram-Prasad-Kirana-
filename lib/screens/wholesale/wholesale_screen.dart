@@ -8,6 +8,7 @@ import '../../models/product.dart';
 import '../../models/wholesale_item.dart';
 import '../../providers/cart_provider.dart';
 import '../../services/api_service.dart';
+import '../product/product_details_screen.dart';
 import '../../widgets/product_thumbnail.dart';
 import '../../widgets/store_animation.dart';
 
@@ -259,6 +260,14 @@ class _WholesaleScreenState extends State<WholesaleScreen> {
                             itemBuilder: (context, index) =>
                                 _WholesaleProductCard(
                               product: products[index],
+                              onOpen: () => Navigator.push<void>(
+                                context,
+                                MaterialPageRoute<void>(
+                                  builder: (_) => ProductDetailsScreen(
+                                    product: products[index],
+                                  ),
+                                ),
+                              ),
                               cartQuantity: cart
                                       .items['${products[index].id}:wholesale']
                                       ?.quantity ??
@@ -288,11 +297,13 @@ class _WholesaleScreenState extends State<WholesaleScreen> {
 
 class _WholesaleProductCard extends StatelessWidget {
   final Product product;
+  final VoidCallback onOpen;
   final int cartQuantity;
   final VoidCallback onAdd;
 
   const _WholesaleProductCard({
     required this.product,
+    required this.onOpen,
     required this.cartQuantity,
     required this.onAdd,
   });
@@ -312,57 +323,92 @@ class _WholesaleProductCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          ProductThumbnail(
-            imageUrl: product.imageUrl,
-            size: 82,
-            fit: BoxFit.contain,
-            borderRadius: BorderRadius.circular(13),
-            backgroundColor: Colors.white,
-            imageWidthFactor: .77,
-          ),
-          const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (product.brand?.isNotEmpty == true)
-                  Text(
-                    product.brand!.toUpperCase(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: AppConstants.textMuted,
-                      fontSize: 9,
-                      letterSpacing: .7,
-                      fontWeight: FontWeight.w700,
+            child: InkWell(
+              onTap: onOpen,
+              borderRadius: BorderRadius.circular(13),
+              child: Row(
+                children: [
+                  ProductThumbnail(
+                    imageUrl: product.imageUrl,
+                    size: 82,
+                    fit: BoxFit.contain,
+                    borderRadius: BorderRadius.circular(13),
+                    backgroundColor: Colors.white,
+                    imageWidthFactor: .77,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (product.brand?.isNotEmpty == true)
+                          Text(
+                            product.brand!.toUpperCase(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: AppConstants.textMuted,
+                              fontSize: 9,
+                              letterSpacing: .7,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        Text(
+                          product.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.star_rounded,
+                              color: Color(0xFFE7A900),
+                              size: 13,
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              product.reviewCount == 0
+                                  ? 'New · no ratings'
+                                  : '${product.rating.toStringAsFixed(1)} · ${product.reviewCount} ratings',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: AppConstants.textMuted,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '${hasMinimum ? 'Minimum $minimum × ${product.weight} · ' : ''}${product.stock} available',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: AppConstants.textMuted,
+                            fontSize: 10,
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        Text(
+                          'Rs. ${unitPrice.toStringAsFixed(0)} / unit',
+                          style: const TextStyle(
+                            color: AppConstants.primary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                Text(
-                  product.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '${hasMinimum ? 'Minimum $minimum × ${product.weight} · ' : ''}${product.stock} available',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: AppConstants.textMuted, fontSize: 10),
-                ),
-                const SizedBox(height: 7),
-                Text(
-                  'Rs. ${unitPrice.toStringAsFixed(0)} / unit',
-                  style: const TextStyle(
-                    color: AppConstants.primary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           const SizedBox(width: 6),

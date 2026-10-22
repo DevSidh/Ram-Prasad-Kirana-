@@ -42,6 +42,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
   GoogleMapController? _mapController;
   BitmapDescriptor? _riderMarkerIcon;
   String? _refreshError;
+  bool _isAppForeground = true;
 
   @override
   void initState() {
@@ -51,10 +52,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_refreshOrder());
     });
-    _refreshTimer = Timer.periodic(
-      const Duration(seconds: 20),
-      (_) => unawaited(_refreshOrder()),
-    );
+    _startRefreshTimer();
   }
 
   Future<void> _loadRiderMarkerIcon() async {
@@ -94,10 +92,26 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _refreshOrder();
+    _isAppForeground = state == AppLifecycleState.resumed;
+    if (_isAppForeground) {
+      _startRefreshTimer();
+      unawaited(_refreshOrder());
+    } else {
+      _refreshTimer?.cancel();
+      _refreshTimer = null;
+    }
+  }
+
+  void _startRefreshTimer() {
+    if (!_isAppForeground || _refreshTimer != null) return;
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => unawaited(_refreshOrder()),
+    );
   }
 
   Future<void> _refreshOrder() async {
+    if (!_isAppForeground) return;
     try {
       await context.read<OrderProvider>().refreshOrder(widget.order.id);
       if (mounted && _refreshError != null) {

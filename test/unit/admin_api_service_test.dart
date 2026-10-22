@@ -22,6 +22,7 @@ class _AdminApi extends ApiService {
   Map<String, String>? receiptHistoryQuery;
   Map<String, dynamic>? savedStoreSettings;
   Map<String, dynamic>? savedCoupon;
+  Map<String, dynamic>? postedNotification;
   Map<String, dynamic>? postedWholesaleItem;
 
   @override
@@ -240,6 +241,15 @@ class _AdminApi extends ApiService {
   @override
   Future<dynamic> patch(String endpoint, Map<String, dynamic> body) async {
     patches.add((endpoint, body));
+    if (endpoint == '/admin/coupons/coupon-1') {
+      savedCoupon = {
+        ...body,
+        'id': 'coupon-1',
+        'isActive': true,
+        'usedCount': 3,
+      };
+      return {'coupon': savedCoupon};
+    }
     if (endpoint == '/admin/coupons/coupon-1/active') {
       return {
         'coupon': {
@@ -283,6 +293,14 @@ class _AdminApi extends ApiService {
 
   @override
   Future<dynamic> post(String endpoint, Map<String, dynamic> body) async {
+    if (endpoint == '/admin/notifications/customer') {
+      postedNotification = body;
+      return {
+        'recipientCount': 1,
+        'notificationsCreated': 1,
+        'pushDelivery': {'available': false, 'sent': 0, 'failed': 0},
+      };
+    }
     if (endpoint == '/admin/wholesale-items') {
       postedWholesaleItem = body;
       return {};
@@ -446,6 +464,57 @@ void main() {
     expect(api.patches.single.$2, {'isActive': false});
   });
 
+  test('admin can edit coupon code, limits, and expiration time', () async {
+    final api = _AdminApi();
+    final details = {
+      'code': 'UPDATED10',
+      'discountType': 'PERCENTAGE',
+      'discountPercent': 10,
+      'discountAmount': null,
+      'minOrderAmount': 600,
+      'maxDiscount': 150,
+      'usageLimit': 30,
+      'perUserLimit': 2,
+      'expiresAt': '2027-01-01T12:30:00.000Z',
+    };
+
+    final updated =
+        await AdminApiService(api).updateCoupon('coupon-1', details);
+
+    expect(api.patches.single, ('/admin/coupons/coupon-1', details));
+    expect(updated.code, 'UPDATED10');
+    expect(updated.usageLimit, 30);
+    expect(updated.perUserLimit, 2);
+    expect(updated.expiresAt, DateTime.parse('2027-01-01T12:30:00.000Z'));
+  });
+
+  test('admin can target a notification and remove a customer safely',
+      () async {
+    final api = _AdminApi();
+    final adminApi = AdminApiService(api);
+
+    final sent = await adminApi.sendCustomerNotification(
+      userId: 'customer-1',
+      title: 'Hello',
+      body: 'A targeted update.',
+      couponCode: 'save10',
+    );
+    await adminApi.removeCustomer(
+      'customer-1',
+      confirmation: 'REMOVE USER',
+    );
+
+    expect(sent.recipientCount, 1);
+    expect(api.postedNotification, {
+      'userId': 'customer-1',
+      'title': 'Hello',
+      'body': 'A targeted update.',
+      'couponCode': 'SAVE10',
+    });
+    expect(api.deletes.single.$1, '/admin/customers/customer-1');
+    expect(api.deletes.single.$2, {'confirmation': 'REMOVE USER'});
+  });
+
   test('loads and saves store ordering controls and weekly hours', () async {
     final api = _AdminApi();
     final adminApi = AdminApiService(api);
@@ -525,18 +594,22 @@ void main() {
     );
   });
 
-  test('clears order item details only after sending the typed confirmation',
+  test('cancels an order using its status-history preserving endpoint',
       () async {
     final api = _AdminApi();
 
-    final deleted = await AdminApiService(api).clearAllOrderItemDetails(
-      confirmation: 'CONFIRM DELETE',
+    await AdminApiService(api).updateOrderStatus(
+      'order-1',
+      'CANCELLED',
+      note: 'Cancelled by customer request.',
     );
 
-    expect(deleted, 7);
-    expect(api.deletes, hasLength(1));
-    expect(api.deletes.single.$1, '/admin/orders/items');
-    expect(api.deletes.single.$2, {'confirmation': 'CONFIRM DELETE'});
+    expect(api.patches.single.$1, '/admin/orders/order-1/status');
+    expect(api.patches.single.$2, {
+      'status': 'CANCELLED',
+      'note': 'Cancelled by customer request.',
+    });
+    expect(api.deletes, isEmpty);
   });
 
   test('sets and clears the scheduled delivery time for an order', () async {

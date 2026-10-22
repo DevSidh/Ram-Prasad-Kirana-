@@ -311,43 +311,51 @@ class DrinkStage extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final artSize = (constraints.maxHeight * .60)
-            .clamp(42.0, constraints.maxWidth * .70)
+        final artSize = (constraints.maxHeight * (featured ? .84 : .60))
+            .clamp(42.0, constraints.maxWidth * (featured ? .92 : .70))
             .toDouble();
-        final artWidth =
-            (artSize * .68).clamp(34.0, constraints.maxWidth * .58).toDouble();
+        final artWidth = (artSize * (featured ? .78 : .68))
+            .clamp(34.0, constraints.maxWidth * (featured ? .84 : .58))
+            .toDouble();
         return ClipRRect(
           borderRadius: radius,
           child: Stack(
             fit: StackFit.expand,
             children: [
               DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topRight,
-                    end: Alignment.bottomLeft,
-                    colors: disabled
-                        ? const [Color(0xFF42474D), Color(0xFF272C31)]
-                        : [drink.colorTop, drink.colorBottom],
-                  ),
-                ),
+                key: featured
+                    ? const ValueKey('featured-drink-white-stage')
+                    : null,
+                decoration: featured
+                    ? const BoxDecoration(color: Colors.white)
+                    : BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topRight,
+                          end: Alignment.bottomLeft,
+                          colors: disabled
+                              ? const [Color(0xFF42474D), Color(0xFF272C31)]
+                              : [drink.colorTop, drink.colorBottom],
+                        ),
+                      ),
               ),
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: RadialGradient(
-                        center: const Alignment(.04, -.12),
-                        radius: .82,
-                        colors: [
-                          Colors.white.withValues(alpha: disabled ? .06 : .25),
-                          Colors.white.withValues(alpha: 0),
-                        ],
+              if (!featured)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: RadialGradient(
+                          center: const Alignment(.04, -.12),
+                          radius: .82,
+                          colors: [
+                            Colors.white
+                                .withValues(alpha: disabled ? .06 : .25),
+                            Colors.white.withValues(alpha: 0),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
               Positioned(
                 left: 10,
                 right: 10,
@@ -357,25 +365,26 @@ class DrinkStage extends StatelessWidget {
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      Positioned(
-                        bottom: artSize * .04,
-                        child: Container(
-                          width: artSize * .68,
-                          height: artSize * .12,
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: .28),
-                            borderRadius: BorderRadius.all(
-                              Radius.elliptical(artSize, artSize),
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: .3),
-                                blurRadius: artSize * .14,
+                      if (!featured)
+                        Positioned(
+                          bottom: artSize * .04,
+                          child: Container(
+                            width: artSize * .68,
+                            height: artSize * .12,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: .28),
+                              borderRadius: BorderRadius.all(
+                                Radius.elliptical(artSize, artSize),
                               ),
-                            ],
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: .3),
+                                  blurRadius: artSize * .14,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
                       SizedBox(
                         width: artWidth,
                         height: artSize,

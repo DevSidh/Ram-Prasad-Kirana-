@@ -1,22 +1,35 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/constants.dart';
 import '../../models/admin_models.dart';
+import '../../services/admin_order_notification_service.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
 
 class AdminOrdersScreen extends StatefulWidget {
   final ApiService api;
+  final bool isActive;
+  final AdminOrderNotificationService? notificationService;
 
-  const AdminOrdersScreen({super.key, required this.api});
+  const AdminOrdersScreen({
+    super.key,
+    required this.api,
+    this.isActive = false,
+    this.notificationService,
+  });
 
   @override
   State<AdminOrdersScreen> createState() => _AdminOrdersScreenState();
 }
 
-class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
+class _AdminOrdersScreenState extends State<AdminOrdersScreen>
+    with WidgetsBindingObserver {
   late final AdminApiService _adminApi = AdminApiService(widget.api);
+  late final AdminOrderNotificationService _notificationService =
+      widget.notificationService ?? const AdminOrderNotificationService();
   final _searchController = TextEditingController();
   AdminOrderPage? _page;
   List<AdminDeliveryPerson> _deliveryPeople = const [];
@@ -25,7 +38,12 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
   String? _deliveryError;
   String? _savingId;
   bool _loading = true;
-  bool _clearingItemDetails = false;
+  final Map<String, String> _optimisticStatuses = {};
+  Timer? _orderPollTimer;
+  bool _hasPollBaseline = false;
+  bool _pollInFlight = false;
+  bool _isAppForeground = true;
+  final Set<String> _seenOrderIds = {};
   int _pageNumber = 1;
 
   static const _statuses = <(String, String)>[
@@ -40,13 +58,99 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+    if (widget.isActive) _startOrderPolling();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _isAppForeground = state == AppLifecycleState.resumed;
+    if (_isAppForeground) {
+      if (widget.isActive) _startOrderPolling(resetBaseline: false);
+    } else {
+      _pauseOrderPolling();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant AdminOrdersScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive == oldWidget.isActive) return;
+    if (widget.isActive) {
+      _startOrderPolling();
+    } else {
+      _stopOrderPolling();
+    }
   }
 
   @override
   void dispose() {
+    _stopOrderPolling();
+    WidgetsBinding.instance.removeObserver(this);
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _startOrderPolling({bool resetBaseline = true}) {
+    if (!_isAppForeground || !widget.isActive) return;
+    _orderPollTimer?.cancel();
+    if (resetBaseline) _hasPollBaseline = false;
+    unawaited(_notificationService.requestPermission());
+    unawaited(_pollOrders());
+    _orderPollTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => unawaited(_pollOrders()),
+    );
+  }
+
+  void _stopOrderPolling() {
+    _orderPollTimer?.cancel();
+    _orderPollTimer = null;
+    _hasPollBaseline = false;
+  }
+
+  void _pauseOrderPolling() {
+    _orderPollTimer?.cancel();
+    _orderPollTimer = null;
+  }
+
+  Future<void> _pollOrders() async {
+    if (!widget.isActive || !_isAppForeground || _pollInFlight) return;
+    _pollInFlight = true;
+    try {
+      final incoming = await _adminApi.getRecentOrderAlerts();
+      if (!mounted || !widget.isActive || !_isAppForeground) return;
+      if (!_hasPollBaseline) {
+        _seenOrderIds.addAll(incoming.map((order) => order.id));
+        _hasPollBaseline = true;
+        return;
+      }
+      final newOrders = incoming
+          .where((order) => _seenOrderIds.add(order.id))
+          .toList();
+      if (newOrders.isNotEmpty) {
+        for (final order in newOrders) {
+          unawaited(_notificationService.showNewOrder(order.orderNumber));
+        }
+        final order = newOrders.first;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              newOrders.length == 1
+                  ? 'New order received: ${order.orderNumber}'
+                  : '${newOrders.length} new orders received. Latest: ${order.orderNumber}',
+            ),
+            duration: const Duration(seconds: 6),
+          ),
+        );
+        unawaited(_load());
+      }
+    } catch (_) {
+      // Keep the existing order list usable when a background check fails.
+    } finally {
+      _pollInFlight = false;
+    }
   }
 
   Future<void> _load() async {
@@ -56,19 +160,24 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
       _deliveryError = null;
     });
     try {
-      final result = await _adminApi.getOrders(
-        page: _pageNumber,
-        search: _searchController.text,
-        status: _status,
-      );
       List<AdminDeliveryPerson> people = _deliveryPeople;
       String? deliveryError;
-      try {
-        people = await _adminApi.getDeliveryPeople();
-      } catch (error) {
-        deliveryError =
-            'Delivery assignments could not load: ${error.toString().replaceFirst('Exception: ', '')}';
-      }
+      late AdminOrderPage result;
+      await Future.wait<void>([
+        _adminApi
+            .getOrders(
+              page: _pageNumber,
+              search: _searchController.text,
+              status: _status,
+            )
+            .then<void>((value) => result = value),
+        _adminApi.getDeliveryPeople().then<void>((value) {
+          people = value;
+        }).catchError((Object error) {
+          deliveryError =
+              'Delivery assignments could not load: ${error.toString().replaceFirst('Exception: ', '')}';
+        }),
+      ]);
       if (!mounted) return;
       setState(() {
         _page = result;
@@ -76,6 +185,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
         _deliveryError = deliveryError;
         _loading = false;
         _savingId = null;
+        _optimisticStatuses.clear();
       });
     } catch (error) {
       if (!mounted) return;
@@ -109,14 +219,18 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
     }
   }
 
+  String _effectiveStatus(AdminOrder order) =>
+      _optimisticStatuses[order.id] ?? order.status;
+
   List<String> _allowedStatuses(AdminOrder order) {
-    if (order.deliveryId != null && order.status != 'CANCELLED') {
-      return order.status == 'PROCESSING' &&
+    final status = _effectiveStatus(order);
+    if (order.deliveryId != null && status != 'CANCELLED') {
+      return status == 'PROCESSING' &&
               ['ASSIGNED', 'DECLINED', 'FAILED'].contains(order.deliveryStatus)
           ? ['CANCELLED']
           : const [];
     }
-    return switch (order.status) {
+    return switch (status) {
       'PLACED' => ['CONFIRMED', 'CANCELLED'],
       'CONFIRMED' => ['PROCESSING', 'CANCELLED'],
       'PROCESSING' => ['OUT_FOR_DELIVERY', 'CANCELLED'],
@@ -150,7 +264,10 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
       if (confirm != true || !mounted) return;
     }
 
-    setState(() => _savingId = order.id);
+    setState(() {
+      _savingId = order.id;
+      _optimisticStatuses[order.id] = nextStatus;
+    });
     try {
       await _adminApi.updateOrderStatus(order.id, nextStatus);
       if (!mounted) return;
@@ -161,11 +278,12 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
           ),
         ),
       );
-      await _load();
+      unawaited(_load());
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _savingId = null;
+        _optimisticStatuses.remove(order.id);
         _error = error.toString().replaceFirst('Exception: ', '');
       });
     }
@@ -236,90 +354,6 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
     }
   }
 
-  Future<void> _clearAllOrderItemDetails() async {
-    if (_clearingItemDetails) return;
-    var confirmationText = '';
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Clear all order item details?'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'This permanently removes product line items from every '
-                'order. Orders, totals, payments, delivery records, and '
-                'status history will remain.',
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                key: const ValueKey('clear-order-items-confirmation'),
-                autofocus: true,
-                textCapitalization: TextCapitalization.characters,
-                decoration: const InputDecoration(
-                  labelText: 'Type CONFIRM DELETE',
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: (value) {
-                  confirmationText = value;
-                  setDialogState(() {});
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: confirmationText == 'CONFIRM DELETE'
-                  ? () => Navigator.pop(dialogContext, true)
-                  : null,
-              style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error,
-                foregroundColor: Theme.of(context).colorScheme.onError,
-              ),
-              child: const Text('Delete item details'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    try {
-      setState(() {
-        _clearingItemDetails = true;
-        _error = null;
-      });
-      final deletedItems = await _adminApi.clearAllOrderItemDetails(
-        confirmation: confirmationText,
-      );
-      if (!mounted) return;
-      setState(() => _clearingItemDetails = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            deletedItems == 0
-                ? 'There were no order item details to delete.'
-                : 'Deleted item details for $deletedItems '
-                    '${deletedItems == 1 ? 'order item' : 'order items'}.',
-          ),
-        ),
-      );
-      await _load();
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _clearingItemDetails = false;
-        _error = error.toString().replaceFirst('Exception: ', '');
-      });
-    }
-  }
-
   String _statusLabel(String status) {
     for (final entry in _statuses) {
       if (entry.$1 == status) return entry.$2;
@@ -336,32 +370,13 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
         children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Orders',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-                ),
-              ),
-              IconButton(
-                key: const ValueKey('clear-all-order-item-details'),
-                tooltip: 'Delete all order item details',
-                onPressed:
-                    _clearingItemDetails ? null : _clearAllOrderItemDetails,
-                color: Theme.of(context).colorScheme.error,
-                icon: _clearingItemDetails
-                    ? const SizedBox.square(
-                        dimension: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.delete_sweep_outlined),
-              ),
-            ],
+          const Text(
+            'Orders',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
           Text(
-            'Review customer details and move each order through its delivery status.',
+            'Review customer details and update delivery status. Cancelling preserves order, payment, and fulfillment history.',
             style: TextStyle(color: AppConstants.textMuted),
           ),
           const SizedBox(height: 14),
@@ -438,7 +453,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen> {
                 deliveryPeople: _deliveryPeople
                     .where((person) => person.isActive && person.isAvailable)
                     .toList(),
-                statusLabel: _statusLabel(order.status),
+                statusLabel: _statusLabel(_effectiveStatus(order)),
                 statusOptions: actions,
                 statusLabelFor: _statusLabel,
                 isSaving: _savingId == order.id,

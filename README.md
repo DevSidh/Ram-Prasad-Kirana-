@@ -200,6 +200,11 @@ flutter run -d <device-id> --dart-define=API_BASE_URL=http://192.168.1.20:4000/a
 Replace the example LAN address with the computer's actual address and allow
 the backend port through the local firewall. Release builds require a deployed
 HTTPS API URL; the app rejects localhost and other non-production release URLs.
+Release builds default to the production Render API and also compile the local
+development URL as `LOCAL_API_BASE_URL` (the Android emulator default is
+`http://10.0.2.2:4000/api/v1`). Set `API_BASE_URL` to the production URL when
+building a release; set `LOCAL_API_BASE_URL` to the computer's LAN URL when a
+local development build needs to reach a physical phone.
 
 ### 3. Create an admin and starter categories
 
@@ -389,9 +394,11 @@ For a Google Play App Bundle, use `-Artifact appbundle` (the default). Artifacts
 - APK: `build/app/outputs/flutter-apk/app-release.apk`
 - AAB: `build/app/outputs/bundle/release/app-release.aab`
 
-The version name and build number come from `version` in `pubspec.yaml`.
-Increment them appropriately before a new distribution. Do not share an APK
-built with a local or placeholder API URL.
+For local builds, the version name and build number come from `version` in
+`pubspec.yaml`. GitHub releases use the pushed tag for the version name and
+retain the `+build` number from `pubspec.yaml` as the Android version code.
+Increment both before a new distribution. Do not share an APK built with a
+local or placeholder API URL.
 
 ### GitHub release
 
@@ -409,8 +416,8 @@ Create a release tag on the intended commit and push it:
 
 ```powershell
 git status
-git tag -a v3.0.0 -m "Ram Prasad General Store v3.0.0"
-git push origin v3.0.0
+git tag -a v3.0.1 -m "Ram Prasad General Store v3.0.1"
+git push origin v3.0.1
 ```
 
 Use a unique tag that does not already exist. Pushing a tag triggers the

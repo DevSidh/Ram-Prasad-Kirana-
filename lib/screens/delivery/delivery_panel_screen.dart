@@ -56,6 +56,11 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _refresh();
+    _startRefreshTimer();
+  }
+
+  void _startRefreshTimer() {
+    if (_refreshTimer != null) return;
     _refreshTimer = Timer.periodic(
       const Duration(seconds: 60),
       (_) => _refresh(silent: true),
@@ -73,9 +78,12 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _startRefreshTimer();
       _locationError = null;
       _refresh(silent: true);
-    } else if (state == AppLifecycleState.paused) {
+    } else {
+      _refreshTimer?.cancel();
+      _refreshTimer = null;
       _locationTimer?.cancel();
       _locationTimer = null;
     }

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -68,6 +69,70 @@ class _NotificationsApi extends ApiService {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('coupon notification offers to copy its code', (tester) async {
+    final copiedValues = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copiedValues.add((call.arguments as Map)['text'] as String);
+        }
+        return null;
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+    });
+    SharedPreferences.setMockInitialValues({
+      AppConstants.keyToken: 'test-token',
+      AppConstants.keyUser: jsonEncode({
+        'id': 'customer-1',
+        'email': 'customer@example.com',
+        'fullName': 'Test Customer',
+        'role': 'CUSTOMER',
+      }),
+    });
+    final api = _NotificationsApi()
+      ..notifications.add({
+        'id': 'offer-1',
+        'title': 'Coupon alert',
+        'body': 'Use this offer at checkout.',
+        'type': 'PROMOTIONAL',
+        'metadata': {'couponCode': 'SAVE10'},
+        'isRead': false,
+        'createdAt': '2026-10-12T06:00:00.000Z',
+      });
+    final auth = AuthProvider(apiService: api);
+    final theme = ThemeProvider();
+    addTearDown(auth.dispose);
+    addTearDown(theme.dispose);
+    await auth.sessionReady;
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<ApiService>.value(value: api),
+          ChangeNotifierProvider<AuthProvider>.value(value: auth),
+          ChangeNotifierProvider<ThemeProvider>.value(value: theme),
+        ],
+        child: const MaterialApp(home: NotificationsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Coupon alert'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Coupon SAVE10 is ready to use at checkout.'),
+        findsOneWidget);
+    await tester.tap(find.text('Copy code'));
+    await tester.pumpAndSettle();
+    expect(find.text('Coupon SAVE10 copied.'), findsOneWidget);
+    expect(copiedValues, ['SAVE10']);
+  });
 
   testWidgets('opening notifications marks all read before deleting',
       (tester) async {

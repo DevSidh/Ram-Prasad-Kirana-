@@ -27,6 +27,7 @@ void main() {
       expect(animation.assetPath, 'animations/diwali_greeting.lottie');
       expect(animation.aspectRatio, 600 / 1253);
       expect(animation.loop, isTrue);
+      expect(animation.isVisible, isTrue);
       expect(
         find.byKey(
           const ValueKey('store-animation-animations/diwali_greeting.lottie'),
@@ -44,7 +45,25 @@ void main() {
     });
   }
 
-  testWidgets('dismissing animation keeps festival heading visible',
+  testWidgets('passes offscreen state to the Diwali animation', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: HomeDiwaliGreeting(isVisible: false),
+          ),
+        ),
+      ),
+    );
+
+    final animation = tester.widget<StoreAnimation>(
+      find.byType(StoreAnimation),
+    );
+    expect(animation.isVisible, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('dismissing pauses the animation and keeps its artwork',
       (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
@@ -60,13 +79,17 @@ void main() {
     await tester.tap(find.byTooltip('Dismiss Diwali animation'));
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('FESTIVAL OF LIGHT'), findsOneWidget);
-    expect(find.text('Happy Diwali!'), findsNothing);
+    expect(find.text('Hello, there'), findsOneWidget);
+    expect(find.text('FESTIVAL OF LIGHT'), findsNothing);
+    final animation = tester.widget<StoreAnimation>(
+      find.byType(StoreAnimation),
+    );
+    expect(animation.isVisible, isFalse);
     expect(
       find.byKey(
         const ValueKey('store-animation-animations/diwali_greeting.lottie'),
       ),
-      findsNothing,
+      findsOneWidget,
     );
     expect(tester.takeException(), isNull);
   });

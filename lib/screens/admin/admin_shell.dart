@@ -18,6 +18,7 @@ import 'admin_restock_screen.dart';
 import 'admin_showcase_screen.dart';
 import 'admin_skus_screen.dart';
 import 'admin_store_hours_screen.dart';
+import 'admin_streak_screen.dart';
 import 'admin_wholesale_screen.dart';
 
 class AdminShell extends StatefulWidget {
@@ -45,6 +46,7 @@ class _AdminShellState extends State<AdminShell> {
     'Showcase',
     'Product SKUs',
     'Store hours',
+    'Buying streak',
     'Promotions',
   ];
 
@@ -56,10 +58,10 @@ class _AdminShellState extends State<AdminShell> {
       AdminDashboardScreen(
         api: api,
         onOrdersRequested: () {
-          if (mounted) setState(() => _selectedIndex = 1);
+          if (mounted) _selectIndex(1);
         },
       ),
-      AdminOrdersScreen(api: api),
+      AdminOrdersScreen(api: api, isActive: true),
       AdminDeliveryPeopleScreen(api: api),
       AdminCustomersScreen(api: api),
       AdminAnnouncementsScreen(api: api),
@@ -76,8 +78,15 @@ class _AdminShellState extends State<AdminShell> {
       ),
       AdminSkusScreen(api: api),
       const AdminStoreHoursScreen(),
+      AdminStreakScreen(api: api),
       AdminCouponsScreen(api: api),
     ];
+  }
+
+  void _selectIndex(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
   }
 
   Future<void> _signOut() async {
@@ -150,8 +159,7 @@ class _AdminShellState extends State<AdminShell> {
                 minExtendedWidth: 210,
                 groupAlignment: -1,
                 selectedIndex: _selectedIndex,
-                onDestinationSelected: (index) =>
-                    setState(() => _selectedIndex = index),
+                onDestinationSelected: _selectIndex,
                 leading: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 20, 12, 24),
                   child: Row(
@@ -259,7 +267,7 @@ class _AdminShellState extends State<AdminShell> {
                   selectedColor: AppConstants.primaryDark,
                   selectedTileColor: AppConstants.primaryLight,
                   onTap: () {
-                    setState(() => _selectedIndex = index);
+                    _selectIndex(index);
                     Navigator.pop(context);
                   },
                 ),
@@ -338,6 +346,11 @@ class _AdminShellState extends State<AdminShell> {
       label: Text('Store hours'),
     ),
     NavigationRailDestination(
+      icon: Icon(Icons.local_fire_department_outlined),
+      selectedIcon: Icon(Icons.local_fire_department_rounded),
+      label: Text('Buying streak'),
+    ),
+    NavigationRailDestination(
       icon: Icon(Icons.local_offer_outlined),
       selectedIcon: Icon(Icons.local_offer_rounded),
       label: Text('Promotions'),
@@ -358,6 +371,7 @@ class _AdminShellState extends State<AdminShell> {
     Icons.view_carousel_outlined,
     Icons.qr_code_2_outlined,
     Icons.schedule_outlined,
+    Icons.local_fire_department_outlined,
     Icons.local_offer_outlined,
   ];
 
@@ -375,6 +389,7 @@ class _AdminShellState extends State<AdminShell> {
     Icons.view_carousel_rounded,
     Icons.qr_code_2_rounded,
     Icons.schedule_rounded,
+    Icons.local_fire_department_rounded,
     Icons.local_offer_rounded,
   ];
 }

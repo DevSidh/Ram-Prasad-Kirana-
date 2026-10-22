@@ -82,6 +82,14 @@ void main() {
       scrollable: profileScrollable,
     );
     expect(find.text('Preferences & payments'), findsOneWidget);
+    expect(find.text('Buying day streak'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('profile-menu-scroll')),
+        matching: find.byType(BackdropFilter),
+      ),
+      findsNothing,
+    );
     await tester.scrollUntilVisible(
       find.text('Help & account'),
       160,

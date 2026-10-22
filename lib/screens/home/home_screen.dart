@@ -48,8 +48,11 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  static const _diwaliGreetingAspectRatio = 600 / 1253;
+
   final ScrollController _scrollController = ScrollController();
   final ValueNotifier<double> _scrollOffset = ValueNotifier(0);
+  final ValueNotifier<bool> _diwaliAnimationVisible = ValueNotifier(true);
   final Map<String, GlobalKey> _categoryChipKeys = {};
   bool _offersOnly = false;
   bool _offerPopupCheckStarted = false;
@@ -60,6 +63,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _backendRecoveryAttempt = 0;
   bool _backendRecoveryInProgress = false;
   bool _appIsForeground = true;
+  double _diwaliGreetingExtent = double.infinity;
 
   String _locationTitle = 'Delivery to Home';
   String _locationSubtitle = 'Janakpur, Madhesh Province';
@@ -78,6 +82,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_checkAndShowOffer());
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _diwaliGreetingExtent =
+        (MediaQuery.sizeOf(context).width - 32) / _diwaliGreetingAspectRatio +
+            44;
+    _updateDiwaliAnimationVisibility(
+      _scrollController.hasClients ? _scrollController.offset : 0,
+    );
   }
 
   @override
@@ -192,6 +207,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if ((offset - _scrollOffset.value).abs() >= 1) {
       _scrollOffset.value = offset;
     }
+
+    _updateDiwaliAnimationVisibility(offset);
+  }
+
+  void _updateDiwaliAnimationVisibility(double offset) {
+    final animationVisible = offset < _diwaliGreetingExtent;
+    if (_diwaliAnimationVisible.value != animationVisible) {
+      _diwaliAnimationVisible.value = animationVisible;
+    }
   }
 
   bool _snapCategoryChips(ScrollNotification notification) {
@@ -243,6 +267,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ..removeListener(_handleScroll)
       ..dispose();
     _scrollOffset.dispose();
+    _diwaliAnimationVisible.dispose();
     super.dispose();
   }
 
@@ -701,9 +726,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            HomeDiwaliGreeting(
-                              key: ValueKey(
-                                'diwali-greeting-${user?.id ?? 'guest'}',
+                            ValueListenableBuilder<bool>(
+                              valueListenable: _diwaliAnimationVisible,
+                              builder: (context, isVisible, _) =>
+                                  HomeDiwaliGreeting(
+                                key: ValueKey(
+                                  'diwali-greeting-${user?.id ?? 'guest'}',
+                                ),
+                                isVisible: isVisible,
+                                greeting: greeting,
+                                userName: userName,
                               ),
                             ),
                             _buildCollapsingHeader(
@@ -1685,8 +1717,8 @@ class _FeaturedProductSlideState extends State<_FeaturedProductSlide>
                                             originalCarouselProductImageUrl(
                                           product.imageUrl,
                                         ),
-                                        size: constraints.maxWidth * .30,
-                                        width: constraints.maxWidth * .36,
+                                        size: constraints.maxWidth * .32,
+                                        width: constraints.maxWidth * .38,
                                         height: constraints.maxHeight * .62,
                                         fit: BoxFit.contain,
                                         borderRadius: BorderRadius.zero,

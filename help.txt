@@ -1,0 +1,178 @@
+FASTSTORE HELP AND TROUBLESHOOTING
+=================================
+
+This file covers common app, account, email, order, admin, and deployment
+problems. Do not share passwords, OAuth client secrets, Gmail refresh tokens,
+database URLs, signing keys, authorization headers, or raw authentication logs.
+
+QUICK CHECKS
+------------
+1. Check the backend health endpoint:
+   https://ram-prasad-kirana-backend.onrender.com/api/v1/health
+   "status": "ok" and "database": "connected" indicate the API and database
+   are responding. Email "configured" only confirms environment values exist;
+   it does not confirm that an email can be delivered.
+2. Check Render logs for the relevant timestamp and safe provider error code.
+   Share only the code and message after removing addresses and credentials.
+3. After changing backend code or Render environment values, wait for the new
+   deployment to finish before testing.
+
+SIGN-UP AND EMAIL VERIFICATION
+------------------------------
+* New accounts are kept pending until the email code is verified. A failed or
+  expired code does not create an account. Request a new code and enter the
+  latest six-digit code before it expires.
+* On the login screen choose "Verify email address" to request a code again.
+  Enter the email used for registration. A verified account does not need
+  another verification.
+* If no code arrives, check the spelling of the email, spam/junk folder, and
+  backend logs. Request limits may require waiting before retrying.
+* Registration phone numbers must have ten digits starting with 98 or 97.
+  The country prefix +977 is displayed by the app; do not enter a different
+  country prefix.
+* A profile image is optional. It uploads after email verification. If the
+  image upload fails, verification still succeeds; add the photo later from
+  the Profile screen.
+
+GMAIL API EMAIL DELIVERY
+------------------------
+* The current email sender uses Gmail API over HTTPS, not SMTP. Render should
+  have GMAIL_OAUTH_CLIENT_ID, GMAIL_OAUTH_CLIENT_SECRET, GMAIL_REFRESH_TOKEN,
+  GMAIL_USER, and GMAIL_FROM configured. GMAIL_USER and GMAIL_FROM must refer
+  to the Gmail account that granted the gmail.send scope.
+* Keep client secrets and refresh tokens private. Never put them in source
+  control, screenshots, chat, or logs.
+* A Gmail API 401/403 or EAUTH means OAuth credentials, scope, consent, or
+  sender-account authorization needs checking. Reauthorize the correct Gmail
+  account with https://www.googleapis.com/auth/gmail.send and replace an
+  expired/revoked refresh token.
+* OAuth refresh tokens for an External consent app left in Testing can expire
+  after seven days. Use the appropriate published/verified consent setup for
+  ongoing production use.
+* ETIMEDOUT, ECONNRESET, ENOTFOUND, or EAI_AGAIN indicate HTTPS/DNS connectivity
+  trouble between the backend and Google. Confirm the service can reach
+  oauth2.googleapis.com and gmail.googleapis.com on TCP 443.
+* A Gmail API "configured" health status does not test the token or send a
+  message. Test by requesting a verification code and inspect safe backend
+  error codes.
+* Old SMTP settings are not used by the Gmail API build. Do not switch back to
+  SMTP on a free Render web service if outbound SMTP ports are restricted.
+
+LOGIN AND PASSWORD RESET
+------------------------
+* "Invalid email or password": verify the email spelling and password. Use
+  "Forgot password?" to request a reset code.
+* "Verify your email address before signing in": use the login screen's
+  verification option, request a fresh code, and verify the account.
+* Reset codes expire and have limited attempts. Request another code if it
+  expired; enter the newest code.
+* If the app says the server cannot be reached, check internet access, the
+  configured API URL, and the backend health endpoint.
+
+PROFILE AND ACCOUNT
+-------------------
+* Phone numbers must be ten digits beginning with 98 or 97. The profile page
+  currently prevents editing a phone number until phone/SMS verification is
+  supported.
+* Profile image uploads accept JPEG, PNG, or WebP up to 5 MB. Retry on a
+  reliable connection or add the image later from Profile.
+* Admin customer removal requires typing REMOVE USER exactly. It deactivates
+  and anonymizes the account, releases the original email and phone for a new
+  account, and preserves anonymized order/payment history.
+
+ORDERS AND PAYMENTS
+-------------------
+* Order status changes may take time while the backend updates inventory and
+  history. The app can show an optimistic status; if the request fails, it
+  reverts and displays an error.
+* Cancel an order rather than deleting it. Cancellation preserves order,
+  payment, item, and fulfillment history; handle online refunds separately.
+* If order lists are stale, pull to refresh or check the active status/search
+  filter and the backend connection.
+* Do not retry a payment repeatedly after a timeout until you check the order
+  and payment status; contact the store admin with the order number.
+
+ADMIN ALERTS AND ANNOUNCEMENTS
+------------------------------
+* New-order alerts are checked while the admin panel is open. On Android,
+  allow FastStore notification permission in the system prompt/settings.
+  In-app alerts remain available if system notifications are disabled.
+* Admin announcements use "Faststore" as the notification title. The admin
+  announcement headline and message appear in its body.
+* When an announcement includes a valid coupon, open the notification and
+  choose "Copy code". If the coupon is expired, inactive, or out of uses, edit
+  or replace it before sending the announcement.
+* Individual announcements require searching for and selecting an active
+  customer.
+
+COUPONS
+-------
+* Coupon code/name, discount, expiry, total-use limit, and per-customer limit
+  can be edited in Admin > Promotions.
+* The total-use limit cannot be lower than the number of uses already
+  recorded. Increase the limit or deactivate the coupon instead.
+* Check expiry time, active status, minimum order value, and remaining uses if
+  a customer cannot apply a coupon.
+
+APP DOES NOT CONNECT OR OPENS TO A BLANK/GREEN SCREEN
+----------------------------------------------------
+* Release APKs use the production HTTPS API URL by default. The release build
+  must use:
+  API_BASE_URL=https://ram-prasad-kirana-backend.onrender.com/api/v1
+* Local Android emulator builds can use:
+  LOCAL_API_BASE_URL=http://10.0.2.2:4000/api/v1
+  10.0.2.2 is only the Android emulator's route to the development computer.
+  For a physical phone, use the computer's LAN IP address and ensure both
+  devices are on the same network and the firewall permits the backend port.
+* Do not use localhost in a physical-device build; it refers to the phone.
+* Rebuild the APK after changing Dart defines. The API URL is compiled into
+  the app. Confirm that a release APK uses HTTPS and the production host.
+* If startup reports API configuration invalid, set the correct production
+  API_BASE_URL and rebuild. Do not release an APK pointed at localhost.
+* If a screen is empty, refresh after checking the health endpoint and logs.
+  Clear app storage only as a last resort because it removes the local session.
+
+BACKEND, DATABASE, AND DEPLOYMENT
+---------------------------------
+* Render build fails: inspect the first TypeScript/build error, run
+  "npm ci", "npm run prisma:generate", and "npm run build" in backend, then
+  deploy the corrected commit.
+* Service exits during startup: inspect Render logs for Prisma migration and
+  database errors. Check DATABASE_URL is set in Render and uses the correct
+  CockroachDB cluster.
+* Prisma P3009 means a prior migration failed. Do not blindly rerun SQL or
+  mark it applied. Inspect the failed migration and actual production schema,
+  take a backup, and use a reviewed recovery procedure appropriate to the
+  database.
+* A schema-lock/changefeed error requires database-specific DBA review.
+  Do not disable a schema lock or alter production tables without a backup and
+  explicit approval.
+* If deployment reports an old commit, confirm the intended commit was pushed
+  to the branch Render deploys and wait for that commit's deployment to finish.
+* After changing environment variables, verify the service restarted and
+  inspect health/logs without printing secret values.
+
+LOCAL DEVELOPMENT AND BUILD
+---------------------------
+* Backend: install dependencies in backend, configure its ignored .env from
+  backend/.env.example, generate Prisma Client, then run npm run build and
+  npm test from backend.
+* Flutter: run flutter pub get, flutter analyze, and flutter test from the
+  repository root. Install Android SDK/Flutter tools if the commands are not
+  available.
+* A failed Android release signing build needs the correct local signing
+  configuration. Never share or commit keystore files or signing passwords.
+* If a device is not detected, enable USB debugging, connect by USB, accept
+  the device authorization prompt, and check "adb devices".
+* If Maps do not load, verify platform-specific Maps API keys, enabled APIs,
+  billing, application restrictions, and build-time configuration.
+
+SECURITY
+--------
+* Never share SMTP passwords, Google OAuth client secrets, refresh tokens,
+  database credentials, JWT secrets, Firebase private keys, signing materials,
+  bearer tokens, or raw AUTH PLAIN/AUTH LOGIN lines.
+* If any secret is exposed, revoke/rotate it at its provider and update the
+  hosting secret manager. Do not commit the replacement to Git.
+* Do not disable TLS certificate verification to work around connection
+  problems.

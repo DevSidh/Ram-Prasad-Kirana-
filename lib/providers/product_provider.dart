@@ -14,6 +14,10 @@ class ProductProvider extends ChangeNotifier {
   final ApiService _apiService;
   List<Product> _products = [];
   List<Category> _categories = [];
+  final Map<int, List<Product>> _filteredProductViews = {};
+  List<Product>? _featuredProductsCache;
+  List<Product>? _wishlistProductsCache;
+  List<({String value, String normalized})> _searchTerms = const [];
   bool _isLoading = true;
   String? _errorMessage;
   String _selectedCategorySlug = 'all';
@@ -26,6 +30,7 @@ class ProductProvider extends ChangeNotifier {
   bool _homeBestSellersOnly = false;
   bool _homeCheapOnly = false;
   final List<String> _wishlistIds = [];
+  Set<String> _wishlistIdSet = {};
   final Map<String, bool> _wishlistOverridesDuringLoad = {};
   int _wishlistRevision = 0;
   bool _disposed = false;
@@ -45,12 +50,15 @@ class ProductProvider extends ChangeNotifier {
   List<Product> get homeProducts =>
       _getFilteredProducts(ignoreSelectedCategory: true);
   List<Product> get featuredProducts =>
-      _products.where((product) => product.isFeatured).toList();
+      _featuredProductsCache ??= List<Product>.unmodifiable(
+        _products.where((product) => product.isFeatured),
+      );
   List<Product> get favoriteProducts =>
       _getFilteredProducts(onlyFavorites: true);
-  List<Product> get wishlistProducts => _products
-      .where((product) => _wishlistIds.contains(product.id))
-      .toList(growable: false);
+  List<Product> get wishlistProducts =>
+      _wishlistProductsCache ??= List<Product>.unmodifiable(
+        _products.where((product) => _wishlistIdSet.contains(product.id)),
+      );
   List<Product> get allProducts => List.unmodifiable(_products);
   List<Category> get categories => List.unmodifiable(_categories);
   bool get isLoading => _isLoading;
@@ -77,7 +85,9 @@ class ProductProvider extends ChangeNotifier {
     _wishlistErrorMessage = null;
     _loadingWishlist = userId != null;
     _wishlistIds.clear();
+    _wishlistIdSet.clear();
     _wishlistOverridesDuringLoad.clear();
+    _invalidateWishlistViews();
     scheduleMicrotask(() {
       if (!_disposed) notifyListeners();
     });
@@ -223,9 +233,12 @@ class ProductProvider extends ChangeNotifier {
       _categories = categories
           .where((category) => !excludedCategoryIds.contains(category.id))
           .toList(growable: false);
-      _products = productsById.values
-          .where((product) => !excludedCategoryIds.contains(product.categoryId))
-          .toList(growable: false);
+      _replaceProducts(
+        productsById.values
+            .where(
+                (product) => !excludedCategoryIds.contains(product.categoryId))
+            .toList(growable: false),
+      );
       _lastCatalogLoadAt = DateTime.now();
       _isLoading = false;
       notifyListeners();
@@ -263,11 +276,14 @@ class ProductProvider extends ChangeNotifier {
           .where(_isExcludedCustomerCategory)
           .map((category) => category.id)
           .toSet();
-      _products = productData
-          .cast<Map<String, dynamic>>()
-          .map(Product.fromJson)
-          .where((product) => !excludedCategoryIds.contains(product.categoryId))
-          .toList(growable: false);
+      _replaceProducts(
+        productData
+            .cast<Map<String, dynamic>>()
+            .map(Product.fromJson)
+            .where(
+                (product) => !excludedCategoryIds.contains(product.categoryId))
+            .toList(growable: false),
+      );
       _categories = categories
           .where((category) => !excludedCategoryIds.contains(category.id))
           .toList(growable: false);
@@ -295,29 +311,35 @@ class ProductProvider extends ChangeNotifier {
   }
 
   void setFeaturedLocally(String productId, bool isFeatured) {
-    _products = _products
-        .map(
-          (product) => product.id == productId
-              ? product.copyWith(isFeatured: isFeatured)
-              : product,
-        )
-        .toList();
+    _replaceProducts(
+      _products
+          .map(
+            (product) => product.id == productId
+                ? product.copyWith(isFeatured: isFeatured)
+                : product,
+          )
+          .toList(growable: false),
+    );
     notifyListeners();
   }
 
   void setProductImageLocally(String productId, String? imageUrl) {
-    _products = _products
-        .map(
-          (product) => product.id == productId
-              ? product.copyWith(imageUrl: imageUrl)
-              : product,
-        )
-        .toList();
+    _replaceProducts(
+      _products
+          .map(
+            (product) => product.id == productId
+                ? product.copyWith(imageUrl: imageUrl)
+                : product,
+          )
+          .toList(growable: false),
+    );
     notifyListeners();
   }
 
   void setSelectedCategory(String slug) {
+    if (_selectedCategorySlug == slug) return;
     _selectedCategorySlug = slug;
+    _invalidateFilteredProducts();
     notifyListeners();
   }
 
@@ -331,16 +353,21 @@ class ProductProvider extends ChangeNotifier {
     _favoritesOnly = false;
     _homeBestSellersOnly = false;
     _homeCheapOnly = false;
+    _invalidateFilteredProducts();
     notifyListeners();
   }
 
   void setSearchQuery(String query) {
+    if (_searchQuery == query) return;
     _searchQuery = query;
+    _invalidateFilteredProducts();
     notifyListeners();
   }
 
   void setSortBy(String sort) {
+    if (_sortBy == sort) return;
     _sortBy = sort;
+    _invalidateFilteredProducts();
     notifyListeners();
   }
 
@@ -349,29 +376,62 @@ class ProductProvider extends ChangeNotifier {
     required bool bestSellersOnly,
     required bool cheapOnly,
   }) {
+    if (_favoritesOnly == savedOnly &&
+        _homeBestSellersOnly == bestSellersOnly &&
+        _homeCheapOnly == cheapOnly) {
+      return;
+    }
     _favoritesOnly = savedOnly;
     _homeBestSellersOnly = bestSellersOnly;
     _homeCheapOnly = cheapOnly;
+    _invalidateFilteredProducts();
     notifyListeners();
   }
 
   void setFilters({double? maxPrice, bool? organicOnly}) {
-    if (maxPrice != null) _maxPrice = maxPrice;
-    if (organicOnly != null) _organicOnly = organicOnly;
+    final nextMaxPrice = maxPrice ?? _maxPrice;
+    final nextOrganicOnly = organicOnly ?? _organicOnly;
+    if (_maxPrice == nextMaxPrice && _organicOnly == nextOrganicOnly) return;
+    _maxPrice = nextMaxPrice;
+    _organicOnly = nextOrganicOnly;
+    _invalidateFilteredProducts();
     notifyListeners();
+  }
+
+  List<String> searchSuggestions(String query, {int limit = 6}) {
+    final normalizedQuery = query.trim().toLowerCase();
+    if (normalizedQuery.isEmpty || limit <= 0) return const [];
+
+    final suggestions = <String>[];
+    for (final term in _searchTerms) {
+      if (term.normalized.contains(normalizedQuery)) {
+        suggestions.add(term.value);
+        if (suggestions.length == limit) break;
+      }
+    }
+    return suggestions;
+  }
+
+  void _replaceWishlistIds(Iterable<String> productIds) {
+    final ids = productIds.toList(growable: false);
+    _wishlistIds
+      ..clear()
+      ..addAll(ids);
+    _wishlistIdSet = _wishlistIds.toSet();
+    _invalidateWishlistViews();
   }
 
   Future<void> toggleWishlist(String productId) async {
     final userId = _authenticatedUserId;
     final revision = ++_wishlistRevision;
-    if (_wishlistIds.contains(productId)) {
-      _wishlistIds.remove(productId);
+    if (_wishlistIdSet.contains(productId)) {
+      _replaceWishlistIds(_wishlistIds.where((id) => id != productId));
     } else {
-      _wishlistIds.add(productId);
+      _replaceWishlistIds([..._wishlistIds, productId]);
     }
     if (userId != null && _loadingWishlist) {
       _wishlistOverridesDuringLoad[productId] =
-          _wishlistIds.contains(productId);
+          _wishlistIdSet.contains(productId);
     }
     _wishlistErrorMessage = null;
     notifyListeners();
@@ -384,10 +444,10 @@ class ProductProvider extends ChangeNotifier {
       }
     } catch (error) {
       if (revision == _wishlistRevision) {
-        if (_wishlistIds.contains(productId)) {
-          _wishlistIds.remove(productId);
+        if (_wishlistIdSet.contains(productId)) {
+          _replaceWishlistIds(_wishlistIds.where((id) => id != productId));
         } else {
-          _wishlistIds.add(productId);
+          _replaceWishlistIds([..._wishlistIds, productId]);
         }
         _wishlistErrorMessage =
             error.toString().replaceFirst('Exception: ', '');
@@ -397,16 +457,16 @@ class ProductProvider extends ChangeNotifier {
     }
   }
 
-  bool isWishlisted(String productId) => _wishlistIds.contains(productId);
+  bool isWishlisted(String productId) => _wishlistIdSet.contains(productId);
 
   Future<void> _loadWishlist() async {
     final revision = _wishlistRevision;
     try {
       final preferences = await SharedPreferences.getInstance();
       if (_disposed || revision != _wishlistRevision) return;
-      _wishlistIds
-        ..clear()
-        ..addAll(preferences.getStringList('saved_product_ids') ?? const []);
+      _replaceWishlistIds(
+        preferences.getStringList('saved_product_ids') ?? const [],
+      );
       notifyListeners();
     } catch (error, stackTrace) {
       debugPrint('Unable to load saved products: $error\n$stackTrace');
@@ -439,9 +499,7 @@ class ProductProvider extends ChangeNotifier {
           }
         }
       }
-      _wishlistIds
-        ..clear()
-        ..addAll(productIds);
+      _replaceWishlistIds(productIds);
       _wishlistOverridesDuringLoad.clear();
       _wishlistErrorMessage = null;
       _loadingWishlist = false;
@@ -516,15 +574,37 @@ class ProductProvider extends ChangeNotifier {
     bool? favoritesOnly,
     String? categorySlug,
   }) {
-    if (maxPrice != null) _maxPrice = maxPrice;
-    if (minimumRating != null) _minimumRating = minimumRating;
-    if (organicOnly != null) _organicOnly = organicOnly;
-    if (favoritesOnly != null) _favoritesOnly = favoritesOnly;
-    if (categorySlug != null) _selectedCategorySlug = categorySlug;
+    final nextMaxPrice = maxPrice ?? _maxPrice;
+    final nextMinimumRating = minimumRating ?? _minimumRating;
+    final nextOrganicOnly = organicOnly ?? _organicOnly;
+    final nextFavoritesOnly = favoritesOnly ?? _favoritesOnly;
+    final nextCategorySlug = categorySlug ?? _selectedCategorySlug;
+    if (_maxPrice == nextMaxPrice &&
+        _minimumRating == nextMinimumRating &&
+        _organicOnly == nextOrganicOnly &&
+        _favoritesOnly == nextFavoritesOnly &&
+        _selectedCategorySlug == nextCategorySlug) {
+      return;
+    }
+    _maxPrice = nextMaxPrice;
+    _minimumRating = nextMinimumRating;
+    _organicOnly = nextOrganicOnly;
+    _favoritesOnly = nextFavoritesOnly;
+    _selectedCategorySlug = nextCategorySlug;
+    _invalidateFilteredProducts();
     notifyListeners();
   }
 
   void resetCatalogFilters() {
+    if (_maxPrice == double.infinity &&
+        _minimumRating == 0 &&
+        !_organicOnly &&
+        !_favoritesOnly &&
+        !_homeBestSellersOnly &&
+        !_homeCheapOnly &&
+        _selectedCategorySlug == 'all') {
+      return;
+    }
     _maxPrice = double.infinity;
     _minimumRating = 0;
     _organicOnly = false;
@@ -532,6 +612,7 @@ class ProductProvider extends ChangeNotifier {
     _homeBestSellersOnly = false;
     _homeCheapOnly = false;
     _selectedCategorySlug = 'all';
+    _invalidateFilteredProducts();
     notifyListeners();
   }
 
@@ -545,46 +626,34 @@ class ProductProvider extends ChangeNotifier {
     bool onlyFavorites = false,
     bool ignoreSelectedCategory = false,
   }) {
-    var result = List<Product>.from(_products);
+    final cacheKey = (onlyFavorites ? 2 : 0) | (ignoreSelectedCategory ? 1 : 0);
+    final cached = _filteredProductViews[cacheKey];
+    if (cached != null) return cached;
 
-    if (_searchQuery.trim().isNotEmpty) {
-      final query = _searchQuery.toLowerCase().trim();
-      result = result
-          .where(
-            (product) =>
-                product.name.toLowerCase().contains(query) ||
-                (product.brand?.toLowerCase().contains(query) ?? false) ||
-                (product.categoryName?.toLowerCase().contains(query) ??
-                    false) ||
-                product.description.toLowerCase().contains(query),
-          )
-          .toList();
+    final query = _searchQuery.trim().toLowerCase();
+    final filterCategory =
+        !ignoreSelectedCategory && _selectedCategorySlug != 'all';
+    final filterFavorites = onlyFavorites || _favoritesOnly;
+    final favoriteIds = filterFavorites ? _wishlistIds.toSet() : null;
+    final result = <Product>[];
+    for (final product in _products) {
+      if (query.isNotEmpty &&
+          !product.name.toLowerCase().contains(query) &&
+          !(product.brand?.toLowerCase().contains(query) ?? false) &&
+          !(product.categoryName?.toLowerCase().contains(query) ?? false) &&
+          !product.description.toLowerCase().contains(query)) {
+        continue;
+      }
+      if (filterCategory && product.categorySlug != _selectedCategorySlug) {
+        continue;
+      }
+      if (favoriteIds != null && !favoriteIds.contains(product.id)) continue;
+      if (_organicOnly && !product.isOrganic) continue;
+      if (_homeCheapOnly && !product.isFeatured) continue;
+      if (_maxPrice.isFinite && product.price > _maxPrice) continue;
+      if (product.rating < _minimumRating) continue;
+      result.add(product);
     }
-
-    if (!ignoreSelectedCategory && _selectedCategorySlug != 'all') {
-      result = result
-          .where((product) => product.categorySlug == _selectedCategorySlug)
-          .toList();
-    }
-
-    if (onlyFavorites || _favoritesOnly) {
-      result =
-          result.where((product) => _wishlistIds.contains(product.id)).toList();
-    }
-
-    if (_organicOnly) {
-      result = result.where((product) => product.isOrganic).toList();
-    }
-
-    if (_homeCheapOnly) {
-      result = result.where((product) => product.isFeatured).toList();
-    }
-
-    if (_maxPrice.isFinite) {
-      result = result.where((product) => product.price <= _maxPrice).toList();
-    }
-    result =
-        result.where((product) => product.rating >= _minimumRating).toList();
 
     if (_homeCheapOnly || _sortBy == 'price_asc') {
       result.sort((a, b) => a.price.compareTo(b.price));
@@ -602,6 +671,48 @@ class ProductProvider extends ChangeNotifier {
       result.sort((a, b) => b.reviewCount.compareTo(a.reviewCount));
     }
 
-    return result;
+    final immutableResult = List<Product>.unmodifiable(result);
+    _filteredProductViews[cacheKey] = immutableResult;
+    return immutableResult;
+  }
+
+  void _replaceProducts(List<Product> products) {
+    _products = products;
+    final seenTerms = <String>{};
+    final searchTerms = <({String value, String normalized})>[];
+    for (final product in products) {
+      for (final value in [
+        product.name,
+        if (product.brand?.isNotEmpty == true) product.brand!,
+        if (product.categoryName?.isNotEmpty == true) product.categoryName!,
+      ]) {
+        if (seenTerms.add(value)) {
+          searchTerms.add(
+            (value: value, normalized: value.toLowerCase()),
+          );
+        }
+      }
+    }
+    _searchTerms = List.unmodifiable(searchTerms);
+    _invalidateProductViews();
+  }
+
+  void _invalidateFilteredProducts() {
+    _filteredProductViews.clear();
+  }
+
+  void _invalidateWishlistViews() {
+    _filteredProductViews.remove(2);
+    if (_favoritesOnly) {
+      _filteredProductViews.remove(0);
+      _filteredProductViews.remove(1);
+    }
+    _wishlistProductsCache = null;
+  }
+
+  void _invalidateProductViews() {
+    _invalidateFilteredProducts();
+    _featuredProductsCache = null;
+    _wishlistProductsCache = null;
   }
 }

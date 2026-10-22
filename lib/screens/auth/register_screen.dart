@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -23,6 +24,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   bool _obscurePassword = true;
+  Uint8List? _profileImageBytes;
 
   @override
   void dispose() {
@@ -51,9 +53,34 @@ class _RegisterScreenState extends State<RegisterScreen> {
         MaterialPageRoute(
           builder: (_) => EmailVerificationScreen(
             email: authProvider.pendingVerificationEmail!,
+            profileImageBytes: _profileImageBytes,
           ),
         ),
         (route) => route.isFirst,
+      );
+    }
+  }
+
+  Future<void> _selectProfileImage() async {
+    try {
+      final files = await FilePicker.pickFiles(type: FileType.image);
+      if (files.isEmpty) return;
+      final image = files.single;
+      final extension = image.extension?.toLowerCase();
+      if (!const {'jpg', 'jpeg', 'png', 'webp'}.contains(extension)) {
+        throw StateError('Choose a JPEG, PNG, or WebP profile photo.');
+      }
+      final bytes = await image.readAsBytes();
+      if (bytes.isEmpty || bytes.length > 5 * 1024 * 1024) {
+        throw StateError('Choose a profile photo that is 5 MB or smaller.');
+      }
+      if (!mounted) return;
+      setState(() => _profileImageBytes = bytes);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', ''))),
       );
     }
   }
@@ -89,6 +116,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   style: TextStyle(color: AppConstants.textMuted, fontSize: 13),
                 ),
                 const SizedBox(height: 24),
+                Center(
+                  child: Column(
+                    children: [
+                      CircleAvatar(
+                        radius: 38,
+                        backgroundColor: AppConstants.primaryLight,
+                        backgroundImage: _profileImageBytes == null
+                            ? null
+                            : MemoryImage(_profileImageBytes!),
+                        child: _profileImageBytes == null
+                            ? const Icon(Icons.person_outline, size: 36)
+                            : null,
+                      ),
+                      TextButton.icon(
+                        onPressed: _selectProfileImage,
+                        icon: const Icon(Icons.add_a_photo_outlined),
+                        label: Text(
+                          _profileImageBytes == null
+                              ? 'Add profile photo (optional)'
+                              : 'Change profile photo',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
                 TextFormField(
                   controller: _nameController,
                   decoration: const InputDecoration(
@@ -120,12 +173,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   decoration: const InputDecoration(
                     labelText: 'Phone Number',
                     prefixIcon: Icon(Icons.phone_outlined),
+                    prefixText: '+977 ',
+                    helperText: 'Enter 10 digits starting with 98 or 97.',
                     counterText: '',
                   ),
-                  validator: (value) =>
-                      value == null || !RegExp(r'^\d{10}$').hasMatch(value)
-                          ? 'Enter a 10-digit phone number'
-                          : null,
+                  validator: (value) => value == null ||
+                          !RegExp(r'^9[78]\d{8}$').hasMatch(value.trim())
+                      ? 'Enter a 10-digit number starting with 98 or 97'
+                      : null,
                 ),
                 const SizedBox(height: 14),
                 TextFormField(

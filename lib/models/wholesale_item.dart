@@ -9,6 +9,8 @@ class WholesaleItem {
   final String? categorySlug;
   final String? brand;
   final double price;
+  final double rating;
+  final int reviewCount;
   final int stock;
   final int minimumQuantity;
   final String unitLabel;
@@ -25,6 +27,8 @@ class WholesaleItem {
     this.categorySlug,
     this.brand,
     required this.price,
+    this.rating = 0,
+    this.reviewCount = 0,
     required this.stock,
     required this.minimumQuantity,
     required this.unitLabel,
@@ -55,6 +59,8 @@ class WholesaleItem {
           : json['categorySlug']?.toString(),
       brand: json['brand']?.toString(),
       price: price is num ? price.toDouble() : 0,
+      rating: (json['rating'] as num?)?.toDouble() ?? 0,
+      reviewCount: (json['reviewCount'] as num?)?.toInt() ?? 0,
       stock: stock is num ? stock.toInt() : 0,
       minimumQuantity: minimum is num ? minimum.toInt() : 1,
       unitLabel: json['unitLabel']?.toString() ?? '1 pc',
@@ -72,9 +78,12 @@ class WholesaleItem {
         categoryName: categoryName,
         categorySlug: categorySlug,
         price: price,
+        rating: rating,
+        reviewCount: reviewCount,
         weight: unitLabel,
         stock: stock,
         isWholesale: true,
+        isWholesaleItem: true,
         wholesalePrice: price,
         wholesaleMinimumQuantity: minimumQuantity,
         description: description,

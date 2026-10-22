@@ -3,6 +3,13 @@ import 'package:flutter/material.dart';
 import 'theme/app_colors.dart';
 
 class AppConstants {
+  static const String productionApiBaseUrl =
+      'https://ram-prasad-kirana-backend.onrender.com/api/v1';
+  static const String _configuredApiBaseUrl =
+      String.fromEnvironment('API_BASE_URL');
+  static const String _configuredLocalApiBaseUrl =
+      String.fromEnvironment('LOCAL_API_BASE_URL');
+
   static bool _isDarkTheme = true;
   static bool? _themeOverride;
 
@@ -14,17 +21,29 @@ class AppConstants {
   static const String appName = 'FastStore';
   static const String appTagline = 'Janakpur';
 
-  // Base API URL (can be customized via build-time environment variables)
-  static String get apiBaseUrl {
-    const configuredUrl = String.fromEnvironment('API_BASE_URL');
-    if (configuredUrl.isNotEmpty) return configuredUrl;
+  static String get localDevelopmentApiBaseUrl {
+    if (_configuredLocalApiBaseUrl.isNotEmpty) {
+      return _configuredLocalApiBaseUrl;
+    }
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       return 'http://10.0.2.2:4000/api/v1';
     }
     return 'http://localhost:4000/api/v1';
   }
 
+  static String get apiBaseUrl {
+    if (_configuredApiBaseUrl.isNotEmpty) return _configuredApiBaseUrl;
+    const isReleaseBuild = bool.fromEnvironment('dart.vm.product');
+    return isReleaseBuild ? productionApiBaseUrl : localDevelopmentApiBaseUrl;
+  }
+
   static void validateApiConfiguration() {
+    if (!isApiEndpointUrl(localDevelopmentApiBaseUrl)) {
+      throw StateError(
+        'LOCAL_API_BASE_URL must be a valid HTTP or HTTPS endpoint.',
+      );
+    }
+
     const isReleaseBuild = bool.fromEnvironment('dart.vm.product');
     if (!isReleaseBuild) return;
 
@@ -33,6 +52,13 @@ class AppConstants {
         'Release builds require the deployed HTTPS API_BASE_URL, not a local or placeholder URL.',
       );
     }
+  }
+
+  static bool isApiEndpointUrl(String value) {
+    final uri = Uri.tryParse(value);
+    return uri != null &&
+        (uri.scheme == 'http' || uri.scheme == 'https') &&
+        uri.host.isNotEmpty;
   }
 
   static bool isProductionApiUrl(String value) {
@@ -68,14 +94,12 @@ class AppConstants {
   static const Color primary = Color(0xFF16A34A);
   static Color primaryFor(bool isDark) =>
       (isDark ? AppColors.dark : AppColors.light).primary;
-  static Color primaryDarkFor(bool isDark) =>
-      primaryFor(isDark);
+  static Color primaryDarkFor(bool isDark) => primaryFor(isDark);
   static Color primaryLightFor(bool isDark) =>
       (isDark ? AppColors.dark : AppColors.light).backgroundGlow;
   static Color backgroundFor(bool isDark) =>
       (isDark ? AppColors.dark : AppColors.light).background;
-  static Color homeBackgroundFor(bool isDark) =>
-      backgroundFor(isDark);
+  static Color homeBackgroundFor(bool isDark) => backgroundFor(isDark);
   static Color homeGlowFor(bool isDark) =>
       (isDark ? AppColors.dark : AppColors.light).backgroundGlow;
   static Color surfaceFor(bool isDark) =>
@@ -90,10 +114,8 @@ class AppConstants {
       (isDark ? AppColors.dark : AppColors.light).surfaceGlass;
   static Color glassBorderFor(bool isDark) =>
       (isDark ? AppColors.dark : AppColors.light).glassBorder;
-  static Color get primaryDark =>
-      primaryDarkFor(isDarkTheme);
-  static Color get primaryLight =>
-      primaryLightFor(isDarkTheme);
+  static Color get primaryDark => primaryDarkFor(isDarkTheme);
+  static Color get primaryLight => primaryLightFor(isDarkTheme);
   static const Color accent = Color(0xFFFBBF24);
   static const Color primaryForeground = Color(0xFF07100D);
 

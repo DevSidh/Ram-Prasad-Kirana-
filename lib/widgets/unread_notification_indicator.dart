@@ -24,16 +24,31 @@ class UnreadNotificationIndicator extends StatefulWidget {
 }
 
 class _UnreadNotificationIndicatorState
-    extends State<UnreadNotificationIndicator> {
+    extends State<UnreadNotificationIndicator> with WidgetsBindingObserver {
   static const _refreshInterval = Duration(minutes: 1);
   Timer? _refreshTimer;
   bool _hasUnread = false;
+  bool _isAppForeground = true;
+  bool _isVisible = false;
 
   @override
   void initState() {
     super.initState();
-    _startRefreshTimer();
-    unawaited(_refresh());
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final isVisible = TickerMode.valuesOf(context).enabled;
+    if (_isVisible == isVisible) return;
+    _isVisible = isVisible;
+    if (_isVisible && _isAppForeground) {
+      _startRefreshTimer();
+      unawaited(_refresh());
+    } else {
+      _stopRefreshTimer();
+    }
   }
 
   @override
@@ -43,26 +58,50 @@ class _UnreadNotificationIndicatorState
         oldWidget.refreshToken != widget.refreshToken) {
       _refreshTimer?.cancel();
       _refreshTimer = null;
+      if (_isVisible && _isAppForeground) {
+        _startRefreshTimer();
+        unawaited(_refresh());
+      }
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _isAppForeground = state == AppLifecycleState.resumed;
+    if (_isAppForeground && _isVisible) {
       _startRefreshTimer();
       unawaited(_refresh());
+    } else {
+      _stopRefreshTimer();
     }
   }
 
   void _startRefreshTimer() {
-    if (widget.userId == null || widget.api == null) return;
+    if (!_isAppForeground ||
+        !_isVisible ||
+        _refreshTimer != null ||
+        widget.userId == null ||
+        widget.api == null) {
+      return;
+    }
     _refreshTimer = Timer.periodic(_refreshInterval, (_) {
       unawaited(_refresh());
     });
   }
 
+  void _stopRefreshTimer() {
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
+  }
+
   Future<void> _refresh() async {
+    if (!_isAppForeground || !_isVisible) return;
     if (widget.userId == null || widget.api == null) {
       if (mounted && _hasUnread) setState(() => _hasUnread = false);
       return;
     }
     try {
-      final response =
-          await widget.api!.get('/account/notifications');
+      final response = await widget.api!.get('/account/notifications');
       if (response is! Map<String, dynamic> || response['data'] is! List) {
         throw const FormatException(
           'The store returned invalid notification data.',
@@ -74,7 +113,10 @@ class _UnreadNotificationIndicatorState
           : (response['data'] as List)
               .whereType<Map<String, dynamic>>()
               .any((notification) => notification['isRead'] != true);
-      if (mounted && hasUnread != _hasUnread) {
+      if (mounted &&
+          _isAppForeground &&
+          _isVisible &&
+          hasUnread != _hasUnread) {
         setState(() => _hasUnread = hasUnread);
       }
     } catch (error, stackTrace) {
@@ -85,7 +127,8 @@ class _UnreadNotificationIndicatorState
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
+    _stopRefreshTimer();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 

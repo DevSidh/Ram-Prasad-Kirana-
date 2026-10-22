@@ -4,12 +4,37 @@ import 'package:freshharvest_grocery/core/media.dart';
 
 void main() {
   group('release API configuration', () {
+    test('production and local backend addresses are defined separately', () {
+      expect(
+        AppConstants.productionApiBaseUrl,
+        'https://ram-prasad-kirana-backend.onrender.com/api/v1',
+      );
+      expect(
+        AppConstants.localDevelopmentApiBaseUrl,
+        anyOf(
+          'http://10.0.2.2:4000/api/v1',
+          'http://localhost:4000/api/v1',
+        ),
+      );
+    });
+
     test('accepts an HTTPS deployment API URL', () {
       expect(
         AppConstants.isProductionApiUrl(
             'https://api.ramprasadstore.com/api/v1'),
         isTrue,
       );
+    });
+
+    test('accepts local HTTP endpoints and rejects malformed local URLs', () {
+      expect(
+        AppConstants.isApiEndpointUrl('http://10.0.2.2:4000/api/v1'),
+        isTrue,
+      );
+      expect(AppConstants.isApiEndpointUrl('http://localhost:4000/api/v1'),
+          isTrue);
+      expect(AppConstants.isApiEndpointUrl('not-a-url'), isFalse);
+      expect(AppConstants.isApiEndpointUrl('https:///api/v1'), isFalse);
     });
 
     test('rejects local, insecure, and placeholder API URLs', () {

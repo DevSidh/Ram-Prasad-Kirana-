@@ -62,6 +62,22 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
     );
   }
 
+  Future<void> _editCoupon(AdminCoupon current) async {
+    final updated = await showDialog<AdminCoupon>(
+      context: context,
+      builder: (_) => _CouponFormDialog(api: _adminApi, coupon: current),
+    );
+    if (updated == null || !mounted) return;
+    setState(() {
+      _coupons = _coupons
+          .map((coupon) => coupon.id == updated.id ? updated : coupon)
+          .toList();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${updated.code} updated.')),
+    );
+  }
+
   Future<void> _setActive(AdminCoupon coupon, bool isActive) async {
     try {
       final updated = await _adminApi.setCouponActive(coupon.id, isActive);
@@ -83,6 +99,51 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             content: Text(error.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
+  }
+
+  Future<void> _removeCoupon(AdminCoupon coupon) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Remove ${coupon.code}?'),
+        content: const Text(
+          'This coupon will no longer be available at checkout. Existing order history will be preserved.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Keep coupon'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Remove coupon'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final previousCoupons = _coupons;
+    setState(() {
+      _coupons = _coupons.where((item) => item.id != coupon.id).toList();
+    });
+    try {
+      await _adminApi.removeCoupon(coupon.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${coupon.code} was removed.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _coupons = previousCoupons);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not remove ${coupon.code}: ${error.toString().replaceFirst('Exception: ', '')}',
+          ),
+        ),
       );
     }
   }
@@ -159,7 +220,7 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
                   ),
                   if (coupon.expiresAt != null)
                     Text(
-                      'Expires ${MaterialLocalizations.of(context).formatMediumDate(coupon.expiresAt!.toLocal())}',
+                      'Expires ${MaterialLocalizations.of(context).formatMediumDate(coupon.expiresAt!.toLocal())} at ${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(coupon.expiresAt!.toLocal()))}',
                       style: TextStyle(
                         color: AppConstants.textMuted,
                         fontSize: 11,
@@ -171,6 +232,16 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
             Switch(
               value: coupon.isActive,
               onChanged: (value) => _setActive(coupon, value),
+            ),
+            IconButton(
+              tooltip: 'Edit ${coupon.code}',
+              onPressed: () => _editCoupon(coupon),
+              icon: const Icon(Icons.edit_outlined),
+            ),
+            IconButton(
+              tooltip: 'Remove ${coupon.code}',
+              onPressed: () => _removeCoupon(coupon),
+              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
             ),
           ],
         ),
@@ -283,8 +354,9 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
 
 class _CouponFormDialog extends StatefulWidget {
   final AdminApiService api;
+  final AdminCoupon? coupon;
 
-  const _CouponFormDialog({required this.api});
+  const _CouponFormDialog({required this.api, this.coupon});
 
   @override
   State<_CouponFormDialog> createState() => _CouponFormDialogState();
@@ -302,6 +374,25 @@ class _CouponFormDialogState extends State<_CouponFormDialog> {
   DateTime? _expiresAt;
   bool _saving = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final coupon = widget.coupon;
+    if (coupon == null) return;
+    _code.text = coupon.code;
+    _discountType = coupon.discountType;
+    _discount.text = (coupon.discountType == 'PERCENTAGE'
+                ? coupon.discountPercent
+                : coupon.discountAmount)
+            ?.toString() ??
+        '';
+    _minimum.text = coupon.minOrderAmount.toString();
+    _maximum.text = coupon.maxDiscount?.toString() ?? '';
+    _usageLimit.text = coupon.usageLimit?.toString() ?? '';
+    _perUserLimit.text = coupon.perUserLimit?.toString() ?? '';
+    _expiresAt = coupon.expiresAt?.toLocal();
+  }
 
   @override
   void dispose() {
@@ -331,10 +422,32 @@ class _CouponFormDialogState extends State<_CouponFormDialog> {
     final selected = await showDatePicker(
       context: context,
       initialDate: _expiresAt ?? today,
-      firstDate: DateTime(today.year, today.month, today.day),
+      firstDate: DateTime(today.year - 10),
       lastDate: DateTime(today.year + 10),
     );
-    if (selected != null && mounted) setState(() => _expiresAt = selected);
+    if (selected == null || !mounted) return;
+    final current = _expiresAt ??
+        DateTime(
+          selected.year,
+          selected.month,
+          selected.day,
+          23,
+          59,
+        );
+    final selectedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(current),
+    );
+    if (selectedTime == null || !mounted) return;
+    setState(() {
+      _expiresAt = DateTime(
+        selected.year,
+        selected.month,
+        selected.day,
+        selectedTime.hour,
+        selectedTime.minute,
+      );
+    });
   }
 
   Future<void> _save() async {
@@ -345,7 +458,7 @@ class _CouponFormDialogState extends State<_CouponFormDialog> {
     });
     final discount = double.parse(_discount.text.trim());
     try {
-      final coupon = await widget.api.createCoupon({
+      final details = {
         'code': _code.text.trim().toUpperCase(),
         'discountType': _discountType,
         'discountPercent': _discountType == 'PERCENTAGE' ? discount : null,
@@ -361,11 +474,11 @@ class _CouponFormDialogState extends State<_CouponFormDialog> {
         'perUserLimit': _perUserLimit.text.trim().isEmpty
             ? null
             : int.parse(_perUserLimit.text.trim()),
-        'expiresAt': _expiresAt
-            ?.add(const Duration(hours: 23, minutes: 59, seconds: 59))
-            .toUtc()
-            .toIso8601String(),
-      });
+        'expiresAt': _expiresAt?.toUtc().toIso8601String(),
+      };
+      final coupon = widget.coupon == null
+          ? await widget.api.createCoupon(details)
+          : await widget.api.updateCoupon(widget.coupon!.id, details);
       if (mounted) Navigator.pop(context, coupon);
     } catch (error) {
       if (!mounted) return;
@@ -380,7 +493,8 @@ class _CouponFormDialogState extends State<_CouponFormDialog> {
   Widget build(BuildContext context) {
     final isPercentage = _discountType == 'PERCENTAGE';
     return AlertDialog(
-      title: const Text('Create promotion'),
+      title:
+          Text(widget.coupon == null ? 'Create promotion' : 'Edit promotion'),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
         child: Form(
@@ -407,6 +521,17 @@ class _CouponFormDialogState extends State<_CouponFormDialog> {
                     }
                     return null;
                   },
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Coupon names and start dates are not stored by this system yet. Expiration date and time are supported.',
+                    style: TextStyle(
+                      color: AppConstants.textMuted,
+                      fontSize: 11,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
@@ -484,28 +609,32 @@ class _CouponFormDialogState extends State<_CouponFormDialog> {
                   validator: (value) {
                     if (value?.trim().isEmpty == true) return null;
                     final limit = int.tryParse(value!.trim());
+                    if (limit == null || limit < 1) {
+                      return 'Enter a whole number above zero.';
+                    }
+                    if (limit < (widget.coupon?.usedCount ?? 0)) {
+                      return 'Cannot be lower than ${widget.coupon!.usedCount} uses already recorded.';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _perUserLimit,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Uses per customer (optional)',
+                    helperText:
+                        'Limit redemptions per signed-in customer account.',
+                  ),
+                  validator: (value) {
+                    if (value?.trim().isEmpty == true) return null;
+                    final limit = int.tryParse(value!.trim());
                     return limit == null || limit < 1
                         ? 'Enter a whole number above zero.'
                         : null;
                   },
                 ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _perUserLimit,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Uses per customer (optional)',
-                      helperText:
-                          'Limit redemptions per signed-in customer account.',
-                    ),
-                    validator: (value) {
-                      if (value?.trim().isEmpty == true) return null;
-                      final limit = int.tryParse(value!.trim());
-                      return limit == null || limit < 1
-                          ? 'Enter a whole number above zero.'
-                          : null;
-                    },
-                  ),
                 const SizedBox(height: 10),
                 Align(
                   alignment: Alignment.centerLeft,
@@ -514,8 +643,8 @@ class _CouponFormDialogState extends State<_CouponFormDialog> {
                     icon: const Icon(Icons.event_outlined),
                     label: Text(
                       _expiresAt == null
-                          ? 'No expiry date'
-                          : 'Expires ${MaterialLocalizations.of(context).formatMediumDate(_expiresAt!)}',
+                          ? 'No expiry date/time'
+                          : 'Expires ${MaterialLocalizations.of(context).formatMediumDate(_expiresAt!)} at ${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(_expiresAt!))}',
                     ),
                   ),
                 ),
@@ -563,7 +692,8 @@ class _CouponFormDialogState extends State<_CouponFormDialog> {
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('Create code'),
+                  : Text(
+                      widget.coupon == null ? 'Create code' : 'Save changes'),
             ),
           ],
         ),

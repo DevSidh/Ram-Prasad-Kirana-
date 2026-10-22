@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/constants.dart';
 import '../../providers/auth_provider.dart';
-import '../../providers/cart_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../services/api_service.dart';
@@ -168,11 +168,20 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     final couponCode = rawCouponCode.trim().toUpperCase();
     if (!RegExp(r'^[A-Z0-9][A-Z0-9_-]{2,39}$').hasMatch(couponCode)) return;
-    context.read<CartProvider>().suggestCouponCode(couponCode);
+    final messenger = ScaffoldMessenger.of(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Coupon $couponCode added to your cart. It will be validated at checkout.',
+          'Coupon $couponCode is ready to use at checkout.',
+        ),
+        action: SnackBarAction(
+          label: 'Copy code',
+          onPressed: () async {
+            await Clipboard.setData(ClipboardData(text: couponCode));
+            messenger.showSnackBar(
+              SnackBar(content: Text('Coupon $couponCode copied.')),
+            );
+          },
         ),
       ),
     );

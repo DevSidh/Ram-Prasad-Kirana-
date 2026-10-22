@@ -65,13 +65,14 @@ class AdminCoupon {
         code is! String ||
         (discountType != 'PERCENTAGE' && discountType != 'FIXED') ||
         isActive is! bool) {
-      throw const FormatException('The server returned invalid coupon details.');
+      throw const FormatException(
+          'The server returned invalid coupon details.');
     }
     final rawExpiry = json['expiresAt'];
-    final expiresAt =
-        rawExpiry is String ? DateTime.tryParse(rawExpiry) : null;
+    final expiresAt = rawExpiry is String ? DateTime.tryParse(rawExpiry) : null;
     if (rawExpiry != null && expiresAt == null) {
-      throw const FormatException('The server returned an invalid coupon expiry.');
+      throw const FormatException(
+          'The server returned an invalid coupon expiry.');
     }
     return AdminCoupon(
       id: id,
@@ -86,7 +87,8 @@ class AdminCoupon {
       minOrderAmount: _asDouble(json['minOrderAmount']),
       maxDiscount:
           json['maxDiscount'] == null ? null : _asDouble(json['maxDiscount']),
-      usageLimit: json['usageLimit'] == null ? null : _asInt(json['usageLimit']),
+      usageLimit:
+          json['usageLimit'] == null ? null : _asInt(json['usageLimit']),
       perUserLimit:
           json['perUserLimit'] == null ? null : _asInt(json['perUserLimit']),
       usedCount: _asInt(json['usedCount']),
@@ -123,13 +125,13 @@ class AdminRestockReceipt {
     final product = json['product'];
     final staff = json['staff'];
     final createdAtValue = json['createdAt'];
-    final createdAt = createdAtValue is String
-        ? DateTime.tryParse(createdAtValue)
-        : null;
+    final createdAt =
+        createdAtValue is String ? DateTime.tryParse(createdAtValue) : null;
     if (json['id'] is! String ||
         product is! Map<String, dynamic> ||
         createdAt == null) {
-      throw const FormatException('The server returned invalid restock history.');
+      throw const FormatException(
+          'The server returned invalid restock history.');
     }
     return AdminRestockReceipt(
       id: json['id'] as String,
@@ -208,17 +210,19 @@ class AdminProduct {
       sku: json['sku']?.toString() ?? '',
       slug: json['slug']?.toString() ?? '',
       categoryId: json['categoryId']?.toString() ??
-          (category is Map<String, dynamic> ? category['id']?.toString() : null) ??
+          (category is Map<String, dynamic>
+              ? category['id']?.toString()
+              : null) ??
           '',
-      categoryName:
-          category is Map<String, dynamic> ? category['name']?.toString() ?? '' : '',
+      categoryName: category is Map<String, dynamic>
+          ? category['name']?.toString() ?? ''
+          : '',
       imageUrl: json['imageUrl']?.toString(),
       brand: json['brand']?.toString(),
       description: json['description']?.toString(),
       origin: json['origin']?.toString(),
-      unitLabel: json['unitLabel']?.toString() ??
-          json['weight']?.toString() ??
-          '1 pc',
+      unitLabel:
+          json['unitLabel']?.toString() ?? json['weight']?.toString() ?? '1 pc',
       price: _asDouble(json['price']),
       originalPrice: json['originalPrice'] == null
           ? null
@@ -227,8 +231,7 @@ class AdminProduct {
       wholesalePrice: json['wholesalePrice'] == null
           ? null
           : _asDouble(json['wholesalePrice']),
-      wholesaleMinimumQuantity:
-          _asInt(json['wholesaleMinimumQuantity'] ?? 1),
+      wholesaleMinimumQuantity: _asInt(json['wholesaleMinimumQuantity'] ?? 1),
       lowStockThreshold: _asInt(json['lowStockThreshold'] ?? 10),
       stock: _asInt(stockValue),
       isActive: json['isActive'] as bool? ?? true,
@@ -490,9 +493,8 @@ class AdminOrder {
     final items = json['items'];
     final history = json['statusHistory'];
     final delivery = json['delivery'];
-    final deliveryPerson = delivery is Map<String, dynamic>
-        ? delivery['deliveryPerson']
-        : null;
+    final deliveryPerson =
+        delivery is Map<String, dynamic> ? delivery['deliveryPerson'] : null;
     final deliveryHistory =
         delivery is Map<String, dynamic> ? delivery['statusHistory'] : null;
     final rawScheduledDeliveryAt = json['scheduledDeliveryAt'];
@@ -511,10 +513,7 @@ class AdminOrder {
             shipping['district'],
             shipping['province'],
             shipping['postalCode'],
-          ]
-            .whereType<String>()
-            .where((part) => part.trim().isNotEmpty)
-            .toList()
+          ].whereType<String>().where((part) => part.trim().isNotEmpty).toList()
         : <String>[];
     return AdminOrder(
       id: json['id']?.toString() ?? '',
@@ -557,9 +556,8 @@ class AdminOrder {
       statusHistory: history is List
           ? history.whereType<Map<String, dynamic>>().toList()
           : const [],
-      deliveryId: delivery is Map<String, dynamic>
-          ? delivery['id']?.toString()
-          : null,
+      deliveryId:
+          delivery is Map<String, dynamic> ? delivery['id']?.toString() : null,
       deliveryStatus: delivery is Map<String, dynamic>
           ? delivery['status']?.toString()
           : null,
@@ -608,6 +606,7 @@ class AdminOrderItem {
 
 class AdminCustomer {
   final String id;
+  final String profileId;
   final String name;
   final String email;
   final String phone;
@@ -620,6 +619,7 @@ class AdminCustomer {
 
   const AdminCustomer({
     required this.id,
+    required this.profileId,
     required this.name,
     required this.email,
     required this.phone,
@@ -636,6 +636,7 @@ class AdminCustomer {
     final recentOrders = json['recentOrders'];
     return AdminCustomer(
       id: json['id']?.toString() ?? '',
+      profileId: json['profileId']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
       email: json['email']?.toString() ?? '',
       phone: json['phone']?.toString() ?? '',
@@ -649,6 +650,76 @@ class AdminCustomer {
       recentOrders: recentOrders is List
           ? recentOrders.whereType<Map<String, dynamic>>().toList()
           : const [],
+    );
+  }
+}
+
+class AdminStreakReward {
+  final int day;
+  final String title;
+  final String description;
+
+  const AdminStreakReward({
+    required this.day,
+    required this.title,
+    required this.description,
+  });
+
+  factory AdminStreakReward.fromJson(Map<String, dynamic> json) {
+    if (json['day'] is! int ||
+        json['title'] is! String ||
+        json['description'] is! String) {
+      throw const FormatException(
+          'The server returned an invalid streak reward.');
+    }
+    return AdminStreakReward(
+      day: json['day'] as int,
+      title: json['title'] as String,
+      description: json['description'] as String,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'day': day,
+        'title': title,
+        'description': description,
+      };
+}
+
+class AdminStreakClaim {
+  final int day;
+  final String title;
+  final String description;
+  final String customerName;
+  final String profileId;
+  final String claimedAt;
+
+  const AdminStreakClaim({
+    required this.day,
+    required this.title,
+    required this.description,
+    required this.customerName,
+    required this.profileId,
+    required this.claimedAt,
+  });
+
+  factory AdminStreakClaim.fromJson(Map<String, dynamic> json) {
+    if (json['day'] is! int ||
+        json['title'] is! String ||
+        json['description'] is! String ||
+        json['customerName'] is! String ||
+        json['profileId'] is! String ||
+        json['claimedAt'] is! String) {
+      throw const FormatException(
+          'The server returned an invalid streak claim.');
+    }
+    return AdminStreakClaim(
+      day: json['day'] as int,
+      title: json['title'] as String,
+      description: json['description'] as String,
+      customerName: json['customerName'] as String,
+      profileId: json['profileId'] as String,
+      claimedAt: json['claimedAt'] as String,
     );
   }
 }

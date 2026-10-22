@@ -40,6 +40,30 @@ class AuthProvider extends ChangeNotifier {
         avatarUrl: _resolveAvatarUrl(savedUser.avatarUrl),
       );
       notifyListeners();
+      if (savedUser.profileId == null) {
+        try {
+          final response = await _apiService.get('/account/profile');
+          final profile =
+              response is Map<String, dynamic> ? response['data'] : null;
+          if (profile is! Map<String, dynamic> ||
+              profile['profileId'] is! String) {
+            throw const FormatException(
+              'The server did not return your profile ID.',
+            );
+          }
+          _currentUser = User.fromJson(profile).copyWith(
+            avatarUrl: _resolveAvatarUrl(profile['avatarUrl']),
+          );
+          await prefs.setString(
+            AppConstants.keyUser,
+            jsonEncode(_currentUser!.toJson()),
+          );
+          notifyListeners();
+        } catch (error) {
+          _errorMessage = error.toString().replaceFirst('Exception: ', '');
+          notifyListeners();
+        }
+      }
     }
   }
 
@@ -68,6 +92,7 @@ class AuthProvider extends ChangeNotifier {
       _currentUser = User(
         id: userData['id'] as String? ??
             'user-${DateTime.now().millisecondsSinceEpoch}',
+        profileId: userData['profileId'] as String?,
         email: userData['email'] as String? ?? email,
         fullName: userData['fullName'] as String? ?? 'Customer',
         phone: userData['phone'] as String? ?? '',
@@ -153,6 +178,7 @@ class AuthProvider extends ChangeNotifier {
       _currentUser = User(
         id: userData['id'] as String? ??
             'user-${DateTime.now().millisecondsSinceEpoch}',
+        profileId: userData['profileId'] as String?,
         email: userData['email'] as String? ?? email,
         fullName: userData['fullName'] as String? ?? 'Customer',
         phone: userData['phone'] as String?,

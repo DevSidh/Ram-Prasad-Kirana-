@@ -69,6 +69,90 @@ void main() {
 
     expect(_unreadDot(), findsNothing);
   });
+
+  testWidgets('pauses unread refreshes while the app is backgrounded',
+      (tester) async {
+    var requests = 0;
+    final api = ApiService(
+      baseUrl: 'https://store.example/api/v1',
+      client: MockClient((_) async {
+        requests++;
+        return http.Response(
+          jsonEncode({'data': <dynamic>[], 'unreadCount': 0}),
+          200,
+        );
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: UnreadNotificationIndicator(
+            api: api,
+            userId: 'customer-1',
+            refreshToken: 0,
+            child: const Icon(Icons.notifications_outlined),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(requests, 1);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump(const Duration(minutes: 2));
+    expect(requests, 1);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(requests, 2);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('pauses unread refreshes while the home tab is not visible',
+      (tester) async {
+    var requests = 0;
+    final api = ApiService(
+      baseUrl: 'https://store.example/api/v1',
+      client: MockClient((_) async {
+        requests++;
+        return http.Response(
+          jsonEncode({'data': <dynamic>[], 'unreadCount': 0}),
+          200,
+        );
+      }),
+    );
+
+    Widget buildIndicator(bool visible) => MaterialApp(
+          home: TickerMode(
+            enabled: visible,
+            child: Scaffold(
+              body: UnreadNotificationIndicator(
+                api: api,
+                userId: 'customer-1',
+                refreshToken: 0,
+                child: const Icon(Icons.notifications_outlined),
+              ),
+            ),
+          ),
+        );
+
+    await tester.pumpWidget(buildIndicator(true));
+    await tester.pumpAndSettle();
+    expect(requests, 1);
+
+    await tester.pumpWidget(buildIndicator(false));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(minutes: 2));
+    expect(requests, 1);
+
+    await tester.pumpWidget(buildIndicator(true));
+    await tester.pumpAndSettle();
+    expect(requests, 2);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }
 
 Finder _unreadDot() => find.byWidgetPredicate(

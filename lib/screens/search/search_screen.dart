@@ -148,20 +148,7 @@ class _SearchScreenState extends State<SearchScreen> {
     final results = productProvider.products;
     final searchText = _searchController.text.trim();
     final isSearching = searchText.isNotEmpty;
-    final query = searchText.toLowerCase();
-    final suggestions = query.isEmpty
-        ? <String>[]
-        : productProvider.allProducts
-            .expand((product) => [
-                  product.name,
-                  if (product.brand?.isNotEmpty == true) product.brand!,
-                  if (product.categoryName?.isNotEmpty == true)
-                    product.categoryName!,
-                ])
-            .where((keyword) => keyword.toLowerCase().contains(query))
-            .toSet()
-            .take(6)
-            .toList();
+    final suggestions = productProvider.searchSuggestions(searchText);
 
     return Scaffold(
       backgroundColor: Colors.transparent,

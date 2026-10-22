@@ -58,6 +58,92 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
     }
   }
 
+  Future<void> _removeCustomer(AdminCustomer customer) async {
+    final confirmedText = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        var phrase = '';
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Remove customer?'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'This anonymizes ${customer.name} and releases their email and phone for a new account. Orders, item lines, payments, and fulfillment history will be preserved.',
+                ),
+                const SizedBox(height: 12),
+                const Text('Type REMOVE USER to continue.'),
+                const SizedBox(height: 8),
+                TextField(
+                  key: const ValueKey('remove-customer-confirmation'),
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: const InputDecoration(
+                    labelText: 'Confirmation phrase',
+                  ),
+                  onChanged: (value) => setDialogState(() => phrase = value),
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: phrase == 'REMOVE USER'
+                        ? () => Navigator.pop(dialogContext, phrase)
+                        : null,
+                    child: const Text('Remove customer'),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (!mounted || confirmedText != 'REMOVE USER') return;
+
+    final originalPage = _page;
+    if (originalPage != null) {
+      setState(() {
+        _page = AdminCustomerPage(
+          customers: originalPage.customers
+              .where((item) => item.id != customer.id)
+              .toList(),
+          pagination: AdminPagination(
+            page: originalPage.pagination.page,
+            pageSize: originalPage.pagination.pageSize,
+            total:
+                (originalPage.pagination.total - 1).clamp(0, 1 << 31).toInt(),
+          ),
+        );
+      });
+    }
+    try {
+      await _adminApi.removeCustomer(
+        customer.id,
+        confirmation: 'REMOVE USER',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Customer removed; historical orders were preserved.'),
+        ),
+      );
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _page = originalPage;
+        _error = error.toString().replaceFirst('Exception: ', '');
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final customers = _page?.customers ?? const <AdminCustomer>[];
@@ -113,7 +199,12 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
           else if (customers.isEmpty)
             const _EmptyCustomers()
           else
-            ...customers.map(_CustomerCard.new),
+            ...customers.map(
+              (customer) => _CustomerCard(
+                customer,
+                onRemove: () => _removeCustomer(customer),
+              ),
+            ),
           if (pagination != null && pagination.total > pagination.pageSize)
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -134,13 +225,13 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
                 ),
                 IconButton(
                   tooltip: 'Next page',
-                  onPressed: _pageNumber * pagination.pageSize >=
-                          pagination.total
-                      ? null
-                      : () {
-                          _pageNumber++;
-                          _load();
-                        },
+                  onPressed:
+                      _pageNumber * pagination.pageSize >= pagination.total
+                          ? null
+                          : () {
+                              _pageNumber++;
+                              _load();
+                            },
                   icon: const Icon(Icons.chevron_right_rounded),
                 ),
               ],
@@ -153,8 +244,9 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
 
 class _CustomerCard extends StatelessWidget {
   final AdminCustomer customer;
+  final VoidCallback onRemove;
 
-  const _CustomerCard(this.customer);
+  const _CustomerCard(this.customer, {required this.onRemove});
 
   @override
   Widget build(BuildContext context) {
@@ -184,6 +276,7 @@ class _CustomerCard extends StatelessWidget {
         ),
         subtitle: Text(
           [
+            if (customer.profileId.isNotEmpty) customer.profileId,
             customer.phone,
             customer.email,
             '${customer.orderCount} orders',
@@ -203,6 +296,16 @@ class _CustomerCard extends StatelessWidget {
             label: 'Account',
             value: customer.isActive ? 'Active' : 'Suspended',
           ),
+          if (customer.profileId.isNotEmpty)
+            _CustomerField(
+              label: 'Customer ID',
+              value: customer.profileId,
+            ),
+          if (customer.createdAt != null)
+            _CustomerField(
+              label: 'Customer since',
+              value: _formatCreatedAt(context, customer.createdAt!),
+            ),
           if (customer.addresses.isNotEmpty) ...[
             const SizedBox(height: 8),
             const Text(
@@ -258,9 +361,29 @@ class _CustomerCard extends StatelessWidget {
                 ),
               ),
           ],
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton.icon(
+              onPressed: onRemove,
+              icon: const Icon(Icons.person_remove_outlined),
+              label: const Text('Remove customer'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error,
+              ),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  String _formatCreatedAt(BuildContext context, String value) {
+    final createdAt = DateTime.tryParse(value)?.toLocal();
+    if (createdAt == null) return value;
+    final localizations = MaterialLocalizations.of(context);
+    return '${localizations.formatMediumDate(createdAt)} · '
+        '${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(createdAt))}';
   }
 
   double _number(dynamic value) {

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:freshharvest_grocery/providers/auth_provider.dart';
+import 'package:freshharvest_grocery/screens/auth/login_screen.dart';
 import 'package:freshharvest_grocery/screens/auth/register_screen.dart';
 import 'package:freshharvest_grocery/services/api_service.dart';
 
@@ -91,5 +92,26 @@ void main() {
 
     expect(find.text('Verify your email'), findsOneWidget);
     expect(find.text('Send a new code'), findsOneWidget);
+  });
+
+  testWidgets('login provides a route to email verification', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final auth = AuthProvider(apiService: _RegisterApi());
+    addTearDown(auth.dispose);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<AuthProvider>.value(
+        value: auth,
+        child: const MaterialApp(home: LoginScreen()),
+      ),
+    );
+    await auth.sessionReady;
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('login-email-verification')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Verify your email'), findsOneWidget);
+    expect(find.text('Send verification code'), findsOneWidget);
   });
 }

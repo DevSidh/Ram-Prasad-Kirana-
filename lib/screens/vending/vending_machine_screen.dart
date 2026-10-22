@@ -5,9 +5,12 @@ import 'package:provider/provider.dart';
 
 import '../../core/responsive_layout.dart';
 import '../../models/product.dart';
+import '../../providers/cart_provider.dart';
 import '../../services/api_service.dart';
+import '../../screens/product/product_details_screen.dart';
 import '../../widgets/product_card.dart';
-import 'drinks_menu_section.dart';
+import 'drinks_menu_section.dart'
+    show CategoryChips, Drink, DrinkCard, drinkCategoryFor;
 
 class VendingMachineScreen extends StatefulWidget {
   const VendingMachineScreen({super.key});
@@ -114,11 +117,10 @@ class _VendingMachineScreenState extends State<VendingMachineScreen> {
           .whereType<Map<String, dynamic>>()
           .map(Product.fromJson)
           .where((product) => product.isVendingDrink)
-          .take(18)
-          .toList(growable: false);
+          .toList();
       if (!mounted) return;
       setState(() {
-        _drinks = products;
+        _drinks = products.take(18).toList(growable: false);
         _loading = false;
         _error = null;
       });
@@ -135,18 +137,22 @@ class _VendingMachineScreenState extends State<VendingMachineScreen> {
   }
 
   List<Product> get _visibleDrinks {
-    final products = _drinks
+    return _drinks
         .where(
           (product) =>
               _selectedCategory == 'All' ||
               drinkCategoryFor(product) == _selectedCategory,
         )
-        .toList();
-    products.sort((a, b) {
-      if (a.isBestSeller != b.isBestSeller) return a.isBestSeller ? -1 : 1;
-      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-    });
-    return products;
+        .toList(growable: false);
+  }
+
+  void _openDrink(Product product) {
+    Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => ProductDetailsScreen(product: product),
+      ),
+    );
   }
 
   @override
@@ -159,6 +165,14 @@ class _VendingMachineScreenState extends State<VendingMachineScreen> {
   @override
   Widget build(BuildContext context) {
     final drinks = _visibleDrinks;
+    Product? featuredDrink;
+    for (final drink in drinks) {
+      if (drink.isBestSeller) {
+        featuredDrink = drink;
+        break;
+      }
+    }
+    final gridDrinks = drinks;
     final media = MediaQuery.of(context);
     final textScale = media.textScaler.scale(1).clamp(1.0, 1.2).toDouble();
     final theme = Theme.of(context);
@@ -259,6 +273,36 @@ class _VendingMachineScreenState extends State<VendingMachineScreen> {
                   ),
                 )
               else ...[
+                if (featuredDrink != null)
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    sliver: SliverToBoxAdapter(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 9),
+                            child: Text(
+                              'Featured drink',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          DrinkCard(
+                            key: ValueKey('featured-drink-${featuredDrink.id}'),
+                            drink: Drink.fromProduct(featuredDrink, 0),
+                            featured: true,
+                            selected: false,
+                            onSelect: _openDrink,
+                            onAdd: (product) =>
+                                context.read<CartProvider>().addItem(product),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                   sliver: SliverLayoutBuilder(
@@ -272,12 +316,47 @@ class _VendingMachineScreenState extends State<VendingMachineScreen> {
                         crossAxisSpacing: 12,
                         mainAxisSpacing: 12,
                       ),
-                      itemCount: drinks.length,
-                      itemBuilder: (context, index) => ProductCard(
-                        key: ValueKey(drinks[index].id),
-                        product: drinks[index],
-                        compact: true,
-                      ),
+                      itemCount: gridDrinks.length,
+                      itemBuilder: (context, index) {
+                        final product = gridDrinks[index];
+                        return Stack(
+                          key: ValueKey(product.id),
+                          children: [
+                            Positioned.fill(
+                              child: ProductCard(
+                                product: product,
+                                compact: true,
+                              ),
+                            ),
+                            if (product.isBestSeller)
+                              Positioned(
+                                top: 7,
+                                left: 7,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF9A4D13),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: const Padding(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    child: Text(
+                                      'FEATURED',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: .4,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
                     ),
                   ),
                 ),

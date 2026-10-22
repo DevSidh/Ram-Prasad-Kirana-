@@ -51,6 +51,7 @@ class OfferPopup extends StatelessWidget {
     final saleBannerWidth = (screenHeight * .24).clamp(150.0, 205.0).toDouble();
     final saleBannerHeight = saleBannerWidth * (120 / 145);
     final diyaSize = (screenHeight * .13).clamp(66.0, 92.0).toDouble();
+    final pixelRatio = MediaQuery.devicePixelRatioOf(context);
     final disableAnimations = MediaQuery.disableAnimationsOf(context);
     final offerDescription = offer.discountType == OfferDiscountType.percentage
         ? '${offer.percent}% off up to Rs. ${offer.maxDiscount}'
@@ -97,8 +98,13 @@ class OfferPopup extends StatelessWidget {
                                 SizedBox(
                                   height: heroHeight,
                                   child: Image.asset(
+                                    key: const ValueKey(
+                                      'diwali-popup-hero-image',
+                                    ),
                                     'assets/images/diwali_popup_hero.jpg',
                                     width: double.infinity,
+                                    cacheHeight:
+                                        (heroHeight * pixelRatio).round(),
                                     fit: BoxFit.contain,
                                     alignment: Alignment.center,
                                     errorBuilder: (_, error, stackTrace) {
@@ -154,7 +160,11 @@ class OfferPopup extends StatelessWidget {
                                   width: 80,
                                   height: diyaSize,
                                   child: Image.asset(
+                                    key: const ValueKey(
+                                      'diwali-popup-diya-image',
+                                    ),
                                     'assets/images/diwali_popup_diya.gif',
+                                    cacheWidth: (80 * pixelRatio).round(),
                                     fit: BoxFit.contain,
                                     gaplessPlayback: true,
                                     errorBuilder: (_, error, stackTrace) {

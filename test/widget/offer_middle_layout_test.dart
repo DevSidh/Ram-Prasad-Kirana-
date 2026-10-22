@@ -43,6 +43,19 @@ void main() {
         ),
         findsOneWidget,
       );
+      final heroImage = tester.widget<Image>(
+        find.byKey(const ValueKey('diwali-popup-hero-image')),
+      );
+      expect(heroImage.image, isA<ResizeImage>());
+      expect(
+        (heroImage.image as ResizeImage).height,
+        (size.height * .31).clamp(130.0, 220.0).round(),
+      );
+      final diyaImage = tester.widget<Image>(
+        find.byKey(const ValueKey('diwali-popup-diya-image')),
+      );
+      expect(diyaImage.image, isA<ResizeImage>());
+      expect((diyaImage.image as ResizeImage).width, 80);
       expect(tester.takeException(), isNull);
     });
   }

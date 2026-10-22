@@ -193,6 +193,40 @@ void main() {
     provider.dispose();
   });
 
+  test(
+      'catalog views and suggestion terms are reused until their inputs change',
+      () async {
+    final provider = ProductProvider(apiService: _CatalogApi());
+    await provider.loadCatalog();
+
+    final products = provider.products;
+    final homeProducts = provider.homeProducts;
+    expect(identical(products, provider.products), isTrue);
+    expect(identical(homeProducts, provider.homeProducts), isTrue);
+    expect(
+      provider.searchSuggestions('GREEN'),
+      ['Leafy greens', 'Premium Greens'],
+    );
+
+    await provider.toggleWishlist('rice');
+    expect(identical(homeProducts, provider.homeProducts), isTrue);
+
+    provider.setSearchQuery('rice');
+    expect(identical(products, provider.products), isFalse);
+    expect(provider.products.map((product) => product.id), ['rice']);
+
+    provider.setHomeFilters(
+      savedOnly: true,
+      bestSellersOnly: false,
+      cheapOnly: false,
+    );
+    expect(provider.homeProducts.map((product) => product.id), ['rice']);
+    await provider.toggleWishlist('rice');
+    expect(provider.wishlistIds, isEmpty);
+    expect(provider.homeProducts, isEmpty);
+    provider.dispose();
+  });
+
   test('best sellers show the catalog and cheap shows carousel products',
       () async {
     final provider = ProductProvider(apiService: _CatalogApi());

@@ -86,6 +86,18 @@ void main() {
     expect(find.byType(SingleChildScrollView), findsOneWidget);
     expect(find.text('Order received'), findsOneWidget);
 
+    final requestsBeforeBackground = api.orderRequests;
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump(const Duration(seconds: 40));
+    expect(api.orderRequests, requestsBeforeBackground);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    await tester.pump();
+    expect(api.orderRequests, greaterThan(requestsBeforeBackground));
+
     api.status = 'CONFIRMED';
     await tester.pump(const Duration(seconds: 20));
     await tester.pump();

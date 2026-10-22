@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dotlottie_flutter/dotlottie_flutter.dart';
 import 'package:flutter/material.dart';
 
@@ -7,6 +9,7 @@ class StoreAnimation extends StatefulWidget {
   final double? aspectRatio;
   final String semanticLabel;
   final bool loop;
+  final bool isVisible;
 
   const StoreAnimation({
     super.key,
@@ -15,6 +18,7 @@ class StoreAnimation extends StatefulWidget {
     required this.semanticLabel,
     this.aspectRatio,
     this.loop = true,
+    this.isVisible = true,
   }) : assert(aspectRatio == null || aspectRatio > 0);
 
   @override
@@ -23,6 +27,44 @@ class StoreAnimation extends StatefulWidget {
 
 class _StoreAnimationState extends State<StoreAnimation> {
   bool _failedToLoad = false;
+  bool _shouldPlay = true;
+  DotLottieViewController? _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _shouldPlay = widget.isVisible;
+  }
+
+  @override
+  void didUpdateWidget(StoreAnimation oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isVisible != widget.isVisible) {
+      _updatePlaybackPreference();
+    }
+  }
+
+  void _updatePlaybackPreference() {
+    final shouldPlay = widget.isVisible;
+    if (_shouldPlay == shouldPlay) return;
+    _shouldPlay = shouldPlay;
+
+    final controller = _controller;
+    if (controller != null) {
+      unawaited(shouldPlay ? controller.play() : controller.pause());
+    }
+  }
+
+  void _handleViewCreated(DotLottieViewController controller) {
+    _controller = controller;
+    if (!_shouldPlay) unawaited(controller.pause());
+  }
+
+  @override
+  void dispose() {
+    _controller = null;
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,10 +85,11 @@ class _StoreAnimationState extends State<StoreAnimation> {
             : DotLottieView(
                 sourceType: 'asset',
                 source: widget.assetPath,
-                autoplay: !MediaQuery.disableAnimationsOf(context),
+                autoplay: _shouldPlay,
                 loop: widget.loop,
                 useFrameInterpolation: true,
                 fit: BoxFit.contain,
+                onViewCreated: _handleViewCreated,
                 onLoadError: () {
                   if (mounted) setState(() => _failedToLoad = true);
                 },

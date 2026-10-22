@@ -89,14 +89,16 @@ jobs:
       - name: Build signed APK
         env:
           API_BASE_URL: ${{ vars.API_BASE_URL }}
+          LOCAL_API_BASE_URL: ${{ vars.LOCAL_API_BASE_URL }}
           MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
+          LOCAL_API_BASE_URL="${LOCAL_API_BASE_URL:-http://10.0.2.2:4000/api/v1}"
           flutter build apk --release \
             --build-name="$VERSION" \
-            --build-number="$GITHUB_RUN_NUMBER" \
             --dart-define=API_BASE_URL="$API_BASE_URL" \
+            --dart-define=LOCAL_API_BASE_URL="$LOCAL_API_BASE_URL" \
             --dart-define=GOOGLE_MAPS_CONFIGURED=true
 
       - name: Name release APK

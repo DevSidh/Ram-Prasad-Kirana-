@@ -43,6 +43,45 @@ class AdminApiService {
     );
   }
 
+  Future<AdminBroadcastResult> sendCustomerNotification({
+    required String userId,
+    required String title,
+    required String body,
+    String? couponCode,
+  }) async {
+    final response = _asMap(await _api.post('/admin/notifications/customer', {
+      'userId': userId,
+      'title': title.trim(),
+      'body': body.trim(),
+      if (couponCode != null && couponCode.trim().isNotEmpty)
+        'couponCode': couponCode.trim().toUpperCase(),
+    }));
+    return _broadcastResult(response);
+  }
+
+  AdminBroadcastResult _broadcastResult(Map<String, dynamic> response) {
+    final recipientCount = response['recipientCount'];
+    final notificationsCreated = response['notificationsCreated'];
+    final pushDelivery = response['pushDelivery'];
+    if (recipientCount is! int ||
+        notificationsCreated is! int ||
+        pushDelivery is! Map<String, dynamic> ||
+        pushDelivery['available'] is! bool ||
+        pushDelivery['sent'] is! int ||
+        pushDelivery['failed'] is! int ||
+        (pushDelivery['error'] != null && pushDelivery['error'] is! String)) {
+      throw Exception('The server returned an invalid notification result.');
+    }
+    return AdminBroadcastResult(
+      recipientCount: recipientCount,
+      notificationsCreated: notificationsCreated,
+      pushAvailable: pushDelivery['available'] as bool,
+      pushSent: pushDelivery['sent'] as int,
+      pushFailed: pushDelivery['failed'] as int,
+      pushError: pushDelivery['error'] as String?,
+    );
+  }
+
   Future<AdminDashboard> getDashboard() async {
     return AdminDashboard.fromJson(_asMap(await _api.get('/admin/dashboard')));
   }
@@ -68,6 +107,16 @@ class AdminApiService {
     return AdminCoupon.fromJson(coupon);
   }
 
+  Future<AdminCoupon> updateCoupon(
+      String id, Map<String, dynamic> details) async {
+    final response = _asMap(await _api.patch('/admin/coupons/$id', details));
+    final coupon = response['coupon'];
+    if (coupon is! Map<String, dynamic>) {
+      throw Exception('The server did not return the updated coupon.');
+    }
+    return AdminCoupon.fromJson(coupon);
+  }
+
   Future<AdminCoupon> setCouponActive(String id, bool isActive) async {
     final response = _asMap(await _api.patch(
       '/admin/coupons/$id/active',
@@ -78,6 +127,46 @@ class AdminApiService {
       throw Exception('The server did not return the updated coupon.');
     }
     return AdminCoupon.fromJson(coupon);
+  }
+
+  Future<void> removeCoupon(String id) async {
+    await _api.delete('/admin/coupons/${Uri.encodeComponent(id)}');
+  }
+
+  Future<({List<AdminStreakReward> rewards, List<AdminStreakClaim> claims})>
+      getStreakRewards() async {
+    final response = _asMap(await _api.get('/admin/streak/rewards'));
+    final rewards = response['rewards'];
+    final claims = response['claims'];
+    if (rewards is! List || claims is! List) {
+      throw Exception('The server returned invalid buying streak settings.');
+    }
+    return (
+      rewards: rewards
+          .whereType<Map<String, dynamic>>()
+          .map(AdminStreakReward.fromJson)
+          .toList(growable: false),
+      claims: claims
+          .whereType<Map<String, dynamic>>()
+          .map(AdminStreakClaim.fromJson)
+          .toList(growable: false),
+    );
+  }
+
+  Future<List<AdminStreakReward>> saveStreakRewards(
+    List<AdminStreakReward> rewards,
+  ) async {
+    final response = _asMap(await _api.put('/admin/streak/rewards', {
+      'rewards': rewards.map((reward) => reward.toJson()).toList(),
+    }));
+    final savedRewards = response['rewards'];
+    if (savedRewards is! List) {
+      throw Exception('The server did not return the saved streak rewards.');
+    }
+    return savedRewards
+        .whereType<Map<String, dynamic>>()
+        .map(AdminStreakReward.fromJson)
+        .toList(growable: false);
   }
 
   Future<StoreAvailability> getStoreSettings() async {
@@ -144,18 +233,14 @@ class AdminApiService {
     });
   }
 
-  Future<int> clearAllOrderItemDetails({
+  Future<void> removeCustomer(
+    String id, {
     required String confirmation,
   }) async {
-    final response = _asMap(await _api.delete(
-      '/admin/orders/items',
+    await _api.delete(
+      '/admin/customers/${Uri.encodeComponent(id)}',
       body: {'confirmation': confirmation},
-    ));
-    final deletedItems = response['deletedItems'];
-    if (deletedItems is! int || deletedItems < 0) {
-      throw Exception('The server returned an invalid order cleanup result.');
-    }
-    return deletedItems;
+    );
   }
 
   Future<void> updateOrderDeliveryTime(
@@ -177,6 +262,30 @@ class AdminApiService {
         .whereType<Map<String, dynamic>>()
         .map(AdminDeliveryPerson.fromJson)
         .toList();
+  }
+
+  Future<List<({String id, String orderNumber})>> getRecentOrderAlerts({
+    int limit = 50,
+  }) async {
+    final response = _asMap(await _api.get(
+      '/admin/orders/alerts',
+      queryParams: {'limit': '$limit'},
+    ));
+    final orders = response['orders'];
+    if (orders is! List) {
+      throw Exception('The server returned an invalid order alert list.');
+    }
+    return orders.map((order) {
+      if (order is! Map<String, dynamic> ||
+          order['id'] is! String ||
+          order['orderNumber'] is! String) {
+        throw Exception('The server returned an invalid order alert.');
+      }
+      return (
+        id: order['id'] as String,
+        orderNumber: order['orderNumber'] as String,
+      );
+    }).toList();
   }
 
   Future<List<AdminPendingDeliveryCash>> getPendingDeliveryCash() async {

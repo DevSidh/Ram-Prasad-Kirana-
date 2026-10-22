@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
@@ -36,6 +35,7 @@ class _MainBottomNavState extends State<MainBottomNav>
   final GlobalKey _cartTargetKey = GlobalKey();
   Timer? _refreshTimer;
   bool _refreshInProgress = false;
+  bool _isAppForeground = true;
 
   final List<Widget> _screens = const [
     HomeScreen(),
@@ -52,10 +52,7 @@ class _MainBottomNavState extends State<MainBottomNav>
     _currentIndex = widget.initialIndex;
     _visitedScreens.add(_currentIndex);
     WidgetsBinding.instance.addObserver(this);
-    _refreshTimer = Timer.periodic(
-      const Duration(minutes: 5),
-      (_) => unawaited(_refreshSection(_currentIndex)),
-    );
+    _startRefreshTimer();
   }
 
   @override
@@ -67,13 +64,26 @@ class _MainBottomNavState extends State<MainBottomNav>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (mounted && state == AppLifecycleState.resumed) {
+    _isAppForeground = state == AppLifecycleState.resumed;
+    if (_isAppForeground) {
+      _startRefreshTimer();
       unawaited(_refreshSection(_currentIndex));
+    } else {
+      _refreshTimer?.cancel();
+      _refreshTimer = null;
     }
   }
 
+  void _startRefreshTimer() {
+    if (!_isAppForeground || _refreshTimer != null) return;
+    _refreshTimer = Timer.periodic(
+      const Duration(minutes: 5),
+      (_) => unawaited(_refreshSection(_currentIndex)),
+    );
+  }
+
   Future<void> _refreshSection(int index) async {
-    if (!mounted || _refreshInProgress) return;
+    if (!mounted || !_isAppForeground || _refreshInProgress) return;
     _refreshInProgress = true;
     try {
       final products = context.read<ProductProvider>();
@@ -238,62 +248,59 @@ class _FloatingNavigationBar extends StatelessWidget {
     return ClipRRect(
       key: const ValueKey('floating-nav-capsule'),
       borderRadius: BorderRadius.circular(40),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 17, sigmaY: 17),
-        child: Container(
-          width: navigationWidth,
-          height: 66,
-          padding: const EdgeInsets.all(9),
-          decoration: BoxDecoration(
-            color: tokens.navBarFill,
-            border: Border.all(color: tokens.navBarBorder),
-            borderRadius: BorderRadius.circular(40),
-          ),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              const gap = 0.0;
-              final tabWidth =
-                  (constraints.maxWidth - gap * (labels.length - 1)) /
-                      labels.length;
-              final indicatorSize = math.min(constraints.maxHeight, tabWidth);
-              return SizedBox(
-                height: constraints.maxHeight,
-                child: Stack(
-                  children: [
-                    _NavigationIndicator(
-                      selectedIndex: selectedIndex,
-                      tabWidth: tabWidth,
-                      gap: gap,
-                      size: indicatorSize,
-                      color: tokens.navBarActiveBackground,
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        for (var index = 0; index < labels.length; index++)
-                          SizedBox(
-                            width: tabWidth,
-                            child: _NavigationItem(
-                              segmentKey:
-                                  ValueKey('nav-tab-${keyNames[index]}'),
-                              label: labels[index],
-                              icon: icons[index],
-                              selected: selectedIndex == index,
-                              activeIconColor: tokens.navBarActiveIcon,
-                              inactiveIconColor: tokens.navBarInactiveIcon,
-                              showBadge: index == 4,
-                              badgeCount: index == 4 ? cartItemCount : 0,
-                              iconTargetKey: index == 4 ? cartTargetKey : null,
-                              onTap: () => onSelect(index),
-                            ),
+      child: Container(
+        width: navigationWidth,
+        height: 66,
+        padding: const EdgeInsets.all(9),
+        decoration: BoxDecoration(
+          color: tokens.navBarFill,
+          border: Border.all(color: tokens.navBarBorder),
+          borderRadius: BorderRadius.circular(40),
+        ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            const gap = 0.0;
+            final tabWidth =
+                (constraints.maxWidth - gap * (labels.length - 1)) /
+                    labels.length;
+            final indicatorSize = math.min(constraints.maxHeight, tabWidth);
+            return SizedBox(
+              height: constraints.maxHeight,
+              child: Stack(
+                children: [
+                  _NavigationIndicator(
+                    selectedIndex: selectedIndex,
+                    tabWidth: tabWidth,
+                    gap: gap,
+                    size: indicatorSize,
+                    color: tokens.navBarActiveBackground,
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      for (var index = 0; index < labels.length; index++)
+                        SizedBox(
+                          width: tabWidth,
+                          child: _NavigationItem(
+                            segmentKey:
+                                ValueKey('nav-tab-${keyNames[index]}'),
+                            label: labels[index],
+                            icon: icons[index],
+                            selected: selectedIndex == index,
+                            activeIconColor: tokens.navBarActiveIcon,
+                            inactiveIconColor: tokens.navBarInactiveIcon,
+                            showBadge: index == 4,
+                            badgeCount: index == 4 ? cartItemCount : 0,
+                            iconTargetKey: index == 4 ? cartTargetKey : null,
+                            onTap: () => onSelect(index),
                           ),
-                      ],
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );
