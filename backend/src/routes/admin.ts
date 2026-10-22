@@ -20,15 +20,13 @@ import {
   type NormalizedProductImage,
 } from '../services/product-image.js';
 import { identityAlreadyInUse, normalizeEmail, normalizePhone } from '../services/user-identity.js';
+import { formatUserDisplayId } from '../services/user-display-id.js';
+import { removeCancelledOrderPurchaseDay } from '../services/buying-streak.js';
 import {
   DEFAULT_WEEKLY_HOURS,
   getStoreAvailability,
   storeHoursSchema,
 } from '../services/store-hours.js';
-import {
-  clearAllOrderItemDetails,
-  clearOrderItemsInput,
-} from '../services/order-maintenance.js';
 
 const categoryInput = z.object({
   name: z.string().trim().min(1).max(120).optional(),
@@ -131,6 +129,9 @@ const ordersQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
+const orderAlertsQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
 const customersQuery = z.object({
   search: z.string().trim().max(200).optional(),
   page: z.coerce.number().int().min(1).default(1),
@@ -193,6 +194,24 @@ const couponCreateInput = z.object({
   }
 });
 const couponActiveInput = z.object({ isActive: z.boolean() }).strict();
+const streakRewardsInput = z.object({
+  rewards: z.array(z.object({
+    day: z.number().int().min(1).max(365),
+    title: z.string().trim().min(1).max(120),
+    description: z.string().trim().min(1).max(1000),
+  }).strict()).max(100),
+}).strict().superRefine(({ rewards }, context) => {
+  if (new Set(rewards.map(({ day }) => day)).size !== rewards.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['rewards'],
+      message: 'Each streak day can have only one reward.',
+    });
+  }
+});
+const adminUserRemovalInput = z.object({
+  confirmation: z.literal('REMOVE USER'),
+}).strict();
 const wholesaleItemFields = {
   sku: z.string().trim().min(1).max(80),
   name: z.string().trim().min(1).max(160),
@@ -619,6 +638,8 @@ export function createAdminRouter(
     }).strict().safeParse(req.body);
     if (!parsed.success) return invalidInput(res, parsed.error);
 
+    const notificationTitle = 'Faststore';
+    const notificationBody = `${parsed.data.title}\n\n${parsed.data.body}`;
     try {
       if (parsed.data.couponCode) {
         const coupon = await prisma.coupon.findUnique({
@@ -648,8 +669,8 @@ export function createAdminRouter(
             data: batch.map(({ id }) => ({
               userId: id,
               type: 'PROMOTIONAL',
-              title: parsed.data.title,
-              body: parsed.data.body,
+              title: notificationTitle,
+              body: notificationBody,
               ...(parsed.data.couponCode
                 ? { metadata: { couponCode: parsed.data.couponCode } }
                 : {}),
@@ -668,8 +689,8 @@ export function createAdminRouter(
         pushDelivery = await sendPushToUsers(
           prisma,
           recipients.map(({ id }) => id),
-          parsed.data.title,
-          parsed.data.body,
+          notificationTitle,
+          notificationBody,
           parsed.data.couponCode
             ? { couponCode: parsed.data.couponCode }
             : {},
@@ -697,9 +718,102 @@ export function createAdminRouter(
     }
   });
 
+  router.post('/notifications/customer', async (req, res) => {
+    const parsed = z.object({
+      userId: z.string().trim().min(1).max(100),
+      title: z.string().trim().min(1).max(120),
+      body: z.string().trim().min(1).max(1000),
+      couponCode: z.string().trim().toUpperCase().min(3).max(40)
+        .regex(/^[A-Z0-9][A-Z0-9_-]*$/)
+        .optional(),
+    }).strict().safeParse(req.body);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+
+    const notificationTitle = 'Faststore';
+    const notificationBody = `${parsed.data.title}\n\n${parsed.data.body}`;
+    try {
+      const recipient = await prisma.user.findFirst({
+        where: {
+          id: parsed.data.userId,
+          role: 'CUSTOMER',
+          isActive: true,
+        },
+        select: { id: true },
+      });
+      if (!recipient) {
+        return res.status(404).json({ error: 'Active customer not found.' });
+      }
+      if (parsed.data.couponCode) {
+        const coupon = await prisma.coupon.findUnique({
+          where: { code: parsed.data.couponCode },
+          select: {
+            isActive: true,
+            expiresAt: true,
+            usageLimit: true,
+            usedCount: true,
+          },
+        });
+        if (!coupon ||
+            !coupon.isActive ||
+            (coupon.expiresAt !== null && coupon.expiresAt <= new Date()) ||
+            (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit)) {
+          return res.status(400).json({ error: 'That coupon is not currently available.' });
+        }
+      }
+      await prisma.notification.create({
+        data: {
+          userId: recipient.id,
+          type: 'PROMOTIONAL',
+          title: notificationTitle,
+          body: notificationBody,
+          ...(parsed.data.couponCode
+            ? { metadata: { couponCode: parsed.data.couponCode } }
+            : {}),
+        },
+      });
+
+      let pushDelivery: {
+        available: boolean;
+        sent: number;
+        failed: number;
+        error?: string;
+      } = { available: false, sent: 0, failed: 0 };
+      try {
+        pushDelivery = await sendPushToUsers(
+          prisma,
+          [recipient.id],
+          notificationTitle,
+          notificationBody,
+          parsed.data.couponCode
+            ? { couponCode: parsed.data.couponCode }
+            : {},
+        );
+      } catch (error) {
+        console.error('Admin customer notification push delivery failed:', error);
+        pushDelivery = {
+          available: true,
+          sent: 0,
+          failed: 0,
+          error: 'Push delivery could not be completed; the in-app alert was saved.',
+        };
+      }
+      return res.status(201).json({
+        recipientCount: 1,
+        notificationsCreated: 1,
+        pushDelivery,
+      });
+    } catch (error) {
+      console.error('Admin customer notification failed:', error);
+      return res.status(500).json({
+        error: 'Unable to send this announcement.',
+      });
+    }
+  });
+
   router.get('/coupons', async (_req, res) => {
     try {
       const coupons = await prisma.coupon.findMany({
+        where: { isDeleted: false },
         orderBy: [{ createdAt: 'desc' }, { code: 'asc' }],
       });
       return res.json({ coupons: coupons.map(couponResponse) });
@@ -717,9 +831,48 @@ export function createAdminRouter(
           ...parsed.data,
           code: parsed.data.code,
           isActive: true,
+          isDeleted: false,
         },
       });
       return res.status(201).json({ coupon: couponResponse(coupon) });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002') {
+        return res.status(409).json({ error: 'A coupon with this code already exists.' });
+      }
+      sendAdminError(error, res);
+    }
+  });
+
+  router.patch('/coupons/:id', async (req, res) => {
+    const id = recordIdInput.safeParse(req.params.id);
+    const parsed = couponCreateInput.safeParse(req.body);
+    if (!id.success) return res.status(400).json({ error: 'Invalid coupon ID.' });
+    if (!parsed.success) return invalidInput(res, parsed.error);
+    try {
+      const current = await prisma.coupon.findUnique({
+        where: { id: id.data, isDeleted: false },
+        select: { id: true, usedCount: true },
+      });
+      if (!current) return res.status(404).json({ error: 'Coupon not found.' });
+      if (parsed.data.usageLimit !== null &&
+          parsed.data.usageLimit < current.usedCount) {
+        return res.status(400).json({
+          error: 'The total-use limit cannot be lower than uses already recorded.',
+        });
+      }
+      const updated = await prisma.coupon.updateMany({
+        where: { id: id.data, isDeleted: false },
+        data: parsed.data,
+      });
+      if (updated.count === 0) {
+        return res.status(404).json({ error: 'Coupon not found.' });
+      }
+      const coupon = await prisma.coupon.findUnique({
+        where: { id: id.data, isDeleted: false },
+      });
+      if (!coupon) return res.status(404).json({ error: 'Coupon not found.' });
+      return res.json({ coupon: couponResponse(coupon) });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError &&
           error.code === 'P2002') {
@@ -736,15 +889,100 @@ export function createAdminRouter(
     if (!input.success) return invalidInput(res, input.error);
     try {
       const updated = await prisma.coupon.updateMany({
-        where: { id: id.data },
+        where: { id: id.data, isDeleted: false },
         data: { isActive: input.data.isActive },
       });
       if (updated.count === 0) {
         return res.status(404).json({ error: 'Coupon not found.' });
       }
-      const coupon = await prisma.coupon.findUnique({ where: { id: id.data } });
+      const coupon = await prisma.coupon.findUnique({
+        where: { id: id.data, isDeleted: false },
+      });
       if (!coupon) return res.status(404).json({ error: 'Coupon not found.' });
       return res.json({ coupon: couponResponse(coupon) });
+    } catch (error) {
+      sendAdminError(error, res);
+    }
+  });
+
+  router.delete('/coupons/:id', async (req, res) => {
+    const id = recordIdInput.safeParse(req.params.id);
+    if (!id.success) return res.status(400).json({ error: 'Invalid coupon ID.' });
+    try {
+      const removed = await prisma.coupon.updateMany({
+        where: { id: id.data, isDeleted: false },
+        data: { isActive: false, isDeleted: true },
+      });
+      if (removed.count !== 1) {
+        return res.status(404).json({ error: 'Coupon not found.' });
+      }
+      return res.json({ message: 'Coupon removed.' });
+    } catch (error) {
+      sendAdminError(error, res);
+    }
+  });
+
+  router.get('/streak/rewards', async (_req, res) => {
+    try {
+      const [rewards, claims] = await Promise.all([
+        prisma.buyingStreakRewardConfig.findMany({
+          orderBy: { day: 'asc' },
+        }),
+        prisma.buyingStreakRewardProgress.findMany({
+          where: { claimedAt: { not: null } },
+          orderBy: { claimedAt: 'desc' },
+          take: 100,
+          select: {
+            day: true,
+            title: true,
+            description: true,
+            unlockedAt: true,
+            claimedAt: true,
+            user: { select: { name: true, userNumber: true } },
+          },
+        }),
+      ]);
+      return res.json({
+        rewards,
+        claims: claims.map((claim) => ({
+          day: claim.day,
+          title: claim.title,
+          description: claim.description,
+          unlockedAt: claim.unlockedAt.toISOString(),
+          claimedAt: claim.claimedAt?.toISOString() ?? null,
+          customerName: claim.user.name,
+          profileId: formatUserDisplayId(claim.user.userNumber),
+        })),
+      });
+    } catch (error) {
+      sendAdminError(error, res);
+    }
+  });
+
+  router.put('/streak/rewards', async (req, res) => {
+    const parsed = streakRewardsInput.safeParse(req.body);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+    try {
+      const rewards = await prisma.$transaction(async (tx) => {
+        const configuredDays = parsed.data.rewards.map(({ day }) => day);
+        await tx.buyingStreakRewardConfig.deleteMany({
+          where: configuredDays.length > 0 ? { day: { notIn: configuredDays } } : {},
+        });
+        for (const reward of parsed.data.rewards) {
+          await tx.buyingStreakRewardConfig.upsert({
+            where: { day: reward.day },
+            update: {
+              title: reward.title,
+              description: reward.description,
+            },
+            create: reward,
+          });
+        }
+        return tx.buyingStreakRewardConfig.findMany({
+          orderBy: { day: 'asc' },
+        });
+      });
+      return res.json({ rewards });
     } catch (error) {
       sendAdminError(error, res);
     }
@@ -836,6 +1074,26 @@ export function createAdminRouter(
           total: Number(order.total),
           createdAt: order.createdAt,
           customer: order.user,
+        })),
+      });
+    } catch (error) {
+      sendAdminError(error, res);
+    }
+  });
+
+  router.get('/orders/alerts', async (req, res) => {
+    const parsed = orderAlertsQuery.safeParse(req.query);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+    try {
+      const orders = await prisma.order.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: parsed.data.limit,
+        select: { id: true, orderNumber: true, createdAt: true },
+      });
+      return res.json({
+        orders: orders.map((order) => ({
+          ...order,
+          createdAt: order.createdAt.toISOString(),
         })),
       });
     } catch (error) {
@@ -983,26 +1241,19 @@ export function createAdminRouter(
     }
   });
 
-  router.delete('/orders/items', async (req, res) => {
-    const parsed = clearOrderItemsInput.safeParse(req.body);
-    if (!parsed.success) return invalidInput(res, parsed.error);
-    try {
-      const deletedItems = await clearAllOrderItemDetails(
-        prisma,
-        parsed.data.confirmation,
-      );
-      return res.json({ deletedItems });
-    } catch (error) {
-      sendAdminError(error, res);
-    }
-  });
-
   router.get('/customers', async (req, res) => {
     const parsed = customersQuery.safeParse(req.query);
     if (!parsed.success) return invalidInput(res, parsed.error);
     const { search, page, pageSize } = parsed.data;
+    const profileIdMatch = search?.match(/^USR-(\d{1,19})$/i);
+    const parsedProfileNumber = profileIdMatch ? BigInt(profileIdMatch[1]) : null;
+    const profileNumber = parsedProfileNumber !== null &&
+            parsedProfileNumber <= 9_223_372_036_854_775_807n
+        ? parsedProfileNumber
+        : null;
     const where: Prisma.UserWhereInput = {
       role: 'CUSTOMER',
+      isActive: true,
       ...(search
         ? {
           OR: [
@@ -1016,6 +1267,9 @@ export function createAdminRouter(
                 },
               },
             },
+            ...(profileNumber !== null
+              ? [{ userNumber: profileNumber }]
+              : []),
           ],
         }
         : {}),
@@ -1031,6 +1285,7 @@ export function createAdminRouter(
           take: pageSize,
           select: {
             id: true,
+            userNumber: true,
             name: true,
             email: true,
             phone: true,
@@ -1084,6 +1339,7 @@ export function createAdminRouter(
       return res.json({
         customers: customers.map((customer) => ({
           id: customer.id,
+          profileId: formatUserDisplayId(customer.userNumber),
           name: customer.name,
           email: customer.email,
           phone: customer.phone,
@@ -1101,6 +1357,88 @@ export function createAdminRouter(
         pagination: { page, pageSize, total },
       });
     } catch (error) {
+      sendAdminError(error, res);
+    }
+  });
+
+  router.delete('/customers/:id', async (req, res) => {
+    const id = parseRecordId(req.params.id, res);
+    if (!id) return;
+    const parsed = adminUserRemovalInput.safeParse(req.body);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+
+    try {
+      const customer = await prisma.user.findFirst({
+        where: { id, role: 'CUSTOMER' },
+        select: { id: true, email: true },
+      });
+      if (!customer) {
+        return res.status(404).json({ error: 'Customer not found.' });
+      }
+      const anonymizedEmail = `removed-${randomUUID()}@accounts.invalid`;
+      const replacementPasswordHash = await bcrypt.hash(randomUUID(), 12);
+      await prisma.$transaction(async (tx) => {
+        const updated = await tx.user.updateMany({
+          where: { id: customer.id, role: 'CUSTOMER' },
+          data: {
+            isActive: false,
+            tokenVersion: { increment: 1 },
+            name: 'Removed customer',
+            email: anonymizedEmail,
+            phone: null,
+            avatarUrl: null,
+            avatarData: null,
+            avatarMimeType: null,
+            passwordHash: replacementPasswordHash,
+            emailVerified: false,
+            phoneVerified: false,
+          },
+        });
+        if (updated.count !== 1) throw new Error('CUSTOMER_REMOVAL_CONFLICT');
+
+        await tx.order.updateMany({
+          where: { userId: customer.id },
+          data: {
+            addressId: null,
+            shippingName: 'Removed customer',
+            shippingPhone: 'Removed',
+            shippingAddress: 'Removed on customer removal',
+            shippingCity: 'Removed',
+            shippingDistrict: null,
+            shippingProvince: null,
+            shippingPostalCode: null,
+            notes: null,
+          },
+        });
+        await tx.payment.updateMany({
+          where: { order: { userId: customer.id } },
+          data: {
+            transactionId: null,
+            gatewayResponse: Prisma.DbNull,
+            errorMessage: null,
+          },
+        });
+        await tx.passwordResetOtp.deleteMany({ where: { email: customer.email } });
+        await tx.address.deleteMany({ where: { userId: customer.id } });
+        await tx.cart.deleteMany({ where: { userId: customer.id } });
+        await tx.wishlist.deleteMany({ where: { userId: customer.id } });
+        await tx.review.deleteMany({ where: { userId: customer.id } });
+        await tx.notification.deleteMany({ where: { userId: customer.id } });
+        await tx.deviceToken.deleteMany({ where: { userId: customer.id } });
+        await tx.buyingStreakPurchaseDay.deleteMany({
+          where: { userId: customer.id },
+        });
+        await tx.buyingStreakRewardProgress.deleteMany({
+          where: { userId: customer.id },
+        });
+      });
+      return res.json({
+        message: 'Customer details were removed. Historical orders and their item and fulfillment records were preserved.',
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'CUSTOMER_REMOVAL_CONFLICT') {
+        return res.status(409).json({ error: 'The customer changed. Refresh and try again.' });
+      }
       sendAdminError(error, res);
     }
   });
@@ -1474,6 +1812,7 @@ export function createAdminRouter(
             items: true,
             userId: true,
             orderNumber: true,
+            createdAt: true,
             delivery: { select: { id: true, status: true, deliveryPersonId: true } },
           },
         });
@@ -1504,6 +1843,11 @@ export function createAdminRouter(
         if (changed.count !== 1) return { kind: 'conflict' as const };
 
         if (status === 'CANCELLED') {
+          await removeCancelledOrderPurchaseDay(tx, {
+            userId: existing.userId,
+            orderId: existing.id,
+            orderCreatedAt: existing.createdAt,
+          });
           if (existing.couponCode) {
             await tx.coupon.updateMany({
               where: { code: existing.couponCode, usedCount: { gt: 0 } },

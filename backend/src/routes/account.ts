@@ -15,6 +15,10 @@ import {
 } from '../services/customer-catalog.js';
 import { isPushConfigured } from '../services/push-notifications.js';
 import { identityAlreadyInUse, normalizePhone } from '../services/user-identity.js';
+import { formatUserDisplayId } from '../services/user-display-id.js';
+import {
+  getBuyingStreakSnapshot,
+} from '../services/buying-streak.js';
 
 const addressFields = {
   title: z.string().trim().min(1).max(40),
@@ -127,6 +131,93 @@ export function createAccountRouter(
 ): Router {
   const router = Router();
   router.use(authenticateToken);
+
+  router.get('/profile', async (_req, res) => {
+    const userId = authenticatedUserId(res);
+    if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
+    try {
+      const user = await prisma.user.findFirst({
+        where: { id: userId, isActive: true },
+        select: {
+          id: true,
+          userNumber: true,
+          name: true,
+          email: true,
+          phone: true,
+          role: true,
+          avatarUrl: true,
+        },
+      });
+      if (!user) return res.status(404).json({ error: 'Account not found.' });
+      return res.json({
+        data: {
+          id: user.id,
+          profileId: formatUserDisplayId(user.userNumber),
+          fullName: user.name,
+          email: user.email,
+          phone: user.phone,
+          role: user.role,
+          avatarUrl: user.avatarUrl,
+        },
+      });
+    } catch (error) {
+      console.error('Profile load failed:', error);
+      return res.status(500).json({ error: 'Unable to load your profile.' });
+    }
+  });
+
+  router.get('/buying-streak', async (_req, res) => {
+    const userId = authenticatedUserId(res);
+    if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
+    try {
+      const snapshot = await getBuyingStreakSnapshot(prisma, userId);
+      return res.json(snapshot);
+    } catch (error) {
+      console.error('Buying streak load failed:', error);
+      return res.status(500).json({ error: 'Unable to load your buying streak.' });
+    }
+  });
+
+  router.post('/buying-streak/rewards/:day/claim', async (req, res) => {
+    const userId = authenticatedUserId(res);
+    if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
+    const day = Number(req.params.day);
+    if (!Number.isSafeInteger(day) || day < 1 || day > 365) {
+      return res.status(400).json({ error: 'Choose a valid streak reward.' });
+    }
+    try {
+      const reward = await prisma.buyingStreakRewardProgress.findUnique({
+        where: { userId_day: { userId, day } },
+      });
+      if (!reward) {
+        return res.status(409).json({
+          error: 'Complete this buying streak milestone before claiming its reward.',
+        });
+      }
+      if (reward.claimedAt) {
+        return res.status(409).json({ error: 'This streak reward was already claimed.' });
+      }
+      const claimedAt = new Date();
+      const claimed = await prisma.buyingStreakRewardProgress.updateMany({
+        where: { userId, day, claimedAt: null },
+        data: { claimedAt },
+      });
+      if (claimed.count !== 1) {
+        return res.status(409).json({ error: 'This streak reward was already claimed.' });
+      }
+      return res.json({
+        reward: {
+          day: reward.day,
+          title: reward.title,
+          description: reward.description,
+          claimedAt: claimedAt.toISOString(),
+        },
+      });
+    } catch (error) {
+      console.error('Buying streak reward claim failed:', error);
+      return res.status(500).json({ error: 'Unable to claim this streak reward.' });
+    }
+  });
 
   router.get('/notifications', async (_req, res) => {
     const userId = authenticatedUserId(res);
@@ -631,6 +722,7 @@ export function createAccountRouter(
         data: parsed.data,
         select: {
           id: true,
+          userNumber: true,
           name: true,
           email: true,
           phone: true,
@@ -641,6 +733,7 @@ export function createAccountRouter(
       return res.json({
         data: {
           id: user.id,
+          profileId: formatUserDisplayId(user.userNumber),
           fullName: user.name,
           email: user.email,
           phone: user.phone,

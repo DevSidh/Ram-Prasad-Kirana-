@@ -17,9 +17,17 @@ async function main(): Promise<void> {
     { id: 'admin-user', role: 'ADMIN', isActive: true },
   ];
   const createdBatches: Array<Array<Record<string, unknown>>> = [];
+  const customerNotifications: Array<Record<string, unknown>> = [];
   let transactionCount = 0;
   const prisma = {
     user: {
+      findFirst: async ({ where }: {
+        where: { id: string; role: string; isActive: boolean };
+      }) => where.id === 'customer-1' &&
+        where.role === 'CUSTOMER' &&
+        where.isActive
+        ? { id: 'customer-1' }
+        : null,
       findMany: async ({ where }: {
         where: { isActive: boolean };
         select: { id: boolean };
@@ -31,6 +39,10 @@ async function main(): Promise<void> {
       },
     },
     notification: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        customerNotifications.push(data);
+        return { id: 'notification-1' };
+      },
       createMany: async ({ data }: {
         data: Array<Record<string, unknown>>;
       }) => {
@@ -79,6 +91,8 @@ async function main(): Promise<void> {
     const address = server.address();
     assert(address && typeof address !== 'string');
     const endpoint = `http://127.0.0.1:${address.port}/admin/notifications/broadcast`;
+    const customerEndpoint =
+      `http://127.0.0.1:${address.port}/admin/notifications/customer`;
     const request = (body: unknown, authorized = true) => fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -117,10 +131,48 @@ async function main(): Promise<void> {
     assert.deepEqual(createdBatches.map((batch) => batch.length), [500, 2]);
     assert.ok(createdBatches.flat().every((notification) =>
       notification.type === 'PROMOTIONAL' &&
-      notification.title === 'Store update' &&
-      notification.body === 'Fresh produce is available.' &&
+      notification.title === 'Faststore' &&
+      notification.body === 'Store update\n\nFresh produce is available.' &&
       JSON.stringify(notification.metadata) ===
         JSON.stringify({ couponCode: 'DIWALI50' })));
+
+    const targeted = await fetch(customerEndpoint, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-admin': 'allowed',
+      },
+      body: JSON.stringify({
+        userId: 'customer-1',
+        title: 'A note for you',
+        body: 'Your order is ready.',
+      }),
+    });
+    assert.equal(targeted.status, 201);
+    assert.deepEqual(await targeted.json(), {
+      recipientCount: 1,
+      notificationsCreated: 1,
+      pushDelivery: { available: false, sent: 0, failed: 0 },
+    });
+    assert.deepEqual(customerNotifications, [{
+      userId: 'customer-1',
+      type: 'PROMOTIONAL',
+      title: 'Faststore',
+      body: 'A note for you\n\nYour order is ready.',
+    }]);
+    const inactiveTarget = await fetch(customerEndpoint, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-admin': 'allowed',
+      },
+      body: JSON.stringify({
+        userId: 'inactive-customer',
+        title: 'A note',
+        body: 'A message',
+      }),
+    });
+    assert.equal(inactiveTarget.status, 404);
 
     assert.deepEqual(
       splitIntoBatches(Array.from({ length: 1001 }, (_, index) => index), 500)

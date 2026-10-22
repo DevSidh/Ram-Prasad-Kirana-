@@ -9,6 +9,7 @@ datasource db {
 
 model User {
   id                    String                  @id @default(cuid())
+  userNumber            BigInt                  @unique @default(dbgenerated("nextval('user_display_id_seq')"))
   name                  String
   email                 String                  @unique
   phone                 String?                 @unique
@@ -34,9 +35,44 @@ model User {
   pushTokens            DeviceToken[]
   reviews               Review[]
   wishlists             Wishlist?
+  buyingStreakDays      BuyingStreakPurchaseDay[]
+  buyingStreakProgress  BuyingStreakRewardProgress[]
 
   @@index([role])
   @@index([createdAt])
+}
+
+model BuyingStreakPurchaseDay {
+  id        String   @id @default(cuid())
+  userId    String
+  dayKey    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dayKey])
+}
+
+model BuyingStreakRewardConfig {
+  id          String   @id @default(cuid())
+  day         Int      @unique
+  title       String
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model BuyingStreakRewardProgress {
+  id          String    @id @default(cuid())
+  userId      String
+  day         Int
+  title       String
+  description String
+  unlockedAt  DateTime  @default(now())
+  claimedAt   DateTime?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, day])
+  @@index([userId, claimedAt])
 }
 
 model PasswordResetOtp {
@@ -55,6 +91,17 @@ model EmailVerificationOtp {
   expiresAt DateTime
   attempts  Int      @default(0)
   createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+model PendingRegistration {
+  email        String   @id
+  name         String
+  phone        String
+  passwordHash String
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
 
   @@index([expiresAt])
 }
@@ -483,6 +530,7 @@ model Coupon {
   perUserLimit    Int?
   usedCount       Int          @default(0)
   isActive        Boolean      @default(true)
+  isDeleted       Boolean      @default(false)
   expiresAt       DateTime?
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt

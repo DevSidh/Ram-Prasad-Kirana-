@@ -12,7 +12,13 @@ import { createAuthMiddleware } from './middleware/auth.js';
 import { createAccountRouter } from './routes/account.js';
 import { createAdminRouter } from './routes/admin.js';
 import { createDeliveryRouter } from './routes/delivery.js';
-import { createEmailVerificationRouter } from './routes/email-verification.js';
+import {
+  beginPendingRegistration,
+  cleanupExpiredRegistrations,
+  createEmailVerificationRouter,
+  normalizeRegistrationPhone,
+  RegistrationEmailUnavailableError,
+} from './routes/email-verification.js';
 import { createPasswordResetRouter } from './routes/password-reset.js';
 import { createPlacesRouter } from './routes/places.js';
 import { createPublicLegalRouter } from './routes/public-legal.js';
@@ -25,9 +31,10 @@ import {
 import {
   identityAlreadyInUse,
   normalizeEmail,
-  normalizeSignupPhone,
 } from './services/user-identity.js';
 import { findAdminByPassword } from './services/admin-login.js';
+import { formatUserDisplayId } from './services/user-display-id.js';
+import { recordBuyingStreakPurchase, removeCancelledOrderPurchaseDay } from './services/buying-streak.js';
 import { orderInput } from './schemas/order.js';
 import { InventoryService } from './services/inventory.js';
 import { canCustomerCancelOrder } from './services/order-cancellation.js';
@@ -46,7 +53,13 @@ import {
   DEFAULT_WEEKLY_HOURS,
   getStoreAvailability,
 } from './services/store-hours.js';
-import { getEmailDeliveryConfigurationStatus } from './services/email-sender.js';
+import {
+  createStoreEmailSender,
+  getEmailDeliveryConfigurationStatus,
+  getEmailDeliveryFailureDetails,
+  getSafeErrorMetadata,
+  StoreEmailDeliveryError,
+} from './services/email-sender.js';
 
 dotenv.config();
 
@@ -61,6 +74,7 @@ const ADMIN_USERNAME = process.env.ADMIN_USERNAME?.trim().toLowerCase();
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL?.trim().toLowerCase();
 const prisma = new PrismaClient();
 const inventoryService = new InventoryService(prisma);
+const sendVerificationEmail = createStoreEmailSender();
 const productionCorsOrigins = new Set(
   (process.env.CORS_ORIGINS ?? '')
     .split(',')
@@ -126,7 +140,12 @@ app.use('/api/v1/auth/login', authRateLimit);
 app.use('/api/v1/auth/register', authRateLimit);
 app.use(
   '/api/v1/auth/email-verification',
-  createEmailVerificationRouter(prisma, AUTH_SECRET, JWT_EXPIRES_IN_SECONDS),
+  createEmailVerificationRouter(
+    prisma,
+    AUTH_SECRET,
+    JWT_EXPIRES_IN_SECONDS,
+    sendVerificationEmail,
+  ),
 );
 
 const { authenticateToken, requireAdmin, requireDeliveryPerson } =
@@ -325,7 +344,7 @@ app.post('/api/v1/auth/register', async (req: Request, res: Response) => {
 
   const normalizedName = fullName.trim();
   const normalizedEmail = normalizeEmail(email);
-  const normalizedPhone = normalizeSignupPhone(phone);
+  const normalizedPhone = normalizeRegistrationPhone(phone);
 
   if (normalizedName.length === 0 || normalizedName.length > 120) {
     return res.status(400).json({ error: 'Full name must be between 1 and 120 characters' });
@@ -342,40 +361,75 @@ app.post('/api/v1/auth/register', async (req: Request, res: Response) => {
   }
 
   try {
+    await cleanupExpiredRegistrations(prisma);
     if (await identityAlreadyInUse(prisma, {
       email: normalizedEmail,
       phone: normalizedPhone,
     })) {
       return res.status(409).json({ error: 'An account with this email or phone already exists' });
     }
-    const passwordHash = await bcrypt.hash(password, 12);
-    const user = await prisma.user.create({
-      data: {
-        name: normalizedName,
+    const pendingRegistration = await prisma.pendingRegistration.findUnique({
+      where: { email: normalizedEmail },
+    });
+    if (
+      pendingRegistration &&
+      pendingRegistration.expiresAt.getTime() > Date.now()
+    ) {
+      return res.status(201).json({
+        message: 'Email verification is already pending for this address.',
+        requiresEmailVerification: true,
         email: normalizedEmail,
-        phone: normalizedPhone,
-        passwordHash,
-        emailVerified: false,
-      },
+      });
+    }
+    const pendingPhone = await prisma.pendingRegistration.findFirst({
+      where: { phone: normalizedPhone, email: { not: normalizedEmail } },
+      select: { email: true },
     });
-
-    return res.status(201).json({
-      message: 'Account created. Verify your email address to finish registration.',
-      requiresEmailVerification: true,
-      email: user.email,
-    });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+    if (pendingPhone) {
       return res.status(409).json({ error: 'An account with this email or phone already exists' });
     }
+    const passwordHash = await bcrypt.hash(password, 12);
+    await beginPendingRegistration(prisma, {
+      name: normalizedName,
+      email: normalizedEmail,
+      phone: normalizedPhone,
+      passwordHash,
+    }, sendVerificationEmail);
 
-    console.error('User registration failed:', error);
+    return res.status(201).json({
+      message: 'A verification code has been sent to your email address.',
+      requiresEmailVerification: true,
+      email: normalizedEmail,
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      return res.status(409).json({ error: 'An account with this email or phone already exists' });
+    }
+    if (error instanceof RegistrationEmailUnavailableError) {
+      return res.status(503).json({
+        error: 'Email delivery is not configured on the store server.',
+      });
+    }
+    if (error instanceof StoreEmailDeliveryError) {
+      const failure = getEmailDeliveryFailureDetails(error);
+      console.error('Registration verification provider failure:', failure.diagnostic);
+      return res.status(failure.statusCode).json({ error: failure.message });
+    }
+
+    console.error(
+      'User registration failed:',
+      getSafeErrorMetadata(error),
+    );
     return res.status(500).json({ error: 'Unable to create account at this time' });
   }
 });
 
 const loginUserSelect = {
   id: true,
+  userNumber: true,
   email: true,
   name: true,
   phone: true,
@@ -468,6 +522,7 @@ app.post('/api/v1/auth/login', async (req: Request, res: Response) => {
       token,
       user: {
         id: user.id,
+        profileId: formatUserDisplayId(user.userNumber),
         email: user.email,
         fullName: user.name,
         phone: user.phone,
@@ -1109,6 +1164,7 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
           statusHistory: { create: { status: 'PLACED', note: 'Order placed by customer.' } },
         },
       });
+      await recordBuyingStreakPurchase(transaction, userId, created.createdAt);
       try {
         const retailStock = [...stockByProduct].map(([productId, quantity]) => ({
           productId,
@@ -1253,6 +1309,11 @@ app.post('/api/v1/orders/:id/cancel', authenticateToken, async (req: Request, re
         data: { status: 'CANCELLED', paymentStatus: 'CANCELLED' },
       });
       if (updated.count !== 1) return { kind: 'not-cancellable' as const };
+      await removeCancelledOrderPurchaseDay(transaction, {
+        userId,
+        orderId: existing.id,
+        orderCreatedAt: existing.createdAt,
+      });
       if (existing.couponCode) {
         await transaction.coupon.updateMany({
           where: { code: existing.couponCode, usedCount: { gt: 0 } },
