@@ -40,7 +40,7 @@ async function run(): Promise<void> {
       ],
     };
     const suggestionsResponse = await fetch(
-      `${baseUrl}/autocomplete?input=Main%20Road&latitude=26.72&longitude=85.92&languageCode=ne`,
+      `${baseUrl}/autocomplete?input=M&languageCode=ne`,
     );
     assert.equal(suggestionsResponse.status, 200);
     assert.deepEqual(await suggestionsResponse.json(), {
@@ -61,13 +61,9 @@ async function run(): Promise<void> {
       lastGoogleRequest?.init?.body?.toString() ?? '{}',
     ) as Record<string, unknown>;
     assert.equal(autocompleteBody.languageCode, 'ne');
-    assert.deepEqual(autocompleteBody.includedRegionCodes, ['np']);
-    assert.equal(
-      (autocompleteBody.locationBias as {
-        circle: { center: { latitude: number } };
-      }).circle.center.latitude,
-      26.72,
-    );
+    assert.equal(autocompleteBody.input, 'M');
+    assert.equal('locationBias' in autocompleteBody, false);
+    assert.equal('includedRegionCodes' in autocompleteBody, false);
 
     googlePayload = {
       location: { latitude: 26.728, longitude: 85.925 },
@@ -88,7 +84,7 @@ async function run(): Promise<void> {
       'location,formattedAddress,displayName',
     );
 
-    const invalidResponse = await fetch(`${baseUrl}/autocomplete?input=ab`);
+    const invalidResponse = await fetch(`${baseUrl}/autocomplete?input=`);
     assert.equal(invalidResponse.status, 400);
     console.log('Places API route tests passed.');
   } finally {

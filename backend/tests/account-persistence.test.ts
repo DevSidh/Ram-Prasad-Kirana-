@@ -46,7 +46,7 @@ const product = {
   isBestSeller: false,
   isActive: true,
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-  inventory: { totalStock: 10, reservedStock: 0 },
+  inventory: { totalStock: 10000, reservedStock: 0 },
   category: { name: 'Fruit', slug: 'fruit', isActive: true },
 };
 
@@ -112,6 +112,9 @@ const prisma = {
   address: {
     findFirst: async () => ({ latitude: null, longitude: null }),
   },
+  order: {
+    findMany: async () => [{ couponCode: 'SAVE10' }],
+  },
 } as unknown as PrismaClient;
 
 const authenticate: RequestHandler = (req, res, next) => {
@@ -139,6 +142,15 @@ async function run(): Promise<void> {
     const unauthenticated = await fetch(`${baseUrl}/cart`);
     assert.equal(unauthenticated.status, 401);
 
+    const usedCoupons = await fetch(`${baseUrl}/coupons/used`, { headers });
+    assert.deepEqual(await usedCoupons.json(), {
+      usedCouponCodes: ['SAVE10'],
+    });
+    const singularUsedCoupons = await fetch(`${baseUrl}/coupon/used`, { headers });
+    assert.deepEqual(await singularUsedCoupons.json(), {
+      usedCouponCodes: ['SAVE10'],
+    });
+
     const initialCart = await fetch(`${baseUrl}/cart`, { headers });
     assert.deepEqual(await initialCart.json(), { items: [] });
 
@@ -146,21 +158,33 @@ async function run(): Promise<void> {
       method: 'PUT',
       headers,
       body: JSON.stringify({
-        items: [{ productId: 'product-1', quantity: 2, isWholesale: false }],
+        items: [{
+          productId: 'product-1',
+          quantity: 1,
+          weightGrams: 2500,
+          isWholesale: false,
+        }],
       }),
     });
     assert.equal(saveCart.status, 204);
     assert.equal(storedCartItems.length, 1);
     assert.equal(storedCartItems[0].productId, 'product-1');
-    assert.equal(storedCartItems[0].quantity, 2);
+    assert.equal(storedCartItems[0].quantity, 1);
+    assert.equal(storedCartItems[0].weightGrams, 2500);
     assert.equal(storedCartItems[0].isWholesale, false);
     const loadedRetailCart = await fetch(`${baseUrl}/cart`, { headers });
     const retailCart = await loadedRetailCart.json() as {
-      items: Array<{ product: { id: string }; isWholesale: boolean }>;
+      items: Array<{
+        product: { id: string; weightStockKg?: number };
+        isWholesale: boolean;
+        weightGrams?: number;
+      }>;
     };
     assert.equal(retailCart.items.length, 1);
     assert.equal(retailCart.items[0]?.product.id, 'product-1');
     assert.equal(retailCart.items[0]?.isWholesale, false);
+    assert.equal(retailCart.items[0]?.product.weightStockKg, 10);
+    assert.equal(retailCart.items[0]?.weightGrams, 2500);
 
     const saveWholesaleCart = await fetch(`${baseUrl}/cart`, {
       method: 'PUT',

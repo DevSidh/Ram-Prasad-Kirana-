@@ -85,6 +85,9 @@ export function createDeliveryRouter(
             cashCollectedAt: true,
             cashHandedOver: true,
             cashHandedOverAt: true,
+            customerLatitude: true,
+            customerLongitude: true,
+            customerLocationUpdatedAt: true,
             statusHistory: {
               orderBy: { createdAt: 'desc' },
               take: 5,
@@ -114,7 +117,11 @@ export function createDeliveryRouter(
                   select: { amount: true },
                 },
                 items: {
-                  select: { productName: true, quantity: true },
+                  select: {
+                    productName: true,
+                    quantity: true,
+                    weightGrams: true,
+                  },
                 },
               },
             },
@@ -158,6 +165,10 @@ export function createDeliveryRouter(
       return res.json({
         assignments: deliveries.map((delivery) => {
           const { order } = delivery;
+          const customerLocationFresh =
+            delivery.status === 'OUT_FOR_DELIVERY' &&
+            delivery.customerLocationUpdatedAt !== null &&
+            Date.now() - delivery.customerLocationUpdatedAt.getTime() <= 120_000;
           const paidOnline = order.payments.reduce(
             (sum, payment) => sum + Number(payment.amount),
             0,
@@ -200,11 +211,21 @@ export function createDeliveryRouter(
               ].filter(Boolean).join(', '),
               latitude: order.address?.latitude ?? null,
               longitude: order.address?.longitude ?? null,
+              customerLatitude: customerLocationFresh
+                ? delivery.customerLatitude
+                : null,
+              customerLongitude: customerLocationFresh
+                ? delivery.customerLongitude
+                : null,
+              customerLocationUpdatedAt: customerLocationFresh
+                ? delivery.customerLocationUpdatedAt?.toISOString() ?? null
+                : null,
               instructions: order.notes ?? '',
               createdAt: order.createdAt.toISOString(),
               items: order.items.map((item) => ({
                 name: item.productName,
                 quantity: item.quantity,
+                weightGrams: item.weightGrams,
               })),
             },
           };
@@ -384,6 +405,9 @@ export function createDeliveryRouter(
                 latitude: null,
                 longitude: null,
                 locationUpdatedAt: null,
+                customerLatitude: null,
+                customerLongitude: null,
+                customerLocationUpdatedAt: null,
               }
               : {}),
             ...(status === 'PICKED_UP' ? { pickedUpAt: new Date() } : {}),

@@ -4,9 +4,16 @@ import { InventoryService } from '../src/services/inventory.js';
 
 let totalStock = 1;
 let reservedStock = 0;
+let batchStock = 1;
 const transactions: Array<Record<string, unknown>> = [];
 
 const transaction = {
+  $queryRaw: async (query: TemplateStringsArray) => {
+    const statement = query.join('');
+    return statement.includes('FROM "InventoryBatch"')
+      ? batchStock > 0 ? [{ id: 'batch-1', remainingQuantity: batchStock }] : []
+      : [];
+  },
   $executeRaw: async (query: TemplateStringsArray, ...values: unknown[]) => {
     const statement = query.join('?');
     const quantity = Number(values[0]);
@@ -24,6 +31,15 @@ const transaction = {
   },
   inventory: {
     findUnique: async () => ({ totalStock, reservedStock }),
+  },
+  inventoryBatch: {
+    updateMany: async ({ data }: { data: { remainingQuantity: { decrement: number } } }) => {
+      batchStock -= data.remainingQuantity.decrement;
+      return { count: 1 };
+    },
+  },
+  orderBatchAllocation: {
+    create: async () => undefined,
   },
   inventoryTransaction: {
     create: async ({ data }: { data: Record<string, unknown> }) => {

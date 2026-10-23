@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import {
+  displayInventoryQuantity,
+  inventoryQuantityForUnit,
+  isWeightUnitLabel,
   validateProductSalePrice,
   validateProductUnit,
 } from '../src/services/product-validation.js';
@@ -38,6 +41,13 @@ assert.ok(
 );
 assert.equal(validateProductSalePrice(80, 100), null);
 assert.ok(validateProductSalePrice(100, 80));
+assert.equal(isWeightUnitLabel('1 kg'), true);
+assert.equal(isWeightUnitLabel('500 g'), true);
+assert.equal(isWeightUnitLabel('1 pack'), false);
+assert.equal(inventoryQuantityForUnit(1.25, '1 kg'), 1250);
+assert.equal(inventoryQuantityForUnit(2, '1 pc'), 2);
+assert.equal(displayInventoryQuantity(1250, '1 kg'), 1.25);
+assert.equal(displayInventoryQuantity(2, '1 pc'), 2);
 assert.equal(isExcludedCustomerCategory('Fruits & Vegetables', 'fruit-vegetables'), true);
 assert.equal(isExcludedCustomerCategory('Dairy & Eggs', 'dairy-eggs'), true);
 assert.equal(isExcludedCustomerCategory('Rice & Grains', 'rice-grains'), true);

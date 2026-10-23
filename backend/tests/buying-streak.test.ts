@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import express, { type RequestHandler } from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { createAccountRouter } from '../src/routes/account.js';
-import { calculateCurrentBuyingStreak } from '../src/services/buying-streak.js';
+import {
+  calculateCurrentBuyingStreak,
+  calculateLongestBuyingStreak,
+} from '../src/services/buying-streak.js';
 
 const now = new Date('2026-11-02T01:00:00.000Z');
 assert.equal(
@@ -16,6 +19,18 @@ assert.equal(calculateCurrentBuyingStreak(['2026-11-01'], now), 1);
 assert.equal(calculateCurrentBuyingStreak(['2026-11-02', '2026-10-31'], now), 1);
 assert.equal(calculateCurrentBuyingStreak(['2026-10-31'], now), 0);
 assert.equal(calculateCurrentBuyingStreak([], now), 0);
+assert.equal(
+  calculateLongestBuyingStreak([
+    '2026-11-02',
+    '2026-11-01',
+    '2026-10-30',
+    '2026-10-29',
+    '2026-10-28',
+    '2026-10-28',
+  ]),
+  3,
+);
+assert.equal(calculateLongestBuyingStreak([]), 0);
 
 async function verifyOneTimeClaim(): Promise<void> {
   let claimedAt: Date | null = null;

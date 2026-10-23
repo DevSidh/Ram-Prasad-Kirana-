@@ -32,6 +32,38 @@ export function calculateCurrentBuyingStreak(
   return currentStreak;
 }
 
+export function calculateLongestBuyingStreak(
+  dayKeys: readonly string[],
+): number {
+  const uniqueDays = [...new Set(dayKeys)].sort();
+  let longestStreak = 0;
+  let currentStreak = 0;
+  let previousDay: string | null = null;
+
+  for (const dayKey of uniqueDays) {
+    currentStreak =
+      previousDay !== null && previousDayKey(dayKey) === previousDay
+        ? currentStreak + 1
+        : 1;
+    longestStreak = Math.max(longestStreak, currentStreak);
+    previousDay = dayKey;
+  }
+
+  return longestStreak;
+}
+
+function countLatestConsecutiveDays(dayKeys: readonly string[]): number {
+  if (dayKeys.length === 0) return 0;
+  const purchaseDays = new Set(dayKeys);
+  let dayKey = dayKeys[0];
+  let streak = 0;
+  while (purchaseDays.has(dayKey)) {
+    streak++;
+    dayKey = previousDayKey(dayKey);
+  }
+  return streak;
+}
+
 export async function recordBuyingStreakPurchase(
   transaction: Prisma.TransactionClient,
   userId: string,
@@ -127,6 +159,13 @@ export async function getBuyingStreakSnapshot(
   ]);
 
   const progressByDay = new Map(progress.map((item) => [item.day, item]));
+  const dayKeys = purchaseDays.map(({ dayKey }) => dayKey);
+  const today = getStoreDayKey(now);
+  const yesterday = previousDayKey(today);
+  const latestDay = dayKeys[0] ?? null;
+  const currentStreak = calculateCurrentBuyingStreak(dayKeys, now);
+  const latestConsecutiveStreak = countLatestConsecutiveDays(dayKeys);
+  const bestStreak = calculateLongestBuyingStreak(dayKeys);
   const rewardByDay = new Map<number, {
     day: number;
     title: string;
@@ -143,22 +182,58 @@ export async function getBuyingStreakSnapshot(
     });
   }
 
+  const orderedRewards = [...rewardByDay.values()]
+    .sort((left, right) => left.day - right.day);
+  const currentMonth = today.slice(0, 7);
+  const daysInMonth = new Date(
+    Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)), 0),
+  ).getUTCDate();
+  const monthStartDayOfWeek = new Date(
+    Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, 1),
+  ).getUTCDay();
+  const completedMilestones = orderedRewards.filter(
+    (reward) => reward.day <= bestStreak,
+  );
+  const nextReward = orderedRewards.find(
+    (reward) => reward.day > currentStreak,
+  );
+
   return {
-    currentStreak: calculateCurrentBuyingStreak(
-      purchaseDays.map(({ dayKey }) => dayKey),
-      now,
+    currentStreak,
+    bestStreak,
+    totalPurchaseDays: dayKeys.length,
+    lastConsecutiveStreak: latestConsecutiveStreak,
+    lastPurchaseDay: latestDay,
+    hasPurchasedToday: latestDay === today,
+    streakAtRisk: currentStreak > 0 && latestDay !== today,
+    streakBroken:
+      currentStreak === 0 &&
+      latestConsecutiveStreak > 0 &&
+      latestDay !== today &&
+      latestDay !== yesterday,
+    calendarMonth: currentMonth,
+    daysInMonth,
+    monthStartWeekday: (monthStartDayOfWeek + 6) % 7,
+    monthPurchaseDays: dayKeys.filter((dayKey) =>
+      dayKey.startsWith(`${currentMonth}-`),
     ),
-    lastPurchaseDay: purchaseDays[0]?.dayKey ?? null,
-    rewards: [...rewardByDay.values()]
-      .sort((left, right) => left.day - right.day)
-      .map((reward) => {
-        const status = progressByDay.get(reward.day);
-        return {
-          ...reward,
-          isUnlocked: status !== undefined,
-          unlockedAt: status?.unlockedAt.toISOString() ?? null,
-          claimedAt: status?.claimedAt?.toISOString() ?? null,
-        };
-      }),
+    profileLevel:
+      completedMilestones.length === 0
+        ? 'New shopper'
+        : completedMilestones[completedMilestones.length - 1].title,
+    nextRewardDay: nextReward?.day ?? null,
+    daysToNextReward:
+      nextReward === undefined
+        ? null
+        : Math.max(nextReward.day - currentStreak, 0),
+    rewards: orderedRewards.map((reward) => {
+      const status = progressByDay.get(reward.day);
+      return {
+        ...reward,
+        isUnlocked: status !== undefined,
+        unlockedAt: status?.unlockedAt.toISOString() ?? null,
+        claimedAt: status?.claimedAt?.toISOString() ?? null,
+      };
+    }),
   };
 }

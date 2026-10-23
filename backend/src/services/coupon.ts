@@ -9,11 +9,31 @@ export interface CouponForValidation {
   perUserLimit?: number | null;
   usedCount: number;
   expiresAt: Date | null;
+  productId?: string | null;
+  assignedUserId?: string | null;
 }
 
 type CouponCheck =
   | { valid: true; discount: number; message: string }
   | { valid: false; discount: 0; message: string };
+
+export function calculateCouponEligibleSubtotal(
+  couponProductId: string | null,
+  items: readonly {
+    productId: string;
+    subtotal: number;
+    isWholesale: boolean;
+  }[],
+): number {
+  return items.reduce(
+    (sum, item) =>
+      !item.isWholesale &&
+      (couponProductId === null || item.productId === couponProductId)
+        ? sum + item.subtotal
+        : sum,
+    0,
+  );
+}
 
 interface PublicCouponOfferBase {
   id: string;
@@ -44,6 +64,8 @@ export function toPublicCouponOffer(
 ): PublicCouponOffer | null {
   if (
     !coupon.isActive ||
+    coupon.productId != null ||
+    coupon.assignedUserId != null ||
     (coupon.expiresAt !== null && coupon.expiresAt <= now) ||
     (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit)
   ) {
@@ -105,7 +127,15 @@ export function checkCoupon(
   subtotal: number,
   now: Date = new Date(),
   userUsedCount = 0,
+  userId?: string,
 ): CouponCheck {
+  if (coupon.assignedUserId != null && coupon.assignedUserId !== userId) {
+    return {
+      valid: false,
+      discount: 0,
+      message: 'This coupon was issued to a different customer.',
+    };
+  }
   if (!coupon.isActive) {
     return { valid: false, discount: 0, message: 'This coupon is not active.' };
   }

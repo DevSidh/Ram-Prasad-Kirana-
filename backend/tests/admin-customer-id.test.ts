@@ -39,20 +39,22 @@ async function main(): Promise<void> {
     await new Promise<void>((resolve) => server.once('listening', resolve));
     const address = server.address();
     assert(address && typeof address !== 'string');
-    const response = await fetch(
-      `http://127.0.0.1:${address.port}/admin/customers?search=USR-000042`,
-      { headers: { 'x-admin': 'allowed' } },
-    );
-    assert.equal(response.status, 200);
-    const body = await response.json() as {
-      customers: Array<{ id: string; profileId: string }>;
-    };
-    assert.equal(body.customers[0].id, 'customer-internal-id');
-    assert.equal(body.customers[0].profileId, 'USR-000042');
-    const where = capturedWhere as {
-      OR: Array<Record<string, unknown>>;
-    };
-    assert.ok(where.OR.some((entry) => entry.userNumber === 42n));
+    for (const search of ['USR-000042', '000042', '42']) {
+      const response = await fetch(
+        `http://127.0.0.1:${address.port}/admin/customers?search=${search}`,
+        { headers: { 'x-admin': 'allowed' } },
+      );
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        customers: Array<{ id: string; profileId: string }>;
+      };
+      assert.equal(body.customers[0].id, 'customer-internal-id');
+      assert.equal(body.customers[0].profileId, 'USR-000042');
+      const where = capturedWhere as {
+        OR: Array<Record<string, unknown>>;
+      };
+      assert.ok(where.OR.some((entry) => entry.userNumber === 42n));
+    }
     console.log('Admin customer ID search tests passed.');
   } finally {
     await new Promise<void>((resolve, reject) => {

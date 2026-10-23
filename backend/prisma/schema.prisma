@@ -37,6 +37,7 @@ model User {
   wishlists             Wishlist?
   buyingStreakDays      BuyingStreakPurchaseDay[]
   buyingStreakProgress  BuyingStreakRewardProgress[]
+  assignedCoupons       Coupon[]                @relation("CouponAssignedUser")
 
   @@index([role])
   @@index([createdAt])
@@ -150,6 +151,7 @@ model Category {
 model Product {
   id                       String           @id @default(cuid())
   sku                      String           @unique
+  barcode                  String?          @unique
   name                     String
   slug                     String           @unique
   categoryId               String
@@ -161,6 +163,7 @@ model Product {
   description              String?
   origin                   String?
   imageUrl                 String?
+  imageUrls                Json             @default("[]")
   imageData                Bytes?
   imageMimeType            String?
   normalizedImageData      Bytes?
@@ -174,16 +177,20 @@ model Product {
   isFeatured               Boolean          @default(false)
   isBestSeller             Boolean          @default(false)
   isVendingDrink         Boolean          @default(false)
+  vendingSection          String?
   isActive               Boolean          @default(true)
   createdAt                DateTime         @default(now())
   updatedAt                DateTime         @updatedAt
   cartItems                CartItem[]
   inventory                Inventory?
+  batches                  InventoryBatch[]
   orderItems               OrderItem[]
+  batchAllocations         OrderBatchAllocation[]
   category                 Category         @relation(fields: [categoryId], references: [id])
   variants                 ProductVariant[]
   reviews                  Review[]
   wishlistItems            WishlistItem[]
+  coupons                  Coupon[]
 
   @@index([categoryId])
   @@index([isActive])
@@ -246,6 +253,41 @@ model Inventory {
   inventoryTransactions InventoryTransaction[]
 
   @@index([totalStock])
+}
+
+model InventoryBatch {
+  id                String                 @id @default(cuid())
+  productId         String
+  lotNumber         String?
+  manufacturedAt    DateTime?
+  expiresAt         DateTime?
+  noExpiry          Boolean                @default(false)
+  datesVerified     Boolean                @default(false)
+  receivedQuantity  Int
+  remainingQuantity Int
+  purchasePrice     Decimal?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  product           Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
+  allocations       OrderBatchAllocation[]
+
+  @@index([productId, expiresAt])
+  @@index([expiresAt])
+}
+
+model OrderBatchAllocation {
+  id        String         @id @default(cuid())
+  orderId   String
+  productId String
+  batchId   String
+  quantity  Int
+  createdAt DateTime       @default(now())
+  order     Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
+  batch     InventoryBatch @relation(fields: [batchId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([batchId])
 }
 
 model ProductVariant {
@@ -317,6 +359,7 @@ model Order {
   address             Address?             @relation(fields: [addressId], references: [id])
   user                User                 @relation(fields: [userId], references: [id])
   items               OrderItem[]
+  batchAllocations    OrderBatchAllocation[]
   statusHistory       OrderStatusHistory[]
   payments            Payment[]
 
@@ -336,6 +379,7 @@ model OrderItem {
   productName     String
   sku             String
   quantity        Int
+  weightGrams     Int?
   price           Decimal
   total           Decimal
   isWholesale     Boolean        @default(false)
@@ -385,6 +429,7 @@ model CartItem {
   wholesaleItemId  String?
   productVariantId String?
   quantity         Int             @default(1)
+  weightGrams      Int?
   unitPrice        Decimal
   isWholesale      Boolean         @default(false)
   createdAt        DateTime        @default(now())
@@ -487,6 +532,9 @@ model Delivery {
   latitude          Float?
   longitude         Float?
   locationUpdatedAt DateTime?
+  customerLatitude  Float?
+  customerLongitude Float?
+  customerLocationUpdatedAt DateTime?
   notes             String?
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
@@ -528,6 +576,8 @@ model OrderStatusHistory {
 model Coupon {
   id              String       @id @default(cuid())
   code            String       @unique
+  productId       String?
+  assignedUserId  String?
   discountType    DiscountType @default(PERCENTAGE)
   discountPercent Decimal?
   discountAmount  Decimal?
@@ -541,17 +591,22 @@ model Coupon {
   expiresAt       DateTime?
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
+  product         Product?     @relation(fields: [productId], references: [id], onDelete: Restrict)
+  assignedUser    User?        @relation("CouponAssignedUser", fields: [assignedUserId], references: [id], onDelete: Cascade)
 
   @@index([isActive])
   @@index([expiresAt])
+  @@index([productId])
+  @@index([assignedUserId])
 }
 
 model StoreSetting {
-  id                String   @id @default("store")
-  isOrderingEnabled Boolean  @default(true)
-  weeklyHours       Json
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                    String   @id @default("store")
+  isOrderingEnabled     Boolean  @default(true)
+  weeklyHours           Json
+  customerMenuFeatures Json     @default("{}")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 }
 
 enum UserRole {

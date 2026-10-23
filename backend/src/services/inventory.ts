@@ -1,9 +1,91 @@
 import { PrismaClient, Prisma } from '@prisma/client';
+import { getLocalDayRange } from './local-day.js';
 
 export class InventoryAdjustmentError extends Error {}
 
+export type InventoryBatchDetails = {
+  lotNumber?: string | null;
+  manufacturedAt?: Date | null;
+  expiresAt?: Date | null;
+  noExpiry: boolean;
+  datesVerified: boolean;
+  purchasePrice?: number | null;
+};
+
 export class InventoryService {
   constructor(private prisma: PrismaClient) {}
+
+  private async addBatch(
+    tx: Prisma.TransactionClient,
+    productId: string,
+    quantity: number,
+    details: InventoryBatchDetails,
+  ): Promise<void> {
+    await tx.inventoryBatch.create({
+      data: {
+        productId,
+        lotNumber: details.lotNumber ?? null,
+        manufacturedAt: details.manufacturedAt ?? null,
+        expiresAt: details.expiresAt ?? null,
+        noExpiry: details.noExpiry,
+        datesVerified: details.datesVerified,
+        receivedQuantity: quantity,
+        remainingQuantity: quantity,
+        purchasePrice: details.purchasePrice ?? null,
+      },
+    });
+  }
+
+  private async adjustBatchStock(
+    tx: Prisma.TransactionClient,
+    productId: string,
+    adjustment: number,
+    referenceId: string,
+  ): Promise<void> {
+    if (adjustment > 0) {
+      await this.addBatch(tx, productId, adjustment, {
+        lotNumber: `UNTRACKED-${referenceId.slice(0, 80)}`,
+        noExpiry: false,
+        datesVerified: false,
+      });
+      return;
+    }
+    if (adjustment === 0) return;
+
+    const batches = await tx.$queryRaw<
+      Array<{ id: string; remainingQuantity: number }>
+    >`
+      SELECT "id", "remainingQuantity"
+      FROM "InventoryBatch"
+      WHERE "productId" = ${productId}
+        AND "remainingQuantity" > 0
+      ORDER BY
+        CASE WHEN "expiresAt" IS NULL THEN 1 ELSE 0 END,
+        "expiresAt" ASC,
+        "createdAt" ASC
+      FOR UPDATE
+    `;
+    let remaining = -adjustment;
+    for (const batch of batches) {
+      if (remaining === 0) break;
+      const quantity = Math.min(remaining, batch.remainingQuantity);
+      const updated = await tx.inventoryBatch.updateMany({
+        where: { id: batch.id, remainingQuantity: { gte: quantity } },
+        data: { remainingQuantity: { decrement: quantity } },
+      });
+      if (updated.count !== 1) {
+        throw new InventoryAdjustmentError(
+          'A batch changed during the stock adjustment. Refresh and try again.',
+        );
+      }
+      remaining -= quantity;
+    }
+    if (remaining > 0) {
+      throw new InventoryAdjustmentError(
+        'Batch quantities do not match inventory. Reconcile batches before adjusting stock.',
+      );
+    }
+  }
 
   private async restockItem(
     tx: Prisma.TransactionClient,
@@ -12,6 +94,7 @@ export class InventoryService {
     referenceId: string,
     notes: string,
     performedById?: string,
+    batch?: InventoryBatchDetails,
   ): Promise<void> {
     if (!Number.isSafeInteger(quantity) || quantity <= 0) {
       throw new InventoryAdjustmentError('Restock quantity must be a positive integer.');
@@ -28,6 +111,11 @@ export class InventoryService {
       const inventory = await tx.inventory.create({
         data: { productId, totalStock: quantity },
         select: { id: true },
+      });
+      await this.addBatch(tx, productId, quantity, batch ?? {
+        lotNumber: `UNTRACKED-${referenceId.slice(0, 80)}`,
+        noExpiry: false,
+        datesVerified: false,
       });
       await tx.inventoryTransaction.create({
         data: {
@@ -64,6 +152,11 @@ export class InventoryService {
       );
     }
 
+    await this.addBatch(tx, productId, quantity, batch ?? {
+      lotNumber: `UNTRACKED-${referenceId.slice(0, 80)}`,
+      noExpiry: false,
+      datesVerified: false,
+    });
     await tx.inventoryTransaction.create({
       data: {
         inventory: { connect: { productId } },
@@ -103,6 +196,13 @@ export class InventoryService {
         data: { productId, totalStock },
         select: { id: true },
       });
+      if (totalStock > 0) {
+        await this.addBatch(tx, productId, totalStock, {
+          lotNumber: `UNTRACKED-${referenceId.slice(0, 80)}`,
+          noExpiry: false,
+          datesVerified: false,
+        });
+      }
       await tx.inventoryTransaction.create({
         data: {
           inventoryId: inventory.id,
@@ -140,6 +240,7 @@ export class InventoryService {
       );
     }
 
+    await this.adjustBatchStock(tx, productId, adjustment, referenceId);
     await tx.inventoryTransaction.create({
       data: {
         inventory: { connect: { productId } },
@@ -206,6 +307,7 @@ export class InventoryService {
     orderId: string
   ): Promise<void> {
     for (const item of items) {
+      await this.consumeBatchStock(tx, item.productId, item.quantity, orderId);
       const current = await tx.inventory.findUnique({
         where: { productId: item.productId },
         select: { totalStock: true, reservedStock: true },
@@ -231,6 +333,108 @@ export class InventoryService {
           notes: `Purchased and deducted for Order #${orderId}`,
         },
       });
+    }
+  }
+
+  private async consumeBatchStock(
+    tx: Prisma.TransactionClient,
+    productId: string,
+    quantity: number,
+    orderId: string,
+  ): Promise<void> {
+    const today = getLocalDayRange().start;
+    const batches = await tx.$queryRaw<
+      Array<{ id: string; remainingQuantity: number }>
+    >`
+      SELECT "id", "remainingQuantity"
+      FROM "InventoryBatch"
+      WHERE "productId" = ${productId}
+        AND "remainingQuantity" > 0
+        AND ("expiresAt" IS NULL OR "expiresAt" >= ${today})
+      ORDER BY
+        CASE WHEN "expiresAt" IS NULL THEN 1 ELSE 0 END,
+        "expiresAt" ASC,
+        "createdAt" ASC
+      FOR UPDATE
+    `;
+    let remaining = quantity;
+    for (const batch of batches) {
+      if (remaining === 0) break;
+      const allocated = Math.min(remaining, batch.remainingQuantity);
+      const updated = await tx.inventoryBatch.updateMany({
+        where: { id: batch.id, remainingQuantity: { gte: allocated } },
+        data: { remainingQuantity: { decrement: allocated } },
+      });
+      if (updated.count !== 1) {
+        throw new Error(
+          `INSUFFICIENT_STOCK: A product batch changed while reserving ${productId}.`,
+        );
+      }
+      await tx.orderBatchAllocation.create({
+        data: { orderId, productId, batchId: batch.id, quantity: allocated },
+      });
+      remaining -= allocated;
+    }
+    if (remaining > 0) {
+      throw new Error(
+        `INSUFFICIENT_STOCK: Product ${productId} has insufficient unexpired batch stock.`,
+      );
+    }
+  }
+
+  async receiveBatch(
+    tx: Prisma.TransactionClient,
+    productId: string,
+    quantity: number,
+    referenceId: string,
+    details: InventoryBatchDetails,
+    performedById: string,
+    notes?: string,
+  ): Promise<void> {
+    await this.restockItem(
+      tx,
+      productId,
+      quantity,
+      referenceId,
+      notes ?? `Batch ${details.lotNumber ?? 'received'} added by admin.`,
+      performedById,
+      details,
+    );
+  }
+
+  async restoreCommittedStock(
+    tx: Prisma.TransactionClient,
+    productId: string,
+    quantity: number,
+    orderId: string,
+  ): Promise<void> {
+    const allocations = await tx.orderBatchAllocation.findMany({
+      where: { orderId, productId },
+      select: { id: true, batchId: true, quantity: true },
+    });
+    if (allocations.length === 0) {
+      await this.addBatch(tx, productId, quantity, {
+        lotNumber: `CANCELLED-${orderId}`,
+        noExpiry: false,
+        datesVerified: false,
+      });
+      return;
+    }
+    const allocatedQuantity = allocations.reduce(
+      (total, allocation) => total + allocation.quantity,
+      0,
+    );
+    if (allocatedQuantity !== quantity) {
+      throw new InventoryAdjustmentError(
+        'Order batch allocations do not match the quantity being returned.',
+      );
+    }
+    for (const allocation of allocations) {
+      await tx.inventoryBatch.update({
+        where: { id: allocation.batchId },
+        data: { remainingQuantity: { increment: allocation.quantity } },
+      });
+      await tx.orderBatchAllocation.delete({ where: { id: allocation.id } });
     }
   }
 
@@ -293,6 +497,7 @@ export class InventoryService {
     notes?: string
   ): Promise<void> {
     for (const item of items) {
+      await this.adjustBatchStock(tx, item.productId, item.quantity, referenceId);
       await tx.$executeRaw`
         UPDATE "Inventory"
         SET

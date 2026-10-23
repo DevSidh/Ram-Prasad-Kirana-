@@ -32,6 +32,10 @@ function createTransaction(initialInventory: {
         return { id: 'inventory-1' };
       },
     },
+    inventoryBatch: {
+      create: async () => ({ id: 'batch-1' }),
+      updateMany: async () => ({ count: 1 }),
+    },
     inventoryTransaction: {
       create: async ({ data }: { data: Record<string, unknown> }) => {
         transactions.push(data);

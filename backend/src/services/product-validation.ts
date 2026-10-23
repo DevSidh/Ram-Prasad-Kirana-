@@ -4,6 +4,26 @@ export type ProductSaleDetails = {
   unitLabel: string;
 };
 
+export function isWeightUnitLabel(unitLabel: string): boolean {
+  return /^\s*\d+(?:\.\d+)?\s*(?:kg|g)\s*$/i.test(unitLabel);
+}
+
+export function inventoryQuantityForUnit(
+  quantity: number,
+  unitLabel: string,
+): number {
+  return isWeightUnitLabel(unitLabel)
+    ? Math.round(quantity * 1000)
+    : Math.round(quantity);
+}
+
+export function displayInventoryQuantity(
+  quantity: number,
+  unitLabel: string,
+): number {
+  return isWeightUnitLabel(unitLabel) ? quantity / 1000 : quantity;
+}
+
 export function validateProductUnit({
   name,
   categoryName,

@@ -25,6 +25,7 @@ import { createPublicLegalRouter } from './routes/public-legal.js';
 import { createReviewRouter } from './routes/reviews.js';
 import { sendPushToUser } from './services/push-notifications.js';
 import { getUploadsDirectory } from './services/image-upload.js';
+import { getLocalDayRange } from './services/local-day.js';
 import {
   getNormalizedProductImage,
   getNormalizedWholesaleImage,
@@ -35,16 +36,25 @@ import {
 } from './services/user-identity.js';
 import { findAdminByPassword } from './services/admin-login.js';
 import { formatUserDisplayId } from './services/user-display-id.js';
+import { normalizeCustomerMenuFeatures } from './services/customer-menu-features.js';
 import { recordBuyingStreakPurchase, removeCancelledOrderPurchaseDay } from './services/buying-streak.js';
 import { orderInput } from './schemas/order.js';
 import { InventoryService } from './services/inventory.js';
 import { canCustomerCancelOrder } from './services/order-cancellation.js';
 import { orderCartCleanupWhere } from './services/order-cart-cleanup.js';
-import { checkCoupon, toPublicCouponOffer } from './services/coupon.js';
+import {
+  calculateCouponEligibleSubtotal,
+  checkCoupon,
+  toPublicCouponOffer,
+} from './services/coupon.js';
 import {
   CUSTOMER_CATALOG_CATEGORY_FILTER,
   CUSTOMER_CATALOG_PRODUCT_FILTER,
 } from './services/customer-catalog.js';
+import {
+  displayInventoryQuantity,
+  isWeightUnitLabel,
+} from './services/product-validation.js';
 import {
   assertWithinDeliveryServiceArea,
   DEFAULT_DELIVERY_FEE,
@@ -82,6 +92,15 @@ const productionCorsOrigins = new Set(
     .map((origin) => origin.trim())
     .filter(Boolean),
 );
+
+function sellableBatchQuantity(
+  batches: readonly { remainingQuantity: number }[],
+): number {
+  return batches.reduce(
+    (quantity, batch) => quantity + batch.remainingQuantity,
+    0,
+  );
+}
 
 if (!AUTH_SECRET || AUTH_SECRET.length < 32) {
   throw new Error('Missing required AUTH_SECRET environment variable. Set a secure secret before starting the backend.');
@@ -256,6 +275,7 @@ function orderResponse(order: OrderRecord) {
       const updatedAt = wholesaleItem?.updatedAt ?? product?.updatedAt;
       return {
         quantity: item.quantity,
+        weightGrams: item.weightGrams,
         isWholesale: item.isWholesale,
         product: {
           id: wholesaleItem?.id ?? product?.id ?? item.productId ?? '',
@@ -579,6 +599,26 @@ app.get('/api/v1/store/availability', async (_req: Request, res: Response) => {
   }
 });
 
+app.get('/api/v1/store/customer-menu-features', async (_req: Request, res: Response) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    const settings = await prisma.storeSetting.findUnique({
+      where: { id: 'store' },
+      select: { customerMenuFeatures: true },
+    });
+    return res.json({
+      customerMenuFeatures: normalizeCustomerMenuFeatures(
+        settings?.customerMenuFeatures,
+      ),
+    });
+  } catch (error) {
+    console.error('Customer menu settings lookup failed:', error);
+    return res.status(500).json({
+      error: 'Unable to load customer menu settings.',
+    });
+  }
+});
+
 app.get('/api/v1/products', async (req: Request, res: Response) => {
   const category = typeof req.query.category === 'string' ? req.query.category : undefined;
   const vendingDrink = req.query.vendingDrink === 'true';
@@ -624,6 +664,7 @@ app.get('/api/v1/products', async (req: Request, res: Response) => {
         }
         : {}),
     };
+    const saleDayStart = getLocalDayRange().start;
     const [total, products] = await Promise.all([
       prisma.product.count({ where }),
       prisma.product.findMany({
@@ -654,26 +695,52 @@ app.get('/api/v1/products', async (req: Request, res: Response) => {
           description: true,
           origin: true,
           imageUrl: true,
+          imageUrls: true,
           imageMimeType: true,
           unitLabel: true,
           isOrganic: true,
           isFeatured: true,
           isBestSeller: true,
           isVendingDrink: true,
+          vendingSection: true,
           isActive: true,
           createdAt: true,
           updatedAt: true,
           category: { select: { name: true, slug: true } },
           inventory: { select: { totalStock: true, reservedStock: true } },
+          batches: {
+            where: {
+              remainingQuantity: { gt: 0 },
+              OR: [
+                { expiresAt: null },
+                { expiresAt: { gte: saleDayStart } },
+              ],
+            },
+            select: { remainingQuantity: true },
+          },
         },
       }),
     ]);
 
-    const data = products.map(({ category: productCategory, inventory, imageMimeType, ...product }) => {
+    const data = products.map(({
+      category: productCategory,
+      inventory,
+      batches,
+      imageMimeType,
+      ...product
+    }) => {
       const price = Number(product.price);
       const originalPrice = product.originalPrice === null
         ? null
         : Number(product.originalPrice);
+      const inventoryStock = Math.min(
+        Math.max(
+          0,
+          (inventory?.totalStock ?? 0) - (inventory?.reservedStock ?? 0),
+        ),
+        sellableBatchQuantity(batches),
+      );
+      const stock = displayInventoryQuantity(inventoryStock, product.unitLabel);
       return {
         ...product,
         price,
@@ -691,7 +758,8 @@ app.get('/api/v1/products', async (req: Request, res: Response) => {
         rating: Number(product.rating),
         categoryName: productCategory.name,
         categorySlug: productCategory.slug,
-        stock: Math.max(0, (inventory?.totalStock ?? 0) - (inventory?.reservedStock ?? 0)),
+        stock: isWeightUnitLabel(product.unitLabel) ? Math.floor(stock) : stock,
+        ...(isWeightUnitLabel(product.unitLabel) ? { weightStockKg: stock } : {}),
       };
     });
 
@@ -860,6 +928,7 @@ app.get('/api/v1/images/:id', async (req: Request, res: Response) => {
 
 app.get('/api/v1/products/:id', async (req: Request, res: Response) => {
   try {
+    const saleDayStart = getLocalDayRange().start;
     const product = await prisma.product.findFirst({
       where: {
         AND: [
@@ -884,26 +953,52 @@ app.get('/api/v1/products/:id', async (req: Request, res: Response) => {
         description: true,
         origin: true,
         imageUrl: true,
+        imageUrls: true,
         imageMimeType: true,
         unitLabel: true,
         isOrganic: true,
         isFeatured: true,
         isBestSeller: true,
         isVendingDrink: true,
+        vendingSection: true,
         isActive: true,
         createdAt: true,
         updatedAt: true,
         category: { select: { name: true, slug: true } },
         inventory: { select: { totalStock: true, reservedStock: true } },
+        batches: {
+          where: {
+            remainingQuantity: { gt: 0 },
+            OR: [
+              { expiresAt: null },
+              { expiresAt: { gte: saleDayStart } },
+            ],
+          },
+          select: { remainingQuantity: true },
+        },
       },
     });
     if (!product) return res.status(404).json({ error: 'Product not found' });
 
-    const { category: productCategory, inventory, imageMimeType, ...fields } = product;
+    const {
+      category: productCategory,
+      inventory,
+      batches,
+      imageMimeType,
+      ...fields
+    } = product;
     const price = Number(product.price);
     const originalPrice = product.originalPrice === null
       ? null
       : Number(product.originalPrice);
+    const inventoryStock = Math.min(
+      Math.max(
+        0,
+        (inventory?.totalStock ?? 0) - (inventory?.reservedStock ?? 0),
+      ),
+      sellableBatchQuantity(batches),
+    );
+    const stock = displayInventoryQuantity(inventoryStock, product.unitLabel);
     return res.json({
       data: {
         ...fields,
@@ -922,7 +1017,8 @@ app.get('/api/v1/products/:id', async (req: Request, res: Response) => {
         rating: Number(product.rating),
         categoryName: productCategory.name,
         categorySlug: productCategory.slug,
-        stock: Math.max(0, (inventory?.totalStock ?? 0) - (inventory?.reservedStock ?? 0)),
+        stock: isWeightUnitLabel(product.unitLabel) ? Math.floor(stock) : stock,
+        ...(isWeightUnitLabel(product.unitLabel) ? { weightStockKg: stock } : {}),
       },
     });
   } catch (error) {
@@ -997,6 +1093,7 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
       const wholesaleItemIds = [...new Set(
         input.items.filter((item) => item.isWholesale).map((item) => item.productId),
       )];
+      const saleDayStart = getLocalDayRange().start;
       const [products, wholesaleItems] = await Promise.all([
         transaction.product.findMany({
           where: {
@@ -1005,7 +1102,19 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
               CUSTOMER_CATALOG_PRODUCT_FILTER,
             ],
           },
-          include: { inventory: true },
+          include: {
+            inventory: true,
+            batches: {
+              where: {
+                remainingQuantity: { gt: 0 },
+                OR: [
+                  { expiresAt: null },
+                  { expiresAt: { gte: saleDayStart } },
+                ],
+              },
+              select: { remainingQuantity: true },
+            },
+          },
         }),
         transaction.wholesaleItem.findMany({
           where: {
@@ -1019,7 +1128,11 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
       const wholesaleItemsById = new Map(
         wholesaleItems.map((item) => [item.id, item]),
       );
-      let couponEligibleSubtotal = 0;
+      const couponEligibleItems: {
+        productId: string;
+        subtotal: number;
+        isWholesale: boolean;
+      }[] = [];
       const subtotal = input.items.reduce((sum, item) => {
         if (item.isWholesale) {
           const wholesaleItem = wholesaleItemsById.get(item.productId);
@@ -1036,8 +1149,33 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
         const product = productsById.get(item.productId);
         if (!product) throw new OrderStockError('This item is no longer available.');
         const price = Number(product.price);
-        couponEligibleSubtotal += price * item.quantity;
-        return sum + price * item.quantity;
+        const weightProduct = isWeightUnitLabel(product.unitLabel);
+        if (weightProduct !== (item.weightGrams != null)) {
+          throw new OrderStockError(
+            weightProduct
+              ? `Choose a weight for ${product.name}.`
+              : `Weight cannot be selected for ${product.name}.`,
+          );
+        }
+        const stockQuantity = weightProduct ? item.weightGrams! : item.quantity;
+        const available = Math.min(
+          product.inventory
+            ? product.inventory.totalStock - product.inventory.reservedStock
+            : 0,
+          sellableBatchQuantity(product.batches),
+        );
+        if (stockQuantity > available) {
+          throw new OrderStockError(`${product.name} does not have enough stock.`);
+        }
+        const lineTotal = weightProduct
+          ? price * stockQuantity / 1000
+          : price * item.quantity;
+        couponEligibleItems.push({
+          productId: product.id,
+          subtotal: lineTotal,
+          isWholesale: false,
+        });
+        return sum + lineTotal;
       }, 0);
 
       let couponCode: string | null = null;
@@ -1049,9 +1187,15 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
         if (!coupon) {
           throw new CouponRejectedError('That coupon code is not valid.');
         }
-        if (couponEligibleSubtotal <= 0) {
+        const eligibleSubtotal = calculateCouponEligibleSubtotal(
+          coupon.productId,
+          couponEligibleItems,
+        );
+        if (eligibleSubtotal <= 0) {
           throw new CouponRejectedError(
-            'Coupons do not apply to wholesale-priced items.',
+            coupon.productId === null
+              ? 'Coupons do not apply to wholesale-priced items.'
+              : 'Add the product named in this coupon to your basket.',
           );
         }
         const userUsedCount = coupon.perUserLimit === null
@@ -1065,9 +1209,10 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
           });
         const couponCheck = checkCoupon(
           coupon,
-          couponEligibleSubtotal,
+          eligibleSubtotal,
           new Date(),
           userUsedCount,
+          userId,
         );
         if (!couponCheck.valid) {
           throw new CouponRejectedError(couponCheck.message);
@@ -1097,7 +1242,11 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
       const stockByWholesaleItem = new Map<string, number>();
       for (const item of input.items) {
         const stock = item.isWholesale ? stockByWholesaleItem : stockByProduct;
-        stock.set(item.productId, (stock.get(item.productId) ?? 0) + item.quantity);
+        const product = item.isWholesale ? null : productsById.get(item.productId);
+        const quantity = product && isWeightUnitLabel(product.unitLabel)
+          ? item.weightGrams!
+          : item.quantity;
+        stock.set(item.productId, (stock.get(item.productId) ?? 0) + quantity);
       }
       for (const [wholesaleItemId, quantity] of stockByWholesaleItem) {
         const item = wholesaleItemsById.get(wholesaleItemId);
@@ -1111,7 +1260,8 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
         const product = productsById.get(productId);
         const inventory = product?.inventory;
         if (!product || !inventory ||
-          inventory.totalStock - inventory.reservedStock < quantity) {
+          inventory.totalStock - inventory.reservedStock < quantity ||
+          sellableBatchQuantity(product.batches) < quantity) {
           throw new OrderStockError(
             `${product?.name ?? 'An item'} does not have enough stock.`,
           );
@@ -1157,15 +1307,22 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
                 ? wholesaleItemsById.get(item.productId)!
                 : productsById.get(item.productId)!;
               const price = Number(product.price);
+              const weightGrams = item.isWholesale
+                ? null
+                : item.weightGrams ?? null;
+              const total = weightGrams == null
+                ? price * item.quantity
+                : price * weightGrams / 1000;
               return {
                 productId: item.isWholesale ? null : product.id,
                 wholesaleItemId: item.isWholesale ? product.id : null,
                 isWholesale: item.isWholesale,
                 productName: product.name,
                 sku: product.sku,
-                quantity: item.quantity,
+                quantity: weightGrams == null ? item.quantity : 1,
+                weightGrams,
                 price,
-                total: price * item.quantity,
+                total,
               };
             }),
           },
@@ -1328,38 +1485,52 @@ app.post('/api/v1/orders/:id/cancel', authenticateToken, async (req: Request, re
           data: { usedCount: { decrement: 1 } },
         });
       }
+      const cancelledProductStock = new Map<string, number>();
       for (const item of existing.items) {
         if (item.productId) {
-          const restocked = await transaction.inventory.updateMany({
-            where: { productId: item.productId },
-            data: {
-              totalStock: { increment: item.quantity },
-              version: { increment: 1 },
-            },
-          });
-          if (restocked.count === 1) {
-            const inventory = await transaction.inventory.findUnique({
-              where: { productId: item.productId },
-              select: { id: true, totalStock: true, reservedStock: true },
-            });
-            if (inventory) {
-              await transaction.inventoryTransaction.create({
-                data: {
-                  inventoryId: inventory.id,
-                  type: 'RESTOCKED',
-                  quantity: item.quantity,
-                  balanceAfter: inventory.totalStock - inventory.reservedStock,
-                  referenceId: existing.id,
-                  notes: `Stock returned after cancellation of Order #${existing.orderNumber}.`,
-                },
-              });
-            }
-          }
+          const quantity = item.weightGrams ?? item.quantity;
+          cancelledProductStock.set(
+            item.productId,
+            (cancelledProductStock.get(item.productId) ?? 0) + quantity,
+          );
         } else if (item.wholesaleItemId) {
           await transaction.wholesaleItem.update({
             where: { id: item.wholesaleItemId },
             data: { stock: { increment: item.quantity } },
           });
+        }
+      }
+      for (const [productId, restockQuantity] of cancelledProductStock) {
+        const restocked = await transaction.inventory.updateMany({
+          where: { productId },
+          data: {
+            totalStock: { increment: restockQuantity },
+            version: { increment: 1 },
+          },
+        });
+        if (restocked.count === 1) {
+          await inventoryService.restoreCommittedStock(
+            transaction,
+            productId,
+            restockQuantity,
+            existing.id,
+          );
+          const inventory = await transaction.inventory.findUnique({
+            where: { productId },
+            select: { id: true, totalStock: true, reservedStock: true },
+          });
+          if (inventory) {
+            await transaction.inventoryTransaction.create({
+              data: {
+                inventoryId: inventory.id,
+                type: 'RESTOCKED',
+                quantity: restockQuantity,
+                balanceAfter: inventory.totalStock - inventory.reservedStock,
+                referenceId: existing.id,
+                notes: `Stock returned after cancellation of Order #${existing.orderNumber}.`,
+              },
+            });
+          }
         }
       }
       await transaction.orderStatusHistory.create({
@@ -1418,6 +1589,8 @@ app.get('/api/v1/coupons/offer', async (_req: Request, res: Response) => {
     const coupons = await prisma.coupon.findMany({
       where: {
         isActive: true,
+        productId: null,
+        assignedUserId: null,
         OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
       },
       select: {
@@ -1459,15 +1632,26 @@ app.post(
     const input = z.object({
       code: z.string().trim().min(3).max(40)
         .transform((code) => code.toUpperCase()),
-      subtotal: z.number().finite().positive(),
+      subtotal: z.number().finite().positive().optional(),
+      items: z.array(z.object({
+        productId: z.string().trim().min(1),
+        quantity: z.number().int().min(1).max(100),
+        weightGrams: z.number().int().min(1).max(100000).optional(),
+        isWholesale: z.boolean().default(false),
+      }).strict()).max(50).optional(),
     }).strict().safeParse(req.body);
-    if (!input.success) {
+    if (!input.success ||
+        (input.data.subtotal === undefined && input.data.items === undefined)) {
       return res.status(400).json({
-        error: 'Enter a coupon code and a valid basket subtotal.',
-        details: input.error.issues.map((issue) => ({
-          field: issue.path.join('.'),
-          message: issue.message,
-        })),
+        error: 'Enter a coupon code and the current basket items.',
+        ...(input.success
+          ? {}
+          : {
+              details: input.error.issues.map((issue) => ({
+                field: issue.path.join('.'),
+                message: issue.message,
+              })),
+            }),
       });
     }
 
@@ -1486,6 +1670,74 @@ app.post(
           message: 'That coupon code is not valid.',
         });
       }
+      if (coupon.assignedUserId !== null &&
+          coupon.assignedUserId !== userId) {
+        return res.json({
+          valid: false,
+          discount: 0,
+          message: 'This coupon was issued to a different customer.',
+        });
+      }
+      let couponEligibleItems: {
+        productId: string;
+        subtotal: number;
+        isWholesale: boolean;
+      }[] = [];
+      if (input.data.items !== undefined) {
+        const productIds = [...new Set(
+          input.data.items
+            .filter((item) => !item.isWholesale)
+            .map((item) => item.productId),
+        )];
+        const products = await prisma.product.findMany({
+          where: {
+            AND: [
+              { id: { in: productIds }, isWholesale: false },
+              CUSTOMER_CATALOG_PRODUCT_FILTER,
+            ],
+          },
+          select: { id: true, name: true, price: true, unitLabel: true },
+        });
+        const productsById = new Map(products.map((product) => [product.id, product]));
+        for (const item of input.data.items) {
+          if (item.isWholesale) continue;
+          const product = productsById.get(item.productId);
+          if (!product) continue;
+          const isWeightProduct = isWeightUnitLabel(product.unitLabel);
+          if (isWeightProduct !== (item.weightGrams !== undefined)) {
+            return res.status(400).json({
+              error: `Refresh your basket quantity for ${product.name}.`,
+            });
+          }
+          const lineTotal = isWeightProduct
+            ? Number(product.price) * item.weightGrams! / 1000
+            : Number(product.price) * item.quantity;
+          couponEligibleItems.push({
+            productId: product.id,
+            subtotal: lineTotal,
+            isWholesale: false,
+          });
+        }
+      } else if (input.data.subtotal !== undefined) {
+        couponEligibleItems = [{
+          productId: '',
+          subtotal: input.data.subtotal,
+          isWholesale: false,
+        }];
+      }
+      const eligibleSubtotal = calculateCouponEligibleSubtotal(
+        coupon.productId,
+        couponEligibleItems,
+      );
+      if (eligibleSubtotal <= 0) {
+        return res.json({
+          valid: false,
+          discount: 0,
+          message: coupon.productId === null
+            ? 'Coupons do not apply to wholesale-priced items.'
+            : 'Add the product named in this coupon to your basket.',
+        });
+      }
       const userUsedCount = coupon.perUserLimit === null
         ? 0
         : await prisma.order.count({
@@ -1497,9 +1749,10 @@ app.post(
         });
       const result = checkCoupon(
         coupon,
-        input.data.subtotal,
+        eligibleSubtotal,
         new Date(),
         userUsedCount,
+        userId,
       );
       return res.json({
         valid: result.valid,

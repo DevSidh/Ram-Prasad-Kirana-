@@ -10,6 +10,9 @@ import {
   receiveSingleImage,
 } from '../services/image-upload.js';
 import {
+  displayInventoryQuantity,
+  inventoryQuantityForUnit,
+  isWeightUnitLabel,
   validateProductSalePrice,
   validateProductUnit,
 } from '../services/product-validation.js';
@@ -21,6 +24,10 @@ import {
 } from '../services/product-image.js';
 import { identityAlreadyInUse, normalizeEmail, normalizePhone } from '../services/user-identity.js';
 import { formatUserDisplayId } from '../services/user-display-id.js';
+import {
+  CUSTOMER_MENU_FEATURE_KEYS,
+  normalizeCustomerMenuFeatures,
+} from '../services/customer-menu-features.js';
 import { removeCancelledOrderPurchaseDay } from '../services/buying-streak.js';
 import {
   DEFAULT_WEEKLY_HOURS,
@@ -47,6 +54,7 @@ const createCategoryInput = z.object({
 
 const productFields = {
   sku: z.string().trim().min(1).max(80),
+  barcode: z.string().trim().min(4).max(128).nullable(),
   name: z.string().trim().min(1).max(160),
   slug: z.string().trim().min(1).max(180)
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug must be lowercase words separated by hyphens'),
@@ -60,27 +68,20 @@ const productFields = {
   description: z.string().trim().max(5000).nullable(),
   origin: z.string().trim().max(200).nullable(),
   imageUrl: z.string().trim().max(2048).nullable(),
+  imageUrls: z.array(z.string().trim().min(1).max(2048)).max(8),
   unitLabel: z.string().trim().min(1).max(40),
   isOrganic: z.boolean(),
   isFeatured: z.boolean(),
   isBestSeller: z.boolean(),
   isVendingDrink: z.boolean(),
+  vendingSection: z.enum(['SODA', 'TEA_COFFEE', 'ENERGY']).nullable(),
   isActive: z.boolean(),
-  stock: z.number().int().nonnegative(),
+  stock: z.number().finite().min(0).max(1000000),
 };
-
-const createProductInput = z.object({
-  ...productFields,
-}).partial().extend({
-  sku: productFields.sku,
-  name: productFields.name,
-  slug: productFields.slug,
-  categoryId: productFields.categoryId,
-  price: productFields.price,
-}).strict();
 
 const updateProductInput = z.object({
   sku: productFields.sku.optional(),
+  barcode: productFields.barcode.optional(),
   name: productFields.name.optional(),
   slug: productFields.slug.optional(),
   categoryId: productFields.categoryId.optional(),
@@ -93,14 +94,90 @@ const updateProductInput = z.object({
   description: productFields.description.optional(),
   origin: productFields.origin.optional(),
   imageUrl: productFields.imageUrl.optional(),
+  imageUrls: productFields.imageUrls.optional(),
   unitLabel: productFields.unitLabel.optional(),
   isOrganic: productFields.isOrganic.optional(),
   isFeatured: productFields.isFeatured.optional(),
   isBestSeller: productFields.isBestSeller.optional(),
   isVendingDrink: productFields.isVendingDrink.optional(),
+  vendingSection: productFields.vendingSection.optional(),
   isActive: productFields.isActive.optional(),
   stock: productFields.stock.optional(),
 }).strict().refine((value) => Object.keys(value).length > 0, 'At least one field is required');
+const batchDetailsFields = z.object({
+  lotNumber: z.string().trim().max(120).nullable().optional(),
+  manufacturedAt: z.string().datetime({ offset: true }).nullable(),
+  expiresAt: z.string().datetime({ offset: true }).nullable(),
+  noExpiry: z.boolean(),
+  purchasePrice: z.number().finite().nonnegative().nullable().optional(),
+}).strict();
+const validateBatchDetails = (
+  batch: z.infer<typeof batchDetailsFields>,
+  context: z.RefinementCtx,
+): void => {
+  if (batch.manufacturedAt === null) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['manufacturedAt'],
+      message: 'Enter the manufacture date.',
+    });
+  } else if (new Date(batch.manufacturedAt).getTime() > Date.now()) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['manufacturedAt'],
+      message: 'Manufacture date cannot be in the future.',
+    });
+  }
+  if (batch.noExpiry && batch.expiresAt !== null) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['expiresAt'],
+      message: 'Do not enter an expiry date when no-expiry is selected.',
+    });
+  } else if (!batch.noExpiry && batch.expiresAt === null) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['expiresAt'],
+      message: 'Enter an expiry date or explicitly mark this product as non-expiring.',
+    });
+  } else if (
+    batch.manufacturedAt !== null &&
+    batch.expiresAt !== null &&
+    new Date(batch.expiresAt).getTime() <= new Date(batch.manufacturedAt).getTime()
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['expiresAt'],
+      message: 'Expiry date must be later than manufacture date.',
+    });
+  }
+};
+const initialBatchInput = batchDetailsFields.superRefine(validateBatchDetails);
+const receiveBatchInput = batchDetailsFields.extend({
+  quantity: z.number().finite().positive().max(1000000),
+}).strict().superRefine(validateBatchDetails);
+const createProductInput = z.object({
+  ...productFields,
+}).partial().extend({
+  sku: productFields.sku,
+  barcode: productFields.barcode,
+  name: productFields.name,
+  slug: productFields.slug,
+  categoryId: productFields.categoryId,
+  price: productFields.price,
+  initialBatch: initialBatchInput.optional(),
+}).strict();
+const expiryQuery = z.object({
+  days: z.coerce.number().int().refine(
+    (value) => [7, 15, 30, 60].includes(value),
+    'Warning days must be 7, 15, 30, or 60.',
+  ).default(30),
+  status: z.enum(['all', 'expiring', 'expired', 'today']).default('all'),
+  categoryId: z.string().trim().min(1).max(100).optional(),
+  lowStock: z.enum(['true', 'false']).transform((value) => value === 'true').optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
 
 export const productsQuery = z.object({
   search: z.string().trim().max(200).optional(),
@@ -134,9 +211,24 @@ const orderAlertsQuery = z.object({
 });
 const customersQuery = z.object({
   search: z.string().trim().max(200).optional(),
+  includeInactive: z.enum(['true', 'false'])
+    .transform((value) => value === 'true')
+    .default('false'),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
+const customerMenuFeaturesInput = z.object(
+  Object.fromEntries(
+    CUSTOMER_MENU_FEATURE_KEYS.map((key) => [key, z.boolean()]),
+  ) as Record<(typeof CUSTOMER_MENU_FEATURE_KEYS)[number], z.ZodBoolean>,
+).strict();
+const updateCustomerInput = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  email: z.string().trim().email().max(254).transform(normalizeEmail).optional(),
+  phone: z.string().trim().min(7).max(30).nullable()
+    .transform(normalizePhone).optional(),
+  isActive: z.boolean().optional(),
+}).strict().refine((value) => Object.keys(value).length > 0);
 const deliveryPersonInput = z.object({
   name: z.string().trim().min(1).max(120),
   email: z.string().trim().email().max(254),
@@ -194,6 +286,20 @@ const couponCreateInput = z.object({
   }
 });
 const couponActiveInput = z.object({ isActive: z.boolean() }).strict();
+const productCouponInput = z.object({
+  customerId: z.string().trim().min(1).max(100),
+  productId: z.string().trim().min(1).max(100),
+  discountType: z.enum(['PERCENTAGE', 'FIXED']),
+  discountValue: z.number().finite().positive().max(100000),
+}).strict().superRefine((input, context) => {
+  if (input.discountType === 'PERCENTAGE' && input.discountValue > 100) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['discountValue'],
+      message: 'Percentage discount cannot be greater than 100.',
+    });
+  }
+});
 const streakRewardsInput = z.object({
   rewards: z.array(z.object({
     day: z.number().int().min(1).max(365),
@@ -291,10 +397,10 @@ function wholesaleItemResponse(item: WholesaleItemRecord) {
   };
 }
 
-const restockInput = z.object({
-  quantity: z.number().int().min(1).max(1000000),
+const restockInput = batchDetailsFields.extend({
+  quantity: z.number().finite().positive().max(1000000),
   notes: z.string().trim().max(500).optional(),
-}).strict();
+}).strict().superRefine(validateBatchDetails);
 const restockHistoryQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
@@ -303,6 +409,7 @@ const recordIdInput = z.string().trim().min(1).max(100);
 const productSelect = {
   id: true,
   sku: true,
+  barcode: true,
   name: true,
   slug: true,
   categoryId: true,
@@ -318,12 +425,14 @@ const productSelect = {
   description: true,
   origin: true,
   imageUrl: true,
+  imageUrls: true,
   imageMimeType: true,
   unitLabel: true,
   isOrganic: true,
   isFeatured: true,
   isBestSeller: true,
   isVendingDrink: true,
+  vendingSection: true,
   isActive: true,
   createdAt: true,
   updatedAt: true,
@@ -336,6 +445,9 @@ function productResponse(product: AdminProduct) {
   const { inventory, imageMimeType, ...fields } = product;
   return {
     ...fields,
+    imageUrls: Array.isArray(product.imageUrls)
+      ? product.imageUrls.filter((url): url is string => typeof url === 'string')
+      : [],
     imageUrl: imageMimeType && product.imageUrl
       ? `${product.imageUrl}?v=${product.updatedAt.getTime()}`
       : product.imageUrl,
@@ -345,13 +457,26 @@ function productResponse(product: AdminProduct) {
       ? null
       : Number(product.wholesalePrice),
     rating: Number(product.rating),
-    stock: Math.max(0, (inventory?.totalStock ?? 0) - (inventory?.reservedStock ?? 0)),
+    stock: displayInventoryQuantity(
+      Math.max(0, (inventory?.totalStock ?? 0) - (inventory?.reservedStock ?? 0)),
+      product.unitLabel,
+    ),
+    ...(isWeightUnitLabel(product.unitLabel)
+      ? {
+        weightStockKg: displayInventoryQuantity(
+          Math.max(0, (inventory?.totalStock ?? 0) - (inventory?.reservedStock ?? 0)),
+          product.unitLabel,
+        ),
+      }
+      : {}),
   };
 }
 
 function couponResponse(coupon: {
   id: string;
   code: string;
+  productId: string | null;
+  assignedUserId: string | null;
   discountType: 'PERCENTAGE' | 'FIXED';
   discountPercent: Prisma.Decimal | null;
   discountAmount: Prisma.Decimal | null;
@@ -464,7 +589,11 @@ async function availableProductIds(
       FROM "Product" AS p
       INNER JOIN "Inventory" AS i ON i."productId" = p."id"
       WHERE i."totalStock" - i."reservedStock" > 0
-        AND i."totalStock" - i."reservedStock" <= p."lowStockThreshold"
+        AND i."totalStock" - i."reservedStock" <= CASE
+          WHEN p."unitLabel" ~* '^[[:space:]]*[0-9]+([.][0-9]+)?[[:space:]]*(kg|g)[[:space:]]*$'
+            THEN p."lowStockThreshold" * 1000
+          ELSE p."lowStockThreshold"
+        END
     `;
     return rows.map(({ id }) => id);
   }
@@ -475,7 +604,11 @@ async function availableProductIds(
       LEFT JOIN "Inventory" AS i ON i."productId" = p."id"
       WHERE p."isActive" = true
         AND COALESCE(i."totalStock", 0) - COALESCE(i."reservedStock", 0)
-          <= p."lowStockThreshold"
+          <= CASE
+            WHEN p."unitLabel" ~* '^[[:space:]]*[0-9]+([.][0-9]+)?[[:space:]]*(kg|g)[[:space:]]*$'
+              THEN p."lowStockThreshold" * 1000
+            ELSE p."lowStockThreshold"
+          END
     `;
     return rows.map(({ id }) => id);
   }
@@ -528,6 +661,47 @@ export function createAdminRouter(
   const router = Router();
   const inventoryService = new InventoryService(prisma);
   router.use(authenticateToken, requireAdmin);
+
+  router.get('/customer-menu-features', async (_req, res) => {
+    try {
+      const settings = await prisma.storeSetting.findUnique({
+        where: { id: 'store' },
+        select: { customerMenuFeatures: true },
+      });
+      return res.json({
+        customerMenuFeatures: normalizeCustomerMenuFeatures(
+          settings?.customerMenuFeatures,
+        ),
+      });
+    } catch (error) {
+      sendAdminError(error, res);
+    }
+  });
+
+  router.put('/customer-menu-features', async (req, res) => {
+    const parsed = customerMenuFeaturesInput.safeParse(req.body);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+    try {
+      const settings = await prisma.storeSetting.upsert({
+        where: { id: 'store' },
+        create: {
+          id: 'store',
+          isOrderingEnabled: true,
+          weeklyHours: DEFAULT_WEEKLY_HOURS,
+          customerMenuFeatures: parsed.data,
+        },
+        update: { customerMenuFeatures: parsed.data },
+        select: { customerMenuFeatures: true },
+      });
+      return res.json({
+        customerMenuFeatures: normalizeCustomerMenuFeatures(
+          settings.customerMenuFeatures,
+        ),
+      });
+    } catch (error) {
+      sendAdminError(error, res);
+    }
+  });
 
   router.get('/store-settings', async (_req, res) => {
     try {
@@ -638,7 +812,7 @@ export function createAdminRouter(
     }).strict().safeParse(req.body);
     if (!parsed.success) return invalidInput(res, parsed.error);
 
-    const notificationTitle = 'Faststore';
+    const notificationTitle = 'FASTSTORE';
     const notificationBody = `${parsed.data.title}\n\n${parsed.data.body}`;
     try {
       if (parsed.data.couponCode) {
@@ -729,7 +903,7 @@ export function createAdminRouter(
     }).strict().safeParse(req.body);
     if (!parsed.success) return invalidInput(res, parsed.error);
 
-    const notificationTitle = 'Faststore';
+    const notificationTitle = 'FASTSTORE';
     const notificationBody = `${parsed.data.title}\n\n${parsed.data.body}`;
     try {
       const recipient = await prisma.user.findFirst({
@@ -818,6 +992,91 @@ export function createAdminRouter(
       });
       return res.json({ coupons: coupons.map(couponResponse) });
     } catch (error) {
+      sendAdminError(error, res);
+    }
+  });
+
+  router.post('/coupons/product', async (req, res) => {
+    const parsed = productCouponInput.safeParse(req.body);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+    try {
+      const [customer, product] = await Promise.all([
+        prisma.user.findFirst({
+          where: {
+            id: parsed.data.customerId,
+            role: 'CUSTOMER',
+            isActive: true,
+          },
+          select: { id: true },
+        }),
+        prisma.product.findFirst({
+          where: {
+            id: parsed.data.productId,
+            isActive: true,
+            isWholesale: false,
+            category: { isActive: true },
+          },
+          select: { id: true, name: true, price: true },
+        }),
+      ]);
+      if (!customer) {
+        return res.status(404).json({ error: 'Active customer not found.' });
+      }
+      if (!product) {
+        return res.status(404).json({ error: 'Active store product not found.' });
+      }
+      if (parsed.data.discountType === 'FIXED' &&
+          parsed.data.discountValue > Number(product.price)) {
+        return res.status(400).json({
+          error: 'The discount cannot exceed the selected product price.',
+        });
+      }
+
+      const code = `PRODUCT-${randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`;
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      const coupon = await prisma.$transaction(async (tx) => {
+        const created = await tx.coupon.create({
+          data: {
+            code,
+            productId: product.id,
+            assignedUserId: customer.id,
+            discountType: parsed.data.discountType,
+            discountPercent: parsed.data.discountType === 'PERCENTAGE'
+              ? parsed.data.discountValue
+              : null,
+            discountAmount: parsed.data.discountType === 'FIXED'
+              ? parsed.data.discountValue
+              : null,
+            minOrderAmount: 0,
+            maxDiscount: parsed.data.discountType === 'PERCENTAGE'
+              ? Number(product.price)
+              : null,
+            usageLimit: 1,
+            perUserLimit: 1,
+            expiresAt,
+            isActive: true,
+            isDeleted: false,
+          },
+        });
+        await tx.notification.create({
+          data: {
+            userId: customer.id,
+            type: 'PROMOTIONAL',
+            title: 'FASTSTORE',
+            body: `A ${parsed.data.discountValue}${parsed.data.discountType === 'PERCENTAGE' ? '%' : ' rupee'} discount for ${product.name} is ready. Use code ${code} at checkout within 30 days.`,
+            metadata: { couponCode: code, productId: product.id },
+          },
+        });
+        return created;
+      });
+      return res.status(201).json({ coupon: couponResponse(coupon) });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002') {
+        return res.status(409).json({
+          error: 'A coupon with this code already exists. Please try again.',
+        });
+      }
       sendAdminError(error, res);
     }
   });
@@ -1011,7 +1270,11 @@ export function createAdminRouter(
             COUNT(*) FILTER (
               WHERE COALESCE(i."totalStock", 0) - COALESCE(i."reservedStock", 0) > 0
                 AND COALESCE(i."totalStock", 0) - COALESCE(i."reservedStock", 0)
-                  <= p."lowStockThreshold"
+                  <= CASE
+                    WHEN p."unitLabel" ~* '^[[:space:]]*[0-9]+([.][0-9]+)?[[:space:]]*(kg|g)[[:space:]]*$'
+                      THEN p."lowStockThreshold" * 1000
+                    ELSE p."lowStockThreshold"
+                  END
             ) AS "lowStock"
           FROM "Product" AS p
           LEFT JOIN "Inventory" AS i ON i."productId" = p."id"
@@ -1244,8 +1507,8 @@ export function createAdminRouter(
   router.get('/customers', async (req, res) => {
     const parsed = customersQuery.safeParse(req.query);
     if (!parsed.success) return invalidInput(res, parsed.error);
-    const { search, page, pageSize } = parsed.data;
-    const profileIdMatch = search?.match(/^USR-(\d{1,19})$/i);
+    const { search, page, pageSize, includeInactive } = parsed.data;
+    const profileIdMatch = search?.match(/^(?:USR[- ]?)?(\d{1,19})$/i);
     const parsedProfileNumber = profileIdMatch ? BigInt(profileIdMatch[1]) : null;
     const profileNumber = parsedProfileNumber !== null &&
             parsedProfileNumber <= 9_223_372_036_854_775_807n
@@ -1253,7 +1516,7 @@ export function createAdminRouter(
         : null;
     const where: Prisma.UserWhereInput = {
       role: 'CUSTOMER',
-      isActive: true,
+      ...(!includeInactive ? { isActive: true } : {}),
       ...(search
         ? {
           OR: [
@@ -1355,6 +1618,49 @@ export function createAdminRouter(
           })),
         })),
         pagination: { page, pageSize, total },
+      });
+    } catch (error) {
+      sendAdminError(error, res);
+    }
+  });
+
+  router.patch('/customers/:id', async (req, res) => {
+    const id = parseRecordId(req.params.id, res);
+    if (!id) return;
+    const parsed = updateCustomerInput.safeParse(req.body);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+    try {
+      const existing = await prisma.user.findFirst({
+        where: { id, role: 'CUSTOMER' },
+        select: { id: true },
+      });
+      if (!existing) return res.status(404).json({ error: 'Customer not found.' });
+
+      if ((parsed.data.email !== undefined || parsed.data.phone !== undefined) &&
+          await identityAlreadyInUse(prisma, {
+            email: parsed.data.email,
+            phone: parsed.data.phone ?? null,
+            excludeUserId: id,
+          })) {
+        return res.status(409).json({
+          error: 'That email address or phone number is already in use.',
+        });
+      }
+
+      const customer = await prisma.user.update({
+        where: { id },
+        data: parsed.data,
+        select: {
+          id: true,
+          userNumber: true,
+          name: true,
+          email: true,
+          phone: true,
+          isActive: true,
+        },
+      });
+      return res.json({
+        customer: { ...customer, profileId: formatUserDisplayId(customer.userNumber) },
       });
     } catch (error) {
       sendAdminError(error, res);
@@ -2304,6 +2610,89 @@ export function createAdminRouter(
     }
   });
 
+  router.get('/products/barcode-lookup', async (req, res) => {
+    const parsed = z.string().trim().min(4).max(128).safeParse(req.query.barcode);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: 'Enter a valid barcode between 4 and 128 characters.',
+      });
+    }
+    const barcode = parsed.data;
+    try {
+      const existing = await prisma.product.findUnique({
+        where: { barcode },
+        select: productSelect,
+      });
+      if (existing) {
+        return res.json({
+          found: true,
+          source: 'catalog',
+          product: productResponse(existing),
+        });
+      }
+
+      if (!/^\d{8,14}$/.test(barcode)) {
+        return res.json({ found: false, source: 'none', product: null });
+      }
+
+      const response = await fetch(
+        `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json?fields=status,product`,
+        { signal: AbortSignal.timeout(5000) },
+      );
+      if (!response.ok) {
+        throw new Error(`Open Food Facts responded with HTTP ${response.status}.`);
+      }
+      const payload: unknown = await response.json();
+      if (payload === null || typeof payload !== 'object') {
+        throw new Error('Open Food Facts returned an invalid response.');
+      }
+      const result = payload as {
+        status?: unknown;
+        product?: {
+          product_name?: unknown;
+          brands?: unknown;
+          quantity?: unknown;
+          generic_name?: unknown;
+          ingredients_text?: unknown;
+          image_url?: unknown;
+        };
+      };
+      const sourceProduct = result.product;
+      if (result.status !== 1 || !sourceProduct ||
+          typeof sourceProduct.product_name !== 'string' ||
+          sourceProduct.product_name.trim().length === 0) {
+        return res.json({ found: false, source: 'openfoodfacts', product: null });
+      }
+      return res.json({
+        found: true,
+        source: 'openfoodfacts',
+        product: {
+          barcode,
+          name: sourceProduct.product_name.trim(),
+          brand: typeof sourceProduct.brands === 'string'
+            ? sourceProduct.brands.split(',')[0].trim()
+            : null,
+          unitLabel: typeof sourceProduct.quantity === 'string'
+            ? sourceProduct.quantity.trim()
+            : null,
+          description: typeof sourceProduct.generic_name === 'string'
+            ? sourceProduct.generic_name.trim()
+            : typeof sourceProduct.ingredients_text === 'string'
+              ? sourceProduct.ingredients_text.trim()
+              : null,
+          imageUrl: typeof sourceProduct.image_url === 'string'
+            ? sourceProduct.image_url
+            : null,
+        },
+      });
+    } catch (error) {
+      console.error('Barcode product lookup failed:', error);
+      return res.status(502).json({
+        error: 'Online product lookup is unavailable. Enter the product details manually.',
+      });
+    }
+  });
+
   router.post('/products', receiveSingleImage, async (req, res) => {
     const body = productRequestBody(req);
     if (!body) {
@@ -2311,7 +2700,7 @@ export function createAdminRouter(
     }
     const parsed = createProductInput.safeParse(body);
     if (!parsed.success) return invalidInput(res, parsed.error);
-    const { stock = 0, ...data } = parsed.data;
+    const { stock = 0, initialBatch, ...data } = parsed.data;
     if (data.price <= 0) return res.status(400).json({ error: 'Price must be greater than zero' });
     const salePriceError = validateProductSalePrice(data.price, data.originalPrice);
     if (salePriceError) return res.status(400).json({ error: salePriceError });
@@ -2355,13 +2744,35 @@ export function createAdminRouter(
           });
         }
         const adminId = res.locals.authenticatedUserId;
+        const initialQuantity = inventoryQuantityForUnit(stock, created.unitLabel);
         await inventoryService.setStock(
           tx,
           created.id,
-          stock,
+          initialBatch && initialQuantity > 0 ? 0 : initialQuantity,
           `admin:${adminId}`,
           `Initial stock set to ${stock} by admin ${adminId}.`,
         );
+        if (initialBatch && initialQuantity > 0) {
+          await inventoryService.receiveBatch(
+            tx,
+            created.id,
+            initialQuantity,
+            `admin:${adminId}`,
+            {
+              lotNumber: initialBatch.lotNumber,
+              manufacturedAt: initialBatch.manufacturedAt
+                ? new Date(initialBatch.manufacturedAt)
+                : null,
+              expiresAt: initialBatch.expiresAt
+                ? new Date(initialBatch.expiresAt)
+                : null,
+              noExpiry: initialBatch.noExpiry,
+              datesVerified: true,
+              purchasePrice: initialBatch.purchasePrice ?? null,
+            },
+            adminId,
+          );
+        }
         return tx.product.findUnique({ where: { id: created.id }, select: productSelect });
       });
       if (!product) return res.status(500).json({ error: 'Unable to load the created product' });
@@ -2424,6 +2835,13 @@ export function createAdminRouter(
         unitLabel: data.unitLabel ?? currentProduct.unitLabel,
       });
       if (unitError) return res.status(400).json({ error: unitError });
+      const nextUnitLabel = data.unitLabel ?? currentProduct.unitLabel;
+      if (isWeightUnitLabel(nextUnitLabel) !==
+          isWeightUnitLabel(currentProduct.unitLabel)) {
+        return res.status(409).json({
+          error: 'A product cannot switch between weight and count stock units.',
+        });
+      }
       const salePriceError = validateProductSalePrice(
         data.price ?? Number(currentProduct.price),
         data.originalPrice === undefined
@@ -2438,7 +2856,7 @@ export function createAdminRouter(
       const product = await prisma.$transaction(async (tx) => {
         const existing = await tx.product.findUnique({
           where: { id },
-          select: { id: true },
+          select: { id: true, unitLabel: true },
         });
         if (!existing) return null;
         if (Object.keys(data).length > 0 || req.file) {
@@ -2470,7 +2888,10 @@ export function createAdminRouter(
           await inventoryService.setStock(
             tx,
             id,
-            stock,
+            inventoryQuantityForUnit(
+              stock,
+              data.unitLabel ?? currentProduct.unitLabel,
+            ),
             `admin:${adminId}`,
             `Stock adjusted to ${stock} by admin ${adminId}.`,
           );
@@ -2488,6 +2909,212 @@ export function createAdminRouter(
     }
   });
 
+  router.post('/products/:id/batches', async (req, res) => {
+    const id = parseRecordId(req.params.id, res);
+    if (!id) return;
+    const parsed = receiveBatchInput.safeParse(req.body);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+    try {
+      const product = await prisma.$transaction(async (tx) => {
+        const existing = await tx.product.findUnique({
+          where: { id },
+          select: { id: true, unitLabel: true },
+        });
+        if (!existing) return null;
+        const adminId = res.locals.authenticatedUserId as string;
+        const batch = parsed.data;
+        await inventoryService.receiveBatch(
+          tx,
+          id,
+          inventoryQuantityForUnit(batch.quantity, existing.unitLabel),
+          `admin:${adminId}`,
+          {
+            lotNumber: batch.lotNumber,
+            manufacturedAt: batch.manufacturedAt
+              ? new Date(batch.manufacturedAt)
+              : null,
+            expiresAt: batch.expiresAt ? new Date(batch.expiresAt) : null,
+            noExpiry: batch.noExpiry,
+            datesVerified: true,
+            purchasePrice: batch.purchasePrice ?? null,
+          },
+          adminId,
+        );
+        return tx.product.findUnique({ where: { id }, select: productSelect });
+      });
+      if (!product) return res.status(404).json({ error: 'Product not found' });
+      return res.status(201).json({ product: productResponse(product) });
+    } catch (error) {
+      if (error instanceof InventoryAdjustmentError) {
+        return res.status(409).json({ error: error.message });
+      }
+      sendAdminError(error, res);
+    }
+  });
+
+  router.get('/inventory/expiry', async (req, res) => {
+    const parsed = expiryQuery.safeParse(req.query);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+    const { days, status, categoryId, lowStock, page, pageSize } = parsed.data;
+    const today = getLocalDayRange();
+    const warningEnd = new Date(today.end.getTime() + days * 24 * 60 * 60 * 1000);
+    const baseWhere: Prisma.InventoryBatchWhereInput = {
+      remainingQuantity: { gt: 0 },
+      ...(categoryId ? { product: { categoryId } } : {}),
+    };
+    const expiredWhere: Prisma.InventoryBatchWhereInput = {
+      ...baseWhere,
+      expiresAt: { lt: today.start },
+    };
+    const todayWhere: Prisma.InventoryBatchWhereInput = {
+      ...baseWhere,
+      expiresAt: { gte: today.start, lt: today.end },
+    };
+    const soonWhere: Prisma.InventoryBatchWhereInput = {
+      ...baseWhere,
+      expiresAt: { gte: today.end, lt: warningEnd },
+    };
+    const conditions = [
+      Prisma.sql`b."remainingQuantity" > 0`,
+    ];
+    if (categoryId) conditions.push(Prisma.sql`p."categoryId" = ${categoryId}`);
+    if (lowStock) {
+      conditions.push(
+        Prisma.sql`b."remainingQuantity" <= CASE
+          WHEN p."unitLabel" ~* '^[[:space:]]*[0-9]+([.][0-9]+)?[[:space:]]*(kg|g)[[:space:]]*$'
+            THEN p."lowStockThreshold" * 1000
+          ELSE p."lowStockThreshold"
+        END`,
+      );
+    }
+    if (status === 'expired') {
+      conditions.push(Prisma.sql`b."expiresAt" < ${today.start}`);
+    } else if (status === 'today') {
+      conditions.push(Prisma.sql`b."expiresAt" >= ${today.start}`);
+      conditions.push(Prisma.sql`b."expiresAt" < ${today.end}`);
+    } else if (status === 'expiring') {
+      conditions.push(Prisma.sql`b."expiresAt" >= ${today.end}`);
+      conditions.push(Prisma.sql`b."expiresAt" < ${warningEnd}`);
+    } else {
+      conditions.push(Prisma.sql`b."expiresAt" IS NOT NULL`);
+    }
+    try {
+      const whereSql = Prisma.join(conditions, ' AND ');
+      const [totalRows, rows, expiredCount, todayCount, soonCount,
+        expiredProducts, todayProducts, soonProducts] = await Promise.all([
+        prisma.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+          SELECT COUNT(*) AS "count"
+          FROM "InventoryBatch" AS b
+          INNER JOIN "Product" AS p ON p."id" = b."productId"
+          WHERE ${whereSql}
+        `),
+        prisma.$queryRaw<Array<{
+          id: string;
+          productId: string;
+          productName: string;
+          sku: string;
+          barcode: string | null;
+          imageUrl: string | null;
+          imageMimeType: string | null;
+          updatedAt: Date;
+          categoryName: string;
+          unitLabel: string;
+          lowStockThreshold: number;
+          lotNumber: string | null;
+          manufacturedAt: Date | null;
+          expiresAt: Date | null;
+          noExpiry: boolean;
+          datesVerified: boolean;
+          receivedQuantity: number;
+          remainingQuantity: number;
+          purchasePrice: Prisma.Decimal | null;
+        }>>(Prisma.sql`
+          SELECT
+            b."id", b."productId", p."name" AS "productName",
+            p."sku", p."barcode", p."imageUrl", p."imageMimeType",
+            p."updatedAt", c."name" AS "categoryName", p."unitLabel",
+            p."lowStockThreshold", b."lotNumber", b."manufacturedAt",
+            b."expiresAt", b."noExpiry", b."datesVerified",
+            b."receivedQuantity", b."remainingQuantity", b."purchasePrice"
+          FROM "InventoryBatch" AS b
+          INNER JOIN "Product" AS p ON p."id" = b."productId"
+          INNER JOIN "Category" AS c ON c."id" = p."categoryId"
+          WHERE ${whereSql}
+          ORDER BY b."expiresAt" ASC, b."createdAt" ASC
+          LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
+        `),
+        prisma.inventoryBatch.count({ where: expiredWhere }),
+        prisma.inventoryBatch.count({ where: todayWhere }),
+        prisma.inventoryBatch.count({ where: soonWhere }),
+        prisma.inventoryBatch.groupBy({
+          by: ['productId'],
+          where: expiredWhere,
+        }),
+        prisma.inventoryBatch.groupBy({
+          by: ['productId'],
+          where: todayWhere,
+        }),
+        prisma.inventoryBatch.groupBy({
+          by: ['productId'],
+          where: soonWhere,
+        }),
+      ]);
+      const total = Number(totalRows[0]?.count ?? 0);
+      const batches = rows.map((batch) => {
+        const expiryStatus = batch.expiresAt === null || batch.noExpiry
+          ? batch.datesVerified ? 'safe' : 'dates_unverified'
+          : batch.expiresAt < today.start
+            ? 'expired'
+            : batch.expiresAt < today.end
+              ? 'today'
+              : batch.expiresAt < warningEnd
+                ? 'expiring'
+                : 'safe';
+        return {
+          ...batch,
+          receivedQuantity: displayInventoryQuantity(
+            batch.receivedQuantity,
+            batch.unitLabel,
+          ),
+          remainingQuantity: displayInventoryQuantity(
+            batch.remainingQuantity,
+            batch.unitLabel,
+          ),
+          imageUrl: batch.imageMimeType && batch.imageUrl
+            ? `${batch.imageUrl}?v=${batch.updatedAt.getTime()}`
+            : batch.imageUrl,
+          purchasePrice: batch.purchasePrice === null
+            ? null
+            : Number(batch.purchasePrice),
+          manufacturedAt: batch.manufacturedAt?.toISOString() ?? null,
+          expiresAt: batch.expiresAt?.toISOString() ?? null,
+          daysRemaining: batch.expiresAt === null
+            ? null
+            : Math.ceil(
+                (batch.expiresAt.getTime() - today.start.getTime()) /
+                  (24 * 60 * 60 * 1000),
+              ),
+          expiryStatus,
+        };
+      });
+      return res.json({
+        batches,
+        summary: {
+          warningDays: days,
+          expiringSoonBatches: soonCount,
+          expiringSoonProducts: soonProducts.length,
+          expiredBatches: expiredCount,
+          expiredProducts: expiredProducts.length,
+          expiringTodayBatches: todayCount,
+          expiringTodayProducts: todayProducts.length,
+        },
+        pagination: { page, pageSize, total },
+      });
+    } catch (error) {
+      sendAdminError(error, res);
+    }
+  });
+
   router.post('/products/:id/restock', async (req, res) => {
     const id = parseRecordId(req.params.id, res);
     if (!id) return;
@@ -2497,16 +3124,28 @@ export function createAdminRouter(
       const product = await prisma.$transaction(async (tx) => {
         const existing = await tx.product.findUnique({
           where: { id },
-          select: { id: true },
+          select: { id: true, unitLabel: true },
         });
         if (!existing) return null;
         const adminId = res.locals.authenticatedUserId;
-        await inventoryService.restock(
+        const batch = parsed.data;
+        await inventoryService.receiveBatch(
           tx,
-          [{ productId: id, quantity: parsed.data.quantity }],
+          id,
+          inventoryQuantityForUnit(batch.quantity, existing.unitLabel),
           `admin:${adminId}`,
-          parsed.data.notes ?? 'Stock receipt added by store staff.',
+          {
+            lotNumber: batch.lotNumber,
+            manufacturedAt: batch.manufacturedAt
+              ? new Date(batch.manufacturedAt)
+              : null,
+            expiresAt: batch.expiresAt ? new Date(batch.expiresAt) : null,
+            noExpiry: batch.noExpiry,
+            datesVerified: true,
+            purchasePrice: batch.purchasePrice ?? null,
+          },
           adminId,
+          parsed.data.notes,
         );
         return tx.product.findUnique({ where: { id }, select: productSelect });
       });
@@ -2554,6 +3193,14 @@ export function createAdminRouter(
       return res.json({
         receipts: receipts.map(({ inventory, performedBy, ...receipt }) => ({
           ...receipt,
+          quantity: displayInventoryQuantity(
+            receipt.quantity,
+            inventory.product.unitLabel,
+          ),
+          balanceAfter: displayInventoryQuantity(
+            receipt.balanceAfter,
+            inventory.product.unitLabel,
+          ),
           staff: performedBy,
           product: inventory.product,
         })),

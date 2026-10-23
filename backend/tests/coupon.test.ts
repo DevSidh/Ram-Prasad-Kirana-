@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
-import { checkCoupon, toPublicCouponOffer } from '../src/services/coupon.js';
+import {
+  calculateCouponEligibleSubtotal,
+  checkCoupon,
+  toPublicCouponOffer,
+} from '../src/services/coupon.js';
 
 const baseCoupon = {
   isActive: true,
@@ -15,6 +19,22 @@ const baseCoupon = {
 };
 const now = new Date('2026-06-01T00:00:00.000Z');
 
+assert.equal(
+  calculateCouponEligibleSubtotal(null, [
+    { productId: 'p1', subtotal: 200, isWholesale: false },
+    { productId: 'p2', subtotal: 300, isWholesale: false },
+    { productId: 'w1', subtotal: 900, isWholesale: true },
+  ]),
+  500,
+);
+assert.equal(
+  calculateCouponEligibleSubtotal('p2', [
+    { productId: 'p1', subtotal: 200, isWholesale: false },
+    { productId: 'p2', subtotal: 300, isWholesale: false },
+  ]),
+  300,
+);
+
 assert.deepEqual(checkCoupon(baseCoupon, 1000, now), {
   valid: true,
   discount: 150,
@@ -27,6 +47,26 @@ assert.equal(checkCoupon({ ...baseCoupon, isActive: false }, 1000, now).valid, f
 assert.equal(checkCoupon({ ...baseCoupon, usedCount: 3 }, 1000, now).valid, false);
 assert.equal(checkCoupon(baseCoupon, 1000, now, 2).valid, false);
 assert.equal(checkCoupon(baseCoupon, 1000, now, 1).valid, true);
+assert.equal(
+  checkCoupon(
+    { ...baseCoupon, assignedUserId: 'customer-1' },
+    1000,
+    now,
+    0,
+    'customer-1',
+  ).valid,
+  true,
+);
+assert.equal(
+  checkCoupon(
+    { ...baseCoupon, assignedUserId: 'customer-1' },
+    1000,
+    now,
+    0,
+    'customer-2',
+  ).valid,
+  false,
+);
 assert.equal(
   checkCoupon({ ...baseCoupon, expiresAt: now }, 1000, now).valid,
   false,
@@ -90,6 +130,19 @@ assert.equal(
 assert.equal(
   toPublicCouponOffer(
     { ...baseCoupon, id: 'used', code: 'USED', usedCount: 3 },
+    now,
+  ),
+  null,
+);
+assert.equal(
+  toPublicCouponOffer(
+    {
+      ...baseCoupon,
+      id: 'assigned',
+      code: 'ASSIGNED',
+      productId: 'product-1',
+      assignedUserId: 'customer-1',
+    },
     now,
   ),
   null,

@@ -3,15 +3,9 @@ import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 
 const autocompleteQuery = z.object({
-  input: z.string().trim().min(3).max(200),
-  latitude: z.coerce.number().finite().min(-90).max(90).optional(),
-  longitude: z.coerce.number().finite().min(-180).max(180).optional(),
+  input: z.string().trim().min(1).max(200),
   languageCode: z.enum(['en', 'ne']).default('en'),
-}).strict().refine(
-  ({ latitude, longitude }) =>
-    (latitude === undefined) === (longitude === undefined),
-  { message: 'Latitude and longitude must be provided together.' },
-);
+}).strict();
 
 type GoogleFetch = typeof fetch;
 
@@ -56,7 +50,7 @@ export function createPlacesRouter(
       return res.status(503).json({ error: 'Place search is not configured.' });
     }
 
-    const { input, latitude, longitude, languageCode } = parsed.data;
+    const { input, languageCode } = parsed.data;
     try {
       const response = await googleFetch(
         'https://places.googleapis.com/v1/places:autocomplete',
@@ -66,17 +60,6 @@ export function createPlacesRouter(
           body: JSON.stringify({
             input,
             languageCode,
-            includedRegionCodes: ['np'],
-            ...(latitude !== undefined && longitude !== undefined
-              ? {
-                  locationBias: {
-                    circle: {
-                      center: { latitude, longitude },
-                      radius: 10_000,
-                    },
-                  },
-                }
-              : {}),
           }),
           signal: AbortSignal.timeout(8000),
         },

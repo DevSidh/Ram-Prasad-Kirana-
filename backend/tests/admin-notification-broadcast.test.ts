@@ -131,7 +131,7 @@ async function main(): Promise<void> {
     assert.deepEqual(createdBatches.map((batch) => batch.length), [500, 2]);
     assert.ok(createdBatches.flat().every((notification) =>
       notification.type === 'PROMOTIONAL' &&
-      notification.title === 'Faststore' &&
+      notification.title === 'FASTSTORE' &&
       notification.body === 'Store update\n\nFresh produce is available.' &&
       JSON.stringify(notification.metadata) ===
         JSON.stringify({ couponCode: 'DIWALI50' })));
@@ -157,7 +157,7 @@ async function main(): Promise<void> {
     assert.deepEqual(customerNotifications, [{
       userId: 'customer-1',
       type: 'PROMOTIONAL',
-      title: 'Faststore',
+      title: 'FASTSTORE',
       body: 'A note for you\n\nYour order is ready.',
     }]);
     const inactiveTarget = await fetch(customerEndpoint, {

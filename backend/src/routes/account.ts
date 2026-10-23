@@ -19,6 +19,7 @@ import { formatUserDisplayId } from '../services/user-display-id.js';
 import {
   getBuyingStreakSnapshot,
 } from '../services/buying-streak.js';
+import { isWeightUnitLabel } from '../services/product-validation.js';
 
 const addressFields = {
   title: z.string().trim().min(1).max(40),
@@ -49,10 +50,15 @@ const deviceTokenInput = z.object({
   token: z.string().trim().min(20).max(4096),
   platform: z.enum(['android', 'ios', 'web']),
 }).strict();
+const customerLocationInput = z.object({
+  latitude: z.number().finite().min(-90).max(90),
+  longitude: z.number().finite().min(-180).max(180),
+}).strict();
 const cartInput = z.object({
   items: z.array(z.object({
     productId: z.string().trim().min(1).max(100),
     quantity: z.number().int().min(1).max(100),
+    weightGrams: z.number().int().min(1).max(100000).optional(),
     isWholesale: z.boolean().default(false),
   }).strict()).max(100),
 }).strict().refine(
@@ -71,6 +77,7 @@ class CartItemRejectedError extends Error {}
 type CartResponseItem = {
   product: Record<string, unknown>;
   quantity: number;
+  weightGrams?: number;
   isWholesale: boolean;
 };
 
@@ -218,6 +225,32 @@ export function createAccountRouter(
       return res.status(500).json({ error: 'Unable to claim this streak reward.' });
     }
   });
+
+  const getUsedCoupons: RequestHandler = async (_req, res) => {
+    const userId = authenticatedUserId(res);
+    if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
+    try {
+      const orders = await prisma.order.findMany({
+        where: {
+          userId,
+          status: { not: 'CANCELLED' },
+          couponCode: { not: null },
+        },
+        select: { couponCode: true },
+        distinct: ['couponCode'],
+      });
+      return res.json({
+        usedCouponCodes: orders
+          .map((order) => order.couponCode?.trim().toUpperCase())
+          .filter((code): code is string => Boolean(code)),
+      });
+    } catch (error) {
+      console.error('Used customer coupons lookup failed:', error);
+      return res.status(500).json({ error: 'Unable to load your used coupons.' });
+    }
+  };
+  router.get('/coupons/used', getUsedCoupons);
+  router.get('/coupon/used', getUsedCoupons);
 
   router.get('/notifications', async (_req, res) => {
     const userId = authenticatedUserId(res);
@@ -368,6 +401,7 @@ export function createAccountRouter(
           },
         },
       });
+
       const items = (cart?.items ?? []).flatMap<CartResponseItem>((item) => {
         if (item.isWholesale) {
           const wholesaleItem = item.wholesaleItem;
@@ -420,6 +454,7 @@ export function createAccountRouter(
           (product.inventory?.totalStock ?? 0) -
             (product.inventory?.reservedStock ?? 0),
         );
+        const isWeightProduct = isWeightUnitLabel(product.unitLabel);
         return [{
           product: {
             id: product.id,
@@ -435,7 +470,8 @@ export function createAccountRouter(
               ? Math.round(((originalPrice - price) / originalPrice) * 100)
               : 0,
             unitLabel: product.unitLabel,
-            stock,
+            stock: isWeightProduct ? Math.floor(stock / 1000) : stock,
+            ...(isWeightProduct ? { weightStockKg: stock / 1000 } : {}),
             rating: Number(product.rating),
             reviewCount: product.reviewCount,
             isOrganic: product.isOrganic,
@@ -449,8 +485,12 @@ export function createAccountRouter(
             imageUrl: product.imageMimeType && product.imageUrl
               ? `${product.imageUrl}?v=${product.updatedAt.getTime()}`
               : product.imageUrl ?? '',
+            imageUrls: Array.isArray(product.imageUrls)
+              ? product.imageUrls.filter((url): url is string => typeof url === 'string')
+              : [],
           },
           quantity: item.quantity,
+          ...(item.weightGrams == null ? {} : { weightGrams: item.weightGrams }),
           isWholesale: false,
         }];
       });
@@ -458,6 +498,43 @@ export function createAccountRouter(
     } catch (error) {
       console.error('Account cart load failed:', error);
       return res.status(500).json({ error: 'Unable to load your saved basket.' });
+    }
+  });
+
+  router.put('/orders/:id/live-location', async (req, res) => {
+    const userId = authenticatedUserId(res);
+    if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
+    const parsed = customerLocationInput.safeParse(req.body);
+    if (!parsed.success || !req.params.id || req.params.id.length > 100) {
+      return res.status(400).json({ error: 'Send a valid delivery location.' });
+    }
+    try {
+      const updated = await prisma.delivery.updateMany({
+        where: {
+          orderId: req.params.id,
+          status: 'OUT_FOR_DELIVERY',
+          order: {
+            is: {
+              userId,
+              status: 'OUT_FOR_DELIVERY',
+            },
+          },
+        },
+        data: {
+          customerLatitude: parsed.data.latitude,
+          customerLongitude: parsed.data.longitude,
+          customerLocationUpdatedAt: new Date(),
+        },
+      });
+      if (updated.count !== 1) {
+        return res.status(409).json({
+          error: 'Location sharing is available only during an active delivery.',
+        });
+      }
+      return res.sendStatus(204);
+    } catch (error) {
+      console.error('Customer live location update failed:', error);
+      return res.status(500).json({ error: 'Unable to share your delivery location.' });
     }
   });
 
@@ -483,6 +560,8 @@ export function createAccountRouter(
         select: {
           id: true,
           price: true,
+          unitLabel: true,
+          inventory: { select: { totalStock: true, reservedStock: true } },
         },
         }),
         prisma.wholesaleItem.findMany({
@@ -526,10 +605,27 @@ export function createAccountRouter(
             'One or more products in the basket are no longer available.',
           );
         }
+        const weightMatch = /^\s*\d+(?:\.\d+)?\s*(?:kg|g)\s*$/i
+          .test(product.unitLabel);
+        if (weightMatch !== (item.weightGrams != null)) {
+          throw new CartItemRejectedError(
+            weightMatch
+              ? 'Choose a weight for this product before saving your basket.'
+              : 'Weight can only be set for products sold by weight.',
+          );
+        }
+        if (weightMatch && item.weightGrams! >
+            Math.max(0, (product.inventory?.totalStock ?? 0) -
+              (product.inventory?.reservedStock ?? 0))) {
+          throw new CartItemRejectedError(
+            'The requested weight exceeds available stock.',
+          );
+        }
         return {
           productId: product.id,
           wholesaleItemId: null,
           quantity: item.quantity,
+          weightGrams: item.weightGrams ?? null,
           unitPrice: product.price,
           isWholesale: false,
         };

@@ -4,6 +4,7 @@ export const orderInput = z.object({
   items: z.array(z.object({
     productId: z.string().trim().min(1),
     quantity: z.number().int().min(1).max(100),
+    weightGrams: z.number().int().min(1).max(100000).optional(),
     isWholesale: z.boolean().default(false),
   }).strict()).min(1).max(50),
   addressId: z.string().trim().min(1),
