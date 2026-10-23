@@ -18,7 +18,7 @@ import {
   validateProductUnit,
 } from '../services/product-validation.js';
 import { sendPushToUser, sendPushToUsers } from '../services/push-notifications.js';
-import { getLocalDayRange } from '../services/local-day.js';
+import { getLocalDayRange, getLocalDayRangeForKey } from '../services/local-day.js';
 import {
   normalizeProductImage,
   type NormalizedProductImage,
@@ -201,6 +201,7 @@ export const productsQuery = z.object({
 });
 const ordersQuery = z.object({
   search: z.string().trim().max(200).optional(),
+  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   status: z.enum([
     'PLACED', 'CONFIRMED', 'PROCESSING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED',
   ]).optional(),
@@ -304,8 +305,7 @@ const productCouponInput = z.object({
 const streakRewardsInput = z.object({
   rewards: z.array(z.object({
     day: z.number().int().min(1).max(365),
-    title: z.string().trim().min(1).max(120),
-    description: z.string().trim().min(1).max(1000),
+    couponId: z.string().trim().min(1).max(100),
   }).strict()).max(100),
 }).strict().superRefine(({ rewards }, context) => {
   if (new Set(rewards.map(({ day }) => day)).size !== rewards.length) {
@@ -403,6 +403,7 @@ const restockInput = batchDetailsFields.extend({
   notes: z.string().trim().max(500).optional(),
 }).strict().superRefine(validateBatchDetails);
 const restockHistoryQuery = z.object({
+  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });
@@ -1187,6 +1188,7 @@ export function createAdminRouter(
       const [rewards, claims] = await Promise.all([
         prisma.buyingStreakRewardConfig.findMany({
           orderBy: { day: 'asc' },
+          include: { coupon: { select: { id: true, code: true } } },
         }),
         prisma.buyingStreakRewardProgress.findMany({
           where: { claimedAt: { not: null } },
@@ -1203,7 +1205,13 @@ export function createAdminRouter(
         }),
       ]);
       return res.json({
-        rewards,
+        rewards: rewards.map((reward) => ({
+          day: reward.day,
+          title: reward.title,
+          description: reward.description,
+          couponId: reward.couponId,
+          couponCode: reward.coupon?.code ?? null,
+        })),
         claims: claims.map((claim) => ({
           day: claim.day,
           title: claim.title,
@@ -1229,21 +1237,63 @@ export function createAdminRouter(
           where: configuredDays.length > 0 ? { day: { notIn: configuredDays } } : {},
         });
         for (const reward of parsed.data.rewards) {
+          const coupon = await tx.coupon.findFirst({
+            where: {
+              id: reward.couponId,
+              isActive: true,
+              isDeleted: false,
+              assignedUserId: null,
+              OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            },
+            select: { code: true },
+          });
+          if (!coupon) throw new Error('STREAK_COUPON_UNAVAILABLE');
+          const title = 'Coupon gift';
+          const description = `Claim this milestone to receive coupon ${coupon.code}.`;
           await tx.buyingStreakRewardConfig.upsert({
             where: { day: reward.day },
             update: {
-              title: reward.title,
-              description: reward.description,
+              title,
+              description,
+              couponId: reward.couponId,
             },
-            create: reward,
+            create: {
+              day: reward.day,
+              title,
+              description,
+              couponId: reward.couponId,
+            },
+          });
+          await tx.buyingStreakRewardProgress.updateMany({
+            where: { day: reward.day, claimedAt: null },
+            data: {
+              title,
+              description,
+              couponTemplateId: reward.couponId,
+            },
           });
         }
         return tx.buyingStreakRewardConfig.findMany({
           orderBy: { day: 'asc' },
+          include: { coupon: { select: { id: true, code: true } } },
         });
       });
-      return res.json({ rewards });
+      return res.json({
+        rewards: rewards.map((reward) => ({
+          day: reward.day,
+          title: reward.title,
+          description: reward.description,
+          couponId: reward.couponId,
+          couponCode: reward.coupon?.code ?? null,
+        })),
+      });
     } catch (error) {
+      if (error instanceof Error &&
+          error.message === 'STREAK_COUPON_UNAVAILABLE') {
+        return res.status(409).json({
+          error: 'Choose an active, unassigned coupon for each streak gift.',
+        });
+      }
       sendAdminError(error, res);
     }
   });
@@ -1368,9 +1418,18 @@ export function createAdminRouter(
   router.get('/orders', async (req, res) => {
     const parsed = ordersQuery.safeParse(req.query);
     if (!parsed.success) return invalidInput(res, parsed.error);
-    const { search, status, page, pageSize } = parsed.data;
+    const { search, status, day, page, pageSize } = parsed.data;
+    let dayRange: { start: Date; end: Date } | undefined;
+    try {
+      dayRange = day ? getLocalDayRangeForKey(day) : undefined;
+    } catch {
+      return res.status(400).json({ error: 'Choose a valid store calendar day.' });
+    }
     const where: Prisma.OrderWhereInput = {
       ...(status ? { status } : {}),
+      ...(dayRange
+        ? { createdAt: { gte: dayRange.start, lt: dayRange.end } }
+        : {}),
       ...(search
         ? {
           OR: [
@@ -1625,6 +1684,45 @@ export function createAdminRouter(
     }
   });
 
+  router.get('/customers/removal-history', async (req, res) => {
+    const page = z.coerce.number().int().min(1).default(1)
+      .safeParse(req.query.page);
+    const pageSize = z.coerce.number().int().min(1).max(100).default(25)
+      .safeParse(req.query.pageSize);
+    if (!page.success || !pageSize.success) {
+      return res.status(400).json({ error: 'Invalid removal history page.' });
+    }
+    try {
+      const [total, records] = await Promise.all([
+        prisma.customerRemovalAudit.count(),
+        prisma.customerRemovalAudit.findMany({
+          orderBy: { removedAt: 'desc' },
+          skip: (page.data - 1) * pageSize.data,
+          take: pageSize.data,
+          select: {
+            id: true,
+            customerDisplayId: true,
+            removedAt: true,
+            removedBy: {
+              select: { name: true, userNumber: true },
+            },
+          },
+        }),
+      ]);
+      return res.json({
+        records: records.map((record) => ({
+          profileId: formatUserDisplayId(record.customerDisplayId),
+          removedAt: record.removedAt.toISOString(),
+          removedByName: record.removedBy.name,
+          removedByProfileId: formatUserDisplayId(record.removedBy.userNumber),
+        })),
+        pagination: { page: page.data, pageSize: pageSize.data, total },
+      });
+    } catch (error) {
+      sendAdminError(error, res);
+    }
+  });
+
   router.patch('/customers/:id', async (req, res) => {
     const id = parseRecordId(req.params.id, res);
     if (!id) return;
@@ -1677,13 +1775,17 @@ export function createAdminRouter(
     try {
       const customer = await prisma.user.findFirst({
         where: { id, role: 'CUSTOMER' },
-        select: { id: true, email: true },
+        select: { id: true, email: true, userNumber: true },
       });
       if (!customer) {
         return res.status(404).json({ error: 'Customer not found.' });
       }
       const anonymizedEmail = `removed-${randomUUID()}@accounts.invalid`;
       const replacementPasswordHash = await bcrypt.hash(randomUUID(), 12);
+      const removedById = res.locals.authenticatedUserId;
+      if (typeof removedById !== 'string') {
+        return res.status(401).json({ error: 'Authentication is required.' });
+      }
       await prisma.$transaction(async (tx) => {
         const updated = await tx.user.updateMany({
           where: { id: customer.id, role: 'CUSTOMER' },
@@ -1737,6 +1839,13 @@ export function createAdminRouter(
         });
         await tx.buyingStreakRewardProgress.deleteMany({
           where: { userId: customer.id },
+        });
+        await tx.customerRemovalAudit.create({
+          data: {
+            customerId: customer.id,
+            customerDisplayId: customer.userNumber,
+            removedById,
+          },
         });
       });
       return res.json({
@@ -3073,12 +3182,13 @@ export function createAdminRouter(
                 : 'safe';
         return {
           ...batch,
+          lowStockThreshold: Number(batch.lowStockThreshold),
           receivedQuantity: displayInventoryQuantity(
-            batch.receivedQuantity,
+            Number(batch.receivedQuantity),
             batch.unitLabel,
           ),
           remainingQuantity: displayInventoryQuantity(
-            batch.remainingQuantity,
+            Number(batch.remainingQuantity),
             batch.unitLabel,
           ),
           imageUrl: batch.imageMimeType && batch.imageUrl
@@ -3164,8 +3274,19 @@ export function createAdminRouter(
   router.get('/inventory/restock-history', async (req, res) => {
     const parsed = restockHistoryQuery.safeParse(req.query);
     if (!parsed.success) return invalidInput(res, parsed.error);
-    const { page, pageSize } = parsed.data;
-    const where = { type: 'RESTOCKED' as const };
+    const { day, page, pageSize } = parsed.data;
+    let dayRange: { start: Date; end: Date } | undefined;
+    try {
+      dayRange = day ? getLocalDayRangeForKey(day) : undefined;
+    } catch {
+      return res.status(400).json({ error: 'Choose a valid store calendar day.' });
+    }
+    const where: Prisma.InventoryTransactionWhereInput = {
+      type: 'RESTOCKED',
+      ...(dayRange
+        ? { createdAt: { gte: dayRange.start, lt: dayRange.end } }
+        : {}),
+    };
     try {
       const [total, receipts] = await Promise.all([
         prisma.inventoryTransaction.count({ where }),

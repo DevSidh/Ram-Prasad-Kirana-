@@ -27,8 +27,10 @@ async function run(): Promise<void> {
   }) as typeof fetch;
 
   try {
+    const riderOrigin = { latitude: 26.74, longitude: 85.92 };
     const route = await calculateRoadDeliveryQuote(26.75, 85.93, {
       includePolyline: true,
+      origin: riderOrigin,
     });
     assert.deepEqual(route, {
       distanceMeters: 2400,
@@ -36,6 +38,10 @@ async function run(): Promise<void> {
       encodedPolyline: '_p~iF~ps|U_ulLnnqC',
     });
     assert.equal(requests.length, 1);
+    const routeRequest = JSON.parse(String(requests[0].init?.body)) as {
+      origin: { location: { latLng: { latitude: number; longitude: number } } };
+    };
+    assert.deepEqual(routeRequest.origin.location.latLng, riderOrigin);
     assert.equal(
       new Headers(requests[0].init?.headers).get('X-Goog-Api-Key'),
       'test-routes-key',

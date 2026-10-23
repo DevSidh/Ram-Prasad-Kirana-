@@ -89,7 +89,7 @@ export async function recordBuyingStreakPurchase(
 
   const rewards = await transaction.buyingStreakRewardConfig.findMany({
     where: { day: { lte: currentStreak } },
-    select: { day: true, title: true, description: true },
+    select: { day: true, title: true, description: true, couponId: true },
   });
   for (const reward of rewards) {
     await transaction.buyingStreakRewardProgress.upsert({
@@ -100,6 +100,7 @@ export async function recordBuyingStreakPurchase(
         day: reward.day,
         title: reward.title,
         description: reward.description,
+        couponTemplateId: reward.couponId,
       },
     });
   }
@@ -143,7 +144,13 @@ export async function getBuyingStreakSnapshot(
     }),
     client.buyingStreakRewardConfig.findMany({
       orderBy: { day: 'asc' },
-      select: { day: true, title: true, description: true },
+      select: {
+        day: true,
+        title: true,
+        description: true,
+        couponId: true,
+        coupon: { select: { code: true } },
+      },
     }),
     client.buyingStreakRewardProgress.findMany({
       where: { userId },
@@ -154,6 +161,7 @@ export async function getBuyingStreakSnapshot(
         description: true,
         unlockedAt: true,
         claimedAt: true,
+        coupon: { select: { code: true } },
       },
     }),
   ]);
@@ -170,15 +178,22 @@ export async function getBuyingStreakSnapshot(
     day: number;
     title: string;
     description: string;
+    couponCode: string | null;
   }>();
   for (const configuredReward of configuredRewards) {
-    rewardByDay.set(configuredReward.day, configuredReward);
+    rewardByDay.set(configuredReward.day, {
+      day: configuredReward.day,
+      title: configuredReward.title,
+      description: configuredReward.description,
+      couponCode: null,
+    });
   }
   for (const unlockedReward of progress) {
     rewardByDay.set(unlockedReward.day, {
       day: unlockedReward.day,
       title: unlockedReward.title,
       description: unlockedReward.description,
+      couponCode: progressByDay.get(unlockedReward.day)?.coupon?.code ?? null,
     });
   }
 
@@ -233,6 +248,7 @@ export async function getBuyingStreakSnapshot(
         isUnlocked: status !== undefined,
         unlockedAt: status?.unlockedAt.toISOString() ?? null,
         claimedAt: status?.claimedAt?.toISOString() ?? null,
+        couponCode: status?.coupon?.code ?? null,
       };
     }),
   };

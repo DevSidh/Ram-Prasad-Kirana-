@@ -7,6 +7,7 @@ async function main(): Promise<void> {
   const changedUser: Array<Record<string, unknown>> = [];
   const changedOrders: Array<Record<string, unknown>> = [];
   const changedPayments: Array<Record<string, unknown>> = [];
+  const removalAudits: Array<Record<string, unknown>> = [];
   const deletedRelations: string[] = [];
   let transactions = 0;
   const tx = {
@@ -46,13 +47,22 @@ async function main(): Promise<void> {
     buyingStreakRewardProgress: {
       deleteMany: async () => { deletedRelations.push('buyingStreakRewardProgress'); },
     },
+    customerRemovalAudit: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        removalAudits.push(data);
+      },
+    },
   };
   const prisma = {
     user: {
       findFirst: async ({ where }: {
         where: { id: string; role: string };
       }) => where.id === 'customer-1' && where.role === 'CUSTOMER'
-        ? { id: 'customer-1', email: 'asha@example.com' }
+        ? {
+          id: 'customer-1',
+          email: 'asha@example.com',
+          userNumber: 1001n,
+        }
         : null,
     },
     $transaction: async <T>(work: (transaction: unknown) => Promise<T>) => {
@@ -62,7 +72,7 @@ async function main(): Promise<void> {
   } as unknown as PrismaClient;
   const adminOnly: RequestHandler = (req, res, next) =>
     req.header('x-admin') === 'allowed'
-      ? next()
+      ? (res.locals.authenticatedUserId = 'admin-1', next())
       : res.status(403).json({ error: 'Admin access is required.' });
   const allow: RequestHandler = (_req, _res, next) => next();
   const app = express();
@@ -101,6 +111,11 @@ async function main(): Promise<void> {
     assert.equal(changedOrders[0].shippingName, 'Removed customer');
     assert.equal(changedOrders[0].addressId, null);
     assert.equal(changedPayments.length, 1);
+    assert.deepEqual(removalAudits, [{
+      customerId: 'customer-1',
+      customerDisplayId: 1001n,
+      removedById: 'admin-1',
+    }]);
     assert.deepEqual(
       deletedRelations.sort(),
       [

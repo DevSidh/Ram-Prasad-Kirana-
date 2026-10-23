@@ -67,7 +67,10 @@ function getDeliveryServiceRadiusKm(): number {
 export async function calculateRoadDeliveryQuote(
   latitude: number | null,
   longitude: number | null,
-  options: { includePolyline?: boolean } = {},
+  options: {
+    includePolyline?: boolean;
+    origin?: { latitude: number; longitude: number };
+  } = {},
 ): Promise<{
   distanceMeters: number;
   deliveryFee: number;
@@ -109,8 +112,8 @@ export async function calculateRoadDeliveryQuote(
           origin: {
             location: {
               latLng: {
-                latitude: STORE_LOCATION.latitude,
-                longitude: STORE_LOCATION.longitude,
+                latitude: options.origin?.latitude ?? STORE_LOCATION.latitude,
+                longitude: options.origin?.longitude ?? STORE_LOCATION.longitude,
               },
             },
           },

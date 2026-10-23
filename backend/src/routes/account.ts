@@ -193,34 +193,89 @@ export function createAccountRouter(
       return res.status(400).json({ error: 'Choose a valid streak reward.' });
     }
     try {
-      const reward = await prisma.buyingStreakRewardProgress.findUnique({
-        where: { userId_day: { userId, day } },
+      const result = await prisma.$transaction(async (tx) => {
+        const reward = await tx.buyingStreakRewardProgress.findUnique({
+          where: { userId_day: { userId, day } },
+          include: {
+            couponTemplate: true,
+            coupon: { select: { code: true } },
+          },
+        });
+        if (!reward) return { kind: 'locked' as const };
+        if (reward.claimedAt) return { kind: 'claimed' as const };
+        const template = reward.couponTemplate;
+        if (!template || !template.isActive || template.isDeleted ||
+            template.assignedUserId !== null ||
+            (template.expiresAt !== null &&
+                template.expiresAt.getTime() <= Date.now())) {
+          return { kind: 'coupon-unavailable' as const };
+        }
+        const claimedAt = new Date();
+        const updated = await tx.buyingStreakRewardProgress.updateMany({
+          where: { userId, day, claimedAt: null },
+          data: { claimedAt },
+        });
+        if (updated.count !== 1) {
+          throw new Error('STREAK_REWARD_ALREADY_CLAIMED');
+        }
+        const couponCode =
+          `STREAK-${randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase()}`;
+        const coupon = await tx.coupon.create({
+          data: {
+            code: couponCode,
+            productId: template.productId,
+            assignedUserId: userId,
+            discountType: template.discountType,
+            discountPercent: template.discountPercent,
+            discountAmount: template.discountAmount,
+            minOrderAmount: template.minOrderAmount,
+            maxDiscount: template.maxDiscount,
+            usageLimit: 1,
+            perUserLimit: 1,
+            expiresAt: template.expiresAt,
+          },
+          select: { id: true, code: true },
+        });
+        await tx.buyingStreakRewardProgress.update({
+          where: { userId_day: { userId, day } },
+          data: { couponId: coupon.id },
+        });
+        return {
+          kind: 'claimed-now' as const,
+          day: reward.day,
+          title: reward.title,
+          description: reward.description,
+          claimedAt,
+          couponCode: coupon.code,
+        };
       });
-      if (!reward) {
+      if (result.kind === 'locked') {
         return res.status(409).json({
           error: 'Complete this buying streak milestone before claiming its reward.',
         });
       }
-      if (reward.claimedAt) {
+      if (result.kind === 'claimed') {
         return res.status(409).json({ error: 'This streak reward was already claimed.' });
       }
-      const claimedAt = new Date();
-      const claimed = await prisma.buyingStreakRewardProgress.updateMany({
-        where: { userId, day, claimedAt: null },
-        data: { claimedAt },
-      });
-      if (claimed.count !== 1) {
-        return res.status(409).json({ error: 'This streak reward was already claimed.' });
+      if (result.kind === 'coupon-unavailable') {
+        return res.status(409).json({
+          error: 'This coupon gift is no longer available. Contact the store.',
+        });
       }
       return res.json({
         reward: {
-          day: reward.day,
-          title: reward.title,
-          description: reward.description,
-          claimedAt: claimedAt.toISOString(),
+          day: result.day,
+          title: result.title,
+          description: result.description,
+          claimedAt: result.claimedAt.toISOString(),
+          couponCode: result.couponCode,
         },
       });
     } catch (error) {
+      if (error instanceof Error &&
+          error.message === 'STREAK_REWARD_ALREADY_CLAIMED') {
+        return res.status(409).json({ error: 'This streak reward was already claimed.' });
+      }
       console.error('Buying streak reward claim failed:', error);
       return res.status(500).json({ error: 'Unable to claim this streak reward.' });
     }
@@ -765,13 +820,33 @@ export function createAccountRouter(
           address: {
             select: { latitude: true, longitude: true },
           },
+          delivery: {
+            select: {
+              status: true,
+              latitude: true,
+              longitude: true,
+              locationUpdatedAt: true,
+            },
+          },
         },
       });
       if (!order) return res.status(404).json({ error: 'Order not found.' });
+      const riderLocationIsFresh =
+        order.delivery?.status === 'OUT_FOR_DELIVERY' &&
+        order.delivery.latitude !== null &&
+        order.delivery.longitude !== null &&
+        order.delivery.locationUpdatedAt !== null &&
+        Date.now() - order.delivery.locationUpdatedAt.getTime() <= 120_000;
+      const origin = riderLocationIsFresh
+        ? {
+          latitude: order.delivery!.latitude!,
+          longitude: order.delivery!.longitude!,
+        }
+        : undefined;
       const route = await calculateRoadDeliveryQuote(
         order.address?.latitude ?? null,
         order.address?.longitude ?? null,
-        { includePolyline: true },
+        { includePolyline: true, origin },
       );
       if (!route.encodedPolyline) {
         throw new DeliveryPricingError(
@@ -779,7 +854,10 @@ export function createAccountRouter(
           502,
         );
       }
-      return res.json({ encodedPolyline: route.encodedPolyline });
+      return res.json({
+        encodedPolyline: route.encodedPolyline,
+        origin: riderLocationIsFresh ? 'rider' : 'store',
+      });
     } catch (error) {
       if (error instanceof DeliveryPricingError) {
         return res.status(error.statusCode).json({ error: error.message });

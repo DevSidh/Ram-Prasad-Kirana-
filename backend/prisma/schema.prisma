@@ -8,36 +8,38 @@ datasource db {
 }
 
 model User {
-  id                    String                  @id @default(cuid())
-  userNumber            BigInt                  @unique @default(dbgenerated("nextval('user_display_id_seq')"))
-  name                  String
-  email                 String                  @unique
-  phone                 String?                 @unique
-  avatarUrl             String?
-  avatarData            Bytes?
-  avatarMimeType        String?
-  passwordHash          String
-  role                  UserRole                @default(CUSTOMER)
-  isActive              Boolean                 @default(true)
-  emailVerified         Boolean                 @default(true)
-  phoneVerified         Boolean                 @default(false)
-  tokenVersion          Int                     @default(0)
-  isAvailable           Boolean                 @default(true)
-  createdAt             DateTime                @default(now())
-  updatedAt             DateTime                @updatedAt
-  addresses             Address[]
-  carts                 Cart?
-  deliveries            Delivery[]
-  deliveryStatusChanges DeliveryStatusHistory[] @relation("DeliveryStatusActor")
-  inventoryTransactions InventoryTransaction[]  @relation("InventoryTransactionActor")
-  notifications         Notification[]
-  orders                Order[]
-  pushTokens            DeviceToken[]
-  reviews               Review[]
-  wishlists             Wishlist?
-  buyingStreakDays      BuyingStreakPurchaseDay[]
-  buyingStreakProgress  BuyingStreakRewardProgress[]
-  assignedCoupons       Coupon[]                @relation("CouponAssignedUser")
+  id                     String                       @id @default(cuid())
+  userNumber             BigInt                       @unique @default(dbgenerated("nextval('user_display_id_seq')"))
+  name                   String
+  email                  String                       @unique
+  phone                  String?                      @unique
+  avatarUrl              String?
+  avatarData             Bytes?
+  avatarMimeType         String?
+  passwordHash           String
+  role                   UserRole                     @default(CUSTOMER)
+  isActive               Boolean                      @default(true)
+  emailVerified          Boolean                      @default(true)
+  phoneVerified          Boolean                      @default(false)
+  tokenVersion           Int                          @default(0)
+  isAvailable            Boolean                      @default(true)
+  createdAt              DateTime                     @default(now())
+  updatedAt              DateTime                     @updatedAt
+  addresses              Address[]
+  carts                  Cart?
+  deliveries             Delivery[]
+  deliveryStatusChanges  DeliveryStatusHistory[]      @relation("DeliveryStatusActor")
+  inventoryTransactions  InventoryTransaction[]       @relation("InventoryTransactionActor")
+  notifications          Notification[]
+  orders                 Order[]
+  pushTokens             DeviceToken[]
+  reviews                Review[]
+  wishlists              Wishlist?
+  buyingStreakDays       BuyingStreakPurchaseDay[]
+  buyingStreakProgress   BuyingStreakRewardProgress[]
+  assignedCoupons        Coupon[]                     @relation("CouponAssignedUser")
+  customerRemovalRecords CustomerRemovalAudit[]       @relation("RemovedCustomer")
+  customerRemovalActions CustomerRemovalAudit[]       @relation("CustomerRemovalActor")
 
   @@index([role])
   @@index([createdAt])
@@ -58,22 +60,41 @@ model BuyingStreakRewardConfig {
   day         Int      @unique
   title       String
   description String
+  couponId    String?
+  coupon      Coupon?  @relation("StreakRewardTemplate", fields: [couponId], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
 
 model BuyingStreakRewardProgress {
-  id          String    @id @default(cuid())
-  userId      String
-  day         Int
-  title       String
-  description String
-  unlockedAt  DateTime  @default(now())
-  claimedAt   DateTime?
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id               String    @id @default(cuid())
+  userId           String
+  day              Int
+  title            String
+  description      String
+  couponTemplateId String?
+  couponId         String?   @unique
+  unlockedAt       DateTime  @default(now())
+  claimedAt        DateTime?
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  couponTemplate   Coupon?   @relation("StreakProgressTemplate", fields: [couponTemplateId], references: [id], onDelete: SetNull)
+  coupon           Coupon?   @relation("StreakProgressGift", fields: [couponId], references: [id], onDelete: SetNull)
 
   @@unique([userId, day])
   @@index([userId, claimedAt])
+}
+
+model CustomerRemovalAudit {
+  id                String   @id @default(cuid())
+  customerId        String
+  customerDisplayId BigInt
+  removedById       String
+  removedAt         DateTime @default(now())
+  customer          User     @relation("RemovedCustomer", fields: [customerId], references: [id])
+  removedBy         User     @relation("CustomerRemovalActor", fields: [removedById], references: [id])
+
+  @@index([removedAt])
+  @@index([customerId, removedAt])
 }
 
 model PasswordResetOtp {
@@ -149,44 +170,44 @@ model Category {
 }
 
 model Product {
-  id                       String           @id @default(cuid())
-  sku                      String           @unique
-  barcode                  String?          @unique
+  id                       String                 @id @default(cuid())
+  sku                      String                 @unique
+  barcode                  String?                @unique
   name                     String
-  slug                     String           @unique
+  slug                     String                 @unique
   categoryId               String
   brand                    String?
   price                    Decimal
   originalPrice            Decimal?
-  rating                   Decimal          @default(0)
-  reviewCount              Int              @default(0)
+  rating                   Decimal                @default(0)
+  reviewCount              Int                    @default(0)
   description              String?
   origin                   String?
   imageUrl                 String?
-  imageUrls                Json             @default("[]")
+  imageUrls                Json                   @default("[]")
   imageData                Bytes?
   imageMimeType            String?
   normalizedImageData      Bytes?
   normalizedMimeType       String?
-  unitLabel                String           @default("1 pc")
-  isWholesale              Boolean          @default(false)
+  unitLabel                String                 @default("1 pc")
+  isWholesale              Boolean                @default(false)
   wholesalePrice           Decimal?
-  wholesaleMinimumQuantity Int              @default(1)
-  lowStockThreshold        Int              @default(10)
-  isOrganic                Boolean          @default(false)
-  isFeatured               Boolean          @default(false)
-  isBestSeller             Boolean          @default(false)
-  isVendingDrink         Boolean          @default(false)
-  vendingSection          String?
-  isActive               Boolean          @default(true)
-  createdAt                DateTime         @default(now())
-  updatedAt                DateTime         @updatedAt
+  wholesaleMinimumQuantity Int                    @default(1)
+  lowStockThreshold        Int                    @default(10)
+  isOrganic                Boolean                @default(false)
+  isFeatured               Boolean                @default(false)
+  isBestSeller             Boolean                @default(false)
+  isVendingDrink           Boolean                @default(false)
+  vendingSection           String?
+  isActive                 Boolean                @default(true)
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
   cartItems                CartItem[]
   inventory                Inventory?
   batches                  InventoryBatch[]
   orderItems               OrderItem[]
   batchAllocations         OrderBatchAllocation[]
-  category                 Category         @relation(fields: [categoryId], references: [id])
+  category                 Category               @relation(fields: [categoryId], references: [id])
   variants                 ProductVariant[]
   reviews                  Review[]
   wishlistItems            WishlistItem[]
@@ -200,32 +221,32 @@ model Product {
 }
 
 model WholesaleItem {
-  id              String      @id @default(cuid())
-  sku             String      @unique
-  name            String
-  slug            String      @unique
-  categoryId      String
-  brand           String?
-  price           Decimal
-  stock           Int         @default(0)
-  minimumQuantity Int         @default(1)
-  description     String?
-  origin          String?
-  imageUrl        String?
-  imageData       Bytes?
-  imageMimeType   String?
+  id                  String      @id @default(cuid())
+  sku                 String      @unique
+  name                String
+  slug                String      @unique
+  categoryId          String
+  brand               String?
+  price               Decimal
+  stock               Int         @default(0)
+  minimumQuantity     Int         @default(1)
+  description         String?
+  origin              String?
+  imageUrl            String?
+  imageData           Bytes?
+  imageMimeType       String?
   normalizedImageData Bytes?
   normalizedMimeType  String?
-  unitLabel       String      @default("1 pc")
-  rating          Decimal     @default(0)
-  reviewCount     Int         @default(0)
-  isActive        Boolean     @default(true)
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  category        Category    @relation(fields: [categoryId], references: [id])
-  cartItems       CartItem[]
-  orderItems      OrderItem[]
-  reviews         Review[]
+  unitLabel           String      @default("1 pc")
+  rating              Decimal     @default(0)
+  reviewCount         Int         @default(0)
+  isActive            Boolean     @default(true)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  category            Category    @relation(fields: [categoryId], references: [id])
+  cartItems           CartItem[]
+  orderItems          OrderItem[]
+  reviews             Review[]
 
   @@index([categoryId])
   @@index([isActive])
@@ -330,20 +351,20 @@ model InventoryTransaction {
 }
 
 model Order {
-  id                  String               @id @default(cuid())
-  orderNumber         String               @unique
+  id                  String                 @id @default(cuid())
+  orderNumber         String                 @unique
   userId              String
   addressId           String?
-  status              OrderStatus          @default(PLACED)
+  status              OrderStatus            @default(PLACED)
   paymentMethod       PaymentMethod
-  paymentStatus       PaymentStatus        @default(PENDING)
+  paymentStatus       PaymentStatus          @default(PENDING)
   subtotal            Decimal
-  deliveryFee         Decimal              @default(0)
-  discount            Decimal              @default(0)
-  tip                 Decimal              @default(0)
+  deliveryFee         Decimal                @default(0)
+  discount            Decimal                @default(0)
+  tip                 Decimal                @default(0)
   total               Decimal
   couponCode          String?
-  idempotencyKey      String?              @unique
+  idempotencyKey      String?                @unique
   scheduledDeliveryAt DateTime?
   shippingName        String
   shippingPhone       String
@@ -353,11 +374,11 @@ model Order {
   shippingProvince    String?
   shippingPostalCode  String?
   notes               String?
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
   delivery            Delivery?
-  address             Address?             @relation(fields: [addressId], references: [id])
-  user                User                 @relation(fields: [userId], references: [id])
+  address             Address?               @relation(fields: [addressId], references: [id])
+  user                User                   @relation(fields: [userId], references: [id])
   items               OrderItem[]
   batchAllocations    OrderBatchAllocation[]
   statusHistory       OrderStatusHistory[]
@@ -385,7 +406,7 @@ model OrderItem {
   isWholesale     Boolean        @default(false)
   createdAt       DateTime       @default(now())
   order           Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product         Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
+  product         Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
   wholesaleItem   WholesaleItem? @relation(fields: [wholesaleItemId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
@@ -470,18 +491,18 @@ model WishlistItem {
 }
 
 model Review {
-  id        String   @id @default(cuid())
-  productId String?
+  id              String         @id @default(cuid())
+  productId       String?
   wholesaleItemId String?
-  userId    String
-  rating    Int
-  text      String?
-  imageUrl  String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  product   Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
-  wholesaleItem WholesaleItem? @relation(fields: [wholesaleItemId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          String
+  rating          Int
+  text            String?
+  imageUrl        String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  product         Product?       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  wholesaleItem   WholesaleItem? @relation(fields: [wholesaleItemId], references: [id], onDelete: Cascade)
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([productId, userId])
   @@unique([wholesaleItemId, userId])
@@ -518,29 +539,29 @@ model DeviceToken {
 }
 
 model Delivery {
-  id                String                  @id @default(cuid())
-  orderId           String                  @unique
-  deliveryPersonId  String?
-  status            DeliveryStatus          @default(PENDING)
-  assignedAt        DateTime?
-  pickedUpAt        DateTime?
-  deliveredAt       DateTime?
-  cashCollected     Decimal                 @default(0)
-  cashCollectedAt   DateTime?
-  cashHandedOver    Decimal                 @default(0)
-  cashHandedOverAt  DateTime?
-  latitude          Float?
-  longitude         Float?
-  locationUpdatedAt DateTime?
-  customerLatitude  Float?
-  customerLongitude Float?
+  id                        String                  @id @default(cuid())
+  orderId                   String                  @unique
+  deliveryPersonId          String?
+  status                    DeliveryStatus          @default(PENDING)
+  assignedAt                DateTime?
+  pickedUpAt                DateTime?
+  deliveredAt               DateTime?
+  cashCollected             Decimal                 @default(0)
+  cashCollectedAt           DateTime?
+  cashHandedOver            Decimal                 @default(0)
+  cashHandedOverAt          DateTime?
+  latitude                  Float?
+  longitude                 Float?
+  locationUpdatedAt         DateTime?
+  customerLatitude          Float?
+  customerLongitude         Float?
   customerLocationUpdatedAt DateTime?
-  notes             String?
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
-  deliveryPerson    User?                   @relation(fields: [deliveryPersonId], references: [id])
-  order             Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  statusHistory     DeliveryStatusHistory[]
+  notes                     String?
+  createdAt                 DateTime                @default(now())
+  updatedAt                 DateTime                @updatedAt
+  deliveryPerson            User?                   @relation(fields: [deliveryPersonId], references: [id])
+  order                     Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  statusHistory             DeliveryStatusHistory[]
 
   @@index([deliveryPersonId])
   @@index([status])
@@ -574,25 +595,28 @@ model OrderStatusHistory {
 }
 
 model Coupon {
-  id              String       @id @default(cuid())
-  code            String       @unique
-  productId       String?
-  assignedUserId  String?
-  discountType    DiscountType @default(PERCENTAGE)
-  discountPercent Decimal?
-  discountAmount  Decimal?
-  minOrderAmount  Decimal      @default(0)
-  maxDiscount     Decimal?
-  usageLimit      Int?
-  perUserLimit    Int?
-  usedCount       Int          @default(0)
-  isActive        Boolean      @default(true)
-  isDeleted       Boolean      @default(false)
-  expiresAt       DateTime?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  product         Product?     @relation(fields: [productId], references: [id], onDelete: Restrict)
-  assignedUser    User?        @relation("CouponAssignedUser", fields: [assignedUserId], references: [id], onDelete: Cascade)
+  id                      String                       @id @default(cuid())
+  code                    String                       @unique
+  productId               String?
+  assignedUserId          String?
+  discountType            DiscountType                 @default(PERCENTAGE)
+  discountPercent         Decimal?
+  discountAmount          Decimal?
+  minOrderAmount          Decimal                      @default(0)
+  maxDiscount             Decimal?
+  usageLimit              Int?
+  perUserLimit            Int?
+  usedCount               Int                          @default(0)
+  isActive                Boolean                      @default(true)
+  isDeleted               Boolean                      @default(false)
+  expiresAt               DateTime?
+  createdAt               DateTime                     @default(now())
+  updatedAt               DateTime                     @updatedAt
+  product                 Product?                     @relation(fields: [productId], references: [id], onDelete: Restrict)
+  assignedUser            User?                        @relation("CouponAssignedUser", fields: [assignedUserId], references: [id], onDelete: Cascade)
+  streakRewardConfigs     BuyingStreakRewardConfig[]   @relation("StreakRewardTemplate")
+  streakProgressTemplates BuyingStreakRewardProgress[] @relation("StreakProgressTemplate")
+  streakProgressGift      BuyingStreakRewardProgress?  @relation("StreakProgressGift")
 
   @@index([isActive])
   @@index([expiresAt])
@@ -601,12 +625,12 @@ model Coupon {
 }
 
 model StoreSetting {
-  id                    String   @id @default("store")
-  isOrderingEnabled     Boolean  @default(true)
-  weeklyHours           Json
+  id                   String   @id @default("store")
+  isOrderingEnabled    Boolean  @default(true)
+  weeklyHours          Json
   customerMenuFeatures Json     @default("{}")
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }
 
 enum UserRole {

@@ -41,16 +41,49 @@ async function verifyOneTimeClaim(): Promise<void> {
     description: 'Choose one drink at the counter.',
     unlockedAt: new Date('2026-11-02T01:00:00.000Z'),
     claimedAt: null as Date | null,
+    couponId: null as string | null,
   };
+  let createdCoupons = 0;
   const prisma = {
     buyingStreakRewardProgress: {
-      findUnique: async () => ({ ...progress, claimedAt }),
-      updateMany: async () => {
+      findUnique: async () => ({
+        ...progress,
+        claimedAt,
+        couponTemplate: {
+          id: 'template-1',
+          code: 'STREAK10',
+          productId: null,
+          assignedUserId: null,
+          discountType: 'PERCENTAGE',
+          discountPercent: 10,
+          discountAmount: null,
+          minOrderAmount: 0,
+          maxDiscount: 150,
+          usageLimit: 10,
+          perUserLimit: 1,
+          expiresAt: null,
+          isActive: true,
+          isDeleted: false,
+        },
+        coupon: null,
+      }),
+      updateMany: async ({ data }: { data: { claimedAt: Date } }) => {
         if (claimedAt !== null) return { count: 0 };
-        claimedAt = new Date();
+        claimedAt = data.claimedAt;
         return { count: 1 };
       },
+      update: async ({ data }: { data: { couponId: string } }) => {
+        progress.couponId = data.couponId;
+      },
     },
+    coupon: {
+      create: async ({ data }: { data: { code: string } }) => {
+        createdCoupons++;
+        return { id: 'gift-1', code: data.code };
+      },
+    },
+    $transaction: async <T>(work: (tx: unknown) => Promise<T>) =>
+      work(prisma),
   } as unknown as PrismaClient;
   const authenticate: RequestHandler = (_req, res, next) => {
     res.locals.authenticatedUserId = 'customer-1';
@@ -74,6 +107,7 @@ async function verifyOneTimeClaim(): Promise<void> {
       [200, 409],
     );
     assert.ok(claimedAt);
+    assert.equal(createdCoupons, 1);
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));

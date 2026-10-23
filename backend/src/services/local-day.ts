@@ -70,6 +70,40 @@ export function getLocalDayRange(
   };
 }
 
+export function getLocalDayRangeForKey(
+  dayKey: string,
+  timeZone: string = STORE_TIME_ZONE,
+): { start: Date; end: Date } {
+  if (typeof dayKey !== 'string') {
+    throw new RangeError('The store day must use YYYY-MM-DD.');
+  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
+  if (!match) throw new RangeError('The store day must use YYYY-MM-DD.');
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() + 1 !== month ||
+    date.getUTCDate() !== day
+  ) {
+    throw new RangeError('The store day is not a valid calendar date.');
+  }
+
+  const nextDay = new Date(Date.UTC(year, month - 1, day + 1));
+  return {
+    start: localMidnightUtc(year, month, day, timeZone),
+    end: localMidnightUtc(
+      nextDay.getUTCFullYear(),
+      nextDay.getUTCMonth() + 1,
+      nextDay.getUTCDate(),
+      timeZone,
+    ),
+  };
+}
+
 export function getStoreDayKey(
   date: Date,
   timeZone: string = STORE_TIME_ZONE,
