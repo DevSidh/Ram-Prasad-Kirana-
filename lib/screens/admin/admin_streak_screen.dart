@@ -21,6 +21,7 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
   late final AdminApiService _adminApi = AdminApiService(widget.api);
   List<AdminStreakReward> _rewards = const [];
   List<AdminStreakClaim> _claims = const [];
+  List<AdminCoupon> _coupons = const [];
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -38,10 +39,12 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
     });
     try {
       final result = await _adminApi.getStreakRewards();
+      final coupons = await _adminApi.getCoupons();
       if (!mounted) return;
       setState(() {
         _rewards = result.rewards;
         _claims = result.claims;
+        _coupons = coupons;
         _loading = false;
       });
     } catch (error) {
@@ -58,6 +61,13 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
       context: context,
       builder: (_) => _StreakRewardDialog(
         existing: existing,
+        coupons: _coupons
+            .where((coupon) =>
+                coupon.isActive &&
+                coupon.assignedUserId == null &&
+                (coupon.expiresAt == null ||
+                    coupon.expiresAt!.isAfter(DateTime.now())))
+            .toList(growable: false),
         usedDays: _rewards.map((reward) => reward.day).toSet(),
       ),
     );
@@ -71,6 +81,12 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
   }
 
   Future<void> _save() async {
+    if (_rewards.any((reward) => reward.couponId == null)) {
+      setState(() {
+        _error = 'Select an active coupon for each streak milestone.';
+      });
+      return;
+    }
     setState(() {
       _saving = true;
       _error = null;
@@ -170,7 +186,9 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
                       ),
                       title: Text('Day ${reward.day} · ${reward.title}'),
                       subtitle: Text(
-                        reward.description,
+                        reward.couponCode == null
+                            ? 'No coupon selected. Edit this milestone to choose a coupon gift.'
+                            : 'Gift coupon ${reward.couponCode}',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -257,9 +275,14 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
 }
 
 class _StreakRewardDialog extends StatefulWidget {
-  const _StreakRewardDialog({this.existing, required this.usedDays});
+  const _StreakRewardDialog({
+    this.existing,
+    required this.coupons,
+    required this.usedDays,
+  });
 
   final AdminStreakReward? existing;
+  final List<AdminCoupon> coupons;
   final Set<int> usedDays;
 
   @override
@@ -268,8 +291,7 @@ class _StreakRewardDialog extends StatefulWidget {
 
 class _StreakRewardDialogState extends State<_StreakRewardDialog> {
   late final TextEditingController _dayController;
-  late final TextEditingController _titleController;
-  late final TextEditingController _descriptionController;
+  String? _couponId;
   String? _error;
 
   @override
@@ -277,17 +299,12 @@ class _StreakRewardDialogState extends State<_StreakRewardDialog> {
     super.initState();
     _dayController =
         TextEditingController(text: widget.existing?.day.toString() ?? '');
-    _titleController =
-        TextEditingController(text: widget.existing?.title ?? '');
-    _descriptionController =
-        TextEditingController(text: widget.existing?.description ?? '');
+    _couponId = widget.existing?.couponId;
   }
 
   @override
   void dispose() {
     _dayController.dispose();
-    _titleController.dispose();
-    _descriptionController.dispose();
     super.dispose();
   }
 
@@ -301,18 +318,25 @@ class _StreakRewardDialogState extends State<_StreakRewardDialog> {
       setState(() => _error = 'A reward already exists for day $day.');
       return;
     }
-    final title = _titleController.text.trim();
-    final description = _descriptionController.text.trim();
-    if (title.isEmpty || description.isEmpty) {
-      setState(() => _error = 'Add both a reward name and details.');
+    AdminCoupon? coupon;
+    for (final item in widget.coupons) {
+      if (item.id == _couponId) {
+        coupon = item;
+        break;
+      }
+    }
+    if (coupon == null) {
+      setState(() => _error = 'Choose an active coupon to gift.');
       return;
     }
     Navigator.pop(
       context,
       AdminStreakReward(
         day: day,
-        title: title,
-        description: description,
+        title: 'Coupon gift',
+        description: 'Claim this milestone to receive coupon ${coupon.code}.',
+        couponId: coupon.id,
+        couponCode: coupon.code,
       ),
     );
   }
@@ -331,17 +355,22 @@ class _StreakRewardDialogState extends State<_StreakRewardDialog> {
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(labelText: 'Streak day'),
             ),
-            TextField(
-              controller: _titleController,
-              maxLength: 120,
-              decoration: const InputDecoration(labelText: 'Reward name'),
-            ),
-            TextField(
-              controller: _descriptionController,
-              maxLength: 1000,
-              minLines: 2,
-              maxLines: 4,
-              decoration: const InputDecoration(labelText: 'Reward details'),
+            DropdownButtonFormField<String>(
+              initialValue: widget.coupons.any(
+                (coupon) => coupon.id == _couponId,
+              )
+                  ? _couponId
+                  : null,
+              decoration: const InputDecoration(labelText: 'Coupon gift'),
+              items: widget.coupons
+                  .map(
+                    (coupon) => DropdownMenuItem(
+                      value: coupon.id,
+                      child: Text(coupon.code),
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: (value) => setState(() => _couponId = value),
             ),
             if (_error != null)
               Align(

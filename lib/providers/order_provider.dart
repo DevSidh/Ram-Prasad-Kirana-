@@ -84,6 +84,7 @@ class OrderProvider extends ChangeNotifier {
             .map((item) => {
                   'productId': item.product.id,
                   'quantity': item.quantity,
+                  if (item.weightGrams != null) 'weightGrams': item.weightGrams,
                   'isWholesale': item.isWholesale,
                 })
             .toList(),
@@ -141,7 +142,7 @@ class OrderProvider extends ChangeNotifier {
   }
 
   void updateOrderStatus(String orderId, String newStatus) {
-    final index = _orders.indexindexWhere((o) => o.id == orderId);
+    final index = _orders.indexWhere((o) => o.id == orderId);
     if (index != -1) {
       final current = _orders[index];
       _orders[index] = Order(

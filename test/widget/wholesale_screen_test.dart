@@ -141,6 +141,18 @@ void main() {
     await tester.tap(find.text('Basmati rice').first);
     await tester.pumpAndSettle();
 
+    expect(find.byType(DraggableScrollableSheet), findsOneWidget);
+    await tester.drag(
+        find.byType(CustomScrollView).last, const Offset(0, -350));
+    await tester.pumpAndSettle();
+    await tester.drag(
+        find.byType(CustomScrollView).last, const Offset(0, -350));
+    await tester.pumpAndSettle();
+    expect(find.text('Details'), findsOneWidget);
+    expect(find.text('HIMALAYAN FARMS'), findsWidgets);
+    await tester.tap(find.text('Details'));
+    await tester.pumpAndSettle();
+
     expect(find.byType(ProductDetailsScreen), findsOneWidget);
     expect(find.text('HIMALAYAN FARMS'), findsOneWidget);
     expect(find.text('4.5'), findsOneWidget);

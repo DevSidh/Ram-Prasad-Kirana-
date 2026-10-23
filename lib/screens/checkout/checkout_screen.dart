@@ -9,7 +9,9 @@ import '../../core/constants.dart';
 import '../../core/theme/app_theme_extension.dart';
 import '../../core/widgets/app_widgets.dart';
 import '../../models/address.dart';
+import '../../models/buying_streak.dart';
 import '../../models/coupon_quote.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/cart_provider.dart';
 import '../../providers/order_provider.dart';
 import '../../providers/store_availability_provider.dart';
@@ -34,6 +36,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   List<Address> _savedAddresses = [];
   Address? _selectedAddress;
   bool _loadingAddresses = true;
+  BuyingStreakSnapshot? _buyingStreak;
+  bool _loadingBuyingStreak = false;
   String _selectedPaymentMethod = 'COD';
   bool _isSubmitting = false;
   final String _orderRequestKey = const Uuid().v4();
@@ -232,7 +236,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     try {
       final response = await context.read<ApiService>().post(
         '/coupons/validate',
-        {'code': code, 'subtotal': subtotal},
+        {
+          'code': code,
+          'subtotal': subtotal,
+          'items': context
+              .read<CartProvider>()
+              .itemList
+              .map((item) => {
+                    'productId': item.product.id,
+                    'quantity': item.quantity,
+                    if (item.weightGrams != null)
+                      'weightGrams': item.weightGrams,
+                    'isWholesale': item.isWholesale,
+                  })
+              .toList(),
+        },
       );
       if (response is! Map<String, dynamic>) {
         throw const FormatException(
@@ -386,6 +404,32 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Unable to load delivery addresses: $error')),
       );
+    }
+  }
+
+  Future<void> _loadBuyingStreakPreview() async {
+    final auth = context.read<AuthProvider?>();
+    if (auth == null ||
+        !auth.isAuthenticated ||
+        auth.currentUser?.role.toUpperCase() != 'CUSTOMER' ||
+        _buyingStreak != null ||
+        _loadingBuyingStreak) {
+      return;
+    }
+    _loadingBuyingStreak = true;
+    try {
+      final response =
+          await context.read<ApiService>().get('/account/buying-streak');
+      if (response is! Map<String, dynamic>) {
+        throw const FormatException('The store returned an invalid streak.');
+      }
+      final snapshot = BuyingStreakSnapshot.fromJson(response);
+      if (!mounted) return;
+      setState(() => _buyingStreak = snapshot);
+    } catch (error) {
+      debugPrint('Checkout streak preview unavailable: $error');
+    } finally {
+      _loadingBuyingStreak = false;
     }
   }
 
@@ -705,7 +749,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 child: Stepper(
                   currentStep: _currentStep,
                   onStepContinue: () {
-                    if (_canAdvanceStep) setState(() => _currentStep++);
+                    if (!_canAdvanceStep) return;
+                    setState(() => _currentStep++);
+                    if (_currentStep == 3) {
+                      unawaited(_loadBuyingStreakPreview());
+                    }
                   },
                   onStepCancel: () {
                     if (_currentStep > 0) setState(() => _currentStep--);
@@ -809,6 +857,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         ),
                         child: Column(
                           children: [
+                            if (_buyingStreak != null) ...[
+                              _CheckoutStreakBanner(
+                                snapshot: _buyingStreak!,
+                              ),
+                              const SizedBox(height: 14),
+                            ],
                             _buildCouponEntry(couponEligibleSubtotal),
                             const SizedBox(height: 18),
                             _buildSummaryRow(
@@ -972,6 +1026,61 @@ class _OrderPlacementOverlay extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _CheckoutStreakBanner extends StatelessWidget {
+  const _CheckoutStreakBanner({required this.snapshot});
+
+  final BuyingStreakSnapshot snapshot;
+
+  @override
+  Widget build(BuildContext context) {
+    BuyingStreakReward? availableReward;
+    for (final reward in snapshot.rewards) {
+      if (reward.isUnlocked && reward.claimedAt == null) {
+        availableReward = reward;
+        break;
+      }
+    }
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: colors.primaryContainer,
+        borderRadius: BorderRadius.circular(15),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.local_fire_department_rounded),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${snapshot.currentStreak}-day buying streak',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  availableReward == null
+                      ? snapshot.nextRewardDay == null
+                          ? 'Your streak progress is up to date.'
+                          : '${snapshot.daysToNextReward ?? 0} more '
+                              '${snapshot.daysToNextReward == 1 ? 'day' : 'days'} '
+                              'to your next reward.'
+                      : 'Reward unlocked: ${availableReward.title}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

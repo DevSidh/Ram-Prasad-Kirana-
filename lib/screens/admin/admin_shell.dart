@@ -39,7 +39,7 @@ class _AdminShellState extends State<AdminShell> {
     'Customers',
     'Announcements',
     'Products',
-    'Vending drinks',
+    'Drinks',
     'Wholesale',
     'Restock',
     'Categories',
@@ -313,7 +313,7 @@ class _AdminShellState extends State<AdminShell> {
     NavigationRailDestination(
       icon: Icon(Icons.local_drink_outlined),
       selectedIcon: Icon(Icons.local_drink_rounded),
-      label: Text('Vending drinks'),
+      label: Text('Drinks'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.storefront_outlined),

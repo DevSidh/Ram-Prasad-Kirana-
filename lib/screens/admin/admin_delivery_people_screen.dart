@@ -21,6 +21,7 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
   List<AdminPendingDeliveryCash> _pendingCash = const [];
   AdminOrderPage? _deliveryOrderPage;
   String _deliveryFilter = 'all';
+  DateTime? _selectedDeliveryDay;
   String? _deliveryError;
   String? _assigningOrderId;
   bool _loadingDeliveries = true;
@@ -82,6 +83,7 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
       final page = await _adminApi.getOrders(
         page: _deliveryPageNumber,
         pageSize: 100,
+        day: _selectedDeliveryDay,
       );
       if (!mounted) return;
       setState(() {
@@ -99,7 +101,8 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
     }
   }
 
-  Future<void> _assignOrder(AdminOrder order, AdminDeliveryPerson person) async {
+  Future<void> _assignOrder(
+      AdminOrder order, AdminDeliveryPerson person) async {
     setState(() => _assigningOrderId = order.id);
     try {
       await _adminApi.assignDeliveryPerson(order.id, person.id);
@@ -123,24 +126,20 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
     final orders = _deliveryOrderPage?.orders ?? const <AdminOrder>[];
     return orders.where((order) {
       final deliveryStatus = order.deliveryStatus;
-      final active = const {
-        'ASSIGNED',
-        'ACCEPTED',
-        'PICKED_UP',
-        'OUT_FOR_DELIVERY',
-      }.contains(deliveryStatus);
+      final active = deliveryStatus == 'OUT_FOR_DELIVERY';
       final terminal = const {
-        'DELIVERED',
-        'DECLINED',
-        'FAILED',
-        'CANCELLED',
-      }.contains(deliveryStatus) ||
+            'DELIVERED',
+            'DECLINED',
+            'FAILED',
+            'CANCELLED',
+          }.contains(deliveryStatus) ||
           const {'DELIVERED', 'CANCELLED'}.contains(order.status);
       final needsAssignment = order.status == 'PROCESSING' &&
-              (deliveryStatus == null ||
+              (order.deliveryPersonId == null ||
                   const {'DECLINED', 'FAILED'}.contains(deliveryStatus)) ||
           order.status == 'OUT_FOR_DELIVERY' &&
-              const {'DECLINED', 'FAILED'}.contains(deliveryStatus);
+              (order.deliveryPersonId == null ||
+                  const {'DECLINED', 'FAILED'}.contains(deliveryStatus));
       return switch (_deliveryFilter) {
         'needs_assignment' => needsAssignment,
         'active' => active,
@@ -148,6 +147,22 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
         _ => true,
       };
     }).toList();
+  }
+
+  Future<void> _selectDeliveryDay() async {
+    final now = DateTime.now();
+    final day = await showDatePicker(
+      context: context,
+      initialDate: _selectedDeliveryDay ?? now,
+      firstDate: DateTime(2020),
+      lastDate: now,
+    );
+    if (!mounted || day == null) return;
+    setState(() {
+      _selectedDeliveryDay = day;
+      _deliveryPageNumber = 1;
+    });
+    await _loadDeliveryOrders();
   }
 
   Future<void> _createPerson() async {
@@ -326,8 +341,9 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
   Widget _buildDeliveryBoard() {
     final page = _deliveryOrderPage;
     final orders = _filteredDeliveryOrders;
-    final availablePeople =
-        _people.where((person) => person.isActive && person.isAvailable).toList();
+    final availablePeople = _people
+        .where((person) => person.isActive && person.isAvailable)
+        .toList();
     final pagination = page?.pagination;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -357,7 +373,7 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
               onTap: () => setState(() => _deliveryFilter = 'needs_assignment'),
             ),
             _DeliveryFilterChip(
-              label: 'Active',
+              label: 'Delivering now',
               selected: _deliveryFilter == 'active',
               onTap: () => setState(() => _deliveryFilter = 'active'),
             ),
@@ -366,6 +382,38 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
               selected: _deliveryFilter == 'completed',
               onTap: () => setState(() => _deliveryFilter = 'completed'),
             ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            OutlinedButton.icon(
+              onPressed: _loadingDeliveries ? null : _selectDeliveryDay,
+              icon: const Icon(Icons.calendar_month_rounded, size: 18),
+              label: Text(
+                _selectedDeliveryDay == null
+                    ? 'Order day'
+                    : '${_selectedDeliveryDay!.day.toString().padLeft(2, '0')}/'
+                        '${_selectedDeliveryDay!.month.toString().padLeft(2, '0')}/'
+                        '${_selectedDeliveryDay!.year}',
+              ),
+            ),
+            if (_selectedDeliveryDay != null)
+              TextButton(
+                onPressed: _loadingDeliveries
+                    ? null
+                    : () {
+                        setState(() {
+                          _selectedDeliveryDay = null;
+                          _deliveryPageNumber = 1;
+                        });
+                        _loadDeliveryOrders();
+                      },
+                child: const Text('Clear day'),
+              ),
           ],
         ),
         if (_deliveryError != null) ...[
@@ -428,15 +476,14 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
               ),
               IconButton(
                 tooltip: 'Next delivery page',
-                onPressed:
-                    _deliveryPageNumber * pagination.pageSize >=
-                                pagination.total ||
-                            _loadingDeliveries
-                        ? null
-                        : () {
-                            setState(() => _deliveryPageNumber++);
-                            _loadDeliveryOrders();
-                          },
+                onPressed: _deliveryPageNumber * pagination.pageSize >=
+                            pagination.total ||
+                        _loadingDeliveries
+                    ? null
+                    : () {
+                        setState(() => _deliveryPageNumber++);
+                        _loadDeliveryOrders();
+                      },
                 icon: const Icon(Icons.chevron_right_rounded),
               ),
             ],
@@ -590,7 +637,10 @@ class _DeliveryOrderAdminCard extends StatelessWidget {
                   [
                     entry['status']?.toString().replaceAll('_', ' '),
                     entry['note']?.toString(),
-                  ].whereType<String>().where((value) => value.isNotEmpty).join(' · '),
+                  ]
+                      .whereType<String>()
+                      .where((value) => value.isNotEmpty)
+                      .join(' · '),
                   style: TextStyle(
                     color: AppConstants.textMuted,
                     fontSize: 11,
@@ -956,7 +1006,9 @@ class _NewDeliveryPersonDialogState extends State<_NewDeliveryPersonDialog> {
                 keyboardType: TextInputType.emailAddress,
                 decoration: const InputDecoration(labelText: 'Email'),
                 validator: (value) {
-                  if (_required(value) != null) return 'Enter an email address.';
+                  if (_required(value) != null) {
+                    return 'Enter an email address.';
+                  }
                   return RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
                           .hasMatch(value!.trim())
                       ? null
@@ -977,9 +1029,10 @@ class _NewDeliveryPersonDialogState extends State<_NewDeliveryPersonDialog> {
                   labelText: 'Temporary sign-in password',
                   helperText: 'At least 10 characters. Share it securely.',
                   suffixIcon: IconButton(
-                    tooltip: _obscurePassword ? 'Show password' : 'Hide password',
-                    onPressed: () => setState(
-                        () => _obscurePassword = !_obscurePassword),
+                    tooltip:
+                        _obscurePassword ? 'Show password' : 'Hide password',
+                    onPressed: () =>
+                        setState(() => _obscurePassword = !_obscurePassword),
                     icon: Icon(_obscurePassword
                         ? Icons.visibility_outlined
                         : Icons.visibility_off_outlined),
@@ -1058,7 +1111,8 @@ class _EmptyRiders extends StatelessWidget {
       padding: const EdgeInsets.all(36),
       child: Column(
         children: [
-          const Icon(Icons.people_outline_rounded, size: 42, color: AppConstants.primary),
+          const Icon(Icons.people_outline_rounded,
+              size: 42, color: AppConstants.primary),
           const SizedBox(height: 10),
           const Text(
             'No delivery staff yet',

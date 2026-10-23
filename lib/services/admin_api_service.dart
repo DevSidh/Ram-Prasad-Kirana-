@@ -107,6 +107,27 @@ class AdminApiService {
     return AdminCoupon.fromJson(coupon);
   }
 
+  Future<AdminCoupon> issueProductCoupon({
+    required String customerId,
+    required String productId,
+    required String discountType,
+    required double discountValue,
+  }) async {
+    final response = _asMap(
+      await _api.post('/admin/coupons/product', {
+        'customerId': customerId,
+        'productId': productId,
+        'discountType': discountType,
+        'discountValue': discountValue,
+      }),
+    );
+    final coupon = response['coupon'];
+    if (coupon is! Map<String, dynamic>) {
+      throw Exception('The server did not return the product coupon.');
+    }
+    return AdminCoupon.fromJson(coupon);
+  }
+
   Future<AdminCoupon> updateCoupon(
       String id, Map<String, dynamic> details) async {
     final response = _asMap(await _api.patch('/admin/coupons/$id', details));
@@ -192,6 +213,7 @@ class AdminApiService {
     int pageSize = 20,
     String? search,
     String? status,
+    DateTime? day,
   }) async {
     final response = _asMap(
       await _api.get(
@@ -202,6 +224,7 @@ class AdminApiService {
           if (search != null && search.trim().isNotEmpty)
             'search': search.trim(),
           if (status != null) 'status': status,
+          if (day != null) 'day': _storeDayKey(day),
         },
       ),
     );
@@ -331,10 +354,29 @@ class AdminApiService {
     });
   }
 
+  Future<List<AdminCustomerRemovalRecord>> getCustomerRemovalHistory({
+    int page = 1,
+    int pageSize = 25,
+  }) async {
+    final response = _asMap(await _api.get(
+      '/admin/customers/removal-history',
+      queryParams: {'page': '$page', 'pageSize': '$pageSize'},
+    ));
+    final records = response['records'];
+    if (records is! List) {
+      throw Exception('The server returned invalid customer removal history.');
+    }
+    return records
+        .whereType<Map<String, dynamic>>()
+        .map(AdminCustomerRemovalRecord.fromJson)
+        .toList();
+  }
+
   Future<AdminCustomerPage> getCustomers({
     int page = 1,
     int pageSize = 20,
     String? search,
+    bool includeInactive = false,
   }) async {
     final response = _asMap(
       await _api.get(
@@ -342,6 +384,7 @@ class AdminApiService {
         queryParams: {
           'page': '$page',
           'pageSize': '$pageSize',
+          if (includeInactive) 'includeInactive': 'true',
           if (search != null && search.trim().isNotEmpty)
             'search': search.trim(),
         },
@@ -351,6 +394,7 @@ class AdminApiService {
     if (customers is! List) {
       throw Exception('The server returned an invalid customer list.');
     }
+
     final pagination = response['pagination'];
     return AdminCustomerPage(
       customers: customers
@@ -365,6 +409,49 @@ class AdminApiService {
               total: customers.length,
             ),
     );
+  }
+
+  Future<void> updateCustomer(
+    String customerId,
+    Map<String, dynamic> fields,
+  ) async {
+    await _api.patch(
+      '/admin/customers/${Uri.encodeComponent(customerId)}',
+      fields,
+    );
+  }
+
+  Future<Map<String, bool>> getCustomerMenuFeatures() async {
+    final response = _asMap(
+      await _api.get('/admin/customer-menu-features'),
+    );
+    final features = response['customerMenuFeatures'];
+    if (features is! Map<String, dynamic>) {
+      throw Exception('The store returned invalid customer menu settings.');
+    }
+    return {
+      for (final entry in features.entries)
+        if (entry.value is bool) entry.key: entry.value as bool,
+    };
+  }
+
+  Future<Map<String, bool>> saveCustomerMenuFeatures(
+    Map<String, bool> features,
+  ) async {
+    final response = _asMap(
+      await _api.put(
+        '/admin/customer-menu-features',
+        features,
+      ),
+    );
+    final saved = response['customerMenuFeatures'];
+    if (saved is! Map<String, dynamic>) {
+      throw Exception('The store returned invalid customer menu settings.');
+    }
+    return {
+      for (final entry in saved.entries)
+        if (entry.value is bool) entry.key: entry.value as bool,
+    };
   }
 
   Future<List<AdminCategory>> getCategories() async {
@@ -530,7 +617,7 @@ class AdminApiService {
 
   Future<void> createProduct(
     Map<String, dynamic> fields,
-    int stock, {
+    double stock, {
     Uint8List? imageBytes,
     String? imageName,
   }) async {
@@ -555,7 +642,7 @@ class AdminApiService {
   Future<void> updateProduct(
     String id,
     Map<String, dynamic> fields,
-    int stock, {
+    double stock, {
     Uint8List? imageBytes,
     String? imageName,
   }) async {
@@ -586,9 +673,12 @@ class AdminApiService {
     await _api.patch('/admin/products/$id', {'isActive': isActive});
   }
 
-  Future<AdminProduct> restockProduct(String id, int quantity) async {
+  Future<AdminProduct> restockProduct(
+    String id,
+    Map<String, dynamic> batch,
+  ) async {
     final response = _asMap(
-      await _api.post('/admin/products/$id/restock', {'quantity': quantity}),
+      await _api.post('/admin/products/$id/restock', batch),
     );
     final product = response['product'];
     if (product is! Map<String, dynamic>) {
@@ -597,14 +687,72 @@ class AdminApiService {
     return AdminProduct.fromJson(product);
   }
 
+  Future<Map<String, dynamic>> lookupProductBarcode(String barcode) async {
+    final response = _asMap(await _api.get(
+      '/admin/products/barcode-lookup',
+      queryParams: {'barcode': barcode.trim()},
+    ));
+    if (response['found'] is! bool ||
+        response['source'] is! String ||
+        (response['product'] != null &&
+            response['product'] is! Map<String, dynamic>)) {
+      throw const FormatException(
+        'The server returned an invalid barcode lookup response.',
+      );
+    }
+    return response;
+  }
+
+  Future<AdminProduct> receiveProductBatch(
+    String productId,
+    Map<String, dynamic> batch,
+  ) async {
+    final response = _asMap(
+      await _api.post('/admin/products/$productId/batches', batch),
+    );
+    final product = response['product'];
+    if (product is! Map<String, dynamic>) {
+      throw const FormatException(
+        'The server returned an invalid product after receiving the batch.',
+      );
+    }
+    return AdminProduct.fromJson(product);
+  }
+
+  Future<AdminInventoryExpiryPage> getExpiryBatches({
+    required int warningDays,
+    required String status,
+    required int page,
+    String? categoryId,
+    bool lowStock = false,
+  }) async {
+    final response = _asMap(await _api.get(
+      '/admin/inventory/expiry',
+      queryParams: {
+        'days': '$warningDays',
+        'status': status,
+        'page': '$page',
+        'pageSize': '25',
+        'lowStock': '$lowStock',
+        if (categoryId != null) 'categoryId': categoryId,
+      },
+    ));
+    return AdminInventoryExpiryPage.fromJson(response);
+  }
+
   Future<AdminRestockHistoryPage> getRestockHistory({
     required int page,
     int pageSize = 25,
+    DateTime? day,
   }) async {
     final response = _asMap(
       await _api.get(
         '/admin/inventory/restock-history',
-        queryParams: {'page': '$page', 'pageSize': '$pageSize'},
+        queryParams: {
+          'page': '$page',
+          'pageSize': '$pageSize',
+          if (day != null) 'day': _storeDayKey(day),
+        },
       ),
     );
     final receipts = response['receipts'];
@@ -786,6 +934,13 @@ class AdminPagination {
 Map<String, dynamic> _asMap(dynamic value) {
   if (value is Map<String, dynamic>) return value;
   throw Exception('The server returned an invalid response.');
+}
+
+String _storeDayKey(DateTime date) {
+  final normalized = DateTime(date.year, date.month, date.day);
+  return '${normalized.year.toString().padLeft(4, '0')}-'
+      '${normalized.month.toString().padLeft(2, '0')}-'
+      '${normalized.day.toString().padLeft(2, '0')}';
 }
 
 int _asInt(dynamic value) {

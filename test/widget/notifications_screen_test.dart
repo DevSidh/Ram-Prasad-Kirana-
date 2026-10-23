@@ -123,7 +123,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Coupon alert'));
+    await tester.tap(find.text('FASTSTORE'));
     await tester.pumpAndSettle();
 
     expect(find.text('Coupon SAVE10 is ready to use at checkout.'),

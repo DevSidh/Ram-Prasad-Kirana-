@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/shown_today_store.dart';
+import '../../services/customer_location_consent.dart';
 import '../../widgets/custom_button.dart';
 import '../../widgets/auth_surface.dart';
 import 'register_screen.dart';
@@ -101,6 +102,16 @@ class _LoginScreenState extends State<LoginScreen> {
         await ShownTodayStore.markLoginOfferPending();
       }
       if (!fromSavedLogin) await _offerToSavePassword();
+      if (!mounted) return;
+      if (!widget.isAdminLogin) {
+        final userId = authProvider.currentUser?.id;
+        if (userId != null) {
+          await CustomerLocationConsent.requestAfterSignIn(
+            context,
+            userId: userId,
+          );
+        }
+      }
       if (!mounted) return;
       if (widget.returnToCaller && !widget.isAdminLogin) {
         Navigator.pop(context, true);

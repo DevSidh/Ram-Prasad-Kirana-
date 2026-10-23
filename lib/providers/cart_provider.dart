@@ -13,12 +13,15 @@ class CartProvider extends ChangeNotifier {
   String? _accountUserId;
   bool _isLoading = false;
   bool _disposed = false;
+  bool _hasLoadedAccountCart = false;
+  bool _hasUnsavedChanges = false;
   String? _syncError;
   bool _syncErrorFromSave = false;
   String? _suggestedCouponCode;
   Timer? _saveDebounce;
   int _revision = 0;
   Future<void> _syncQueue = Future<void>.value();
+  Future<void>? _cartLoadFuture;
   final Set<String> _localOverridesDuringLoad = {};
   bool _clearDuringLoad = false;
 
@@ -35,7 +38,9 @@ class CartProvider extends ChangeNotifier {
   bool get hasUnavailableItems => _items.values.any((item) {
         final minimumQuantity =
             item.isWholesale ? item.product.wholesaleMinimumQuantity : 1;
-        return item.quantity > item.product.stock ||
+        return (item.weightGrams != null
+                ? item.weightGrams! > item.product.availableWeightGrams
+                : item.quantity > item.product.stock) ||
             item.quantity > 100 ||
             item.product.stock < minimumQuantity ||
             (item.isWholesale &&
@@ -59,9 +64,12 @@ class CartProvider extends ChangeNotifier {
     _accountUserId = userId;
     final revision = ++_revision;
     _items.clear();
+    _hasLoadedAccountCart = userId == null || _apiService == null;
+    _hasUnsavedChanges = false;
     _suggestedCouponCode = null;
     _localOverridesDuringLoad.clear();
     _clearDuringLoad = false;
+    _cartLoadFuture = null;
     _saveDebounce?.cancel();
     _saveDebounce = null;
     _isLoading = userId != null && _apiService != null;
@@ -70,21 +78,44 @@ class CartProvider extends ChangeNotifier {
     scheduleMicrotask(() {
       if (!_disposed) notifyListeners();
     });
-    if (_isLoading) unawaited(_loadAccountCart(userId!, revision));
+    if (_isLoading) unawaited(_startAccountCartLoad(userId!, revision));
+  }
+
+  Future<void> _startAccountCartLoad(String userId, int revision) {
+    final load = _loadAccountCart(userId, revision);
+    _cartLoadFuture = load;
+    unawaited(load.whenComplete(() {
+      if (identical(_cartLoadFuture, load)) _cartLoadFuture = null;
+    }));
+    return load;
   }
 
   Future<void> refreshSavedCart() async {
     final userId = _accountUserId;
     if (userId == null || _apiService == null) return;
+    if (_isLoading) {
+      await _cartLoadFuture;
+      return;
+    }
     if (_syncErrorFromSave) {
       await retrySync();
+      return;
+    }
+    if (_hasLoadedAccountCart && _hasUnsavedChanges) {
+      _saveDebounce?.cancel();
+      _saveDebounce = null;
+      try {
+        await _writeCurrentCart();
+      } on Exception {
+        return;
+      }
       return;
     }
     _isLoading = true;
     _syncError = null;
     _syncErrorFromSave = false;
     notifyListeners();
-    await _loadAccountCart(userId, _revision);
+    await _startAccountCartLoad(userId, _revision);
   }
 
   Future<void> retrySync() async {
@@ -125,10 +156,12 @@ class CartProvider extends ChangeNotifier {
           product: Product.fromJson(entry['product'] as Map<String, dynamic>),
           quantity: (entry['quantity'] as num).toInt(),
           isWholesale: entry['isWholesale'] as bool,
+          weightGrams: (entry['weightGrams'] as num?)?.toInt(),
         );
         restoredItems[_itemKey(item.product.id, item.isWholesale)] = item;
       }
       if (_accountUserId != userId) return;
+      _hasLoadedAccountCart = true;
       if (_revision != revision ||
           _localOverridesDuringLoad.isNotEmpty ||
           _clearDuringLoad) {
@@ -147,6 +180,7 @@ class CartProvider extends ChangeNotifier {
           ..addAll(restoredItems);
         _localOverridesDuringLoad.clear();
         _clearDuringLoad = false;
+        _hasUnsavedChanges = true;
         _isLoading = false;
         _scheduleServerSave();
         notifyListeners();
@@ -162,8 +196,9 @@ class CartProvider extends ChangeNotifier {
       _syncErrorFromSave = false;
       notifyListeners();
     } catch (error) {
-      if (_accountUserId != userId || _revision != revision) return;
+      if (_accountUserId != userId) return;
       _isLoading = false;
+      _hasLoadedAccountCart = false;
       _syncError = error.toString().replaceFirst('Exception: ', '');
       _syncErrorFromSave = false;
       notifyListeners();
@@ -214,6 +249,44 @@ class CartProvider extends ChangeNotifier {
         isWholesale: isWholesale,
       );
     }
+    _markChanged(key: key);
+  }
+
+  void addWeightedItem(Product product, int weightGrams) {
+    if (!product.isSoldByWeight || weightGrams < 1) {
+      throw StateError('Enter a valid weight in kilograms.');
+    }
+    final key = _itemKey(product.id, false);
+    final current = _items[key];
+    final nextWeight = (current?.weightGrams ?? 0) + weightGrams;
+    if (nextWeight > product.availableWeightGrams) {
+      throw StateError('The requested weight exceeds available stock.');
+    }
+    _items[key] = CartItem(
+      product: product,
+      quantity: 1,
+      weightGrams: nextWeight,
+    );
+    _markChanged(key: key);
+  }
+
+  void setWeightedItem(Product product, int weightGrams) {
+    if (!product.isSoldByWeight || weightGrams < 0) {
+      throw StateError('Enter a valid weight in kilograms.');
+    }
+    if (weightGrams == 0) {
+      removeItem(product.id);
+      return;
+    }
+    if (weightGrams > product.availableWeightGrams) {
+      throw StateError('The requested weight exceeds available stock.');
+    }
+    final key = _itemKey(product.id, false);
+    _items[key] = CartItem(
+      product: product,
+      quantity: 1,
+      weightGrams: weightGrams,
+    );
     _markChanged(key: key);
   }
 
@@ -288,6 +361,9 @@ class CartProvider extends ChangeNotifier {
   }
 
   void _markChanged({String? key, bool clearAll = false}) {
+    if (_accountUserId != null && _apiService != null) {
+      _hasUnsavedChanges = true;
+    }
     if (_isLoading && _accountUserId != null) {
       if (clearAll) _clearDuringLoad = true;
       if (key != null) _localOverridesDuringLoad.add(key);
@@ -300,6 +376,7 @@ class CartProvider extends ChangeNotifier {
 
   void _scheduleServerSave() {
     if (_accountUserId == null || _apiService == null) return;
+    if (_isLoading || !_hasLoadedAccountCart) return;
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(milliseconds: 250), () {
       _saveDebounce = null;
@@ -316,14 +393,17 @@ class CartProvider extends ChangeNotifier {
               'productId': item.product.id,
               'quantity': item.quantity,
               'isWholesale': item.isWholesale,
+              if (item.weightGrams != null) 'weightGrams': item.weightGrams,
             })
         .toList(growable: false);
+    final revision = _revision;
 
     Future<void> send() async {
       if (_accountUserId != userId) return;
       try {
         await apiService.put('/account/cart', {'items': items});
         if (_accountUserId == userId) {
+          if (_revision == revision) _hasUnsavedChanges = false;
           _syncError = null;
           _syncErrorFromSave = false;
         }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,12 +28,10 @@ class _SplashScreenState extends State<SplashScreen> {
       context,
       listen: false,
     );
+    unawaited(productProvider.loadCatalog());
     final results = await Future.wait<dynamic>([
       authProvider.sessionReady,
       SharedPreferences.getInstance(),
-      productProvider
-          .loadCatalog()
-          .timeout(const Duration(seconds: 3), onTimeout: () {}),
     ]);
     final prefs = results[1] as SharedPreferences;
     _onboardingSeen = prefs.getBool(AppConstants.keyOnboardingSeen) ?? false;
@@ -107,6 +107,7 @@ class _SplashScreenState extends State<SplashScreen> {
       onFinished: _onLoadingFinished,
       title: AppConstants.appName,
       subtitle: AppConstants.appTagline,
+      minDuration: const Duration(milliseconds: 1500),
     );
   }
 }

@@ -24,6 +24,8 @@
 	<true/>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Use Face ID to unlock your saved store sign-in.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Scan product barcodes when recording store inventory.</string>
 	<key>GoogleMapsApiKey</key>
 	<string>$(GOOGLE_MAPS_API_KEY)</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

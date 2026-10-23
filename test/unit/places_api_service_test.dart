@@ -19,7 +19,8 @@ class _FakeApiService extends ApiService {
 }
 
 void main() {
-  test('autocomplete sends locale and map-bias coordinates', () async {
+  test('autocomplete sends locale without restricting results to map area',
+      () async {
     final api = _FakeApiService([
       {
         'suggestions': [
@@ -36,8 +37,6 @@ void main() {
     final suggestions = await service.autocomplete(
       input: 'Main Road',
       languageCode: 'ne',
-      latitude: 26.72,
-      longitude: 85.92,
     );
 
     expect(suggestions, hasLength(1));
@@ -47,8 +46,6 @@ void main() {
     expect(api.requests.single.$2, {
       'input': 'Main Road',
       'languageCode': 'ne',
-      'latitude': '26.72',
-      'longitude': '85.92',
     });
   });
 

@@ -62,7 +62,7 @@ void main() {
     client.close();
   });
 
-  test('timeout errors identify the request that exceeded its deadline',
+  test('timeout errors give a short connection message without server details',
       () async {
     final client = MockClient((request) async {
       await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -77,14 +77,33 @@ void main() {
     await expectLater(
       api.get('/products'),
       throwsA(
-        isA<Exception>().having(
+        isA<ApiNetworkException>().having(
+          (error) => error.message,
+          'message',
+          'No internet connection. Check your connection and try again.',
+        ),
+      ),
+    );
+    client.close();
+  });
+
+  test('transport errors never expose backend URLs or exception details',
+      () async {
+    final client = MockClient((request) async {
+      throw http.ClientException('connection aborted', request.url);
+    });
+    final api = ApiService(
+      baseUrl: 'https://store.example/api/v1',
+      client: client,
+    );
+
+    await expectLater(
+      api.get('/products'),
+      throwsA(
+        isA<ApiNetworkException>().having(
           (error) => error.toString(),
           'message',
-          allOf(
-            contains('GET /products'),
-            contains('https://store.example/api/v1'),
-            contains('timed out after 0 seconds'),
-          ),
+          'No internet connection. Check your connection and try again.',
         ),
       ),
     );

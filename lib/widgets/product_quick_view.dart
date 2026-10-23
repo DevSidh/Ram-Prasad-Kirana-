@@ -13,6 +13,7 @@ import '../providers/product_provider.dart';
 import '../screens/product/product_details_screen.dart';
 import 'cart_flight_overlay.dart';
 import 'product_thumbnail.dart';
+import 'weight_quantity_dialog.dart';
 
 Future<void> showProductQuickView(
   BuildContext context,
@@ -35,7 +36,17 @@ Future<void> showProductQuickView(
       final theme = Theme.of(sheetContext);
       final tokens = AppThemeExtension.of(sheetContext);
       final addedToBasketLabel = sheetContext.tr('added to your basket');
-      var quantity = 1;
+      var quantity =
+          product.isWholesaleItem ? product.wholesaleMinimumQuantity : 1;
+      final minimumQuantity =
+          product.isWholesaleItem ? product.wholesaleMinimumQuantity : 1;
+      final unitPrice = product.isWholesaleItem
+          ? product.wholesalePrice ?? product.price
+          : product.price;
+      final canAddToBasket = (product.isSoldByWeight
+              ? product.hasStock
+              : product.stock >= minimumQuantity) &&
+          (!product.isWholesaleItem || product.wholesalePrice != null);
 
       return DraggableScrollableSheet(
         initialChildSize: .78,
@@ -112,7 +123,7 @@ Future<void> showProductQuickView(
                                         fallbackIcon:
                                             Icons.local_grocery_store_rounded,
                                         backgroundColor: Colors.white,
-                                        imageWidthFactor: .77,
+                                        imageWidthFactor: 1,
                                       ),
                                     ),
                                   ),
@@ -194,7 +205,7 @@ Future<void> showProductQuickView(
                                     children: [
                                       Expanded(
                                         child: Text(
-                                          '${AppConstants.currencySymbol}${product.price.toStringAsFixed(0)}',
+                                          '${AppConstants.currencySymbol}${unitPrice.toStringAsFixed(0)}',
                                           style: theme.textTheme.headlineSmall
                                               ?.copyWith(
                                             color: theme.colorScheme.primary,
@@ -204,8 +215,8 @@ Future<void> showProductQuickView(
                                       ),
                                       QuantityStepper(
                                         value: quantity,
-                                        minimum: 1,
-                                        onDecrement: quantity > 1
+                                        minimum: minimumQuantity,
+                                        onDecrement: quantity > minimumQuantity
                                             ? () => setSheetState(
                                                   () => quantity--,
                                                 )
@@ -299,12 +310,21 @@ Future<void> showProductQuickView(
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(18, 10, 18, 12),
                         child: PrimaryButton(
-                          label: product.stock > 0
-                              ? '${context.tr('Add to basket')} · ${AppConstants.currencySymbol}${(product.price * quantity).toStringAsFixed(0)}'
+                          label: canAddToBasket
+                              ? '${context.tr('Add to basket')} · ${AppConstants.currencySymbol}${(unitPrice * quantity).toStringAsFixed(0)}'
                               : context.tr('Out of stock'),
                           icon: Icons.add_shopping_cart_rounded,
-                          onPressed: product.stock > 0
-                              ? () {
+                          onPressed: canAddToBasket
+                              ? () async {
+                                  final weightGrams = product.isSoldByWeight
+                                      ? await showWeightQuantityDialog(
+                                          sheetContext, product)
+                                      : null;
+                                  if (product.isSoldByWeight &&
+                                      weightGrams == null) {
+                                    return;
+                                  }
+                                  if (!sheetContext.mounted) return;
                                   final imageBox = previewImageKey
                                       .currentContext
                                       ?.findRenderObject();
@@ -313,7 +333,18 @@ Future<void> showProductQuickView(
                                       ? imageBox.localToGlobal(Offset.zero) &
                                           imageBox.size
                                       : null;
-                                  cartProvider.addItem(product, quantity);
+                                  if (weightGrams != null) {
+                                    cartProvider.addWeightedItem(
+                                      product,
+                                      weightGrams,
+                                    );
+                                  } else {
+                                    cartProvider.addItem(
+                                      product,
+                                      quantity,
+                                      product.isWholesaleItem,
+                                    );
+                                  }
                                   animateProductToCart(
                                     context: sheetContext,
                                     product: product,

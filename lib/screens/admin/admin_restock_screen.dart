@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/constants.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
 import '../../widgets/store_animation.dart';
+import 'admin_inventory_expiry_screen.dart';
 
 class AdminRestockScreen extends StatefulWidget {
   final ApiService api;
@@ -65,7 +67,7 @@ class _AdminRestockScreenState extends State<AdminRestockScreen> {
     setState(() {
       _products = _products
           .map((item) => item.id == updatedProduct.id ? updatedProduct : item)
-          .where((item) => item.stock <= item.lowStockThreshold)
+          .where((item) => item.availableStock <= item.lowStockThreshold)
           .toList();
     });
     ScaffoldMessenger.of(context).showSnackBar(
@@ -77,6 +79,14 @@ class _AdminRestockScreenState extends State<AdminRestockScreen> {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => AdminRestockHistoryScreen(api: widget.api),
+      ),
+    );
+  }
+
+  Future<void> _openExpiry() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => AdminInventoryExpiryScreen(api: widget.api),
       ),
     );
   }
@@ -96,7 +106,7 @@ class _AdminRestockScreenState extends State<AdminRestockScreen> {
     }
 
     final outOfStockCount =
-        _products.where((product) => product.stock == 0).length;
+        _products.where((product) => product.availableStock == 0).length;
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
@@ -135,13 +145,21 @@ class _AdminRestockScreenState extends State<AdminRestockScreen> {
               ),
             ],
           ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: _openHistory,
-              icon: const Icon(Icons.history_rounded),
-              label: const Text('Receipt history'),
-            ),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 4,
+            children: [
+              TextButton.icon(
+                onPressed: _openExpiry,
+                icon: const Icon(Icons.event_busy_outlined),
+                label: const Text('Near to Expiry'),
+              ),
+              TextButton.icon(
+                onPressed: _openHistory,
+                icon: const Icon(Icons.history_rounded),
+                label: const Text('Receipt history'),
+              ),
+            ],
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
@@ -183,6 +201,7 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
   bool _loading = true;
   String? _error;
   int _page = 1;
+  DateTime? _selectedDay;
 
   @override
   void initState() {
@@ -196,7 +215,10 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
       _error = null;
     });
     try {
-      final history = await _adminApi.getRestockHistory(page: page);
+      final history = await _adminApi.getRestockHistory(
+        page: page,
+        day: _selectedDay,
+      );
       if (!mounted) return;
       setState(() {
         _history = history;
@@ -210,6 +232,19 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
         _loading = false;
       });
     }
+  }
+
+  Future<void> _selectDay() async {
+    final now = DateTime.now();
+    final day = await showDatePicker(
+      context: context,
+      initialDate: _selectedDay ?? now,
+      firstDate: DateTime(2020),
+      lastDate: now,
+    );
+    if (!mounted || day == null) return;
+    setState(() => _selectedDay = day);
+    await _load();
   }
 
   @override
@@ -246,6 +281,33 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
             Text(
               'Stock receipts recorded by admin staff.',
               style: TextStyle(color: AppConstants.textMuted, fontSize: 13),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _loading ? null : _selectDay,
+                  icon: const Icon(Icons.calendar_month_rounded, size: 18),
+                  label: Text(
+                    _selectedDay == null
+                        ? 'Filter by day'
+                        : DateFormat('EEE, d MMM yyyy').format(_selectedDay!),
+                  ),
+                ),
+                if (_selectedDay != null)
+                  TextButton(
+                    onPressed: _loading
+                        ? null
+                        : () {
+                            setState(() => _selectedDay = null);
+                            _load();
+                          },
+                    child: const Text('Clear day'),
+                  ),
+              ],
             ),
             if (_error != null) ...[
               const SizedBox(height: 10),
@@ -329,14 +391,14 @@ class _RestockReceiptCard extends StatelessWidget {
             runSpacing: 5,
             children: [
               Text(
-                '+${receipt.quantity} × ${receipt.unitLabel}',
+                _receiptQuantityLabel(receipt),
                 style: TextStyle(
                   color: AppConstants.primaryDark,
                   fontWeight: FontWeight.w800,
                 ),
               ),
               Text(
-                '${receipt.balanceAfter} available after receipt',
+                '${_formatQuantity(receipt.balanceAfter)} available after receipt',
                 style: TextStyle(color: AppConstants.textMuted),
               ),
             ],
@@ -362,6 +424,18 @@ class _RestockReceiptCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _formatQuantity(double quantity) => quantity % 1 == 0
+      ? quantity.toInt().toString()
+      : quantity.toStringAsFixed(3).replaceFirst(RegExp(r'\.?0+$'), '');
+
+  String _receiptQuantityLabel(AdminRestockReceipt receipt) {
+    if (RegExp(r'^\s*\d+(?:\.\d+)?\s*(?:kg|g)\s*$', caseSensitive: false)
+        .hasMatch(receipt.unitLabel)) {
+      return '+${_formatQuantity(receipt.quantity)} kg';
+    }
+    return '+${_formatQuantity(receipt.quantity)} × ${receipt.unitLabel}';
   }
 }
 
@@ -440,7 +514,7 @@ class _RestockProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isOutOfStock = product.stock == 0;
+    final isOutOfStock = product.availableStock == 0;
     final statusColor =
         isOutOfStock ? Colors.red.shade700 : Colors.orange.shade800;
     return Container(
@@ -489,7 +563,7 @@ class _RestockProductCard extends StatelessWidget {
             runSpacing: 6,
             children: [
               Text(
-                '${product.stock} available',
+                '${product.availableStockLabel} available',
                 style: TextStyle(
                   color: statusColor,
                   fontWeight: FontWeight.w800,
@@ -563,7 +637,12 @@ class _RestockDialog extends StatefulWidget {
 
 class _RestockDialogState extends State<_RestockDialog> {
   late final TextEditingController _quantityController;
+  late final TextEditingController _lotNumberController;
+  late final TextEditingController _notesController;
   final _formKey = GlobalKey<FormState>();
+  DateTime? _manufacturedAt;
+  DateTime? _expiresAt;
+  bool _noExpiry = false;
   bool _saving = false;
   String? _error;
 
@@ -571,17 +650,57 @@ class _RestockDialogState extends State<_RestockDialog> {
   void initState() {
     super.initState();
     final suggestedQuantity =
-        widget.product.lowStockThreshold - widget.product.stock + 1;
+        widget.product.lowStockThreshold - widget.product.availableStock + 1;
     _quantityController = TextEditingController(
-      text: (suggestedQuantity > 0 ? suggestedQuantity : 1).toString(),
+      text: suggestedQuantity > 0
+          ? suggestedQuantity.toStringAsFixed(3).replaceFirst(
+                RegExp(r'\.?0+$'),
+                '',
+              )
+          : '1',
     );
+    _lotNumberController = TextEditingController();
+    _notesController = TextEditingController();
   }
 
   @override
   void dispose() {
     _quantityController.dispose();
+    _lotNumberController.dispose();
+    _notesController.dispose();
     super.dispose();
   }
+
+  Future<void> _chooseDate({
+    required bool manufactureDate,
+    ValueChanged<DateTime>? onSelected,
+  }) async {
+    final selectedDate = manufactureDate ? _manufacturedAt : _expiresAt;
+    final date = await showDatePicker(
+      context: context,
+      initialDate: selectedDate ??
+          (manufactureDate
+              ? DateTime.now()
+              : DateTime.now().add(const Duration(days: 365))),
+      firstDate: DateTime(2000),
+      lastDate: manufactureDate ? DateTime.now() : DateTime(2100),
+    );
+    if (!mounted || date == null) return;
+    setState(() {
+      if (manufactureDate) {
+        _manufacturedAt = date;
+      } else {
+        _expiresAt = date;
+      }
+    });
+    onSelected?.call(date);
+  }
+
+  DateTime _dateAsUtc(DateTime date) =>
+      DateTime.utc(date.year, date.month, date.day);
+
+  String _formatDate(DateTime date) =>
+      MaterialLocalizations.of(context).formatMediumDate(date);
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
@@ -590,9 +709,22 @@ class _RestockDialogState extends State<_RestockDialog> {
       _error = null;
     });
     try {
-      final quantity = int.parse(_quantityController.text.trim());
-      final product =
-          await widget.api.restockProduct(widget.product.id, quantity);
+      final quantity = double.parse(_quantityController.text.trim());
+      final product = await widget.api.restockProduct(
+        widget.product.id,
+        {
+          'quantity': quantity,
+          'lotNumber': _lotNumberController.text.trim().isEmpty
+              ? null
+              : _lotNumberController.text.trim(),
+          'manufacturedAt': _dateAsUtc(_manufacturedAt!).toIso8601String(),
+          'expiresAt':
+              _noExpiry ? null : _dateAsUtc(_expiresAt!).toIso8601String(),
+          'noExpiry': _noExpiry,
+          if (_notesController.text.trim().isNotEmpty)
+            'notes': _notesController.text.trim(),
+        },
+      );
       if (mounted) Navigator.pop(context, product);
     } catch (error) {
       if (!mounted) return;
@@ -611,38 +743,147 @@ class _RestockDialogState extends State<_RestockDialog> {
         width: 360,
         child: Form(
           key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(widget.product.name),
-              const SizedBox(height: 4),
-              Text(
-                'Current available stock: ${widget.product.stock}',
-                style: TextStyle(color: AppConstants.textMuted, fontSize: 12),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _quantityController,
-                enabled: !_saving,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Quantity received',
-                  helperText: 'This amount will be added to current stock.',
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(widget.product.name),
+                const SizedBox(height: 4),
+                Text(
+                  'Current available stock: ${widget.product.availableStockLabel}',
+                  style: TextStyle(color: AppConstants.textMuted, fontSize: 12),
                 ),
-                validator: (value) {
-                  final quantity = int.tryParse(value?.trim() ?? '');
-                  if (quantity == null || quantity < 1 || quantity > 1000000) {
-                    return 'Enter a whole number from 1 to 1,000,000';
-                  }
-                  return null;
-                },
-              ),
-              if (_error != null) ...[
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _quantityController,
+                  enabled: !_saving,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Quantity received',
+                    helperText: 'This amount will be added to current stock.',
+                  ),
+                  validator: (value) {
+                    final quantity = double.tryParse(value?.trim() ?? '');
+                    if (quantity == null ||
+                        !quantity.isFinite ||
+                        quantity <= 0 ||
+                        quantity > 1000000) {
+                      return 'Enter a positive quantity up to 1,000,000';
+                    }
+                    return null;
+                  },
+                ),
                 const SizedBox(height: 8),
-                Text(_error!, style: const TextStyle(color: Colors.red)),
+                TextFormField(
+                  controller: _lotNumberController,
+                  enabled: !_saving,
+                  decoration: const InputDecoration(
+                    labelText: 'Batch / lot number (optional)',
+                  ),
+                ),
+                FormField<DateTime>(
+                  initialValue: _manufacturedAt,
+                  validator: (value) {
+                    if (value == null) return 'Choose a manufacture date.';
+                    if (DateTime(value.year, value.month, value.day)
+                        .isAfter(DateTime.now())) {
+                      return 'Manufacture date cannot be in the future.';
+                    }
+                    return null;
+                  },
+                  builder: (field) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.factory_outlined),
+                    title: Text(
+                      _manufacturedAt == null
+                          ? 'Manufacture date (MFG)'
+                          : 'MFG · ${_formatDate(_manufacturedAt!)}',
+                    ),
+                    subtitle: field.errorText == null
+                        ? null
+                        : Text(
+                            field.errorText!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                    trailing: const Icon(Icons.calendar_month_outlined),
+                    onTap: _saving
+                        ? null
+                        : () => _chooseDate(
+                              manufactureDate: true,
+                              onSelected: field.didChange,
+                            ),
+                  ),
+                ),
+                FormField<DateTime>(
+                  initialValue: _expiresAt,
+                  validator: (value) {
+                    if (_noExpiry) return null;
+                    if (value == null) return 'Choose an expiry date.';
+                    if (_manufacturedAt != null &&
+                        !value.isAfter(_manufacturedAt!)) {
+                      return 'Expiry must be after manufacture.';
+                    }
+                    return null;
+                  },
+                  builder: (field) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.event_busy_outlined),
+                    title: Text(
+                      _noExpiry
+                          ? 'No expiry date confirmed'
+                          : _expiresAt == null
+                              ? 'Expiry date (EXP)'
+                              : 'EXP · ${_formatDate(_expiresAt!)}',
+                    ),
+                    subtitle: field.errorText == null
+                        ? null
+                        : Text(
+                            field.errorText!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                    trailing: _noExpiry
+                        ? null
+                        : const Icon(Icons.calendar_month_outlined),
+                    onTap: _saving || _noExpiry
+                        ? null
+                        : () => _chooseDate(
+                              manufactureDate: false,
+                              onSelected: field.didChange,
+                            ),
+                  ),
+                ),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('This product does not expire'),
+                  value: _noExpiry,
+                  onChanged: _saving
+                      ? null
+                      : (value) => setState(() {
+                            _noExpiry = value ?? false;
+                            if (_noExpiry) _expiresAt = null;
+                          }),
+                ),
+                TextFormField(
+                  controller: _notesController,
+                  enabled: !_saving,
+                  maxLength: 500,
+                  decoration: const InputDecoration(
+                    labelText: 'Receipt notes (optional)',
+                  ),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(_error!, style: const TextStyle(color: Colors.red)),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

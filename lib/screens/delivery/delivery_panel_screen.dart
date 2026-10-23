@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -26,6 +27,7 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen>
     with WidgetsBindingObserver {
   late final DeliveryApiService _deliveryApi = DeliveryApiService(widget.api);
   Timer? _refreshTimer;
+  Duration? _refreshInterval;
   Timer? _locationTimer;
   final LocationService _locationService = LocationService();
   DeliveryProfile? _profile;
@@ -60,9 +62,16 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen>
   }
 
   void _startRefreshTimer() {
-    if (_refreshTimer != null) return;
+    final isTrackingLocation = (_page?.assignments ?? const [])
+        .any((assignment) => assignment.status == 'OUT_FOR_DELIVERY');
+    final interval = isTrackingLocation
+        ? const Duration(seconds: 20)
+        : const Duration(seconds: 60);
+    if (_refreshTimer != null && _refreshInterval == interval) return;
+    _refreshTimer?.cancel();
+    _refreshInterval = interval;
     _refreshTimer = Timer.periodic(
-      const Duration(seconds: 60),
+      interval,
       (_) => _refresh(silent: true),
     );
   }
@@ -84,6 +93,7 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen>
     } else {
       _refreshTimer?.cancel();
       _refreshTimer = null;
+      _refreshInterval = null;
       _locationTimer?.cancel();
       _locationTimer = null;
     }
@@ -112,6 +122,9 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen>
         _error = null;
       });
       _syncLiveLocation();
+      _refreshTimer?.cancel();
+      _refreshTimer = null;
+      _startRefreshTimer();
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -1070,6 +1083,57 @@ class _AssignmentCard extends StatelessWidget {
                     '${order.longitude!.toStringAsFixed(5)}',
               ),
             ],
+            if (order.latitude != null &&
+                order.longitude != null &&
+                order.customerLatitude != null &&
+                order.customerLongitude != null) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 190,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: GoogleMap(
+                    initialCameraPosition: CameraPosition(
+                      target: LatLng(
+                        (order.latitude! + order.customerLatitude!) / 2,
+                        (order.longitude! + order.customerLongitude!) / 2,
+                      ),
+                      zoom: 14,
+                    ),
+                    markers: {
+                      Marker(
+                        markerId: const MarkerId('delivery-destination'),
+                        position: LatLng(order.latitude!, order.longitude!),
+                        infoWindow: const InfoWindow(title: 'Delivery address'),
+                        icon: BitmapDescriptor.defaultMarkerWithHue(
+                          BitmapDescriptor.hueRed,
+                        ),
+                      ),
+                      Marker(
+                        markerId: const MarkerId('customer-current-location'),
+                        position: LatLng(
+                          order.customerLatitude!,
+                          order.customerLongitude!,
+                        ),
+                        infoWindow:
+                            const InfoWindow(title: 'Customer location'),
+                        icon: BitmapDescriptor.defaultMarkerWithHue(
+                          BitmapDescriptor.hueBlue,
+                        ),
+                      ),
+                    },
+                    zoomControlsEnabled: false,
+                    myLocationButtonEnabled: false,
+                    mapToolbarEnabled: false,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              const _InfoLine(
+                icon: Icons.location_on_outlined,
+                text: 'Red: delivery address · Blue: customer live location',
+              ),
+            ],
             if (order.items.isNotEmpty) ...[
               const SizedBox(height: 9),
               for (final item in order.items)
@@ -1092,7 +1156,9 @@ class _AssignmentCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '× ${item.quantity}',
+                        item.weightGrams == null
+                            ? '× ${item.quantity}'
+                            : '${(item.weightGrams! / 1000).toStringAsFixed(3)} kg',
                         style: TextStyle(
                           color: AppConstants.textMuted,
                           fontSize: 12,

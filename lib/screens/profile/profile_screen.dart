@@ -9,6 +9,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/product_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/language_provider.dart';
+import '../../models/customer_menu_features.dart';
 import '../../services/secure_login_service.dart';
 import '../../services/api_service.dart';
 import '../../widgets/unread_notification_indicator.dart';
@@ -38,6 +39,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _uploadingAvatar = false;
   bool _deletingAccount = false;
   int _notificationRefreshToken = 0;
+  CustomerMenuFeatures _menuFeatures = CustomerMenuFeatures.defaults;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadCustomerMenuFeatures();
+    });
+  }
+
+  Future<void> _loadCustomerMenuFeatures() async {
+    final api = context.read<ApiService?>();
+    if (api == null) return;
+    try {
+      final response = await api.get('/store/customer-menu-features');
+      if (response is! Map<String, dynamic>) {
+        throw const FormatException('Invalid customer menu settings.');
+      }
+      if (!mounted) return;
+      setState(() {
+        _menuFeatures =
+            CustomerMenuFeatures.fromJson(response['customerMenuFeatures']);
+      });
+    } catch (error) {
+      debugPrint('Customer menu settings unavailable: $error');
+    }
+  }
 
   Future<bool> _ensureSignedIn() async {
     final auth = context.read<AuthProvider>();
@@ -548,105 +576,130 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           const SizedBox(height: 22),
                           Row(
                             children: [
-                              _ProfileQuickAction(
-                                icon: Icons.receipt_long_outlined,
-                                label: context.tr('Orders'),
-                                onTap: () => _openAccountSection(
-                                  (_) => const MyOrdersScreen(),
+                              if (_menuFeatures.isEnabled('orders'))
+                                _ProfileQuickAction(
+                                  icon: Icons.receipt_long_outlined,
+                                  label: context.tr('Orders'),
+                                  onTap: () => _openAccountSection(
+                                    (_) => const MyOrdersScreen(),
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 10),
-                              _ProfileQuickAction(
-                                icon: Icons.location_on_outlined,
-                                label: context.tr('Addresses'),
-                                onTap: () => _openAccountSection(
-                                  (_) => const AddressBookScreen(),
+                              if (_menuFeatures.isEnabled('orders') &&
+                                  (_menuFeatures.isEnabled('addresses') ||
+                                      _menuFeatures.isEnabled('savedItems')))
+                                const SizedBox(width: 10),
+                              if (_menuFeatures.isEnabled('addresses'))
+                                _ProfileQuickAction(
+                                  icon: Icons.location_on_outlined,
+                                  label: context.tr('Addresses'),
+                                  onTap: () => _openAccountSection(
+                                    (_) => const AddressBookScreen(),
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 10),
-                              _ProfileQuickAction(
-                                icon: Icons.favorite_border,
-                                label: context.tr('Saved items'),
-                                onTap: () {
-                                  products.resetCatalogFilters();
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => const ProductListScreen(
-                                        categoryName: 'Saved items',
-                                        favoritesOnly: true,
+                              if (_menuFeatures.isEnabled('addresses') &&
+                                  _menuFeatures.isEnabled('savedItems'))
+                                const SizedBox(width: 10),
+                              if (_menuFeatures.isEnabled('savedItems'))
+                                _ProfileQuickAction(
+                                  icon: Icons.favorite_border,
+                                  label: context.tr('Saved items'),
+                                  onTap: () {
+                                    products.resetCatalogFilters();
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => const ProductListScreen(
+                                          categoryName: 'Saved items',
+                                          favoritesOnly: true,
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                },
-                              ),
+                                    );
+                                  },
+                                ),
                             ],
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    Material(
-                      color: AppConstants.glassSurfaceFor(isDark),
-                      borderRadius: BorderRadius.circular(18),
-                      child: InkWell(
-                        key: const ValueKey('profile-buying-streak'),
+                    if (_menuFeatures.isEnabled('buyingStreak')) ...[
+                      const SizedBox(height: 16),
+                      Material(
+                        color: AppConstants.glassSurfaceFor(isDark),
                         borderRadius: BorderRadius.circular(18),
-                        onTap: () => _openAccountSection(
-                          (_) => const BuyingStreakScreen(),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 15,
+                        child: InkWell(
+                          key: const ValueKey('profile-buying-streak'),
+                          borderRadius: BorderRadius.circular(18),
+                          onTap: () => _openAccountSection(
+                            (_) => const BuyingStreakScreen(),
                           ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.local_fire_department_rounded,
-                                color: Color(0xFFE98228),
-                                size: 28,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      context.tr('Buying day streak'),
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      context.tr(
-                                        'See your milestones and claim rewards',
-                                      ),
-                                      style: TextStyle(
-                                        color: AppConstants.textMuted,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 15,
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.local_fire_department_rounded,
+                                  color: Color(0xFFE98228),
+                                  size: 28,
                                 ),
-                              ),
-                              const Icon(Icons.chevron_right),
-                            ],
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        context.tr('Buying day streak'),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        context.tr(
+                                          'See your milestones and claim rewards',
+                                        ),
+                                        style: TextStyle(
+                                          color: AppConstants.textMuted,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const Icon(Icons.chevron_right),
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    Text(
-                      context.tr('Preferences & payments'),
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: AppConstants.textDark,
-                            fontWeight: FontWeight.w800,
-                          ),
-                    ),
-                    const SizedBox(height: 8),
+                    ],
+                    if (_menuFeatures.isEnabled('appearance') ||
+                        _menuFeatures.isEnabled('language') ||
+                        _menuFeatures.isEnabled('payments') ||
+                        _menuFeatures.isEnabled('notifications') ||
+                        _menuFeatures.isEnabled('notificationPreferences'))
+                      const SizedBox(height: 16),
+                    if (_menuFeatures.isEnabled('appearance') ||
+                        _menuFeatures.isEnabled('language') ||
+                        _menuFeatures.isEnabled('payments') ||
+                        _menuFeatures.isEnabled('notifications') ||
+                        _menuFeatures.isEnabled('notificationPreferences'))
+                      Text(
+                        context.tr('Preferences & payments'),
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: AppConstants.textDark,
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                    if (_menuFeatures.isEnabled('appearance') ||
+                        _menuFeatures.isEnabled('language') ||
+                        _menuFeatures.isEnabled('payments') ||
+                        _menuFeatures.isEnabled('notifications') ||
+                        _menuFeatures.isEnabled('notificationPreferences'))
+                      const SizedBox(height: 8),
                     // Options List
                     Material(
                       color: AppConstants.glassSurfaceFor(isDark),
@@ -662,114 +715,127 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       clipBehavior: Clip.antiAlias,
                       child: Column(
                         children: [
-                          SwitchListTile.adaptive(
-                            secondary: Icon(
-                              isDark
-                                  ? Icons.dark_mode_outlined
-                                  : Icons.light_mode_outlined,
-                              color: AppConstants.primary,
-                            ),
-                            title: Text(
-                              context.tr('Dark appearance'),
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            subtitle: Text(
-                              context.tr(
-                                isDark ? 'Dark mode is on' : 'Light mode is on',
-                              ),
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppConstants.textMuted,
-                              ),
-                            ),
-                            value: isDark,
-                            onChanged: themeProvider == null ? null : _setTheme,
-                          ),
-                          const Divider(height: 1),
-                          ListTile(
-                            leading: const Icon(
-                              Icons.translate_outlined,
-                              color: AppConstants.primary,
-                            ),
-                            title: Text(
-                              context.tr('Language'),
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            subtitle: Text(
-                              context.tr(
-                                languageProvider?.languageCode == 'ne'
-                                    ? 'Nepali'
-                                    : 'English',
-                              ),
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppConstants.textMuted,
-                              ),
-                            ),
-                            trailing: const Icon(Icons.chevron_right, size: 20),
-                            onTap: languageProvider == null
-                                ? null
-                                : _chooseLanguage,
-                          ),
-                          const Divider(height: 1),
-                          ListTile(
-                            leading: const Icon(Icons.payment_outlined,
-                                color: AppConstants.primary),
-                            title: Text(context.tr('Payment methods'),
-                                style: const TextStyle(
-                                    fontSize: 13, fontWeight: FontWeight.w600)),
-                            trailing: const Icon(Icons.chevron_right, size: 20),
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const PaymentPreferenceScreen(),
-                              ),
-                            ),
-                          ),
-                          const Divider(height: 1),
-                          ListTile(
-                            leading: UnreadNotificationIndicator(
-                              api: context.read<ApiService?>(),
-                              userId: user?.id,
-                              refreshToken: _notificationRefreshToken,
-                              child: const Icon(
-                                Icons.notifications_active_outlined,
+                          if (_menuFeatures.isEnabled('appearance'))
+                            SwitchListTile.adaptive(
+                              secondary: Icon(
+                                isDark
+                                    ? Icons.dark_mode_outlined
+                                    : Icons.light_mode_outlined,
                                 color: AppConstants.primary,
                               ),
-                            ),
-                            title: Text(
-                              context.tr('Notifications'),
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            trailing: const Icon(Icons.chevron_right, size: 20),
-                            onTap: _openNotifications,
-                          ),
-                          const Divider(height: 1),
-                          ListTile(
-                            leading: const Icon(
-                                Icons.notifications_none_outlined,
-                                color: AppConstants.primary),
-                            title: Text(context.tr('Notification Preferences'),
+                              title: Text(
+                                context.tr('Dark appearance'),
                                 style: const TextStyle(
-                                    fontSize: 13, fontWeight: FontWeight.w600)),
-                            trailing: const Icon(Icons.chevron_right, size: 20),
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    const NotificationPreferencesScreen(),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              subtitle: Text(
+                                context.tr(
+                                  isDark
+                                      ? 'Dark mode is on'
+                                      : 'Light mode is on',
+                                ),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppConstants.textMuted,
+                                ),
+                              ),
+                              value: isDark,
+                              onChanged:
+                                  themeProvider == null ? null : _setTheme,
+                            ),
+                          if (_menuFeatures.isEnabled('language'))
+                            ListTile(
+                              leading: const Icon(
+                                Icons.translate_outlined,
+                                color: AppConstants.primary,
+                              ),
+                              title: Text(
+                                context.tr('Language'),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              subtitle: Text(
+                                context.tr(
+                                  languageProvider?.languageCode == 'ne'
+                                      ? 'Nepali'
+                                      : 'English',
+                                ),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppConstants.textMuted,
+                                ),
+                              ),
+                              trailing:
+                                  const Icon(Icons.chevron_right, size: 20),
+                              onTap: languageProvider == null
+                                  ? null
+                                  : _chooseLanguage,
+                            ),
+                          if (_menuFeatures.isEnabled('payments'))
+                            ListTile(
+                              leading: const Icon(Icons.payment_outlined,
+                                  color: AppConstants.primary),
+                              title: Text(context.tr('Payment methods'),
+                                  style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600)),
+                              trailing:
+                                  const Icon(Icons.chevron_right, size: 20),
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const PaymentPreferenceScreen(),
+                                ),
                               ),
                             ),
-                          ),
+                          if (_menuFeatures.isEnabled('notifications'))
+                            ListTile(
+                              leading: UnreadNotificationIndicator(
+                                api: context.read<ApiService?>(),
+                                userId: user?.id,
+                                refreshToken: _notificationRefreshToken,
+                                child: const Icon(
+                                  Icons.notifications_active_outlined,
+                                  color: AppConstants.primary,
+                                ),
+                              ),
+                              title: Text(
+                                context.tr('Notifications'),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              trailing:
+                                  const Icon(Icons.chevron_right, size: 20),
+                              onTap: _openNotifications,
+                            ),
+                          if (_menuFeatures
+                              .isEnabled('notificationPreferences'))
+                            ListTile(
+                              leading: const Icon(
+                                  Icons.notifications_none_outlined,
+                                  color: AppConstants.primary),
+                              title: Text(
+                                  context.tr('Notification Preferences'),
+                                  style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600)),
+                              trailing:
+                                  const Icon(Icons.chevron_right, size: 20),
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const NotificationPreferencesScreen(),
+                                ),
+                              ),
+                            ),
                           const Divider(height: 1),
                           ListTile(
                             leading: const Icon(
@@ -802,101 +868,118 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    Text(
-                      context.tr('Help & account'),
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: AppConstants.textDark,
-                            fontWeight: FontWeight.w800,
-                          ),
-                    ),
-                    const SizedBox(height: 8),
-                    Material(
-                      color: AppConstants.glassSurfaceFor(isDark),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                        side: BorderSide(
-                          color: AppConstants.glassBorderFor(isDark),
-                        ),
+                    if (_menuFeatures.isEnabled('help') ||
+                        _menuFeatures.isEnabled('legal') ||
+                        (user != null &&
+                            _menuFeatures.isEnabled('deleteAccount')))
+                      Text(
+                        context.tr('Help & account'),
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: AppConstants.textDark,
+                              fontWeight: FontWeight.w800,
+                            ),
                       ),
-                      elevation: 1,
-                      shadowColor:
-                          AppConstants.primaryDark.withValues(alpha: 0.06),
-                      clipBehavior: Clip.antiAlias,
-                      child: Column(
-                        children: [
-                          ListTile(
-                            leading: Icon(Icons.help_outline,
-                                color: AppConstants.textMuted),
-                            title: Text(context.tr('Help & store information'),
-                                style: const TextStyle(
-                                    fontSize: 13, fontWeight: FontWeight.w600)),
-                            trailing: const Icon(Icons.chevron_right, size: 20),
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const StoreHelpScreen(),
-                              ),
-                            ),
+                    if (_menuFeatures.isEnabled('help') ||
+                        _menuFeatures.isEnabled('legal') ||
+                        user != null)
+                      const SizedBox(height: 8),
+                    if (_menuFeatures.isEnabled('help') ||
+                        _menuFeatures.isEnabled('legal') ||
+                        user != null)
+                      Material(
+                        color: AppConstants.glassSurfaceFor(isDark),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          side: BorderSide(
+                            color: AppConstants.glassBorderFor(isDark),
                           ),
-                          const Divider(height: 1),
-                          ListTile(
-                            leading: Icon(Icons.privacy_tip_outlined,
-                                color: AppConstants.textMuted),
-                            title: Text(context.tr('Privacy Policy'),
-                                style: const TextStyle(
-                                    fontSize: 13, fontWeight: FontWeight.w600)),
-                            trailing: const Icon(Icons.chevron_right, size: 20),
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const StorePrivacyScreen(),
-                              ),
-                            ),
-                          ),
-                          if (user != null) ...[
-                            const Divider(height: 1),
-                            ListTile(
-                              leading: const Icon(
-                                Icons.person_remove_outlined,
-                                color: Colors.red,
-                              ),
-                              title: Text(
-                                context.tr('Delete account'),
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.red,
+                        ),
+                        elevation: 1,
+                        shadowColor:
+                            AppConstants.primaryDark.withValues(alpha: 0.06),
+                        clipBehavior: Clip.antiAlias,
+                        child: Column(
+                          children: [
+                            if (_menuFeatures.isEnabled('help'))
+                              ListTile(
+                                leading: Icon(Icons.help_outline,
+                                    color: AppConstants.textMuted),
+                                title: Text(
+                                    context.tr('Help & store information'),
+                                    style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600)),
+                                trailing:
+                                    const Icon(Icons.chevron_right, size: 20),
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const StoreHelpScreen(),
+                                  ),
                                 ),
                               ),
-                              enabled: !_deletingAccount,
-                              trailing: _deletingAccount
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.chevron_right, size: 20),
-                              onTap: _deletingAccount
-                                  ? null
-                                  : () => _deleteAccount(auth),
-                            ),
-                            const Divider(height: 1),
-                            ListTile(
-                              leading:
-                                  const Icon(Icons.logout, color: Colors.red),
-                              title: Text(context.tr('Log Out'),
+                            if (_menuFeatures.isEnabled('legal'))
+                              ListTile(
+                                leading: Icon(Icons.privacy_tip_outlined,
+                                    color: AppConstants.textMuted),
+                                title: Text(context.tr('Privacy Policy'),
+                                    style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600)),
+                                trailing:
+                                    const Icon(Icons.chevron_right, size: 20),
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const StorePrivacyScreen(),
+                                  ),
+                                ),
+                              ),
+                            if (user != null &&
+                                _menuFeatures.isEnabled('deleteAccount')) ...[
+                              const Divider(height: 1),
+                              ListTile(
+                                leading: const Icon(
+                                  Icons.person_remove_outlined,
+                                  color: Colors.red,
+                                ),
+                                title: Text(
+                                  context.tr('Delete account'),
                                   style: const TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.red)),
-                              onTap: () => _logOut(auth),
-                            ),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.red,
+                                  ),
+                                ),
+                                enabled: !_deletingAccount,
+                                trailing: _deletingAccount
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.chevron_right, size: 20),
+                                onTap: _deletingAccount
+                                    ? null
+                                    : () => _deleteAccount(auth),
+                              ),
+                              const Divider(height: 1),
+                              ListTile(
+                                leading:
+                                    const Icon(Icons.logout, color: Colors.red),
+                                title: Text(context.tr('Log Out'),
+                                    style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.red)),
+                                onTap: () => _logOut(auth),
+                              ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),

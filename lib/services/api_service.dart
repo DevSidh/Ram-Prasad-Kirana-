@@ -20,8 +20,7 @@ class ApiService {
     http.Client? client,
     Duration requestTimeout = _defaultRequestTimeout,
     Duration uploadTimeout = _defaultUploadTimeout,
-  })
-      : baseUrl = baseUrl ?? AppConstants.apiBaseUrl,
+  })  : baseUrl = baseUrl ?? AppConstants.apiBaseUrl,
         _client = client ?? http.Client(),
         _requestTimeout = requestTimeout,
         _uploadTimeout = uploadTimeout;
@@ -65,18 +64,18 @@ class ApiService {
       if (queryParams != null) {
         uri = uri.replace(queryParameters: queryParams);
       }
-      final response = await _client
-          .get(uri, headers: _headers())
-          .timeout(_requestTimeout);
+      final response =
+          await _client.get(uri, headers: _headers()).timeout(_requestTimeout);
       return _processResponse(response);
     } on ApiResponseException {
       rethrow;
     } on TimeoutException {
-      throw _timeoutException('GET', endpoint, _requestTimeout);
-    } catch (e) {
-      throw Exception(
-        'Could not reach the store server at $baseUrl for GET $endpoint: $e',
-      );
+      throw const ApiNetworkException();
+    } on FormatException {
+      throw const ApiResponseException(
+          'The store returned an invalid response.');
+    } catch (_) {
+      throw const ApiNetworkException();
     }
   }
 
@@ -90,11 +89,12 @@ class ApiService {
     } on ApiResponseException {
       rethrow;
     } on TimeoutException {
-      throw _timeoutException('POST', endpoint, _requestTimeout);
-    } catch (e) {
-      throw Exception(
-        'Could not reach the store server at $baseUrl for POST $endpoint: $e',
-      );
+      throw const ApiNetworkException();
+    } on FormatException {
+      throw const ApiResponseException(
+          'The store returned an invalid response.');
+    } catch (_) {
+      throw const ApiNetworkException();
     }
   }
 
@@ -127,19 +127,19 @@ class ApiService {
         bytes,
         filename: fileName,
       ));
-      final streamed =
-          await _client.send(request).timeout(_uploadTimeout);
-      final response = await http.Response.fromStream(streamed)
-          .timeout(_uploadTimeout);
+      final streamed = await _client.send(request).timeout(_uploadTimeout);
+      final response =
+          await http.Response.fromStream(streamed).timeout(_uploadTimeout);
       return _processResponse(response);
     } on ApiResponseException {
       rethrow;
     } on TimeoutException {
-      throw _timeoutException(method, endpoint, _uploadTimeout);
-    } catch (error) {
-      throw Exception(
-        'Could not reach the store server at $baseUrl for $method $endpoint: $error',
-      );
+      throw const ApiNetworkException();
+    } on FormatException {
+      throw const ApiResponseException(
+          'The store returned an invalid response.');
+    } catch (_) {
+      throw const ApiNetworkException();
     }
   }
 
@@ -153,11 +153,12 @@ class ApiService {
     } on ApiResponseException {
       rethrow;
     } on TimeoutException {
-      throw _timeoutException('PATCH', endpoint, _requestTimeout);
-    } catch (e) {
-      throw Exception(
-        'Could not reach the store server at $baseUrl for PATCH $endpoint: $e',
-      );
+      throw const ApiNetworkException();
+    } on FormatException {
+      throw const ApiResponseException(
+          'The store returned an invalid response.');
+    } catch (_) {
+      throw const ApiNetworkException();
     }
   }
 
@@ -171,11 +172,12 @@ class ApiService {
     } on ApiResponseException {
       rethrow;
     } on TimeoutException {
-      throw _timeoutException('PUT', endpoint, _requestTimeout);
-    } catch (e) {
-      throw Exception(
-        'Could not reach the store server at $baseUrl for PUT $endpoint: $e',
-      );
+      throw const ApiNetworkException();
+    } on FormatException {
+      throw const ApiResponseException(
+          'The store returned an invalid response.');
+    } catch (_) {
+      throw const ApiNetworkException();
     }
   }
 
@@ -196,24 +198,14 @@ class ApiService {
     } on ApiResponseException {
       rethrow;
     } on TimeoutException {
-      throw _timeoutException('DELETE', endpoint, _requestTimeout);
-    } catch (e) {
-      throw Exception(
-        'Could not reach the store server at $baseUrl for DELETE $endpoint: $e',
-      );
+      throw const ApiNetworkException();
+    } on FormatException {
+      throw const ApiResponseException(
+          'The store returned an invalid response.');
+    } catch (_) {
+      throw const ApiNetworkException();
     }
   }
-
-  Exception _timeoutException(
-    String method,
-    String endpoint,
-    Duration timeout,
-  ) =>
-      Exception(
-        'Request $method $endpoint to $baseUrl timed out after '
-        "${timeout.inSeconds} seconds. Check the phone's internet connection "
-        'and try again.',
-      );
 
   dynamic _processResponse(http.Response response) {
     if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -262,6 +254,16 @@ class ApiResponseException implements Exception {
   final String message;
 
   const ApiResponseException(this.message);
+
+  @override
+  String toString() => message;
+}
+
+class ApiNetworkException implements Exception {
+  const ApiNetworkException();
+
+  String get message =>
+      'No internet connection. Check your connection and try again.';
 
   @override
   String toString() => message;

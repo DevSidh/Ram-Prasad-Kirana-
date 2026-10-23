@@ -13,6 +13,8 @@ import 'package:freshharvest_grocery/services/api_service.dart';
 import 'package:freshharvest_grocery/widgets/cart_flight_overlay.dart';
 
 class _CarouselApi extends ApiService {
+  int _loginCount = 0;
+
   @override
   Future<dynamic> get(
     String endpoint, {
@@ -41,6 +43,14 @@ class _CarouselApi extends ApiService {
         'timeZone': 'Asia/Kathmandu',
         'statusMessage': 'The store is open and accepting orders.',
       };
+    }
+    if (endpoint == '/store/customer-menu-features') {
+      return {
+        'customerMenuFeatures': {'coupons': true},
+      };
+    }
+    if (endpoint == '/account/coupons/used') {
+      return {'usedCouponCodes': <String>[]};
     }
     if (endpoint == '/coupons/offer') {
       return {
@@ -98,15 +108,31 @@ class _CarouselApi extends ApiService {
       'pagination': {'page': 1, 'limit': 100, 'total': 3},
     };
   }
+
+  @override
+  Future<dynamic> post(String endpoint, Map<String, dynamic> body) async {
+    if (endpoint == '/auth/login') {
+      _loginCount++;
+      return {
+        'token': 'test-session-$_loginCount',
+        'user': {
+          'id': 'customer-1',
+          'email': body['email'],
+          'fullName': 'Test Customer',
+          'phone': '9800000000',
+          'role': 'CUSTOMER',
+        },
+      };
+    }
+    return super.post(endpoint, body);
+  }
 }
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
-    SharedPreferences.setMockInitialValues({
-      'home_diwali_greeting_lottie_v2_seen_guest': true,
-    });
+    SharedPreferences.setMockInitialValues({});
   });
 
   testWidgets('carousel arrow advances and featured products open quick view',
@@ -116,6 +142,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final api = _CarouselApi();
+    final auth = AuthProvider(apiService: api);
+    await auth.sessionReady;
+    addTearDown(auth.dispose);
     final products = ProductProvider(apiService: api);
     final cart = CartProvider();
     final cartTargetKey = GlobalKey();
@@ -129,9 +158,7 @@ void main() {
       MultiProvider(
         providers: [
           Provider<ApiService>.value(value: api),
-          ChangeNotifierProvider(
-            create: (_) => AuthProvider(apiService: api),
-          ),
+          ChangeNotifierProvider<AuthProvider>.value(value: auth),
           ChangeNotifierProvider<ProductProvider>.value(value: products),
           ChangeNotifierProvider<CartProvider>.value(value: cart),
           ChangeNotifierProvider(
@@ -163,6 +190,12 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
+    await tester.tap(find.byTooltip('Close Diwali animation'));
+    await tester.pump();
+    expect(
+        find.byKey(const ValueKey(
+            'store-animation-animations/diwali_greeting.lottie')),
+        findsNothing);
     await tester.tap(find.byKey(const ValueKey('home-coupon-gift-button')));
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pump();
@@ -288,14 +321,59 @@ void main() {
     expect(find.byKey(const ValueKey('home-floating-cart-bar')), findsNothing);
     await tester.tap(find.textContaining('Add to basket'));
     await tester.pump();
+    expect(tester.takeException(), isNull, reason: 'weight dialog layout');
+    expect(find.text('Choose Sweet oranges weight'), findsOneWidget);
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Weight in kg'),
+      '0.5',
+    );
+    await tester.tap(find.text('Add weight'));
+    await tester.pump();
+    final weightLayoutError = tester.takeException();
+    expect(
+      weightLayoutError,
+      isNull,
+      reason: weightLayoutError is FlutterError
+          ? weightLayoutError.diagnostics
+              .map((diagnostic) => diagnostic.toStringDeep())
+              .join('\n')
+          : 'weight selection layout',
+    );
+    await tester.pump(const Duration(milliseconds: 700));
     await tester.pump(const Duration(milliseconds: 700));
     expect(cart.itemCount, 1);
+    expect(cart.itemForProduct('oranges')?.weightGrams, 500);
     expect(find.byKey(const ValueKey('home-floating-cart-bar')), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.tap(find.byTooltip('Next featured product'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     expect(pageController.page, 0);
+
+    await auth.login('customer@example.com', 'password');
+    await tester.pump();
+    expect(find.byTooltip('Close Diwali animation'), findsOneWidget);
+    await tester.tap(find.byTooltip('Close Diwali animation'));
+    await tester.pump();
+    expect(find.byType(PageView), findsOneWidget);
+    expect(find.byTooltip('Close Diwali animation'), findsNothing);
+    expect(find.byKey(const ValueKey('home-diwali-ribbon-slot')), findsNothing);
+    await auth.logout();
+    await tester.pump();
+    await auth.login('customer@example.com', 'password');
+    await tester.pump();
+    expect(find.byTooltip('Close Diwali animation'), findsOneWidget);
+    await tester.tap(find.byTooltip('Close Diwali animation'));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -700));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.ensureVisible(find.text('Everyday rice'));
+    await tester.tap(find.text('Everyday rice').first);
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.byType(DraggableScrollableSheet), findsOneWidget);
+    Navigator.of(tester.element(find.byType(DraggableScrollableSheet))).pop();
+    await tester.pump(const Duration(milliseconds: 350));
 
     for (final size in [
       const Size(360, 800),
@@ -304,7 +382,8 @@ void main() {
     ]) {
       tester.view.physicalSize = size;
       await tester.pump(const Duration(milliseconds: 100));
-      expect(tester.takeException(), isNull);
+      final layoutError = tester.takeException();
+      expect(layoutError, isNull, reason: 'viewport $size');
     }
   });
 }

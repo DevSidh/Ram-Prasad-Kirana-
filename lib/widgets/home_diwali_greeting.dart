@@ -6,105 +6,139 @@ class HomeDiwaliGreeting extends StatefulWidget {
   final bool isVisible;
   final String greeting;
   final String userName;
+  final VoidCallback? onDismiss;
 
   const HomeDiwaliGreeting({
     super.key,
     this.isVisible = true,
     this.greeting = 'Hello',
     this.userName = 'there',
+    this.onDismiss,
   });
 
   @override
   State<HomeDiwaliGreeting> createState() => _HomeDiwaliGreetingState();
 }
 
-class _HomeDiwaliGreetingState extends State<HomeDiwaliGreeting> {
-  bool _showAnimation = true;
+class _HomeDiwaliGreetingState extends State<HomeDiwaliGreeting>
+    with WidgetsBindingObserver {
+  static const _animationAspectRatio = 600 / 1253;
 
-  void _dismissAnimation() {
-    setState(() => _showAnimation = false);
+  bool _appIsForeground = true;
+  bool _dismissed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _appIsForeground = WidgetsBinding.instance.lifecycleState !=
+            AppLifecycleState.paused &&
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.detached;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final isForeground = state == AppLifecycleState.resumed;
+    if (_appIsForeground == isForeground) return;
+    setState(() => _appIsForeground = isForeground);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  void _dismiss() {
+    final onDismiss = widget.onDismiss;
+    if (onDismiss != null) {
+      onDismiss();
+    } else {
+      setState(() => _dismissed = true);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    const animationAspectRatio = 600 / 1253;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final animationWidth = constraints.maxWidth;
+    if (_dismissed) return const SizedBox.shrink();
 
-          return AnimatedSize(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOutCubic,
-            alignment: Alignment.topCenter,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Stack(
-                  alignment: Alignment.topLeft,
-                  children: [
-                    StoreAnimation(
-                      assetPath: 'animations/diwali_greeting.lottie',
-                      size: animationWidth,
-                      aspectRatio: animationAspectRatio,
-                      semanticLabel: 'Diwali festival animation',
-                      loop: true,
-                      isVisible: widget.isVisible && _showAnimation,
-                    ),
-                    Positioned(
-                      top: 10,
-                      left: 10,
-                      right: 10,
-                      child: IgnorePointer(
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: const Color(0xEFFFFFFF),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 6,
-                              ),
-                              child: Text(
-                                '${widget.greeting}, ${widget.userName}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Color(0xFF7A3417),
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+    final shouldPlay = widget.isVisible &&
+        _appIsForeground &&
+        TickerMode.valuesOf(context).enabled &&
+        !MediaQuery.disableAnimationsOf(context);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            const ColoredBox(color: Color(0xF20D0905)),
+            Align(
+              alignment: Alignment.topCenter,
+              child: FittedBox(
+                fit: BoxFit.cover,
+                alignment: Alignment.topCenter,
+                child: SizedBox(
+                  width: width,
+                  height: width / _animationAspectRatio,
+                  child: StoreAnimation(
+                    assetPath: 'animations/diwali_greeting.lottie',
+                    size: width,
+                    aspectRatio: _animationAspectRatio,
+                    semanticLabel: 'Diwali festival animation',
+                    loop: true,
+                    isVisible: shouldPlay,
+                  ),
                 ),
-                if (_showAnimation)
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: IconButton(
-                      tooltip: 'Dismiss Diwali animation',
-                      onPressed: _dismissAnimation,
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.close_rounded),
-                      constraints: const BoxConstraints.tightFor(
-                        width: 32,
-                        height: 32,
+              ),
+            ),
+            Positioned(
+              top: 14,
+              left: 14,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: .92),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 11,
+                      vertical: 7,
+                    ),
+                    child: Text(
+                      '${widget.greeting}, ${widget.userName}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF7A3417),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
                   ),
-              ],
+                ),
+              ),
             ),
-          );
-        },
-      ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: SafeArea(
+                child: IconButton.filledTonal(
+                  tooltip: 'Close Diwali animation',
+                  onPressed: _dismiss,
+                  style: IconButton.styleFrom(
+                    backgroundColor: const Color(0xAA110B07),
+                    foregroundColor: Colors.white,
+                  ),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

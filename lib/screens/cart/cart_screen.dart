@@ -8,6 +8,7 @@ import '../../providers/language_provider.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/store_animation.dart';
 import '../../widgets/product_thumbnail.dart';
+import '../../widgets/weight_quantity_dialog.dart';
 import '../checkout/checkout_screen.dart';
 
 class CartScreen extends StatefulWidget {
@@ -266,21 +267,72 @@ class _CartScreenState extends State<CartScreen> {
                                           child: _QuantityStepper(
                                             productName: item.product.name,
                                             quantity: item.quantity,
-                                            maxQuantity: item.product.stock
-                                                .clamp(0, 100)
-                                                .toInt(),
-                                            onDecrease: () => _decreaseQuantity(
-                                              cart,
-                                              item.product,
-                                              item.quantity,
-                                              isWholesale: item.isWholesale,
-                                            ),
-                                            onIncrease: () =>
-                                                cart.updateQuantity(
-                                              item.product.id,
-                                              item.quantity + 1,
-                                              isWholesale: item.isWholesale,
-                                            ),
+                                            quantityLabel: item.weightGrams ==
+                                                    null
+                                                ? null
+                                                : '${(item.weightGrams! / 1000).toStringAsFixed(3)} kg',
+                                            maxQuantity:
+                                                item.weightGrams == null
+                                                    ? item.product.stock
+                                                        .clamp(0, 100)
+                                                        .toInt()
+                                                    : 100,
+                                            onDecrease: () {
+                                              if (item.weightGrams != null) {
+                                                final remaining =
+                                                    item.weightGrams! - 100;
+                                                if (remaining <= 0) {
+                                                  cart.removeItem(
+                                                      item.product.id);
+                                                } else {
+                                                  cart.setWeightedItem(
+                                                    item.product,
+                                                    remaining,
+                                                  );
+                                                }
+                                              } else {
+                                                _decreaseQuantity(
+                                                  cart,
+                                                  item.product,
+                                                  item.quantity,
+                                                  isWholesale: item.isWholesale,
+                                                );
+                                              }
+                                            },
+                                            onIncrease: item.weightGrams == null
+                                                ? () => cart.updateQuantity(
+                                                      item.product.id,
+                                                      item.quantity + 1,
+                                                      isWholesale:
+                                                          item.isWholesale,
+                                                    )
+                                                : () async {
+                                                    final grams =
+                                                        await showWeightQuantityDialog(
+                                                      context,
+                                                      item.product,
+                                                    );
+                                                    if (grams == null ||
+                                                        !context.mounted) {
+                                                      return;
+                                                    }
+                                                    try {
+                                                      cart.addWeightedItem(
+                                                          item.product, grams);
+                                                    } catch (error) {
+                                                      ScaffoldMessenger.of(
+                                                              context)
+                                                          .showSnackBar(
+                                                        SnackBar(
+                                                          content: Text(error
+                                                              .toString()
+                                                              .replaceFirst(
+                                                                  'Bad state: ',
+                                                                  '')),
+                                                        ),
+                                                      );
+                                                    }
+                                                  },
                                           ),
                                         ),
                                       ],
@@ -331,20 +383,69 @@ class _CartScreenState extends State<CartScreen> {
                                         _QuantityStepper(
                                           productName: item.product.name,
                                           quantity: item.quantity,
-                                          maxQuantity: item.product.stock
-                                              .clamp(0, 100)
-                                              .toInt(),
-                                          onDecrease: () => _decreaseQuantity(
-                                            cart,
-                                            item.product,
-                                            item.quantity,
-                                            isWholesale: item.isWholesale,
-                                          ),
-                                          onIncrease: () => cart.updateQuantity(
-                                            item.product.id,
-                                            item.quantity + 1,
-                                            isWholesale: item.isWholesale,
-                                          ),
+                                          quantityLabel: item.weightGrams ==
+                                                  null
+                                              ? null
+                                              : '${(item.weightGrams! / 1000).toStringAsFixed(3)} kg',
+                                          maxQuantity: item.weightGrams == null
+                                              ? item.product.stock
+                                                  .clamp(0, 100)
+                                                  .toInt()
+                                              : 100,
+                                          onDecrease: () {
+                                            if (item.weightGrams != null) {
+                                              final remaining =
+                                                  item.weightGrams! - 100;
+                                              if (remaining <= 0) {
+                                                cart.removeItem(
+                                                    item.product.id);
+                                              } else {
+                                                cart.setWeightedItem(
+                                                    item.product, remaining);
+                                              }
+                                            } else {
+                                              _decreaseQuantity(
+                                                cart,
+                                                item.product,
+                                                item.quantity,
+                                                isWholesale: item.isWholesale,
+                                              );
+                                            }
+                                          },
+                                          onIncrease: item.weightGrams == null
+                                              ? () => cart.updateQuantity(
+                                                    item.product.id,
+                                                    item.quantity + 1,
+                                                    isWholesale:
+                                                        item.isWholesale,
+                                                  )
+                                              : () async {
+                                                  final grams =
+                                                      await showWeightQuantityDialog(
+                                                    context,
+                                                    item.product,
+                                                  );
+                                                  if (grams == null ||
+                                                      !context.mounted) {
+                                                    return;
+                                                  }
+                                                  try {
+                                                    cart.addWeightedItem(
+                                                        item.product, grams);
+                                                  } catch (error) {
+                                                    ScaffoldMessenger.of(
+                                                            context)
+                                                        .showSnackBar(
+                                                      SnackBar(
+                                                        content: Text(error
+                                                            .toString()
+                                                            .replaceFirst(
+                                                                'Bad state: ',
+                                                                '')),
+                                                      ),
+                                                    );
+                                                  }
+                                                },
                                         ),
                                       ],
                                     ),
@@ -620,6 +721,7 @@ class _QuantityStepper extends StatelessWidget {
   final String productName;
   final int quantity;
   final int maxQuantity;
+  final String? quantityLabel;
   final VoidCallback onDecrease;
   final VoidCallback onIncrease;
 
@@ -627,6 +729,7 @@ class _QuantityStepper extends StatelessWidget {
     required this.productName,
     required this.quantity,
     required this.maxQuantity,
+    this.quantityLabel,
     required this.onDecrease,
     required this.onIncrease,
   });
@@ -661,8 +764,8 @@ class _QuantityStepper extends StatelessWidget {
               child: child,
             ),
             child: Text(
-              '$quantity',
-              key: ValueKey(quantity),
+              quantityLabel ?? '$quantity',
+              key: ValueKey(quantityLabel ?? quantity),
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 13,

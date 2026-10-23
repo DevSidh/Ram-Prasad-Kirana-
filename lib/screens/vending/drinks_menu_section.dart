@@ -64,27 +64,34 @@ String drinkCategoryFor(Product product) {
       .toLowerCase();
   final searchable =
       '$category ${product.name} ${product.description}'.toLowerCase();
+  if (searchable.contains('milk') ||
+      searchable.contains('lassi') ||
+      searchable.contains('water')) {
+    return 'Hidden';
+  }
+  switch (product.vendingSection?.toUpperCase()) {
+    case 'SODA':
+      return 'Soda';
+    case 'TEA_COFFEE':
+      return 'Tea & Coffee';
+    case 'ENERGY':
+      return 'Energy';
+  }
   if (searchable.contains('energy') ||
       searchable.contains('power') ||
       searchable.contains('energy drink')) {
     return 'Energy';
   }
-  if (searchable.contains('milk') || searchable.contains('lassi')) {
-    return 'Milk';
-  }
   if (searchable.contains('tea') || searchable.contains('coffee')) {
     return 'Tea & Coffee';
   }
-  if (searchable.contains('water')) return 'Water';
   return 'Soda';
 }
 
 (Color, Color) _drinkColors(String category) {
   return switch (category) {
-    'Milk' => (const Color(0xFF8E5B4A), const Color(0xFFDB9B73)),
     'Tea & Coffee' => (const Color(0xFF37483F), const Color(0xFF7CA06E)),
     'Energy' => (const Color(0xFF4C3B79), const Color(0xFFB13E5C)),
-    'Water' => (const Color(0xFF27647C), const Color(0xFF50A9B5)),
     _ => (const Color(0xFF3A5265), const Color(0xFF697D9C)),
   };
 }

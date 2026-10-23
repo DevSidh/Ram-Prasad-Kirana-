@@ -30,26 +30,17 @@ class PlacesApiService {
   Future<List<PlaceSuggestion>> autocomplete({
     required String input,
     required String languageCode,
-    double? latitude,
-    double? longitude,
   }) async {
-    if ((latitude == null) != (longitude == null)) {
-      throw ArgumentError('Latitude and longitude must be supplied together.');
-    }
-
     final response = await _api.get(
       '/places/autocomplete',
       queryParams: {
         'input': input,
         'languageCode': languageCode,
-        if (latitude != null && longitude != null) ...{
-          'latitude': '$latitude',
-          'longitude': '$longitude',
-        },
       },
     );
     if (response is! Map || response['suggestions'] is! List) {
-      throw const FormatException('The server returned invalid place suggestions.');
+      throw const FormatException(
+          'The server returned invalid place suggestions.');
     }
 
     final suggestions = <PlaceSuggestion>[];
@@ -86,7 +77,8 @@ class PlacesApiService {
         !longitude.isFinite ||
         longitude < -180 ||
         longitude > 180) {
-      throw const FormatException('The selected place has no valid map location.');
+      throw const FormatException(
+          'The selected place has no valid map location.');
     }
     return PlaceDetails(
       latitude: latitude.toDouble(),

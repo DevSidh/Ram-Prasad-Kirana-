@@ -642,6 +642,7 @@ class _NotificationTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isRead = notification['isRead'] == true;
     final type = notification['type']?.toString() ?? '';
+    final isAnnouncement = type == 'PROMOTIONAL';
     final icon = type.startsWith('ORDER_')
         ? Icons.local_shipping_outlined
         : Icons.local_offer_outlined;
@@ -655,10 +656,14 @@ class _NotificationTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 9),
       child: Material(
-        color: AppConstants.glassSurfaceFor(AppConstants.isDarkTheme),
+        color: isAnnouncement
+            ? const Color(0xFFFFF5D7)
+            : AppConstants.glassSurfaceFor(AppConstants.isDarkTheme),
         shape: RoundedRectangleBorder(
           side: BorderSide(
-            color: AppConstants.glassBorderFor(AppConstants.isDarkTheme),
+            color: isAnnouncement
+                ? const Color(0xFFE5B64A)
+                : AppConstants.glassBorderFor(AppConstants.isDarkTheme),
           ),
           borderRadius: BorderRadius.circular(17),
         ),
@@ -677,7 +682,12 @@ class _NotificationTile extends StatelessWidget {
                     color: AppConstants.primaryLight,
                     borderRadius: BorderRadius.circular(13),
                   ),
-                  child: Icon(icon, color: AppConstants.primary),
+                  child: Icon(
+                    isAnnouncement ? Icons.campaign_rounded : icon,
+                    color: isAnnouncement
+                        ? const Color(0xFF805700)
+                        : AppConstants.primary,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -685,12 +695,17 @@ class _NotificationTile extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        notification['title']?.toString() ?? 'Store update',
+                        isAnnouncement
+                            ? 'FASTSTORE'
+                            : notification['title']?.toString() ??
+                                'Store update',
                         style: TextStyle(
                           fontSize: 14,
-                          fontWeight:
-                              isRead ? FontWeight.w600 : FontWeight.w800,
-                          color: AppConstants.textDark,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: isAnnouncement ? 1.1 : null,
+                          color: isAnnouncement
+                              ? const Color(0xFF805700)
+                              : AppConstants.textDark,
                         ),
                       ),
                       const SizedBox(height: 4),

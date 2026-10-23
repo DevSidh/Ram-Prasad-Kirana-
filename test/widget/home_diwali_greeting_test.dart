@@ -5,7 +5,7 @@ import 'package:freshharvest_grocery/widgets/store_animation.dart';
 
 void main() {
   for (final size in const [Size(360, 640), Size(440, 956)]) {
-    testWidgets('shows the complete Diwali animation at $size', (tester) async {
+    testWidgets('opens the full Diwali animation at $size', (tester) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -13,11 +13,7 @@ void main() {
 
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: HomeDiwaliGreeting(),
-            ),
-          ),
+          home: Scaffold(body: HomeDiwaliGreeting()),
         ),
       );
 
@@ -34,63 +30,41 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(find.text('FESTIVAL OF LIGHT'), findsNothing);
-      final animationSize = tester.getSize(find.byType(StoreAnimation));
-      expect(animationSize.width, size.width - 32);
-      expect(
-        animationSize.height,
-        (size.width - 32) / (600 / 1253),
-      );
+      expect(find.text('Hello, there'), findsOneWidget);
+      expect(find.textContaining('FESTIVAL OF LIGHTS'), findsNothing);
       expect(tester.takeException(), isNull);
     });
   }
 
-  testWidgets('passes offscreen state to the Diwali animation', (tester) async {
+  testWidgets('pauses when the home tab is not visible', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(
-          body: SingleChildScrollView(
-            child: HomeDiwaliGreeting(isVisible: false),
-          ),
+          body: HomeDiwaliGreeting(isVisible: false),
         ),
       ),
     );
 
-    final animation = tester.widget<StoreAnimation>(
-      find.byType(StoreAnimation),
+    expect(
+      tester.widget<StoreAnimation>(find.byType(StoreAnimation)).isVisible,
+      isFalse,
     );
-    expect(animation.isVisible, isFalse);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('dismissing pauses the animation and keeps its artwork',
-      (tester) async {
+  testWidgets('closes the entire animation when X is tapped', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
-        home: Scaffold(
-          body: SingleChildScrollView(child: HomeDiwaliGreeting()),
-        ),
+        home: Scaffold(body: HomeDiwaliGreeting()),
       ),
     );
+
+    await tester.tap(find.byTooltip('Close Diwali animation'));
     await tester.pump();
 
-    await tester.ensureVisible(find.byTooltip('Dismiss Diwali animation'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Dismiss Diwali animation'));
-    await tester.pump(const Duration(milliseconds: 500));
-
-    expect(find.text('Hello, there'), findsOneWidget);
-    expect(find.text('FESTIVAL OF LIGHT'), findsNothing);
-    final animation = tester.widget<StoreAnimation>(
-      find.byType(StoreAnimation),
-    );
-    expect(animation.isVisible, isFalse);
-    expect(
-      find.byKey(
-        const ValueKey('store-animation-animations/diwali_greeting.lottie'),
-      ),
-      findsOneWidget,
-    );
+    expect(find.byType(StoreAnimation), findsNothing);
+    expect(find.byTooltip('Close Diwali animation'), findsNothing);
+    expect(find.textContaining('FESTIVAL OF LIGHTS'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

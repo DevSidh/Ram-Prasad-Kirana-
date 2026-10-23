@@ -28,6 +28,34 @@ class CurrentCoordinates {
 }
 
 class LocationService {
+  Future<LocationPermission> requestBackgroundSharingPermission() async {
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      return LocationPermission.denied;
+    }
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    return permission;
+  }
+
+  Stream<Position> backgroundPositionStream() {
+    return Geolocator.getPositionStream(
+      locationSettings: AndroidSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 25,
+        intervalDuration: const Duration(seconds: 20),
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationTitle: 'FastStore delivery location',
+          notificationText:
+              'Sharing your location with your delivery partner during an active delivery.',
+          enableWakeLock: true,
+          setOngoing: true,
+        ),
+      ),
+    );
+  }
+
   Future<CurrentCoordinates> getCurrentCoordinates() async {
     if (!await Geolocator.isLocationServiceEnabled()) {
       throw StateError('Turn on location services to share delivery location.');

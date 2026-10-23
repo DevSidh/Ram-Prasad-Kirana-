@@ -37,6 +37,9 @@ class DeliveryOrder {
   final String address;
   final double? latitude;
   final double? longitude;
+  final double? customerLatitude;
+  final double? customerLongitude;
+  final DateTime? customerLocationUpdatedAt;
   final String instructions;
   final String? createdAt;
   final List<DeliveryOrderItem> items;
@@ -54,6 +57,9 @@ class DeliveryOrder {
     required this.address,
     required this.latitude,
     required this.longitude,
+    this.customerLatitude,
+    this.customerLongitude,
+    this.customerLocationUpdatedAt,
     required this.instructions,
     required this.createdAt,
     required this.items,
@@ -74,6 +80,15 @@ class DeliveryOrder {
       address: json['address']?.toString() ?? '',
       latitude: json['latitude'] == null ? null : _number(json['latitude']),
       longitude: json['longitude'] == null ? null : _number(json['longitude']),
+      customerLatitude: json['customerLatitude'] == null
+          ? null
+          : _number(json['customerLatitude']),
+      customerLongitude: json['customerLongitude'] == null
+          ? null
+          : _number(json['customerLongitude']),
+      customerLocationUpdatedAt: json['customerLocationUpdatedAt'] is String
+          ? DateTime.tryParse(json['customerLocationUpdatedAt'] as String)
+          : null,
       instructions: json['instructions']?.toString() ?? '',
       createdAt: json['createdAt']?.toString(),
       items: items is List
@@ -89,13 +104,20 @@ class DeliveryOrder {
 class DeliveryOrderItem {
   final String name;
   final int quantity;
+  final int? weightGrams;
 
-  const DeliveryOrderItem({required this.name, required this.quantity});
+  const DeliveryOrderItem({
+    required this.name,
+    required this.quantity,
+    this.weightGrams,
+  });
 
   factory DeliveryOrderItem.fromJson(Map<String, dynamic> json) {
     return DeliveryOrderItem(
       name: json['name']?.toString() ?? '',
       quantity: _integer(json['quantity']),
+      weightGrams:
+          json['weightGrams'] == null ? null : _integer(json['weightGrams']),
     );
   }
 }
@@ -180,7 +202,8 @@ class DeliveryAssignmentPage {
   factory DeliveryAssignmentPage.fromJson(Map<String, dynamic> json) {
     final assignments = json['assignments'];
     if (assignments is! List) {
-      throw const FormatException('The server returned an invalid delivery list.');
+      throw const FormatException(
+          'The server returned an invalid delivery list.');
     }
     final summary = json['summary'];
     return DeliveryAssignmentPage(

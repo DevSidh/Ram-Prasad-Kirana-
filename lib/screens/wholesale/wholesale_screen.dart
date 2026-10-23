@@ -8,8 +8,8 @@ import '../../models/product.dart';
 import '../../models/wholesale_item.dart';
 import '../../providers/cart_provider.dart';
 import '../../services/api_service.dart';
-import '../product/product_details_screen.dart';
 import '../../widgets/product_thumbnail.dart';
+import '../../widgets/product_quick_view.dart';
 import '../../widgets/store_animation.dart';
 
 class WholesaleScreen extends StatefulWidget {
@@ -260,13 +260,9 @@ class _WholesaleScreenState extends State<WholesaleScreen> {
                             itemBuilder: (context, index) =>
                                 _WholesaleProductCard(
                               product: products[index],
-                              onOpen: () => Navigator.push<void>(
+                              onOpen: () => showProductQuickView(
                                 context,
-                                MaterialPageRoute<void>(
-                                  builder: (_) => ProductDetailsScreen(
-                                    product: products[index],
-                                  ),
-                                ),
+                                products[index],
                               ),
                               cartQuantity: cart
                                       .items['${products[index].id}:wholesale']

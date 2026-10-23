@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:geolocator/geolocator.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/foundation.dart' show Factory, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
@@ -13,6 +15,10 @@ import '../../core/widgets/app_widgets.dart';
 import '../../models/order.dart';
 import '../../providers/language_provider.dart';
 import '../../providers/order_provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../services/api_service.dart';
+import '../../services/customer_location_consent.dart';
+import '../../services/location_service.dart';
 
 const LatLng _storeLocation = LatLng(26.743218, 85.918854);
 const Duration _nepalUtcOffset = Duration(hours: 5, minutes: 45);
@@ -27,6 +33,61 @@ String _addressLabel(Order order) {
   ].where((part) => part != null && part.trim().isNotEmpty).join(', ');
 }
 
+bool _isValidCoordinate(double? latitude, double? longitude) =>
+    latitude != null &&
+    longitude != null &&
+    latitude.isFinite &&
+    latitude >= -90 &&
+    latitude <= 90 &&
+    longitude.isFinite &&
+    longitude >= -180 &&
+    longitude <= 180;
+
+List<LatLng> _decodeEncodedPolyline(String encoded) {
+  if (encoded.isEmpty || encoded.length > 100000) {
+    throw const FormatException('The route line is invalid.');
+  }
+  var index = 0;
+  var latitude = 0;
+  var longitude = 0;
+  final points = <LatLng>[];
+
+  int readDelta() {
+    var result = 0;
+    var shift = 0;
+    var value = 0;
+    do {
+      if (index >= encoded.length || shift > 30) {
+        throw const FormatException('The route line is invalid.');
+      }
+      value = encoded.codeUnitAt(index++) - 63;
+      if (value < 0 || value > 63) {
+        throw const FormatException('The route line is invalid.');
+      }
+      result |= (value & 0x1f) << shift;
+      shift += 5;
+    } while (value >= 0x20);
+    return result & 1 != 0 ? ~(result >> 1) : result >> 1;
+  }
+
+  while (index < encoded.length) {
+    latitude += readDelta();
+    longitude += readDelta();
+    final point = LatLng(latitude / 1e5, longitude / 1e5);
+    if (!_isValidCoordinate(point.latitude, point.longitude)) {
+      throw const FormatException('The route line contains an invalid point.');
+    }
+    points.add(point);
+    if (points.length > 20000) {
+      throw const FormatException('The route line is too detailed.');
+    }
+  }
+  if (points.length < 2) {
+    throw const FormatException('The route line is incomplete.');
+  }
+  return points;
+}
+
 class OrderTrackingScreen extends StatefulWidget {
   final Order order;
 
@@ -39,10 +100,21 @@ class OrderTrackingScreen extends StatefulWidget {
 class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     with WidgetsBindingObserver {
   Timer? _refreshTimer;
+  StreamSubscription<Position>? _customerLocationSubscription;
   GoogleMapController? _mapController;
   BitmapDescriptor? _riderMarkerIcon;
+  DateTime? _lastRouteRequestedAt;
   String? _refreshError;
+  String? _routeError;
+  String _routeOrigin = 'store';
+  List<LatLng> _routePoints = const [];
+  LatLng? _deviceLocation;
+  LatLng? _lastFollowedRiderLocation;
   bool _isAppForeground = true;
+  bool _isRouteVisible = true;
+  bool _isProgrammaticCameraMove = false;
+  bool _followRider = true;
+  bool _locating = false;
 
   @override
   void initState() {
@@ -50,7 +122,12 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     WidgetsBinding.instance.addObserver(this);
     unawaited(_loadRiderMarkerIcon());
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(_refreshOrder());
+      if (!mounted) return;
+      unawaited(_refreshOrder());
+      final address = widget.order.address;
+      if (_isValidCoordinate(address.latitude, address.longitude) && !kIsWeb) {
+        unawaited(_loadRoadRoute());
+      }
     });
     _startRefreshTimer();
   }
@@ -83,9 +160,25 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final isVisible = TickerMode.valuesOf(context).enabled;
+    if (_isRouteVisible == isVisible) return;
+    _isRouteVisible = isVisible;
+    if (isVisible && _isAppForeground) {
+      _startRefreshTimer();
+      unawaited(_refreshOrder());
+    } else {
+      _refreshTimer?.cancel();
+      _refreshTimer = null;
+    }
+  }
+
+  @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _refreshTimer?.cancel();
+    unawaited(_customerLocationSubscription?.cancel());
     _mapController?.dispose();
     super.dispose();
   }
@@ -103,7 +196,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
   }
 
   void _startRefreshTimer() {
-    if (!_isAppForeground || _refreshTimer != null) return;
+    if (!_isAppForeground || !_isRouteVisible || _refreshTimer != null) return;
     _refreshTimer = Timer.periodic(
       const Duration(seconds: 20),
       (_) => unawaited(_refreshOrder()),
@@ -111,9 +204,21 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
   }
 
   Future<void> _refreshOrder() async {
-    if (!_isAppForeground) return;
+    if (!_isAppForeground || !_isRouteVisible || !mounted) return;
     try {
       await context.read<OrderProvider>().refreshOrder(widget.order.id);
+      await _syncCustomerLocationSharing();
+      final order = _latestOrder;
+      final address = order.address;
+      final lastRouteRequest = _lastRouteRequestedAt;
+      if (!kIsWeb &&
+          order.status == 'OUT_FOR_DELIVERY' &&
+          _isValidCoordinate(address.latitude, address.longitude) &&
+          (lastRouteRequest == null ||
+              DateTime.now().difference(lastRouteRequest) >=
+                  const Duration(minutes: 1))) {
+        unawaited(_loadRoadRoute());
+      }
       if (mounted && _refreshError != null) {
         setState(() => _refreshError = null);
       }
@@ -126,6 +231,78 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     }
   }
 
+  Future<void> _syncCustomerLocationSharing() async {
+    final order = _latestOrder;
+    final userId = context.read<AuthProvider>().currentUser?.id;
+    final isActive = order.status == 'OUT_FOR_DELIVERY';
+    final api = context.read<ApiService>();
+    if (!isActive || userId == null) {
+      await _customerLocationSubscription?.cancel();
+      _customerLocationSubscription = null;
+      return;
+    }
+    final isEnabled = await CustomerLocationConsent.isEnabled(userId);
+    if (!mounted) return;
+    if (!isEnabled) {
+      await _customerLocationSubscription?.cancel();
+      _customerLocationSubscription = null;
+      return;
+    }
+    if (_customerLocationSubscription != null) return;
+
+    final locationService = LocationService();
+    _customerLocationSubscription =
+        locationService.backgroundPositionStream().listen(
+      (position) {
+        final location = LatLng(position.latitude, position.longitude);
+        if (mounted) setState(() => _deviceLocation = location);
+        unawaited(
+          _publishCustomerLocation(
+            api,
+            order.id,
+            position.latitude,
+            position.longitude,
+          ),
+        );
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('Customer delivery location stream failed: $error');
+      },
+    );
+
+    try {
+      final position = await locationService.getCurrentCoordinates();
+      if (!mounted) return;
+      setState(
+        () => _deviceLocation = LatLng(position.latitude, position.longitude),
+      );
+      await _publishCustomerLocation(
+        api,
+        order.id,
+        position.latitude,
+        position.longitude,
+      );
+    } catch (error) {
+      debugPrint('Could not get initial customer delivery location: $error');
+    }
+  }
+
+  Future<void> _publishCustomerLocation(
+    ApiService api,
+    String orderId,
+    double latitude,
+    double longitude,
+  ) async {
+    try {
+      await api.put(
+        '/account/orders/${Uri.encodeComponent(orderId)}/live-location',
+        {'latitude': latitude, 'longitude': longitude},
+      );
+    } catch (error) {
+      debugPrint('Could not share delivery location: $error');
+    }
+  }
+
   void _fitMapToMarkers(LatLng destination, {LatLng? riderLocation}) {
     final controller = _mapController;
     if (controller == null || !mounted) return;
@@ -133,7 +310,9 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     final points = [
       _storeLocation,
       destination,
+      if (_deviceLocation != null) _deviceLocation!,
       if (riderLocation != null) riderLocation,
+      ..._routePoints,
     ];
     if (points.length < 2) return;
     final minLatitude =
@@ -146,7 +325,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
         points.map((point) => point.longitude).reduce((a, b) => a > b ? a : b);
 
     if (minLatitude == maxLatitude || minLongitude == maxLongitude) {
-      controller.animateCamera(
+      _animateCamera(
         CameraUpdate.newLatLngZoom(
           LatLng(
             (minLatitude + maxLatitude) / 2,
@@ -157,7 +336,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
       );
       return;
     }
-    controller.animateCamera(
+    _animateCamera(
       CameraUpdate.newLatLngBounds(
         LatLngBounds(
           southwest: LatLng(minLatitude, minLongitude),
@@ -165,6 +344,95 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
         ),
         44,
       ),
+    );
+  }
+
+  void _animateCamera(CameraUpdate update) {
+    _isProgrammaticCameraMove = true;
+    _mapController?.animateCamera(update);
+  }
+
+  Future<void> _loadRoadRoute() async {
+    _lastRouteRequestedAt = DateTime.now();
+    try {
+      final response = await context.read<ApiService>().get(
+            '/account/orders/${Uri.encodeComponent(widget.order.id)}/delivery-route',
+          );
+      if (response is! Map<String, dynamic> ||
+          response['encodedPolyline'] is! String) {
+        throw const FormatException('The route response is invalid.');
+      }
+      final routeOrigin = response['origin'];
+      if (routeOrigin != null &&
+          routeOrigin != 'rider' &&
+          routeOrigin != 'store') {
+        throw const FormatException('The route origin is invalid.');
+      }
+      final points = _decodeEncodedPolyline(
+        response['encodedPolyline'] as String,
+      );
+      if (!mounted) return;
+      setState(() {
+        _routePoints = points;
+        _routeOrigin = routeOrigin as String? ?? 'store';
+        _routeError = null;
+      });
+      if (_followRider) {
+        final address = _latestOrder.address;
+        if (_isValidCoordinate(address.latitude, address.longitude)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || !_followRider) return;
+            _fitMapToMarkers(
+              LatLng(address.latitude!, address.longitude!),
+              riderLocation: _validRiderLocation(_latestOrder),
+            );
+          });
+        }
+      }
+    } catch (error) {
+      debugPrint('Could not load the delivery route: $error');
+      if (mounted) setState(() => _routeError = 'Road route unavailable');
+    }
+  }
+
+  Future<void> _showCurrentLocation() async {
+    if (_locating) return;
+    setState(() => _locating = true);
+    try {
+      final position = await LocationService().getCurrentCoordinates();
+      if (!mounted) return;
+      final location = LatLng(position.latitude, position.longitude);
+      setState(() => _deviceLocation = location);
+      _animateCamera(CameraUpdate.newLatLngZoom(location, 15));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            error.toString().replaceFirst('Bad state: ', ''),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  void _handleCameraMoveStarted() {
+    if (_isProgrammaticCameraMove || !_followRider) return;
+    setState(() => _followRider = false);
+  }
+
+  LatLng? _validRiderLocation(Order order) {
+    if (!_isValidCoordinate(
+      order.deliveryPersonLatitude,
+      order.deliveryPersonLongitude,
+    )) {
+      return null;
+    }
+    return LatLng(
+      order.deliveryPersonLatitude!,
+      order.deliveryPersonLongitude!,
     );
   }
 
@@ -221,20 +489,36 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     context.watch<OrderProvider>();
     final order = _latestOrder;
     final hasDestination =
-        order.address.latitude != null && order.address.longitude != null;
+        _isValidCoordinate(order.address.latitude, order.address.longitude);
     final destination = hasDestination
         ? LatLng(
             order.address.latitude!,
             order.address.longitude!,
           )
         : null;
-    final riderLocation = order.deliveryPersonLatitude != null &&
-            order.deliveryPersonLongitude != null
+    final riderLocation = _isValidCoordinate(
+            order.deliveryPersonLatitude, order.deliveryPersonLongitude)
         ? LatLng(
             order.deliveryPersonLatitude!,
             order.deliveryPersonLongitude!,
           )
         : null;
+    if (_followRider &&
+        riderLocation != null &&
+        riderLocation != _lastFollowedRiderLocation) {
+      _lastFollowedRiderLocation = riderLocation;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_followRider) return;
+        _animateCamera(CameraUpdate.newLatLngZoom(riderLocation, 15));
+      });
+    }
+    final locationUpdatedAt = order.deliveryLocationUpdatedAt;
+    final locationAge = locationUpdatedAt == null
+        ? null
+        : DateTime.now().difference(locationUpdatedAt);
+    final riderLocationIsStale = locationAge == null ||
+        locationAge.isNegative ||
+        locationAge > const Duration(minutes: 2);
 
     return Scaffold(
       backgroundColor: AppConstants.backgroundFor(
@@ -330,7 +614,40 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                                     title: 'Delivery rider · live location',
                                   ),
                                 ),
+                              if (_deviceLocation != null)
+                                Marker(
+                                  markerId: const MarkerId('customer-location'),
+                                  position: _deviceLocation!,
+                                  icon: BitmapDescriptor.defaultMarkerWithHue(
+                                    BitmapDescriptor.hueAzure,
+                                  ),
+                                  infoWindow: const InfoWindow(
+                                    title: 'Your current location',
+                                  ),
+                                ),
                             },
+                            polylines: _routePoints.isEmpty
+                                ? const <Polyline>{}
+                                : {
+                                    Polyline(
+                                      polylineId:
+                                          const PolylineId('delivery-route'),
+                                      points: _routePoints,
+                                      color: _routeOrigin == 'rider'
+                                          ? const Color(0xFFEA7B24)
+                                          : theme.colorScheme.primary,
+                                      width: 4,
+                                    ),
+                                  },
+                            gestureRecognizers: const <Factory<
+                                OneSequenceGestureRecognizer>>{
+                              Factory<EagerGestureRecognizer>(
+                                EagerGestureRecognizer.new,
+                              ),
+                            },
+                            onCameraMoveStarted: _handleCameraMoveStarted,
+                            onCameraIdle: () =>
+                                _isProgrammaticCameraMove = false,
                             myLocationButtonEnabled: false,
                             zoomControlsEnabled: false,
                             zoomGesturesEnabled: true,
@@ -349,13 +666,28 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                           top: 16,
                           left: 16,
                           child: _MapStatusPill(
-                            icon: Icons.route_rounded,
-                            label: riderLocation == null
-                                ? (order.status.toUpperCase() ==
-                                        'OUT_FOR_DELIVERY'
-                                    ? 'Waiting for rider location'
-                                    : 'Store to delivery address')
-                                : 'Delivery rider · live',
+                            icon: riderLocation == null
+                                ? Icons.route_rounded
+                                : riderLocationIsStale
+                                    ? Icons.location_off_rounded
+                                    : Icons.delivery_dining_rounded,
+                            label: riderLocation != null
+                                ? [
+                                    riderLocationIsStale
+                                        ? 'Rider location may be outdated'
+                                        : 'Rider location live',
+                                    if (_routePoints.isNotEmpty)
+                                      _routeOrigin == 'rider'
+                                          ? 'Rider to delivery address'
+                                          : 'Store to delivery address',
+                                  ].join(' · ')
+                                : _routePoints.isNotEmpty
+                                    ? 'Road route · $_routeOrigin to delivery address'
+                                    : order.status.toUpperCase() ==
+                                            'OUT_FOR_DELIVERY'
+                                        ? 'Waiting for rider location'
+                                        : _routeError ??
+                                            'Store and delivery address',
                             theme: theme,
                           ),
                         ),
@@ -363,14 +695,46 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                           Positioned(
                             right: 12,
                             bottom: 12,
-                            child: _MapControlButton(
-                              tooltip: 'Show store, rider and address',
-                              icon: Icons.center_focus_strong_rounded,
-                              theme: theme,
-                              onPressed: () => _fitMapToMarkers(
-                                destination,
-                                riderLocation: riderLocation,
-                              ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _MapControlButton(
+                                  tooltip: 'Show your current location',
+                                  icon: _locating
+                                      ? Icons.hourglass_top_rounded
+                                      : Icons.my_location_rounded,
+                                  theme: theme,
+                                  onPressed: _showCurrentLocation,
+                                ),
+                                const SizedBox(height: 8),
+                                _MapControlButton(
+                                  tooltip: _followRider
+                                      ? 'Following live rider'
+                                      : 'Follow rider and route',
+                                  icon: _followRider
+                                      ? Icons.gps_fixed_rounded
+                                      : Icons.center_focus_strong_rounded,
+                                  theme: theme,
+                                  onPressed: () {
+                                    setState(() => _followRider = true);
+                                    if (riderLocation != null) {
+                                      _lastFollowedRiderLocation =
+                                          riderLocation;
+                                      _animateCamera(
+                                        CameraUpdate.newLatLngZoom(
+                                          riderLocation,
+                                          15,
+                                        ),
+                                      );
+                                    } else {
+                                      _fitMapToMarkers(
+                                        destination,
+                                        riderLocation: riderLocation,
+                                      );
+                                    }
+                                  },
+                                ),
+                              ],
                             ),
                           ),
                         if (order.status.toUpperCase() == 'OUT_FOR_DELIVERY' &&
@@ -663,6 +1027,7 @@ class _DeliveryTimeCard extends StatelessWidget {
 
     return _TrackingCard(
       theme: theme,
+      highlighted: !isDelivered,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -894,7 +1259,9 @@ class _ItemsCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 12),
                     Text(
-                      '×${item.quantity}',
+                      item.weightGrams == null
+                          ? '×${item.quantity}'
+                          : '${(item.weightGrams! / 1000).toStringAsFixed(3)} kg',
                       style: theme.textTheme.labelLarge,
                     ),
                   ],
@@ -913,15 +1280,27 @@ class _ItemsCard extends StatelessWidget {
 class _TrackingCard extends StatelessWidget {
   final ThemeData theme;
   final Widget child;
+  final bool highlighted;
 
-  const _TrackingCard({required this.theme, required this.child});
+  const _TrackingCard({
+    required this.theme,
+    required this.child,
+    this.highlighted = false,
+  });
 
   @override
   Widget build(BuildContext context) => DecoratedBox(
         decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
+          color: highlighted
+              ? theme.colorScheme.primaryContainer
+              : theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: theme.dividerColor.withValues(alpha: 0.55)),
+          border: Border.all(
+            color: highlighted
+                ? theme.colorScheme.primary.withValues(alpha: 0.7)
+                : theme.dividerColor.withValues(alpha: 0.55),
+            width: highlighted ? 1.5 : 1,
+          ),
         ),
         child: Padding(
           padding: const EdgeInsets.all(16),

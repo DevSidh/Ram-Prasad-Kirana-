@@ -23,10 +23,8 @@ class _VendingMachineScreenState extends State<VendingMachineScreen> {
   static const _categories = <String>[
     'All',
     'Soda',
-    'Milk',
     'Tea & Coffee',
     'Energy',
-    'Water',
   ];
 
   final _scrollController = ScrollController();
@@ -117,6 +115,7 @@ class _VendingMachineScreenState extends State<VendingMachineScreen> {
           .whereType<Map<String, dynamic>>()
           .map(Product.fromJson)
           .where((product) => product.isVendingDrink)
+          .where((product) => drinkCategoryFor(product) != 'Hidden')
           .toList();
       if (!mounted) return;
       setState(() {
@@ -239,7 +238,7 @@ class _VendingMachineScreenState extends State<VendingMachineScreen> {
                   },
                 ),
               ),
-              if (_error != null)
+              if (_error != null && _drinks.isNotEmpty)
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -265,9 +264,10 @@ class _VendingMachineScreenState extends State<VendingMachineScreen> {
                 SliverFillRemaining(
                   hasScrollBody: false,
                   child: _MenuMessage(
-                    message: _error == null
-                        ? 'No drinks in this category yet.'
-                        : 'Drinks could not be loaded.',
+                    message: _error ??
+                        (_drinks.isNotEmpty
+                            ? 'No drinks match this category.'
+                            : 'No drinks in this category yet.'),
                     actionLabel: _error == null ? null : 'Retry',
                     onAction: _error == null ? null : _loadDrinks,
                   ),

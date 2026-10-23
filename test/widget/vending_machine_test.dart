@@ -138,9 +138,12 @@ void main() {
       'limit': '100',
     });
 
-    expect(find.text('18 drinks'), findsOneWidget);
+    expect(find.text('13 drinks'), findsOneWidget);
     expect(find.text('Cola'), findsWidgets);
-    expect(find.text('Strawberry Milk Special'), findsOneWidget);
+    expect(find.text('Strawberry Milk Special'), findsNothing);
+    expect(find.text('Mineral Water'), findsNothing);
+    expect(find.byKey(const ValueKey('drink-category-Milk')), findsNothing);
+    expect(find.byKey(const ValueKey('drink-category-Water')), findsNothing);
     expect(find.byType(ProductCard), findsWidgets);
     expect(
       tester.widgetList<ProductCard>(find.byType(ProductCard)).every(
@@ -150,14 +153,14 @@ void main() {
     );
     expect(tester.takeException(), isNull);
 
-    await tester.tap(find.byKey(const ValueKey('drink-category-Milk')));
+    await tester.tap(find.byKey(const ValueKey('drink-category-Tea & Coffee')));
     await tester.pumpAndSettle();
-    expect(find.text('3 drinks'), findsOneWidget);
-    expect(find.text('Strawberry Milk Special'), findsOneWidget);
+    expect(find.text('4 drinks'), findsOneWidget);
+    expect(find.text('Matcha Latte'), findsOneWidget);
     expect(find.text('Cola'), findsNothing);
     expect(tester.takeException(), isNull);
 
-    final drinkCard = find.byKey(const ValueKey('drink-3'));
+    final drinkCard = find.byKey(const ValueKey('drink-5'));
     final addButton = find.descendant(
       of: drinkCard,
       matching: find.byTooltip('Add to basket'),
@@ -165,12 +168,12 @@ void main() {
     await tester.tap(addButton);
     await tester.pumpAndSettle();
     expect(find.text('1'), findsOneWidget);
-    expect(find.text('Strawberry Milk Special'), findsWidgets);
+    expect(find.text('Matcha Latte'), findsWidgets);
     await tester.tap(addButton);
     await tester.pumpAndSettle();
 
     expect(cart.itemCount, 2);
-    expect(cart.itemList.single.product.name, 'Strawberry Milk Special');
+    expect(cart.itemList.single.product.name, 'Matcha Latte');
   });
 
   testWidgets('shows featured drink first and keeps catalog order below',
@@ -224,9 +227,7 @@ void main() {
       textScale: 2,
     );
 
-    await tester.tap(find.byKey(const ValueKey('drink-category-Milk')));
-    await tester.pumpAndSettle();
-    expect(find.text('Strawberry Milk Special'), findsOneWidget);
+    expect(find.byKey(const ValueKey('drink-category-Milk')), findsNothing);
     expect(tester.takeException(), isNull);
     for (final card in tester.widgetList<Widget>(find.byType(ProductCard))) {
       final rect = tester.getRect(find.byWidget(card));
@@ -246,11 +247,13 @@ void main() {
         cart,
         brightness: brightness,
       );
-      await tester.tap(find.byKey(const ValueKey('drink-category-Milk')));
+      await tester.tap(
+        find.byKey(const ValueKey('drink-category-Tea & Coffee')),
+      );
       await tester.pumpAndSettle();
 
       final card = find.ancestor(
-        of: find.text('Strawberry Milk Special'),
+        of: find.text('Matcha Latte'),
         matching: find.byType(ProductCard),
       );
       final theme = Theme.of(tester.element(card));
@@ -259,7 +262,7 @@ void main() {
         tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
         isDark ? const Color(0xFF101316) : Colors.white,
       );
-      final name = find.text('Strawberry Milk Special');
+      final name = find.text('Matcha Latte');
       expect(
           tester.widget<Text>(name).style?.color, theme.colorScheme.onSurface);
       expect(tester.takeException(), isNull);

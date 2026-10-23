@@ -10,6 +10,7 @@ import '../../core/responsive_layout.dart';
 import '../../core/theme/app_theme_extension.dart';
 import '../../core/widgets/app_widgets.dart';
 import '../../models/address.dart';
+import '../../models/cart_item.dart';
 import '../../models/product.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/cart_provider.dart';
@@ -26,6 +27,7 @@ import '../../widgets/frosted_panel.dart';
 import '../../widgets/product_thumbnail.dart';
 import '../../widgets/product_quick_view.dart';
 import '../../widgets/cart_flight_overlay.dart';
+import '../../widgets/weight_quantity_dialog.dart';
 import '../../widgets/home_greeting_diya.dart';
 import '../../widgets/home_diwali_greeting.dart';
 import '../../widgets/offer_popup.dart';
@@ -48,14 +50,13 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
-  static const _diwaliGreetingAspectRatio = 600 / 1253;
-
   final ScrollController _scrollController = ScrollController();
   final ValueNotifier<double> _scrollOffset = ValueNotifier(0);
   final ValueNotifier<bool> _diwaliAnimationVisible = ValueNotifier(true);
   final Map<String, GlobalKey> _categoryChipKeys = {};
   bool _offersOnly = false;
   bool _offerPopupCheckStarted = false;
+  bool _couponsEnabled = true;
   int _notificationRefreshToken = 0;
   late final ProductProvider _recoveryProductProvider;
   late final StoreAvailabilityProvider _recoveryAvailabilityProvider;
@@ -63,7 +64,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _backendRecoveryAttempt = 0;
   bool _backendRecoveryInProgress = false;
   bool _appIsForeground = true;
-  double _diwaliGreetingExtent = double.infinity;
+  bool _showDiwaliAnimation = true;
+  String? _lastAuthenticatedUserId;
+  late final AuthProvider _authProvider;
 
   String _locationTitle = 'Delivery to Home';
   String _locationSubtitle = 'Janakpur, Madhesh Province';
@@ -72,11 +75,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _authProvider = context.read<AuthProvider>();
+    _lastAuthenticatedUserId =
+        _authProvider.isAuthenticated ? _authProvider.currentUser?.id : null;
+    _authProvider.addListener(_handleAuthSessionChanged);
     _recoveryProductProvider = context.read<ProductProvider>();
     _recoveryAvailabilityProvider = context.read<StoreAvailabilityProvider>();
     _recoveryProductProvider.addListener(_handleBackendStatusChanged);
     _recoveryAvailabilityProvider.addListener(_handleBackendStatusChanged);
     _scrollController.addListener(_handleScroll);
+    unawaited(_loadCustomerMenuFeatures());
     unawaited(_recoveryAvailabilityProvider.refresh());
     _handleBackendStatusChanged();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -84,15 +92,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
+  void _handleAuthSessionChanged() {
+    if (!mounted) return;
+    final userId =
+        _authProvider.isAuthenticated ? _authProvider.currentUser?.id : null;
+    final isNewLogin = userId != null && userId != _lastAuthenticatedUserId;
+    _lastAuthenticatedUserId = userId;
+    if (isNewLogin && !_showDiwaliAnimation) {
+      setState(() => _showDiwaliAnimation = true);
+    }
+  }
+
+  void _dismissDiwaliAnimation() {
+    if (!_showDiwaliAnimation) return;
+    setState(() => _showDiwaliAnimation = false);
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _diwaliGreetingExtent =
-        (MediaQuery.sizeOf(context).width - 32) / _diwaliGreetingAspectRatio +
-            44;
-    _updateDiwaliAnimationVisibility(
-      _scrollController.hasClients ? _scrollController.offset : 0,
-    );
+    _updateDiwaliAnimationVisibility();
   }
 
   @override
@@ -152,10 +171,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _openCoupons() async {
+    if (!_couponsEnabled) return;
     await Navigator.push<void>(
       context,
       MaterialPageRoute<void>(builder: (_) => const CouponsScreen()),
     );
+  }
+
+  Future<void> _loadCustomerMenuFeatures() async {
+    try {
+      final response =
+          await context.read<ApiService>().get('/store/customer-menu-features');
+      final features = response is Map<String, dynamic>
+          ? response['customerMenuFeatures']
+          : null;
+      if (!mounted || features is! Map<String, dynamic>) return;
+      final enabled = features['coupons'];
+      if (enabled is bool) setState(() => _couponsEnabled = enabled);
+    } catch (error) {
+      debugPrint('Unable to load coupon menu availability: $error');
+    }
   }
 
   Future<void> _checkAndShowOffer() async {
@@ -208,11 +243,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _scrollOffset.value = offset;
     }
 
-    _updateDiwaliAnimationVisibility(offset);
+    _updateDiwaliAnimationVisibility();
   }
 
-  void _updateDiwaliAnimationVisibility(double offset) {
-    final animationVisible = offset < _diwaliGreetingExtent;
+  void _updateDiwaliAnimationVisibility() {
+    final animationVisible = _appIsForeground;
     if (_diwaliAnimationVisible.value != animationVisible) {
       _diwaliAnimationVisible.value = animationVisible;
     }
@@ -260,6 +295,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _authProvider.removeListener(_handleAuthSessionChanged);
     _backendRecoveryTimer?.cancel();
     _recoveryProductProvider.removeListener(_handleBackendStatusChanged);
     _recoveryAvailabilityProvider.removeListener(_handleBackendStatusChanged);
@@ -594,12 +630,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       width: 50,
                       height: 50,
                     ),
-                    icon: const IgnorePointer(
+                    icon: IgnorePointer(
                       child: StoreAnimation(
                         assetPath: 'animations/gift.lottie',
                         size: 46,
                         semanticLabel: 'Gift coupon animation',
                         loop: true,
+                        isVisible: TickerMode.valuesOf(context).enabled &&
+                            !MediaQuery.disableAnimationsOf(context),
                       ),
                     ),
                   ),
@@ -713,96 +751,300 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: SafeArea(
           child: Stack(
             children: [
-              RefreshIndicator(
-                onRefresh: () => _refreshHome(productProvider),
-                child: RepaintBoundary(
-                  child: CustomScrollView(
-                    controller: _scrollController,
-                    physics: const BouncingScrollPhysics(
-                      parent: AlwaysScrollableScrollPhysics(),
-                    ),
-                    slivers: [
-                      SliverToBoxAdapter(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            ValueListenableBuilder<bool>(
-                              valueListenable: _diwaliAnimationVisible,
-                              builder: (context, isVisible, _) =>
-                                  HomeDiwaliGreeting(
-                                key: ValueKey(
-                                  'diwali-greeting-${user?.id ?? 'guest'}',
-                                ),
-                                isVisible: isVisible,
-                                greeting: greeting,
-                                userName: userName,
+              TickerMode(
+                enabled: !_showDiwaliAnimation,
+                child: RefreshIndicator(
+                  onRefresh: () => _refreshHome(productProvider),
+                  child: RepaintBoundary(
+                    child: CustomScrollView(
+                      controller: _scrollController,
+                      physics: const BouncingScrollPhysics(
+                        parent: AlwaysScrollableScrollPhysics(),
+                      ),
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildCollapsingHeader(
+                                greeting,
+                                userName,
+                                user?.avatarUrl,
+                                auth.authToken,
                               ),
-                            ),
-                            _buildCollapsingHeader(
-                              greeting,
-                              userName,
-                              user?.avatarUrl,
-                              auth.authToken,
-                            ),
-                            _buildAvailabilityNotice(storeAvailability),
-                            Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              child: ValueListenableBuilder<double>(
-                                valueListenable: _scrollOffset,
-                                child: InkWell(
-                                  key: const ValueKey('home-search-inline'),
-                                  onTap: () {
-                                    showSearchOverlay(context);
-                                  },
-                                  borderRadius: BorderRadius.circular(24),
-                                  child: GlassCard(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 14,
+                              _buildAvailabilityNotice(storeAvailability),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 16),
+                                child: ValueListenableBuilder<double>(
+                                  valueListenable: _scrollOffset,
+                                  child: InkWell(
+                                    key: const ValueKey('home-search-inline'),
+                                    onTap: () {
+                                      showSearchOverlay(context);
+                                    },
+                                    borderRadius: BorderRadius.circular(24),
+                                    child: GlassCard(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 14,
+                                      ),
+                                      radius: 24,
+                                      child: Row(
+                                        children: [
+                                          const Icon(Icons.search,
+                                              color: AppConstants.primary,
+                                              size: 20),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Text(
+                                              context.tr(
+                                                  'Find something fresh...'),
+                                              style: TextStyle(
+                                                  color: AppConstants.textMuted,
+                                                  fontSize: 13),
+                                            ),
+                                          ),
+                                          const Icon(Icons.tune_rounded,
+                                              color: AppConstants.primary,
+                                              size: 18),
+                                        ],
+                                      ),
                                     ),
-                                    radius: 24,
-                                    child: Row(
-                                      children: [
-                                        const Icon(Icons.search,
-                                            color: AppConstants.primary,
-                                            size: 20),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: Text(
-                                            context
-                                                .tr('Find something fresh...'),
-                                            style: TextStyle(
-                                                color: AppConstants.textMuted,
-                                                fontSize: 13),
+                                  ),
+                                  builder: (context, offset, child) {
+                                    final visible = offset < 160;
+                                    return IgnorePointer(
+                                      ignoring: !visible,
+                                      child: Opacity(
+                                        opacity: visible ? 1 : 0,
+                                        child: child,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              if (productProvider.categories.isNotEmpty) ...[
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                                  child: SectionHeader(
+                                    title: context.tr('Shop by categories'),
+                                    actionLabel: context.tr('See all'),
+                                    onAction: () {
+                                      productProvider.selectCategory('all');
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              const ProductListScreen(
+                                            categoryName: 'All products',
                                           ),
                                         ),
-                                        const Icon(Icons.tune_rounded,
-                                            color: AppConstants.primary,
-                                            size: 18),
-                                      ],
+                                      );
+                                    },
+                                  ),
+                                ),
+                                SizedBox(
+                                  height: 94,
+                                  child:
+                                      NotificationListener<ScrollNotification>(
+                                    onNotification: _snapCategoryChips,
+                                    child: ListView.separated(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 16),
+                                      scrollDirection: Axis.horizontal,
+                                      physics: const BouncingScrollPhysics(),
+                                      itemCount:
+                                          productProvider.categories.length,
+                                      separatorBuilder: (_, __) =>
+                                          const SizedBox(width: 10),
+                                      itemBuilder: (context, index) {
+                                        final category =
+                                            productProvider.categories[index];
+                                        final selected = productProvider
+                                                .selectedCategorySlug ==
+                                            category.slug;
+                                        final chipKey =
+                                            _categoryChipKeys.putIfAbsent(
+                                          category.id,
+                                          GlobalKey.new,
+                                        );
+                                        return CategoryBubble(
+                                          key: chipKey,
+                                          label: context.tr(category.name),
+                                          selected: selected,
+                                          icon: category.imageUrl != null &&
+                                                  category.imageUrl!.isNotEmpty
+                                              ? ClipOval(
+                                                  child: ProductThumbnail(
+                                                    imageUrl:
+                                                        category.imageUrl!,
+                                                    size: 42,
+                                                    width: 42,
+                                                    height: 42,
+                                                    fit: BoxFit.cover,
+                                                    borderRadius:
+                                                        BorderRadius.zero,
+                                                  ),
+                                                )
+                                              : Icon(
+                                                  _categoryIcon(
+                                                      category.iconName,
+                                                      category.slug,
+                                                      category.name),
+                                                  size: 30,
+                                                  color: selected
+                                                      ? Theme.of(context)
+                                                          .colorScheme
+                                                          .onPrimary
+                                                      : Theme.of(context)
+                                                          .colorScheme
+                                                          .primary,
+                                                ),
+                                          onTap: () {
+                                            productProvider
+                                                .selectCategory(category.slug);
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    ProductListScreen(
+                                                  categoryName: category.name,
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        );
+                                      },
                                     ),
                                   ),
                                 ),
-                                builder: (context, offset, child) {
-                                  final visible = offset < 160;
-                                  return IgnorePointer(
-                                    ignoring: !visible,
-                                    child: Opacity(
-                                      opacity: visible ? 1 : 0,
-                                      child: child,
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            if (productProvider.categories.isNotEmpty) ...[
+                                const SizedBox(height: 12),
+                              ],
                               Padding(
                                 padding:
-                                    const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                                    const EdgeInsets.symmetric(horizontal: 16),
+                                child: _FeaturedProductCarousel(
+                                  products: productProvider.featuredProducts,
+                                  isLoading: productProvider.isLoading,
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 16),
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children: [
+                                      _HomeShortcut(
+                                        icon: Icons.favorite_rounded,
+                                        label:
+                                            '${context.tr('Saved')} ${productProvider.favoriteCount}',
+                                        selected: productProvider.favoritesOnly,
+                                        onTap: () {
+                                          productProvider.setHomeFilters(
+                                            savedOnly:
+                                                !productProvider.favoritesOnly,
+                                            bestSellersOnly: productProvider
+                                                .homeBestSellersOnly,
+                                            cheapOnly:
+                                                productProvider.homeCheapOnly,
+                                          );
+                                        },
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _HomeShortcut(
+                                        icon: Icons.inventory_2_outlined,
+                                        label: context.tr('Wholesale'),
+                                        selected: false,
+                                        onTap: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) =>
+                                                  const WholesaleScreen(),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _HomeShortcut(
+                                        icon: Icons.trending_up_rounded,
+                                        label: context.tr('Best sellers'),
+                                        selected:
+                                            productProvider.homeBestSellersOnly,
+                                        onTap: () {
+                                          productProvider.setHomeFilters(
+                                            savedOnly:
+                                                productProvider.favoritesOnly,
+                                            bestSellersOnly: !productProvider
+                                                .homeBestSellersOnly,
+                                            cheapOnly: false,
+                                          );
+                                        },
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _HomeShortcut(
+                                        icon: Icons.local_offer_outlined,
+                                        label: context.tr('Offers'),
+                                        selected: _offersOnly,
+                                        onTap: () => setState(
+                                            () => _offersOnly = !_offersOnly),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _HomeShortcut(
+                                        icon: Icons.replay_rounded,
+                                        label: context.tr('Reorder'),
+                                        selected: false,
+                                        onTap: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) =>
+                                                  const MyOrdersScreen(),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _HomeShortcut(
+                                        icon: Icons.sell_outlined,
+                                        label: context.tr('Cheap'),
+                                        selected: productProvider.homeCheapOnly,
+                                        onTap: () {
+                                          productProvider.setHomeFilters(
+                                            savedOnly:
+                                                productProvider.favoritesOnly,
+                                            bestSellersOnly: false,
+                                            cheapOnly:
+                                                !productProvider.homeCheapOnly,
+                                          );
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 16),
                                 child: SectionHeader(
-                                  title: context.tr('Shop by categories'),
+                                  title: context.tr(
+                                    _offersOnly
+                                        ? 'Offers'
+                                        : productProvider.favoritesOnly
+                                            ? 'Saved items'
+                                            : productProvider.homeCheapOnly
+                                                ? 'Cheap picks'
+                                                : productProvider
+                                                        .homeBestSellersOnly
+                                                    ? 'Best seller picks'
+                                                    : 'Popular near you',
+                                  ),
                                   actionLabel: context.tr('See all'),
                                   onAction: () {
                                     productProvider.selectCategory('all');
@@ -817,312 +1059,107 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   },
                                 ),
                               ),
-                              SizedBox(
-                                height: 94,
-                                child: NotificationListener<ScrollNotification>(
-                                  onNotification: _snapCategoryChips,
-                                  child: ListView.separated(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 16),
-                                    scrollDirection: Axis.horizontal,
-                                    physics: const BouncingScrollPhysics(),
-                                    itemCount:
-                                        productProvider.categories.length,
-                                    separatorBuilder: (_, __) =>
-                                        const SizedBox(width: 10),
-                                    itemBuilder: (context, index) {
-                                      final category =
-                                          productProvider.categories[index];
-                                      final selected = productProvider
-                                              .selectedCategorySlug ==
-                                          category.slug;
-                                      final chipKey =
-                                          _categoryChipKeys.putIfAbsent(
-                                        category.id,
-                                        GlobalKey.new,
-                                      );
-                                      return CategoryBubble(
-                                        key: chipKey,
-                                        label: context.tr(category.name),
-                                        selected: selected,
-                                        icon: category.imageUrl != null &&
-                                                category.imageUrl!.isNotEmpty
-                                            ? ClipOval(
-                                                child: ProductThumbnail(
-                                                  imageUrl: category.imageUrl!,
-                                                  size: 42,
-                                                  width: 42,
-                                                  height: 42,
-                                                  fit: BoxFit.cover,
-                                                  borderRadius:
-                                                      BorderRadius.zero,
-                                                ),
-                                              )
-                                            : Icon(
-                                                _categoryIcon(
-                                                    category.iconName,
-                                                    category.slug,
-                                                    category.name),
-                                                size: 30,
-                                                color: selected
-                                                    ? Theme.of(context)
-                                                        .colorScheme
-                                                        .onPrimary
-                                                    : Theme.of(context)
-                                                        .colorScheme
-                                                        .primary,
-                                              ),
-                                        onTap: () {
-                                          productProvider
-                                              .selectCategory(category.slug);
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (_) => ProductListScreen(
-                                                categoryName: category.name,
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                      );
-                                    },
+                              const SizedBox(height: 10),
+                            ],
+                          ),
+                        ),
+                        if (productProvider.isLoading && products.isEmpty)
+                          SliverPadding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            sliver: SliverLayoutBuilder(
+                              builder: (context, constraints) =>
+                                  SliverGrid.builder(
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: responsiveGridCrossAxisCount(
+                                    availableWidth: constraints.crossAxisExtent,
+                                    minTileWidth: 128,
+                                  ),
+                                  mainAxisExtent: 220,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 12,
+                                ),
+                                itemCount: 4,
+                                itemBuilder: (context, index) =>
+                                    const ShimmerBox(
+                                  borderRadius: BorderRadius.all(
+                                    Radius.circular(20),
                                   ),
                                 ),
                               ),
-                              const SizedBox(height: 12),
-                            ],
-                            Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              child: _FeaturedProductCarousel(
-                                products: productProvider.featuredProducts,
-                                isLoading: productProvider.isLoading,
-                              ),
                             ),
-                            const SizedBox(height: 14),
-                            Padding(
+                          )
+                        else if (productProvider.errorMessage != null &&
+                            products.isEmpty)
+                          SliverToBoxAdapter(
+                            child: Padding(
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 16),
-                              child: SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: Row(
-                                  children: [
-                                    _HomeShortcut(
-                                      icon: Icons.favorite_rounded,
-                                      label:
-                                          '${context.tr('Saved')} ${productProvider.favoriteCount}',
-                                      selected: productProvider.favoritesOnly,
-                                      onTap: () {
-                                        productProvider.setHomeFilters(
-                                          savedOnly:
-                                              !productProvider.favoritesOnly,
-                                          bestSellersOnly: productProvider
-                                              .homeBestSellersOnly,
-                                          cheapOnly:
-                                              productProvider.homeCheapOnly,
-                                        );
-                                      },
-                                    ),
-                                    const SizedBox(width: 8),
-                                    _HomeShortcut(
-                                      icon: Icons.inventory_2_outlined,
-                                      label: context.tr('Wholesale'),
-                                      selected: false,
-                                      onTap: () {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) =>
-                                                const WholesaleScreen(),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                    const SizedBox(width: 8),
-                                    _HomeShortcut(
-                                      icon: Icons.trending_up_rounded,
-                                      label: context.tr('Best sellers'),
-                                      selected:
-                                          productProvider.homeBestSellersOnly,
-                                      onTap: () {
-                                        productProvider.setHomeFilters(
-                                          savedOnly:
-                                              productProvider.favoritesOnly,
-                                          bestSellersOnly: !productProvider
-                                              .homeBestSellersOnly,
-                                          cheapOnly: false,
-                                        );
-                                      },
-                                    ),
-                                    const SizedBox(width: 8),
-                                    _HomeShortcut(
-                                      icon: Icons.local_offer_outlined,
-                                      label: context.tr('Offers'),
-                                      selected: _offersOnly,
-                                      onTap: () => setState(
-                                          () => _offersOnly = !_offersOnly),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    _HomeShortcut(
-                                      icon: Icons.replay_rounded,
-                                      label: context.tr('Reorder'),
-                                      selected: false,
-                                      onTap: () {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) =>
-                                                const MyOrdersScreen(),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                    const SizedBox(width: 8),
-                                    _HomeShortcut(
-                                      icon: Icons.sell_outlined,
-                                      label: context.tr('Cheap'),
-                                      selected: productProvider.homeCheapOnly,
-                                      onTap: () {
-                                        productProvider.setHomeFilters(
-                                          savedOnly:
-                                              productProvider.favoritesOnly,
-                                          bestSellersOnly: false,
-                                          cheapOnly:
-                                              !productProvider.homeCheapOnly,
-                                        );
-                                      },
-                                    ),
-                                  ],
+                              child: _CatalogMessage(
+                                icon: Icons.cloud_off_outlined,
+                                message: productProvider.errorMessage!,
+                                action: TextButton(
+                                  onPressed: productProvider.loadCatalog,
+                                  child: Text(context.tr('Try again')),
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 24),
-                            Padding(
+                          )
+                        else if (products.isEmpty)
+                          SliverToBoxAdapter(
+                            child: Padding(
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 16),
-                              child: SectionHeader(
-                                title: context.tr(
-                                  _offersOnly
-                                      ? 'Offers'
-                                      : productProvider.favoritesOnly
-                                          ? 'Saved items'
-                                          : productProvider.homeCheapOnly
-                                              ? 'Cheap picks'
-                                              : productProvider
-                                                      .homeBestSellersOnly
-                                                  ? 'Best seller picks'
-                                                  : 'Popular near you',
-                                ),
-                                actionLabel: context.tr('See all'),
-                                onAction: () {
-                                  productProvider.selectCategory('all');
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => const ProductListScreen(
-                                        categoryName: 'All products',
+                              child: _CatalogMessage(
+                                icon: _offersOnly
+                                    ? Icons.local_offer_outlined
+                                    : Icons.inventory_2_outlined,
+                                message: _offersOnly
+                                    ? context
+                                        .tr('No products match this filter.')
+                                    : context.tr(
+                                        'No items yet. Products added by the administrator will appear here.',
                                       ),
-                                    ),
-                                  );
-                                },
+                                action: _offersOnly
+                                    ? TextButton(
+                                        onPressed: () =>
+                                            setState(() => _offersOnly = false),
+                                        child: Text(context.tr('Clear filter')),
+                                      )
+                                    : null,
                               ),
                             ),
-                            const SizedBox(height: 10),
-                          ],
-                        ),
-                      ),
-                      if (productProvider.isLoading && products.isEmpty)
-                        SliverPadding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          sliver: SliverLayoutBuilder(
-                            builder: (context, constraints) =>
-                                SliverGrid.builder(
-                              gridDelegate:
-                                  SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: responsiveGridCrossAxisCount(
-                                  availableWidth: constraints.crossAxisExtent,
-                                  minTileWidth: 128,
-                                ),
-                                mainAxisExtent: 220,
-                                crossAxisSpacing: 12,
-                                mainAxisSpacing: 12,
-                              ),
-                              itemCount: 4,
-                              itemBuilder: (context, index) => const ShimmerBox(
-                                borderRadius: BorderRadius.all(
-                                  Radius.circular(20),
-                                ),
-                              ),
-                            ),
-                          ),
-                        )
-                      else if (productProvider.errorMessage != null &&
-                          products.isEmpty)
-                        SliverToBoxAdapter(
-                          child: Padding(
+                          )
+                        else
+                          SliverPadding(
                             padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: _CatalogMessage(
-                              icon: Icons.cloud_off_outlined,
-                              message: productProvider.errorMessage!,
-                              action: TextButton(
-                                onPressed: productProvider.loadCatalog,
-                                child: Text(context.tr('Try again')),
-                              ),
-                            ),
-                          ),
-                        )
-                      else if (products.isEmpty)
-                        SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: _CatalogMessage(
-                              icon: _offersOnly
-                                  ? Icons.local_offer_outlined
-                                  : Icons.inventory_2_outlined,
-                              message: _offersOnly
-                                  ? context.tr('No products match this filter.')
-                                  : context.tr(
-                                      'No items yet. Products added by the administrator will appear here.',
-                                    ),
-                              action: _offersOnly
-                                  ? TextButton(
-                                      onPressed: () =>
-                                          setState(() => _offersOnly = false),
-                                      child: Text(context.tr('Clear filter')),
-                                    )
-                                  : null,
-                            ),
-                          ),
-                        )
-                      else
-                        SliverPadding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          sliver: SliverLayoutBuilder(
-                            builder: (context, constraints) =>
-                                SliverGrid.builder(
-                              gridDelegate:
-                                  SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: responsiveGridCrossAxisCount(
-                                  availableWidth: constraints.crossAxisExtent,
-                                  minTileWidth: 128,
+                            sliver: SliverLayoutBuilder(
+                              builder: (context, constraints) =>
+                                  SliverGrid.builder(
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: responsiveGridCrossAxisCount(
+                                    availableWidth: constraints.crossAxisExtent,
+                                    minTileWidth: 128,
+                                  ),
+                                  mainAxisExtent: 220,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 12,
                                 ),
-                                mainAxisExtent: 220,
-                                crossAxisSpacing: 12,
-                                mainAxisSpacing: 12,
-                              ),
-                              itemCount: products.length,
-                              itemBuilder: (context, index) => ProductCard(
-                                key: ValueKey(products[index].id),
-                                product: products[index],
-                                compact: true,
+                                itemCount: products.length,
+                                itemBuilder: (context, index) => ProductCard(
+                                  key: ValueKey(products[index].id),
+                                  product: products[index],
+                                  compact: true,
+                                ),
                               ),
                             ),
                           ),
+                        const SliverToBoxAdapter(
+                          child: SizedBox(height: 120),
                         ),
-                      const SliverToBoxAdapter(
-                        child: SizedBox(height: 120),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1176,6 +1213,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   },
                 ),
               ),
+              if (_showDiwaliAnimation)
+                Positioned.fill(
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: _diwaliAnimationVisible,
+                    builder: (context, isVisible, _) => HomeDiwaliGreeting(
+                      key: ValueKey('diwali-greeting-${user?.id ?? 'guest'}'),
+                      isVisible: isVisible,
+                      greeting: greeting,
+                      userName: userName,
+                      onDismiss: _dismissDiwaliAnimation,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -1360,6 +1410,7 @@ class _FeaturedProductCarouselState extends State<_FeaturedProductCarousel> {
                         child: _FeaturedProductSlide(
                           key: ValueKey(widget.products[index].id),
                           product: widget.products[index],
+                          isActive: index == _currentPage,
                           onTap: () => showProductQuickView(
                             context,
                             widget.products[index],
@@ -1412,11 +1463,13 @@ class _FeaturedProductCarouselState extends State<_FeaturedProductCarousel> {
 
 class _FeaturedProductSlide extends StatefulWidget {
   final Product product;
+  final bool isActive;
   final VoidCallback onTap;
 
   const _FeaturedProductSlide({
     super.key,
     required this.product,
+    required this.isActive,
     required this.onTap,
   });
 
@@ -1432,36 +1485,62 @@ class _FeaturedProductSlideState extends State<_FeaturedProductSlide>
     duration: const Duration(seconds: 3),
   );
   bool _reduceMotion = false;
+  bool _tickerModeEnabled = true;
 
   @override
   void initState() {
     super.initState();
-    _floatController.repeat(reverse: true);
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    if (_reduceMotion == reduceMotion) return;
+    final tickerModeEnabled = TickerMode.valuesOf(context).enabled;
+    if (_reduceMotion == reduceMotion &&
+        _tickerModeEnabled == tickerModeEnabled) {
+      return;
+    }
     _reduceMotion = reduceMotion;
-    if (_reduceMotion) {
+    _tickerModeEnabled = tickerModeEnabled;
+    _syncFloatAnimation();
+  }
+
+  @override
+  void didUpdateWidget(covariant _FeaturedProductSlide oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive != widget.isActive) _syncFloatAnimation();
+  }
+
+  void _syncFloatAnimation() {
+    final shouldAnimate =
+        widget.isActive && _tickerModeEnabled && !_reduceMotion;
+    if (shouldAnimate && !_floatController.isAnimating) {
+      _floatController.repeat(reverse: true);
+    } else if (!shouldAnimate && _floatController.isAnimating) {
       _floatController
         ..stop()
         ..value = .5;
-    } else {
-      _floatController.repeat(reverse: true);
     }
   }
 
-  void _addToCart() {
+  Future<void> _addToCart() async {
     final product = widget.product;
+    final weightGrams = product.isSoldByWeight
+        ? await showWeightQuantityDialog(context, product)
+        : null;
+    if (product.isSoldByWeight && weightGrams == null) return;
+    if (!mounted) return;
     final imageContext = _imageKey.currentContext;
     final imageBox = imageContext?.findRenderObject();
     final sourceRect = imageBox is RenderBox && imageBox.hasSize
         ? imageBox.localToGlobal(Offset.zero) & imageBox.size
         : null;
-    context.read<CartProvider>().addItem(product);
+    if (weightGrams != null) {
+      context.read<CartProvider>().addWeightedItem(product, weightGrams);
+    } else {
+      context.read<CartProvider>().addItem(product);
+    }
     animateProductToCart(
       context: context,
       product: product,
@@ -1482,6 +1561,9 @@ class _FeaturedProductSlideState extends State<_FeaturedProductSlide>
     final tokens = AppThemeExtension.of(context);
     final quantity = context.select<CartProvider, int>(
       (cart) => cart.itemForProduct(product.id)?.quantity ?? 0,
+    );
+    final cartItem = context.select<CartProvider, CartItem?>(
+      (cart) => cart.itemForProduct(product.id),
     );
     final hasDiscount =
         product.originalPrice != null && product.originalPrice! > product.price;
@@ -1677,14 +1759,28 @@ class _FeaturedProductSlideState extends State<_FeaturedProductSlide>
                                 const Spacer(),
                                 _FeaturedCartControl(
                                   quantity: quantity,
-                                  available: product.stock > 0,
+                                  quantityLabel: cartItem?.weightGrams == null
+                                      ? null
+                                      : '${(cartItem!.weightGrams! / 1000).toStringAsFixed(3)} kg',
+                                  available: product.hasStock,
                                   onAdd: _addToCart,
-                                  onDecrease: () => context
-                                      .read<CartProvider>()
-                                      .updateQuantity(
+                                  onDecrease: () {
+                                    final cart = context.read<CartProvider>();
+                                    if (cartItem?.weightGrams
+                                        case final grams?) {
+                                      if (grams <= 100) {
+                                        cart.removeItem(product.id);
+                                      } else {
+                                        cart.setWeightedItem(
+                                            product, grams - 100);
+                                      }
+                                    } else {
+                                      cart.updateQuantity(
                                         product.id,
                                         quantity - 1,
-                                      ),
+                                      );
+                                    }
+                                  },
                                 ),
                               ],
                             ),
@@ -1705,7 +1801,7 @@ class _FeaturedProductSlideState extends State<_FeaturedProductSlide>
                               child: Transform.rotate(
                                 angle: -.12,
                                 child: SizedBox(
-                                  width: constraints.maxWidth * .38,
+                                  width: constraints.maxWidth * .4,
                                   height: constraints.maxHeight * .64,
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(18),
@@ -1717,8 +1813,8 @@ class _FeaturedProductSlideState extends State<_FeaturedProductSlide>
                                             originalCarouselProductImageUrl(
                                           product.imageUrl,
                                         ),
-                                        size: constraints.maxWidth * .32,
-                                        width: constraints.maxWidth * .38,
+                                        size: constraints.maxWidth * .34,
+                                        width: constraints.maxWidth * .4,
                                         height: constraints.maxHeight * .62,
                                         fit: BoxFit.contain,
                                         borderRadius: BorderRadius.zero,
@@ -1851,12 +1947,14 @@ class _DiscountBadge extends StatelessWidget {
 
 class _FeaturedCartControl extends StatelessWidget {
   final int quantity;
+  final String? quantityLabel;
   final bool available;
   final VoidCallback onAdd;
   final VoidCallback onDecrease;
 
   const _FeaturedCartControl({
     required this.quantity,
+    this.quantityLabel,
     required this.available,
     required this.onAdd,
     required this.onDecrease,
@@ -1920,19 +2018,23 @@ class _FeaturedCartControl extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox.square(
-            dimension: 44,
+            dimension: 36,
             child: IconButton(
               tooltip: 'Decrease quantity',
               onPressed: onDecrease,
               padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
               icon: const Icon(Icons.remove_rounded, size: 18),
               color: const Color(0xFF12391F),
             ),
           ),
           SizedBox(
-            width: 22,
+            width: quantityLabel == null ? 22 : 54,
             child: Text(
-              '$quantity',
+              quantityLabel ?? '$quantity',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: Color(0xFF12391F),
@@ -1941,11 +2043,12 @@ class _FeaturedCartControl extends StatelessWidget {
             ),
           ),
           SizedBox.square(
-            dimension: 44,
+            dimension: 36,
             child: IconButton(
               tooltip: 'Increase quantity',
               onPressed: onAdd,
               padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
               icon: const Icon(Icons.add_rounded, size: 18),
               color: const Color(0xFF12391F),
             ),

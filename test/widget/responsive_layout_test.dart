@@ -411,10 +411,17 @@ void main() {
     expect(find.text('Add'), findsOneWidget);
     await tester.tap(find.text('Add'));
     await tester.pump();
+    expect(find.text('Choose Red apples weight'), findsOneWidget);
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Weight in kg'),
+      '0.5',
+    );
+    await tester.tap(find.text('Add weight'));
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(cart.items['apples']?.quantity, 1);
-    expect(find.text('1'), findsOneWidget);
+    expect(cart.items['apples']?.weightGrams, 500);
+    expect(find.text('0.5 kg'), findsOneWidget);
     expect(tester.takeException(), isNull);
     products.dispose();
   });
@@ -575,17 +582,36 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Record restock'), findsOneWidget);
     expect(tester.takeException(), isNull);
+    await tester.ensureVisible(find.text('Manufacture date (MFG)'));
+    await tester.tap(find.text('Manufacture date (MFG)'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Expiry date (EXP)'));
+    await tester.tap(find.text('Expiry date (EXP)'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Add to stock'));
     await tester.pumpAndSettle();
 
-    expect(apiService.restockRequest, {'quantity': 3});
+    expect(apiService.restockRequest?['quantity'], 3);
+    expect(apiService.restockRequest?['noExpiry'], isFalse);
+    expect(apiService.restockRequest?['lotNumber'], isNull);
+    final manufacturedAt = DateTime.parse(
+      apiService.restockRequest!['manufacturedAt'] as String,
+    );
+    final expiresAt = DateTime.parse(
+      apiService.restockRequest!['expiresAt'] as String,
+    );
+    expect(expiresAt.isAfter(manufacturedAt), isTrue);
     expect(find.text('Nothing to replenish'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.text('Receipt history'));
     await tester.pumpAndSettle();
     expect(find.text('Recorded by Store Admin'), findsOneWidget);
-    expect(find.text('+3 × 1 kg'), findsOneWidget);
+    expect(find.text('+3 kg'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

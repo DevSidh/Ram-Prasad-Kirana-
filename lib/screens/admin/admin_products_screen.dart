@@ -8,6 +8,8 @@ import '../../core/constants.dart';
 import '../../core/media.dart';
 import '../../core/product_sku.dart';
 import '../../models/admin_models.dart';
+import '../../models/scanned_product_barcode.dart';
+import '../../screens/admin/barcode_scanner_screen.dart';
 import '../../providers/product_provider.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
@@ -94,6 +96,12 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
         categories: _categories,
         product: product,
         vendingOnly: widget.vendingOnly,
+        onExistingProduct: (existing) {
+          Navigator.of(context).pop();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _editProduct(existing);
+          });
+        },
       ),
     );
     if (!mounted) return;
@@ -171,9 +179,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      widget.vendingOnly
-                          ? 'Vending machine drinks'
-                          : 'Store catalog',
+                      widget.vendingOnly ? 'Drinks' : 'Store catalog',
                       style: const TextStyle(
                         fontSize: 21,
                         fontWeight: FontWeight.w800,
@@ -183,10 +189,10 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                     Text(
                       _productPage == null
                           ? widget.vendingOnly
-                              ? 'Manage drinks shown in the customer vending machine.'
+                              ? 'Manage drinks shown in the customer drinks menu.'
                               : 'Manage products and stock.'
                           : widget.vendingOnly
-                              ? '${_productPage!.pagination.total} vending drinks'
+                              ? '${_productPage!.pagination.total} drinks'
                               : '${_productPage!.pagination.total} products in the catalog',
                       style: TextStyle(
                           color: AppConstants.textMuted, fontSize: 12),
@@ -253,12 +259,14 @@ class _ProductFormDialog extends StatefulWidget {
   final List<AdminCategory> categories;
   final AdminProduct? product;
   final bool vendingOnly;
+  final ValueChanged<AdminProduct>? onExistingProduct;
 
   const _ProductFormDialog({
     required this.api,
     required this.categories,
     this.product,
     this.vendingOnly = false,
+    this.onExistingProduct,
   });
 
   @override
@@ -270,6 +278,8 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
   late final TextEditingController _nameController;
   late final TextEditingController _brandController;
   late final TextEditingController _skuController;
+  late final TextEditingController _barcodeController;
+  late final TextEditingController _lotNumberController;
   late final TextEditingController _priceController;
   late final TextEditingController _originalPriceController;
   late final TextEditingController _stockController;
@@ -279,15 +289,23 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
   late final TextEditingController _unitAmountController;
   Uint8List? _pickedImageBytes;
   String? _pickedImageName;
+  final List<_PendingProductImage> _pickedGalleryImages = [];
+  late List<String> _galleryImageUrls;
   bool _removeCurrentImage = false;
   String? _categoryId;
   String _unitType = 'pack';
   bool _saving = false;
   late bool _isVendingDrink;
+  String? _vendingSection;
   String? _error;
   String _weightUnit = 'g';
   String _volumeUnit = 'ml';
   late bool _isBestSeller;
+  DateTime? _manufacturedAt;
+  DateTime? _expiresAt;
+  bool _noExpiry = false;
+  bool _lookingUpBarcode = false;
+  String? _lookupImageUrl;
 
   List<AdminCategory> get _availableCategories {
     final active =
@@ -332,18 +350,27 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
   void initState() {
     super.initState();
     final product = widget.product;
+    _galleryImageUrls = List.of(product?.imageUrls ?? const []);
     _isVendingDrink = product?.isVendingDrink ?? widget.vendingOnly;
+    _vendingSection = product?.vendingSection;
     _isBestSeller = product?.isBestSeller ?? false;
     _nameController = TextEditingController(text: product?.name ?? '');
     _brandController = TextEditingController(text: product?.brand ?? '');
     _skuController = TextEditingController(text: product?.sku ?? '');
+    _barcodeController = TextEditingController(text: product?.barcode ?? '');
+    _lotNumberController = TextEditingController();
     _priceController = TextEditingController(
         text: product?.price == null ? '' : product!.price.toStringAsFixed(2));
     _originalPriceController = TextEditingController(
       text: product?.originalPrice?.toStringAsFixed(2) ?? '',
     );
-    _stockController =
-        TextEditingController(text: product?.stock.toString() ?? '0');
+    _stockController = TextEditingController(
+      text: product == null
+          ? '0'
+          : (product.weightStockKg ?? product.stock.toDouble())
+              .toStringAsFixed(3)
+              .replaceFirst(RegExp(r'\.?0+$'), ''),
+    );
     _lowStockThresholdController = TextEditingController(
       text: product?.lowStockThreshold.toString() ?? '10',
     );
@@ -373,6 +400,8 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
     _nameController.dispose();
     _brandController.dispose();
     _skuController.dispose();
+    _barcodeController.dispose();
+    _lotNumberController.dispose();
     _priceController.dispose();
     _originalPriceController.dispose();
     _stockController.dispose();
@@ -385,6 +414,17 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    final stock = double.parse(_stockController.text.trim());
+    if (widget.product == null &&
+        stock > 0 &&
+        (_manufacturedAt == null ||
+            (!_noExpiry && _expiresAt == null) ||
+            (_noExpiry && _expiresAt != null) ||
+            (_expiresAt != null && !_expiresAt!.isAfter(_manufacturedAt!)))) {
+      setState(() => _error =
+          'Enter a valid manufacture date and a later expiry date, or confirm that this product has no expiry.');
+      return;
+    }
     setState(() {
       _saving = true;
       _error = null;
@@ -408,8 +448,14 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
               : _slugify(_skuController.text))
           : _slugify(name),
       'sku': sku,
+      'barcode': _barcodeController.text.trim().isEmpty
+          ? null
+          : _barcodeController.text.trim(),
       'categoryId': _categoryId,
-      'imageUrl': _removeCurrentImage ? null : widget.product?.imageUrl,
+      'imageUrl': _removeCurrentImage
+          ? null
+          : widget.product?.imageUrl ?? _lookupImageUrl,
+      'imageUrls': _galleryImageUrls,
       'brand': _brandController.text.trim().isEmpty
           ? null
           : _brandController.text.trim(),
@@ -424,11 +470,28 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
           : _originController.text.trim(),
       'unitLabel': '${_unitAmountController.text.trim()} $_selectedUnitSuffix',
       'isVendingDrink': _isVendingDrink,
+      'vendingSection': _isVendingDrink ? _vendingSection : null,
       if (widget.vendingOnly) 'isBestSeller': _isBestSeller,
     };
-    final stock = int.parse(_stockController.text.trim());
+    if (widget.product == null && stock > 0) {
+      data['initialBatch'] = {
+        'lotNumber': _lotNumberController.text.trim().isEmpty
+            ? null
+            : _lotNumberController.text.trim(),
+        'manufacturedAt': _dateAsUtc(_manufacturedAt!).toIso8601String(),
+        'expiresAt':
+            _noExpiry ? null : _dateAsUtc(_expiresAt!).toIso8601String(),
+        'noExpiry': _noExpiry,
+      };
+    }
 
     try {
+      final uploadedGalleryUrls = await Future.wait(
+        _pickedGalleryImages.map(
+          (image) => widget.api.uploadProductImage(image.bytes, image.name),
+        ),
+      );
+      data['imageUrls'] = [..._galleryImageUrls, ...uploadedGalleryUrls];
       if (widget.product == null) {
         await widget.api.createProduct(
           data,
@@ -467,6 +530,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
           () => _error = 'Unable to read that image. Choose another file.');
       return;
     }
+
     if (size > 5 * 1024 * 1024) {
       setState(() => _error = 'Choose an image smaller than 5 MB.');
       return;
@@ -485,14 +549,234 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
     });
   }
 
+  Future<void> _pickGalleryImages() async {
+    final files = await FilePicker.pickFiles(type: FileType.image);
+    if (files.isEmpty) return;
+    final pending = <_PendingProductImage>[];
+    for (final file in files) {
+      final size = await file.length();
+      final extension = file.name.split('.').last.toLowerCase();
+      if (size == null ||
+          size > 5 * 1024 * 1024 ||
+          !{'jpg', 'jpeg', 'png', 'webp'}.contains(extension)) {
+        if (!mounted) return;
+        setState(() {
+          _error = 'Photos must be JPEG, PNG, or WebP files under 5 MB each.';
+        });
+        return;
+      }
+
+      pending.add(
+        _PendingProductImage(
+          bytes: await file.readAsBytes(),
+          name: file.name,
+        ),
+      );
+    }
+    if (_galleryImageUrls.length +
+            _pickedGalleryImages.length +
+            pending.length >
+        8) {
+      if (!mounted) return;
+      setState(() => _error = 'A product can have up to 8 additional photos.');
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _pickedGalleryImages.addAll(pending);
+      _error = null;
+    });
+  }
+
+  DateTime _dateAsUtc(DateTime date) =>
+      DateTime.utc(date.year, date.month, date.day);
+
+  String _formatBatchDate(DateTime date) =>
+      MaterialLocalizations.of(context).formatMediumDate(date);
+
+  Future<void> _scanBarcode() async {
+    final scannedBarcode =
+        await Navigator.of(context).push<ScannedProductBarcode>(
+      MaterialPageRoute<ScannedProductBarcode>(
+        builder: (_) => const BarcodeScannerScreen(),
+      ),
+    );
+    if (!mounted || scannedBarcode == null) return;
+    _barcodeController.text = scannedBarcode.value;
+    if (scannedBarcode.manufacturedAt != null ||
+        scannedBarcode.expiresAt != null) {
+      setState(() {
+        _manufacturedAt = scannedBarcode.manufacturedAt ?? _manufacturedAt;
+        _expiresAt = scannedBarcode.expiresAt ?? _expiresAt;
+        _noExpiry = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'GS1 dates were detected. Verify both dates on the package before saving.',
+          ),
+        ),
+      );
+    }
+    await _lookupBarcode();
+  }
+
+  Future<void> _lookupBarcode() async {
+    final barcode = _barcodeController.text.trim();
+    if (!RegExp(r'^[A-Za-z0-9._:/+-]{4,128}$').hasMatch(barcode)) {
+      setState(() => _error = 'Enter a valid barcode or product code.');
+      return;
+    }
+    setState(() {
+      _lookingUpBarcode = true;
+      _error = null;
+    });
+    try {
+      final result = await widget.api.lookupProductBarcode(barcode);
+      if (!mounted) return;
+      final source = result['source'] as String;
+      final rawProduct = result['product'];
+      if (source == 'catalog' && rawProduct is Map<String, dynamic>) {
+        final existing = AdminProduct.fromJson(rawProduct);
+        if (existing.id == widget.product?.id) {
+          setState(() => _lookingUpBarcode = false);
+          return;
+        }
+        setState(() => _lookingUpBarcode = false);
+        final editExisting = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Product already exists'),
+            content: Text(
+              '${existing.name} already uses this barcode. Edit that product instead of creating a duplicate.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Keep scanning'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Edit product'),
+              ),
+            ],
+          ),
+        );
+        if (editExisting == true) {
+          widget.onExistingProduct?.call(existing);
+        }
+        return;
+      }
+      if (rawProduct is Map<String, dynamic>) {
+        final productName = rawProduct['name']?.toString().trim();
+        final brand = rawProduct['brand']?.toString().trim();
+        final description = rawProduct['description']?.toString().trim();
+        final imageUrl = rawProduct['imageUrl']?.toString().trim();
+        final unitLabel = rawProduct['unitLabel']?.toString().trim();
+        setState(() {
+          if (_nameController.text.trim().isEmpty &&
+              productName != null &&
+              productName.isNotEmpty) {
+            _nameController.text = productName;
+          }
+          if (_brandController.text.trim().isEmpty &&
+              brand != null &&
+              brand.isNotEmpty) {
+            _brandController.text = brand;
+          }
+          if (_descriptionController.text.trim().isEmpty &&
+              description != null &&
+              description.isNotEmpty) {
+            _descriptionController.text = description;
+          }
+          final parsedImage = imageUrl == null ? null : Uri.tryParse(imageUrl);
+          if (_lookupImageUrl == null &&
+              parsedImage != null &&
+              (parsedImage.scheme == 'https' || parsedImage.scheme == 'http') &&
+              parsedImage.host.isNotEmpty) {
+            _lookupImageUrl = imageUrl;
+          }
+          if (unitLabel != null && unitLabel.isNotEmpty) {
+            _applyLookupUnit(unitLabel);
+          }
+          _lookingUpBarcode = false;
+        });
+        return;
+      }
+      setState(() => _lookingUpBarcode = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No product details were found. Enter the details manually; the barcode will be saved for future scans.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _lookingUpBarcode = false;
+        _error = _cleanError(error);
+      });
+    }
+  }
+
+  void _applyLookupUnit(String unitLabel) {
+    final match = RegExp(
+      r'^\s*([\d.]+)\s*(kg|g|ml|l|pcs?|pack)\b',
+      caseSensitive: false,
+    ).firstMatch(unitLabel);
+    if (match == null) return;
+    final amount = double.tryParse(match.group(1) ?? '');
+    if (amount == null || !amount.isFinite || amount <= 0) return;
+    final unit = match.group(2)!.toLowerCase();
+    _unitAmountController.text = match.group(1)!;
+    if (unit == 'kg' || unit == 'g') {
+      _unitType = 'weight';
+      _weightUnit = unit;
+    } else if (unit == 'ml' || unit == 'l') {
+      _unitType = 'volume';
+      _volumeUnit = unit;
+    } else if (unit.startsWith('pc')) {
+      _unitType = 'count';
+    } else {
+      _unitType = 'pack';
+    }
+  }
+
+  Future<void> _chooseBatchDate({
+    required bool manufactureDate,
+    ValueChanged<DateTime>? onSelected,
+  }) async {
+    final selectedDate = manufactureDate ? _manufacturedAt : _expiresAt;
+    final date = await showDatePicker(
+      context: context,
+      initialDate: selectedDate ??
+          (manufactureDate
+              ? DateTime.now()
+              : DateTime.now().add(const Duration(days: 365))),
+      firstDate: DateTime(2000),
+      lastDate: manufactureDate ? DateTime.now() : DateTime(2100),
+    );
+    if (!mounted || date == null) return;
+    setState(() {
+      if (manufactureDate) {
+        _manufacturedAt = date;
+      } else {
+        _expiresAt = date;
+      }
+      _error = null;
+    });
+    onSelected?.call(date);
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(
         widget.vendingOnly
             ? widget.product == null
-                ? 'Add vending drink'
-                : 'Edit vending drink'
+                ? 'Add drink'
+                : 'Edit drink'
             : widget.product == null
                 ? 'Add product'
                 : 'Edit product',
@@ -542,6 +826,50 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                   },
                 ),
                 const SizedBox(height: 11),
+                TextFormField(
+                  controller: _barcodeController,
+                  textInputAction: TextInputAction.search,
+                  onFieldSubmitted: (_) => _lookupBarcode(),
+                  decoration: InputDecoration(
+                    labelText: 'Barcode',
+                    hintText: 'EAN, UPC, Code 128 or QR product code',
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: 'Scan barcode with camera',
+                          onPressed: _saving ? null : _scanBarcode,
+                          icon: const Icon(Icons.document_scanner_outlined),
+                        ),
+                        IconButton(
+                          tooltip: 'Look up product',
+                          onPressed: _saving || _lookingUpBarcode
+                              ? null
+                              : _lookupBarcode,
+                          icon: _lookingUpBarcode
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.search_rounded),
+                        ),
+                      ],
+                    ),
+                  ),
+                  validator: (value) {
+                    final barcode = value?.trim() ?? '';
+                    if (barcode.isNotEmpty &&
+                        !RegExp(r'^[A-Za-z0-9._:/+-]{4,128}$')
+                            .hasMatch(barcode)) {
+                      return 'Use 4-128 letters, numbers, or standard code separators.';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 11),
                 DropdownButtonFormField<String>(
                   initialValue: _availableCategories
                           .any((category) => category.id == _categoryId)
@@ -585,15 +913,28 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                         setState(() => _unitType = value ?? _unitType),
                   ),
                 const SizedBox(height: 8),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Show in vending machine'),
-                  subtitle: const Text(
-                    'List this drink in the customer vending section.',
+                if (widget.vendingOnly)
+                  DropdownButtonFormField<String>(
+                    initialValue: _vendingSection,
+                    decoration: const InputDecoration(
+                      labelText: 'Drink menu section',
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'SODA', child: Text('Soda')),
+                      DropdownMenuItem(
+                        value: 'TEA_COFFEE',
+                        child: Text('Tea & Coffee'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'ENERGY',
+                        child: Text('Energy drink'),
+                      ),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _vendingSection = value),
+                    validator: (value) =>
+                        value == null ? 'Choose a drink menu section.' : null,
                   ),
-                  value: _isVendingDrink,
-                  onChanged: (value) => setState(() => _isVendingDrink = value),
-                ),
                 if (widget.vendingOnly)
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
@@ -668,10 +1009,127 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                     ),
                   ],
                 ),
+                if (widget.product == null) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Opening batch dates are required when adding starting stock.',
+                      style: TextStyle(
+                        color: AppConstants.textMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _lotNumberController,
+                    decoration: const InputDecoration(
+                      labelText: 'Batch / lot number (optional)',
+                    ),
+                  ),
+                  FormField<DateTime>(
+                    initialValue: _manufacturedAt,
+                    validator: (value) {
+                      final needsBatch =
+                          (double.tryParse(_stockController.text.trim()) ?? 0) >
+                              0;
+                      if (needsBatch && value == null) {
+                        return 'Choose a manufacture date.';
+                      }
+                      if (value != null &&
+                          DateTime(value.year, value.month, value.day)
+                              .isAfter(DateTime.now())) {
+                        return 'Manufacture date cannot be in the future.';
+                      }
+                      return null;
+                    },
+                    builder: (field) => ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.factory_outlined),
+                      title: Text(
+                        _manufacturedAt == null
+                            ? 'Manufacture date (MFG)'
+                            : 'MFG · ${_formatBatchDate(_manufacturedAt!)}',
+                      ),
+                      subtitle: field.errorText == null
+                          ? null
+                          : Text(
+                              field.errorText!,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                            ),
+                      trailing: const Icon(Icons.calendar_month_outlined),
+                      onTap: _saving
+                          ? null
+                          : () => _chooseBatchDate(
+                                manufactureDate: true,
+                                onSelected: field.didChange,
+                              ),
+                    ),
+                  ),
+                  FormField<DateTime>(
+                    initialValue: _expiresAt,
+                    validator: (value) {
+                      final needsBatch =
+                          (double.tryParse(_stockController.text.trim()) ?? 0) >
+                              0;
+                      if (!needsBatch || _noExpiry) return null;
+                      if (value == null) return 'Choose an expiry date.';
+                      if (_manufacturedAt != null &&
+                          !value.isAfter(_manufacturedAt!)) {
+                        return 'Expiry must be after manufacture.';
+                      }
+                      return null;
+                    },
+                    builder: (field) => ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.event_busy_outlined),
+                      title: Text(
+                        _noExpiry
+                            ? 'No expiry date confirmed'
+                            : _expiresAt == null
+                                ? 'Expiry date (EXP)'
+                                : 'EXP · ${_formatBatchDate(_expiresAt!)}',
+                      ),
+                      subtitle: field.errorText == null
+                          ? null
+                          : Text(
+                              field.errorText!,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                            ),
+                      trailing: _noExpiry
+                          ? null
+                          : const Icon(Icons.calendar_month_outlined),
+                      onTap: _saving || _noExpiry
+                          ? null
+                          : () => _chooseBatchDate(
+                                manufactureDate: false,
+                                onSelected: field.didChange,
+                              ),
+                    ),
+                  ),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('This product does not expire'),
+                    value: _noExpiry,
+                    onChanged: _saving
+                        ? null
+                        : (value) => setState(() {
+                              _noExpiry = value ?? false;
+                              if (_noExpiry) _expiresAt = null;
+                            }),
+                  ),
+                ],
                 const SizedBox(height: 11),
                 TextFormField(
                   controller: _lowStockThresholdController,
-                  keyboardType: TextInputType.number,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   decoration: const InputDecoration(
                     labelText: 'Low-stock alert threshold',
                     helperText:
@@ -747,6 +1205,49 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                       ],
                     ),
                   ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    onPressed: _saving ? null : _pickGalleryImages,
+                    icon: const Icon(Icons.collections_outlined),
+                    label: const Text('Add product photos'),
+                  ),
+                ),
+                if (_galleryImageUrls.isNotEmpty ||
+                    _pickedGalleryImages.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (var index = 0;
+                            index < _galleryImageUrls.length;
+                            index++)
+                          _GalleryImagePreview(
+                            imageUrl: _galleryImageUrls[index],
+                            onRemove: _saving
+                                ? null
+                                : () => setState(
+                                      () => _galleryImageUrls.removeAt(index),
+                                    ),
+                          ),
+                        for (var index = 0;
+                            index < _pickedGalleryImages.length;
+                            index++)
+                          _GalleryImagePreview(
+                            imageBytes: _pickedGalleryImages[index].bytes,
+                            onRemove: _saving
+                                ? null
+                                : () => setState(
+                                      () =>
+                                          _pickedGalleryImages.removeAt(index),
+                                    ),
+                          ),
+                      ],
+                    ),
+                  ),
                 const SizedBox(height: 11),
                 Row(
                   children: [
@@ -770,12 +1271,17 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                     Expanded(
                       child: TextFormField(
                         controller: _stockController,
-                        keyboardType: TextInputType.number,
-                        decoration:
-                            const InputDecoration(labelText: 'Stock quantity'),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: _unitType == 'weight'
+                              ? 'Stock quantity (kg)'
+                              : 'Stock quantity',
+                        ),
                         validator: (value) {
-                          final stock = int.tryParse(value?.trim() ?? '');
-                          if (stock == null || stock < 0) {
+                          final stock = double.tryParse(value?.trim() ?? '');
+                          if (stock == null || !stock.isFinite || stock < 0) {
                             return 'Enter 0 or more';
                           }
                           return null;
@@ -849,6 +1355,58 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
   }
 }
 
+class _PendingProductImage {
+  const _PendingProductImage({required this.bytes, required this.name});
+
+  final Uint8List bytes;
+  final String name;
+}
+
+class _GalleryImagePreview extends StatelessWidget {
+  const _GalleryImagePreview({
+    this.imageUrl,
+    this.imageBytes,
+    required this.onRemove,
+  });
+
+  final String? imageUrl;
+  final Uint8List? imageBytes;
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: SizedBox(
+            width: 68,
+            height: 68,
+            child: imageBytes != null
+                ? Image.memory(imageBytes!, fit: BoxFit.cover)
+                : Image.network(
+                    optimizedProductImageUrl(imageUrl ?? ''),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) =>
+                        const Icon(Icons.broken_image_outlined),
+                  ),
+          ),
+        ),
+        Positioned(
+          top: 0,
+          right: 0,
+          child: IconButton.filledTonal(
+            tooltip: 'Remove photo',
+            onPressed: onRemove,
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.close_rounded, size: 16),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _ProductCard extends StatelessWidget {
   final AdminProduct product;
   final VoidCallback onEdit;
@@ -912,15 +1470,20 @@ class _ProductCard extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(height: 6),
-                Row(
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
-                        '${AppConstants.currencySymbol}${product.price.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w800, fontSize: 13)),
+                      '${AppConstants.currencySymbol}${product.price.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
                     if (product.originalPrice != null &&
-                        product.originalPrice! > product.price) ...[
-                      const SizedBox(width: 7),
+                        product.originalPrice! > product.price)
                       Text(
                         '${AppConstants.currencySymbol}${product.originalPrice!.toStringAsFixed(2)}',
                         style: TextStyle(
@@ -929,11 +1492,14 @@ class _ProductCard extends StatelessWidget {
                           decoration: TextDecoration.lineThrough,
                         ),
                       ),
-                    ],
-                    const SizedBox(width: 10),
-                    Text('${product.unitLabel} · stock ${product.stock}',
-                        style: TextStyle(
-                            fontSize: 11, color: AppConstants.textMuted)),
+                    Text(
+                      '${product.unitLabel} · stock '
+                      '${product.weightStockKg?.toStringAsFixed(3) ?? product.stock}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppConstants.textMuted,
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -1095,12 +1661,12 @@ class _EmptyProducts extends StatelessWidget {
                 size: 34,
                 color: AppConstants.textMuted),
             const SizedBox(height: 10),
-            Text(vendingOnly ? 'No vending drinks yet' : 'No products found',
+            Text(vendingOnly ? 'No drinks yet' : 'No products found',
                 style: const TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 5),
             Text(
                 vendingOnly
-                    ? 'Add a drink and enable “Show in vending machine” to list it here.'
+                    ? 'Add a drink to list it in the customer drinks menu.'
                     : 'Products from your catalog will appear here.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 12, color: AppConstants.textMuted)),

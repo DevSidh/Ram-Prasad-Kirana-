@@ -569,7 +569,7 @@ class _WholesaleItemFormState extends State<_WholesaleItemForm> {
                     Expanded(
                       child: _numberField(
                         _stock,
-                        'Separate stock',
+                        'Stock',
                         validator: (value) {
                           final number = int.tryParse(value?.trim() ?? '');
                           return number == null || number < 0

@@ -11,6 +11,7 @@ import '../providers/language_provider.dart';
 import 'product_quick_view.dart';
 import 'product_thumbnail.dart';
 import 'cart_flight_overlay.dart';
+import 'weight_quantity_dialog.dart';
 
 class ProductCard extends StatefulWidget {
   final Product product;
@@ -31,8 +32,13 @@ class ProductCard extends StatefulWidget {
 class _ProductCardState extends State<ProductCard> {
   final GlobalKey _imageKey = GlobalKey();
 
-  void _addToCart() {
+  Future<void> _addToCart() async {
     final product = widget.product;
+    final weightGrams = product.isSoldByWeight
+        ? await showWeightQuantityDialog(context, product)
+        : null;
+    if (product.isSoldByWeight && weightGrams == null) return;
+    if (!mounted) return;
     final imageContext = _imageKey.currentContext;
     final imageBox = imageContext?.findRenderObject();
     final sourceRect = imageBox is RenderBox && imageBox.hasSize
@@ -40,7 +46,11 @@ class _ProductCardState extends State<ProductCard> {
         : null;
     final targetKey = CartFlightTarget.maybeOf(context);
 
-    context.read<CartProvider>().addItem(product);
+    if (weightGrams != null) {
+      context.read<CartProvider>().addWeightedItem(product, weightGrams);
+    } else {
+      context.read<CartProvider>().addItem(product);
+    }
     animateProductToCart(
       context: context,
       product: product,
@@ -119,7 +129,7 @@ class _ProductCardState extends State<ProductCard> {
                         borderRadius: BorderRadius.zero,
                         fallbackIcon: _productIllustration(product),
                         backgroundColor: Colors.white,
-                        imageWidthFactor: .73,
+                        imageWidthFactor: 1,
                       ),
                     ),
                   ),
@@ -224,7 +234,7 @@ class _ProductCardState extends State<ProductCard> {
                             child: child,
                           ),
                         ),
-                        child: cartItem == null && product.stock > 0
+                        child: cartItem == null && product.hasStock
                             ? InkWell(
                                 key: const ValueKey('add-to-basket'),
                                 onTap: _addToCart,
@@ -281,39 +291,62 @@ class _ProductCardState extends State<ProductCard> {
                                     child: Row(
                                       children: [
                                         InkWell(
-                                          onTap: () =>
+                                          onTap: () {
+                                            if (cartItem.weightGrams != null) {
+                                              final grams =
+                                                  cartItem.weightGrams! - 100;
+                                              if (grams <= 0) {
+                                                cartProvider
+                                                    .removeItem(product.id);
+                                              } else {
+                                                cartProvider.setWeightedItem(
+                                                    product, grams);
+                                              }
+                                            } else {
                                               cartProvider.updateQuantity(
                                                   product.id,
-                                                  cartItem.quantity - 1),
+                                                  cartItem.quantity - 1);
+                                            }
+                                          },
                                           child: Padding(
-                                            padding: const EdgeInsets.all(4),
+                                            padding: const EdgeInsets.all(3),
                                             child: Icon(Icons.remove,
-                                                size: 14,
+                                                size: 12,
                                                 color:
                                                     AppConstants.primaryDark),
                                           ),
                                         ),
                                         Padding(
                                           padding: const EdgeInsets.symmetric(
-                                              horizontal: 4),
+                                              horizontal: 2),
                                           child: Text(
-                                            '${cartItem.quantity}',
+                                            cartItem.weightGrams == null
+                                                ? '${cartItem.quantity}'
+                                                : cartItem.formattedWeight,
+                                            maxLines: 1,
+                                            softWrap: false,
+                                            overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
                                                 fontWeight: FontWeight.bold,
-                                                fontSize: 12,
+                                                fontSize: 9,
                                                 color:
                                                     AppConstants.primaryDark),
                                           ),
                                         ),
                                         InkWell(
-                                          onTap: () =>
+                                          onTap: () {
+                                            if (cartItem.weightGrams != null) {
+                                              _addToCart();
+                                            } else {
                                               cartProvider.updateQuantity(
                                                   product.id,
-                                                  cartItem.quantity + 1),
+                                                  cartItem.quantity + 1);
+                                            }
+                                          },
                                           child: Padding(
-                                            padding: const EdgeInsets.all(4),
+                                            padding: const EdgeInsets.all(3),
                                             child: Icon(Icons.add,
-                                                size: 14,
+                                                size: 12,
                                                 color:
                                                     AppConstants.primaryDark),
                                           ),
@@ -459,25 +492,25 @@ class _ProductCardState extends State<ProductCard> {
                             height: 48,
                             child: Tooltip(
                               message: context.tr(
-                                product.stock > 0
+                                product.hasStock
                                     ? 'Add to basket'
                                     : 'Unavailable',
                               ),
                               child: Material(
-                                color: product.stock > 0
+                                color: product.hasStock
                                     ? theme.colorScheme.primary
                                     : tokens.surfaceBorder,
                                 shape: const CircleBorder(),
                                 child: InkWell(
                                   customBorder: const CircleBorder(),
-                                  onTap: product.stock > 0 ? _addToCart : null,
+                                  onTap: product.hasStock ? _addToCart : null,
                                   child: Center(
                                     child: cartItem == null
                                         ? Icon(
-                                            product.stock > 0
+                                            product.hasStock
                                                 ? Icons.add_rounded
                                                 : Icons.remove_shopping_cart,
-                                            color: product.stock > 0
+                                            color: product.hasStock
                                                 ? theme.colorScheme.onPrimary
                                                 : tokens.textSecondary,
                                             size: 22,

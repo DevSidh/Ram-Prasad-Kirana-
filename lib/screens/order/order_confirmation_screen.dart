@@ -1,12 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/constants.dart';
+import '../../models/buying_streak.dart';
 import '../../models/cart_item.dart';
 import '../../models/order.dart';
 import '../../navigation/main_bottom_nav.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../services/api_service.dart';
 import '../../widgets/product_thumbnail.dart';
 import '../../widgets/store_animation.dart';
 import 'order_tracking_screen.dart';
@@ -61,6 +66,8 @@ class OrderConfirmationScreen extends StatelessWidget {
                   height: 1.4,
                 ),
               ),
+              const SizedBox(height: 14),
+              const _OrderStreakCard(),
               const SizedBox(height: 24),
               Container(
                 padding: const EdgeInsets.all(16),
@@ -198,6 +205,102 @@ class OrderConfirmationScreen extends StatelessWidget {
   }
 }
 
+class _OrderStreakCard extends StatefulWidget {
+  const _OrderStreakCard();
+
+  @override
+  State<_OrderStreakCard> createState() => _OrderStreakCardState();
+}
+
+class _OrderStreakCardState extends State<_OrderStreakCard> {
+  BuyingStreakSnapshot? _snapshot;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    final auth = context.read<AuthProvider?>();
+    if (auth == null ||
+        !auth.isAuthenticated ||
+        auth.currentUser?.role.toUpperCase() != 'CUSTOMER') {
+      return;
+    }
+    try {
+      final response =
+          await context.read<ApiService>().get('/account/buying-streak');
+      if (response is! Map<String, dynamic>) {
+        throw const FormatException('The store returned an invalid streak.');
+      }
+      final snapshot = BuyingStreakSnapshot.fromJson(response);
+      if (mounted) setState(() => _snapshot = snapshot);
+    } catch (error) {
+      debugPrint('Order confirmation streak card unavailable: $error');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final snapshot = _snapshot;
+    if (snapshot == null || snapshot.currentStreak == 0) {
+      return const SizedBox.shrink();
+    }
+    final nextReward = snapshot.nextRewardDay;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF17452F),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.local_fire_department_rounded,
+            color: Color(0xFFFFC857),
+            size: 30,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${snapshot.currentStreak}-day buying streak!',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                if (nextReward != null)
+                  Text(
+                    '${snapshot.daysToNextReward ?? 0} more '
+                    '${snapshot.daysToNextReward == 1 ? 'day' : 'days'} '
+                    'to your next reward.',
+                    style: const TextStyle(
+                      color: Color(0xFFD5EBDD),
+                      fontSize: 12,
+                    ),
+                  )
+                else
+                  const Text(
+                    'Your rewards and progress are saved.',
+                    style: TextStyle(
+                      color: Color(0xFFD5EBDD),
+                      fontSize: 12,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _OrderItemRow extends StatelessWidget {
   final CartItem item;
   final bool showDivider;
@@ -223,7 +326,8 @@ class _OrderItemRow extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                '${item.product.name} × ${item.quantity}',
+                '${item.product.name} '
+                '${item.weightGrams == null ? '× ${item.quantity}' : '${(item.weightGrams! / 1000).toStringAsFixed(3)} kg'}',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(

@@ -10,6 +10,7 @@ import '../../providers/theme_provider.dart';
 import '../../widgets/product_thumbnail.dart';
 import '../checkout/checkout_screen.dart';
 import '../../services/product_share_link.dart';
+import '../../widgets/weight_quantity_dialog.dart';
 
 class ProductDetailsScreen extends StatefulWidget {
   final Product product;
@@ -23,10 +24,19 @@ class ProductDetailsScreen extends StatefulWidget {
 class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   static const _shareChannel = MethodChannel('faststore/share');
   int _quantity = 1;
+  int _imageIndex = 0;
   bool _sharing = false;
   bool _submittingRating = false;
   double? _updatedRating;
   int? _updatedReviewCount;
+
+  List<String> get _productImages => <String>{
+        if (widget.product.imageUrl.trim().isNotEmpty)
+          widget.product.imageUrl.trim(),
+        ...widget.product.imageUrls
+            .map((url) => url.trim())
+            .where((url) => url.isNotEmpty),
+      }.toList(growable: false);
 
   @override
   void initState() {
@@ -60,6 +70,37 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     } finally {
       if (mounted) setState(() => _sharing = false);
     }
+  }
+
+  Future<void> _addProductToCart({required bool buyNow}) async {
+    final product = widget.product;
+    final weightGrams = product.isSoldByWeight
+        ? await showWeightQuantityDialog(context, product)
+        : null;
+    if (product.isSoldByWeight && weightGrams == null) return;
+    if (!mounted) return;
+
+    final cart = context.read<CartProvider>();
+    if (weightGrams != null) {
+      cart.addWeightedItem(product, weightGrams);
+    } else {
+      cart.addItem(product, _quantity, product.isWholesaleItem);
+    }
+    if (buyNow) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const CheckoutScreen()),
+      );
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(weightGrams == null
+            ? 'Added $_quantity × ${product.name} to basket'
+            : 'Added ${(weightGrams / 1000).toStringAsFixed(3)} kg of ${product.name} to basket'),
+        duration: const Duration(seconds: 1),
+      ),
+    );
   }
 
   Future<void> _toggleWishlist(ProductProvider provider) async {
@@ -179,7 +220,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final cartProvider = Provider.of<CartProvider>(context);
     final productProvider = Provider.of<ProductProvider>(context);
     final authProvider = context.watch<AuthProvider?>();
     context.watch<ThemeProvider?>();
@@ -189,7 +229,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     final minimumQuantity = widget.product.isWholesaleItem
         ? widget.product.wholesaleMinimumQuantity
         : 1;
-    final unavailable = widget.product.stock < minimumQuantity;
+    final unavailable = widget.product.isSoldByWeight
+        ? !widget.product.hasStock
+        : widget.product.stock < minimumQuantity;
 
     return Scaffold(
       backgroundColor: AppConstants.backgroundLight,
@@ -223,20 +265,58 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Hero Image
-            Container(
+            SizedBox(
               height: 280,
               width: double.infinity,
-              color: AppConstants.surfaceLight,
-              child: ProductThumbnail(
-                imageUrl: widget.product.imageUrl,
-                size: 280,
-                width: double.infinity,
-                height: 280,
-                fit: BoxFit.contain,
-                borderRadius: BorderRadius.zero,
-                fallbackIcon: Icons.shopping_basket_outlined,
-                backgroundColor: Colors.white,
-                imageWidthFactor: .77,
+              child: Stack(
+                alignment: Alignment.bottomCenter,
+                children: [
+                  PageView.builder(
+                    itemCount:
+                        _productImages.isEmpty ? 1 : _productImages.length,
+                    onPageChanged: (index) =>
+                        setState(() => _imageIndex = index),
+                    itemBuilder: (context, index) => ColoredBox(
+                      color: AppConstants.surfaceLight,
+                      child: ProductThumbnail(
+                        imageUrl: _productImages.isEmpty
+                            ? widget.product.imageUrl
+                            : _productImages[index],
+                        size: 280,
+                        width: double.infinity,
+                        height: 280,
+                        fit: BoxFit.contain,
+                        borderRadius: BorderRadius.zero,
+                        fallbackIcon: Icons.shopping_basket_outlined,
+                        backgroundColor: Colors.white,
+                        imageWidthFactor: 1,
+                      ),
+                    ),
+                  ),
+                  if (_productImages.length > 1)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: List<Widget>.generate(
+                          _productImages.length,
+                          (index) => AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            width: _imageIndex == index ? 18 : 7,
+                            height: 7,
+                            margin: const EdgeInsets.symmetric(horizontal: 3),
+                            decoration: BoxDecoration(
+                              color: _imageIndex == index
+                                  ? AppConstants.primary
+                                  : AppConstants.textMuted
+                                      .withValues(alpha: .45),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
 
@@ -472,20 +552,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                 child: OutlinedButton(
                   onPressed: unavailable
                       ? null
-                      : () {
-                          cartProvider.addItem(
-                            widget.product,
-                            _quantity,
-                            widget.product.isWholesaleItem,
-                          );
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                  'Added $_quantity × ${widget.product.name} to basket'),
-                              duration: const Duration(seconds: 1),
-                            ),
-                          );
-                        },
+                      : () => _addProductToCart(buyNow: false),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: AppConstants.primary),
                     shape: RoundedRectangleBorder(
@@ -505,18 +572,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                 child: ElevatedButton(
                   onPressed: unavailable
                       ? null
-                      : () {
-                          cartProvider.addItem(
-                            widget.product,
-                            _quantity,
-                            widget.product.isWholesaleItem,
-                          );
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const CheckoutScreen()),
-                          );
-                        },
+                      : () => _addProductToCart(buyNow: true),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppConstants.primary,
                     shape: RoundedRectangleBorder(

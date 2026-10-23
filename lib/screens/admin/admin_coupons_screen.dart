@@ -58,7 +58,23 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
     if (coupon == null || !mounted) return;
     setState(() => _coupons = [coupon, ..._coupons]);
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${coupon.code} is ready for customers.')),
+      SnackBar(
+        content: Text(
+          '${coupon.code} is saved as a draft. Add it to an announcement to share it.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _issueProductCoupon() async {
+    final coupon = await showDialog<AdminCoupon>(
+      context: context,
+      builder: (_) => _ProductCouponDialog(api: _adminApi),
+    );
+    if (coupon == null || !mounted) return;
+    setState(() => _coupons = [coupon, ..._coupons]);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${coupon.code} sent to the selected customer.')),
     );
   }
 
@@ -190,6 +206,17 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
                       letterSpacing: 0.6,
                     ),
                   ),
+                  if (coupon.productId != null || coupon.assignedUserId != null)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 3),
+                      child: Text(
+                        'Product-specific · assigned to one customer',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.deepOrange,
+                        ),
+                      ),
+                    ),
                   const SizedBox(height: 3),
                   Text(
                     '${_discountLabel(coupon)} · Min. ${AppConstants.currencySymbol}${coupon.minOrderAmount.toStringAsFixed(0)}',
@@ -201,8 +228,8 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
                   const SizedBox(height: 3),
                   Text(
                     coupon.usageLimit == null
-                        ? '${coupon.usedCount} uses · ${coupon.isActive ? 'Active' : 'Paused'}'
-                        : '${coupon.usedCount}/${coupon.usageLimit} uses · ${coupon.isActive ? 'Active' : 'Paused'}',
+                        ? '${coupon.usedCount} uses · ${coupon.isActive ? 'Active' : 'Paused'} · ${coupon.isAnnounced ? 'Announced' : 'Draft'}'
+                        : '${coupon.usedCount}/${coupon.usageLimit} uses · ${coupon.isActive ? 'Active' : 'Paused'} · ${coupon.isAnnounced ? 'Announced' : 'Draft'}',
                     style: TextStyle(
                       color: statusColor,
                       fontSize: 11,
@@ -282,7 +309,7 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Active percentage codes with a maximum discount and fixed-amount codes can show the festival popup after sign-in.',
+                    'New store-wide codes stay as drafts until you attach them to an announcement. Product discounts go to one customer.',
                     style: TextStyle(
                       color: AppConstants.textMuted,
                       fontSize: 12,
@@ -295,15 +322,24 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
                 icon: const Icon(Icons.add_rounded, size: 18),
                 label: const Text('Add code'),
               );
+              final productCouponButton = OutlinedButton.icon(
+                onPressed: _issueProductCoupon,
+                icon: const Icon(Icons.card_giftcard_outlined, size: 18),
+                label: const Text('Give product coupon'),
+              );
               if (constraints.maxWidth < 390) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     heading,
                     const SizedBox(height: 10),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: addButton,
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        addButton,
+                        productCouponButton,
+                      ],
                     ),
                   ],
                 );
@@ -311,6 +347,8 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
               return Row(
                 children: [
                   Expanded(child: heading),
+                  productCouponButton,
+                  const SizedBox(width: 8),
                   addButton,
                 ],
               );
@@ -360,6 +398,323 @@ class _CouponFormDialog extends StatefulWidget {
 
   @override
   State<_CouponFormDialog> createState() => _CouponFormDialogState();
+}
+
+class _ProductCouponDialog extends StatefulWidget {
+  const _ProductCouponDialog({required this.api});
+
+  final AdminApiService api;
+
+  @override
+  State<_ProductCouponDialog> createState() => _ProductCouponDialogState();
+}
+
+class _ProductCouponDialogState extends State<_ProductCouponDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _customerController = TextEditingController();
+  final _discountController = TextEditingController(text: '10');
+  Timer? _customerSearchTimer;
+  List<AdminCustomer> _customerResults = const [];
+  List<AdminProduct> _products = const [];
+  AdminCustomer? _selectedCustomer;
+  AdminProduct? _selectedProduct;
+  String _discountType = 'PERCENTAGE';
+  String? _error;
+  bool _loadingProducts = true;
+  bool _loadingCustomers = false;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadProducts());
+  }
+
+  @override
+  void dispose() {
+    _customerSearchTimer?.cancel();
+    _customerController.dispose();
+    _discountController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadProducts() async {
+    try {
+      final page = await widget.api.getProducts(page: 1, pageSize: 100);
+      if (!mounted) return;
+      setState(() {
+        _products = page.products
+            .where((product) => product.isActive && product.availableStock > 0)
+            .toList(growable: false);
+        _loadingProducts = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString().replaceFirst('Exception: ', '');
+        _loadingProducts = false;
+      });
+    }
+  }
+
+  void _searchCustomers(String query) {
+    _customerSearchTimer?.cancel();
+    setState(() {
+      _selectedCustomer = null;
+      _customerResults = const [];
+      _loadingCustomers = query.trim().isNotEmpty;
+      _error = null;
+    });
+    if (query.trim().isEmpty) return;
+    _customerSearchTimer = Timer(const Duration(milliseconds: 350), () async {
+      try {
+        final page = await widget.api.getCustomers(
+          page: 1,
+          pageSize: 8,
+          search: query.trim(),
+        );
+        if (!mounted || _customerController.text.trim() != query.trim()) {
+          return;
+        }
+        setState(() {
+          _customerResults = page.customers;
+          _loadingCustomers = false;
+        });
+      } catch (error) {
+        if (!mounted) return;
+        setState(() {
+          _loadingCustomers = false;
+          _error = error.toString().replaceFirst('Exception: ', '');
+        });
+      }
+    });
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    final customer = _selectedCustomer;
+    final product = _selectedProduct;
+    if (customer == null || product == null) {
+      setState(() => _error = 'Choose a customer and an available product.');
+      return;
+    }
+    final discountValue = double.parse(_discountController.text.trim());
+    if (_discountType == 'FIXED' && discountValue > product.price) {
+      setState(() => _error = 'The discount cannot exceed the product price.');
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final coupon = await widget.api.issueProductCoupon(
+        customerId: customer.id,
+        productId: product.id,
+        discountType: _discountType,
+        discountValue: discountValue,
+      );
+      if (mounted) Navigator.pop(context, coupon);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = error.toString().replaceFirst('Exception: ', '');
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Give a product coupon'),
+      content: SizedBox(
+        width: 480,
+        child: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'The code will only work for the selected customer and product. It can be used once and expires in 30 days.',
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: _customerController,
+                  enabled: !_saving,
+                  decoration: InputDecoration(
+                    labelText: 'Find customer by profile ID or email',
+                    suffixIcon: _loadingCustomers
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : const Icon(Icons.search_rounded),
+                  ),
+                  onChanged: _searchCustomers,
+                ),
+                if (_customerResults.isNotEmpty)
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 180),
+                    margin: const EdgeInsets.only(top: 6),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: AppConstants.borderLight),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: _customerResults.length,
+                      itemBuilder: (context, index) {
+                        final customer = _customerResults[index];
+                        return ListTile(
+                          dense: true,
+                          title: Text(
+                            customer.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text(
+                            '${customer.profileId} · ${customer.email}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onTap: () => setState(() {
+                            _selectedCustomer = customer;
+                            _customerController.text =
+                                '${customer.profileId} · ${customer.name}';
+                            _customerResults = const [];
+                          }),
+                        );
+                      },
+                    ),
+                  ),
+                if (_selectedCustomer != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      'Selected: ${_selectedCustomer!.profileId}',
+                      style: TextStyle(color: AppConstants.primaryDark),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<AdminProduct>(
+                  initialValue: _selectedProduct,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Product'),
+                  items: _products
+                      .map(
+                        (product) => DropdownMenuItem(
+                          value: product,
+                          child: Text(
+                            '${product.name} · ${AppConstants.currencySymbol}${product.price.toStringAsFixed(0)}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: _saving
+                      ? null
+                      : (product) => setState(() => _selectedProduct = product),
+                  validator: (_) =>
+                      _selectedProduct == null ? 'Choose a product' : null,
+                ),
+                if (_loadingProducts)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: LinearProgressIndicator(),
+                  )
+                else if (_products.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Text('No in-stock products are available.'),
+                  ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: _discountType,
+                  decoration: const InputDecoration(labelText: 'Discount type'),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'PERCENTAGE',
+                      child: Text('Percentage'),
+                    ),
+                    DropdownMenuItem(
+                        value: 'FIXED', child: Text('Fixed amount')),
+                  ],
+                  onChanged: _saving
+                      ? null
+                      : (value) {
+                          if (value == null) return;
+                          setState(() => _discountType = value);
+                        },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _discountController,
+                  enabled: !_saving,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: _discountType == 'PERCENTAGE'
+                        ? 'Discount percentage'
+                        : 'Discount amount',
+                    prefixText: _discountType == 'FIXED'
+                        ? '${AppConstants.currencySymbol} '
+                        : null,
+                    suffixText: _discountType == 'PERCENTAGE' ? '%' : null,
+                  ),
+                  validator: (value) {
+                    final amount = double.tryParse(value?.trim() ?? '');
+                    if (amount == null ||
+                        !amount.isFinite ||
+                        amount <= 0 ||
+                        (_discountType == 'PERCENTAGE' && amount > 100)) {
+                      return _discountType == 'PERCENTAGE'
+                          ? 'Enter a value from 1 to 100'
+                          : 'Enter a valid discount amount';
+                    }
+                    return null;
+                  },
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    _error!,
+                    style:
+                        TextStyle(color: Theme.of(context).colorScheme.error),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed:
+              _saving || _loadingProducts || _products.isEmpty ? null : _save,
+          child: _saving
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Send coupon'),
+        ),
+      ],
+    );
+  }
 }
 
 class _CouponFormDialogState extends State<_CouponFormDialog> {

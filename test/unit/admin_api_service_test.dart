@@ -10,6 +10,7 @@ class _AdminApi extends ApiService {
   final List<(String, Map<String, dynamic>)> puts = [];
   final List<(String, Map<String, dynamic>?)> deletes = [];
   String? requestedOrdersStatus;
+  Map<String, String>? requestedOrdersQuery;
   String? uploadedFileName;
   Uint8List? uploadedBytes;
   String? uploadedEndpoint;
@@ -91,6 +92,7 @@ class _AdminApi extends ApiService {
     }
     if (endpoint == '/admin/orders') {
       requestedOrdersStatus = queryParams?['status'];
+      requestedOrdersQuery = queryParams;
       return {
         'orders': [
           {
@@ -172,6 +174,19 @@ class _AdminApi extends ApiService {
           },
         ],
         'pagination': {'page': 1, 'pageSize': 20, 'total': 1},
+      };
+    }
+    if (endpoint == '/admin/customers/removal-history') {
+      return {
+        'records': [
+          {
+            'profileId': 'USR-1001',
+            'removedAt': '2026-10-19T10:00:00.000Z',
+            'removedByName': 'Store Admin',
+            'removedByProfileId': 'USR-1',
+          },
+        ],
+        'pagination': {'page': 1, 'pageSize': 25, 'total': 1},
       };
     }
     if (endpoint == '/admin/products' && queryParams?['stock'] == 'restock') {
@@ -374,13 +389,20 @@ void main() {
       stock: 'restock',
       sort: 'stock_asc',
     );
-    final updated = await adminApi.restockProduct('product-1', 6);
+    final restockBatch = {
+      'quantity': 6,
+      'lotNumber': 'LOT-2026-10',
+      'manufacturedAt': '2026-10-01T00:00:00.000Z',
+      'expiresAt': '2027-10-01T00:00:00.000Z',
+      'noExpiry': false,
+    };
+    final updated = await adminApi.restockProduct('product-1', restockBatch);
 
     expect(api.productQuery?['stock'], 'restock');
     expect(api.productQuery?['sort'], 'stock_asc');
     expect(queue.products.single.lowStockThreshold, 4);
     expect(updated.stock, 8);
-    expect(api.restockRequest, {'quantity': 6});
+    expect(api.restockRequest, restockBatch);
   });
 
   test('can filter the admin product catalog to vending drinks', () async {
@@ -594,6 +616,19 @@ void main() {
     );
   });
 
+  test('serializes selected local day for order and receipt history filters',
+      () async {
+    final api = _AdminApi();
+    final admin = AdminApiService(api);
+    final selectedDay = DateTime(2026, 10, 19);
+
+    await admin.getOrders(day: selectedDay);
+    await admin.getRestockHistory(page: 1, day: selectedDay);
+
+    expect(api.requestedOrdersQuery?['day'], '2026-10-19');
+    expect(api.receiptHistoryQuery?['day'], '2026-10-19');
+  });
+
   test('cancels an order using its status-history preserving endpoint',
       () async {
     final api = _AdminApi();
@@ -637,6 +672,14 @@ void main() {
     expect(result.customers.single.orderCount, 2);
     expect(
         result.customers.single.recentOrders.single['orderNumber'], 'FH-1001');
+  });
+
+  test('loads customer removal audit records', () async {
+    final records =
+        await AdminApiService(_AdminApi()).getCustomerRemovalHistory();
+
+    expect(records.single.profileId, 'USR-1001');
+    expect(records.single.removedByName, 'Store Admin');
   });
 
   test('lists delivery staff and creates a delivery-only staff account',

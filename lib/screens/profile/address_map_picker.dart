@@ -92,14 +92,12 @@ class _AddressMapPickerState extends State<AddressMapPicker> {
 
     setState(() {
       _suggestions = [];
-      _loadingSuggestions = query.length >= 3;
+      _loadingSuggestions = true;
       _suggestionError = null;
     });
-    if (query.length >= 3) {
-      _suggestionTimer = Timer(const Duration(milliseconds: 250), () {
-        _loadSuggestions(query);
-      });
-    }
+    _suggestionTimer = Timer(const Duration(milliseconds: 350), () {
+      _loadSuggestions(query);
+    });
   }
 
   Future<void> _loadSuggestions(String query) async {
@@ -133,8 +131,6 @@ class _AddressMapPickerState extends State<AddressMapPicker> {
       PlacesApiService(context.read<ApiService>()).autocomplete(
         input: query,
         languageCode: context.read<AppLanguageProvider>().languageCode,
-        latitude: _selectedPosition.latitude,
-        longitude: _selectedPosition.longitude,
       );
 
   void _selectSuggestion(PlaceSuggestion place) {
@@ -185,7 +181,8 @@ class _AddressMapPickerState extends State<AddressMapPicker> {
             place.label.isNotEmpty ? place.label : selectedPlace.description;
         _suggestionError = null;
       });
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('Location search failed: $error\n$stackTrace');
       if (mounted) {
         _showMessage(context.tr(
           'Could not search this place. Check your connection and try again.',

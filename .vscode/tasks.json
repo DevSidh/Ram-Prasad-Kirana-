@@ -4,7 +4,7 @@
 		{
 			"label": "Flutter tests",
 			"type": "shell",
-			"command": "flutter test test/unit/cart_test.dart test/unit/inventory_test.dart test/unit/delivery_api_service_test.dart test/widget/address_book_test.dart",
+			"command": "flutter test test/unit/cart_test.dart test/unit/inventory_test.dart test/unit/delivery_api_service_test.dart test/unit/media_test.dart test/widget/address_book_test.dart test/widget/register_screen_test.dart test/widget/admin_orders_test.dart test/widget/admin_customers_test.dart test/widget/notifications_screen_test.dart",
 			"isBackground": false,
 			"problemMatcher": [],
 			"group": "test"
@@ -558,6 +558,366 @@
 			"isBackground": false,
 			"problemMatcher": [],
 			"group": "build"
+		},
+		{
+			"label": "Verify latest pushed build fix",
+			"type": "shell",
+			"command": "Set-Location backend; Write-Output 'Local head:'; git rev-parse --short HEAD; Write-Output 'Origin main:'; git rev-parse --short origin/main; Write-Output 'Current Places router signature:'; Select-String -Path 'src\\routes\\places.ts' -Pattern 'export function createPlacesRouter' -Context 0,5; Write-Output 'Build check:'; npm run build; exit $LASTEXITCODE",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Check local and remote history",
+			"type": "shell",
+			"command": "Write-Output 'Branch status:'; git status -sb; Write-Output 'Recent local commits:'; git log -5 --oneline --decorate; Write-Output 'Local HEAD ancestry compared to origin/main:'; git merge-base --is-ancestor origin/main HEAD; Write-Output \"origin/main is ancestor exit: $LASTEXITCODE\"; git merge-base --is-ancestor HEAD origin/main; Write-Output \"HEAD is ancestor of origin/main exit: $LASTEXITCODE\"; Write-Output 'Changed server wiring compared to origin:'; git diff origin/main..HEAD -- backend/src/server.ts backend/src/routes/places.ts",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Inspect latest local fix commit",
+			"type": "shell",
+			"command": "git show --stat --oneline --no-renames HEAD; Write-Output 'Files changed in local-only commit:'; git diff-tree --no-commit-id --name-only -r HEAD; Write-Output 'Build fix on origin/main:'; git show origin/main:backend/src/routes/places.ts | Select-String -Pattern 'export function createPlacesRouter' -Context 0,4; Write-Output 'Server call on origin/main:'; git show origin/main:backend/src/server.ts | Select-String -Pattern \"createPlacesRouter\\(authenticateToken\\)\"",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Read production migration state",
+			"type": "shell",
+			"command": "Set-Location backend; @'\nrequire('dotenv').config();\nconst { PrismaClient } = require('@prisma/client');\nconst prisma = new PrismaClient();\n(async () => {\n  try {\n    const migrations = await prisma.$queryRawUnsafe(`SELECT migration_name, started_at, finished_at, rolled_back_at, logs FROM \"_prisma_migrations\" WHERE migration_name = '20261031000000_coupon_per_user_limit'`);\n    console.log('Target migration state:');\n    for (const item of migrations) {\n      const safe = { ...item };\n      if (typeof safe.logs === 'string') {\n        safe.logs = safe.logs.replace(/(postgres(?:ql)?|cockroachdb):\\/\\/[^\\s]+/gi, '[database-url-redacted]');\n      }\n      console.log(JSON.stringify(safe));\n    }\n    try {\n      const columns = await prisma.$queryRawUnsafe(`SHOW COLUMNS FROM \"Coupon\"`);\n      console.log('Coupon table columns:');\n      console.log(JSON.stringify(columns.map(({ column_name, data_type, is_nullable }) => ({ column_name, data_type, is_nullable }))));\n    } catch (error) {\n      console.log('Coupon columns query failed:', error && error.message ? error.message : 'unknown error');\n    }\n    try {\n      const indexes = await prisma.$queryRawUnsafe(`SHOW INDEXES FROM \"Order\"`);\n      console.log('Coupon-related order indexes:');\n      console.log(JSON.stringify(indexes.filter((item) => String(item.index_name).includes('couponCode')).map(({ table_name, index_name, column_name, seq_in_index }) => ({ table_name, index_name, column_name, seq_in_index }))));\n    } catch (error) {\n      console.log('Order index query failed:', error && error.message ? error.message : 'unknown error');\n    }\n  } catch (error) {\n    console.log('Migration metadata query failed:', error && error.message ? error.message : 'unknown error');\n    process.exitCode = 1;\n  } finally {\n    await prisma.$disconnect();\n  }\n})();\n'@ | node",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Inspect locked Cockroach table state",
+			"type": "shell",
+			"command": "Set-Location backend; @'\nrequire('dotenv').config();\nconst { PrismaClient } = require('@prisma/client');\nconst prisma = new PrismaClient();\n(async () => {\n  try {\n    const columns = await prisma.$queryRawUnsafe(`SELECT table_schema, table_name, column_name, data_type, is_nullable FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'Coupon' ORDER BY ordinal_position`);\n    console.log('Coupon schema columns (read-only):');\n    console.log(JSON.stringify(columns));\n    const indexes = await prisma.$queryRawUnsafe(`SELECT table_name, index_name, column_name, seq_in_index FROM [SHOW INDEXES FROM public.\"Order\"]`);\n    console.log('Order index details (read-only):');\n    console.log(JSON.stringify(indexes));\n  } catch (error) {\n    console.log('Read-only schema inspection failed:', error && error.message ? error.message : 'unknown error');\n    process.exitCode = 1;\n  } finally {\n    await prisma.$disconnect();\n  }\n})();\n'@ | node",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Inspect migration table and index state",
+			"type": "shell",
+			"command": "Set-Location backend; @'\nrequire('dotenv').config();\nconst { PrismaClient } = require('@prisma/client');\nconst prisma = new PrismaClient();\n(async () => {\n  try {\n    for (const [label, sql] of [\n      ['Coupon DDL', `SHOW CREATE TABLE public.\"Coupon\"`],\n      ['Order index catalog', `SELECT database_name, schema_name, table_name, index_name, column_names FROM crdb_internal.table_indexes WHERE schema_name = 'public' AND table_name = 'Order' ORDER BY index_name`],\n    ]) {\n      try {\n        const result = await prisma.$queryRawUnsafe(sql);\n        console.log(label + ':');\n        console.log(JSON.stringify(result));\n      } catch (error) {\n        console.log(label + ' query failed:', error && error.message ? error.message : 'unknown error');\n      }\n    }\n  } finally { await prisma.$disconnect(); }\n})();\n'@ | node",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Check migration index state",
+			"type": "shell",
+			"command": "Set-Location backend; @'\nrequire('dotenv').config();\nconst { PrismaClient } = require('@prisma/client');\nconst prisma = new PrismaClient();\n(async () => {\n  try {\n    const indexes = await prisma.$queryRawUnsafe(`SELECT table_schema, table_name, index_name, column_name, ordinal_position FROM information_schema.statistics WHERE table_schema = 'public' AND table_name = 'Order' ORDER BY index_name, ordinal_position`);\n    console.log('Order table index metadata:');\n    console.log(JSON.stringify(indexes));\n  } catch (error) {\n    console.log('Index metadata query failed:', error && error.message ? error.message : 'unknown error');\n    process.exitCode = 1;\n  } finally { await prisma.$disconnect(); }\n})();\n'@ | node",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Verify order coupon index",
+			"type": "shell",
+			"command": "Set-Location backend; @'\nrequire('dotenv').config();\nconst { PrismaClient } = require('@prisma/client');\nconst prisma = new PrismaClient();\n(async () => {\n  try {\n    const indexes = await prisma.$queryRawUnsafe(`SELECT table_schema, table_name, index_name, column_name, seq_in_index FROM information_schema.statistics WHERE table_schema = 'public' AND table_name = 'Order' ORDER BY index_name, seq_in_index`);\n    console.log('Order index metadata:');\n    console.log(JSON.stringify(indexes));\n  } catch (error) {\n    console.log('Read-only index query failed:', error && error.message ? error.message : 'unknown error');\n    process.exitCode = 1;\n  } finally { await prisma.$disconnect(); }\n})();\n'@ | node",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Report order coupon index state",
+			"type": "shell",
+			"command": "Set-Location backend; @'\nrequire('dotenv').config();\nconst { PrismaClient } = require('@prisma/client');\nconst prisma = new PrismaClient();\n(async () => {\n  try {\n    const indexes = await prisma.$queryRawUnsafe(`SELECT table_schema, table_name, index_name, column_name FROM information_schema.statistics WHERE table_schema = 'public' AND table_name = 'Order'`);\n    const couponIndex = indexes.filter((item) => item.index_name === 'Order_userId_couponCode_status_idx');\n    console.log('Expected coupon index exists:', couponIndex.length > 0);\n    console.log('Expected index columns:', JSON.stringify(couponIndex.map(({ index_name, column_name }) => ({ index_name, column_name }))));\n  } catch (error) {\n    console.log('Read-only index query failed:', error && error.message ? error.message : 'unknown error');\n    process.exitCode = 1;\n  } finally { await prisma.$disconnect(); }\n})();\n'@ | node",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Apply approved Cockroach migration recovery",
+			"type": "shell",
+			"command": "Set-Location backend; @'\nrequire('dotenv').config();\nconst { PrismaClient } = require('@prisma/client');\nconst prisma = new PrismaClient();\nconst migration = '20261031000000_coupon_per_user_limit';\n(async () => {\n  let unlocked = false;\n  let failure;\n  try {\n    const rows = await prisma.$queryRawUnsafe(`SELECT migration_name, finished_at, rolled_back_at FROM \"_prisma_migrations\" WHERE migration_name = '${migration}'`);\n    const columns = await prisma.$queryRawUnsafe(`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'Coupon' AND column_name = 'perUserLimit'`);\n    const indexes = await prisma.$queryRawUnsafe(`SELECT index_name FROM information_schema.statistics WHERE table_schema = 'public' AND table_name = 'Order' AND index_name = 'Order_userId_couponCode_status_idx'`);\n    if (rows.length !== 1 || rows[0].finished_at !== null || rows[0].rolled_back_at !== null) {\n      throw new Error('Precondition failed: target migration is not in the expected failed state; no schema change was attempted.');\n    }\n    if (columns.length !== 0 || indexes.length !== 0) {\n      throw new Error('Precondition failed: one or more migration objects already exist; no schema change was attempted.');\n    }\n    await prisma.$executeRawUnsafe(`ALTER TABLE \"Coupon\" SET (schema_locked = false)`);\n    unlocked = true;\n    await prisma.$executeRawUnsafe(`ALTER TABLE \"Coupon\" ADD COLUMN IF NOT EXISTS \"perUserLimit\" INT8`);\n    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS \"Order_userId_couponCode_status_idx\" ON \"Order\" (\"userId\", \"couponCode\", \"status\")`);\n    console.log('Both approved additive schema changes applied.');\n  } catch (error) {\n    failure = error;\n  } finally {\n    if (unlocked) {\n      try {\n        await prisma.$executeRawUnsafe(`ALTER TABLE \"Coupon\" SET (schema_locked = true)`);\n        console.log('Coupon changefeed schema lock restored.');\n      } catch (lockError) {\n        console.error('CRITICAL: could not restore Coupon schema lock:', lockError && lockError.message ? lockError.message : 'unknown error');\n        failure = lockError;\n      }\n    }\n  }\n  try {\n    if (failure) throw failure;\n    const columns = await prisma.$queryRawUnsafe(`SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'Coupon' AND column_name = 'perUserLimit'`);\n    const indexes = await prisma.$queryRawUnsafe(`SELECT index_name, column_name FROM information_schema.statistics WHERE table_schema = 'public' AND table_name = 'Order' AND index_name = 'Order_userId_couponCode_status_idx'`);\n    if (columns.length !== 1 || indexes.length !== 3) {\n      throw new Error(`Postcondition failed: expected nullable perUserLimit and a three-column order index; found column rows=${columns.length}, index rows=${indexes.length}.`);\n    }\n    console.log('Verified column:', JSON.stringify(columns[0]));\n    console.log('Verified expected index columns:', JSON.stringify(indexes.map((item) => item.column_name)));\n  } catch (error) {\n    console.error('Recovery did not complete cleanly:', error && error.message ? error.message : 'unknown error');\n    process.exitCode = 1;\n  } finally {\n    await prisma.$disconnect();\n  }\n})();\n'@ | node; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; .\\node_modules\\.bin\\prisma.cmd migrate resolve --applied 20261031000000_coupon_per_user_limit --schema prisma\\schema.prisma; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; .\\node_modules\\.bin\\prisma.cmd migrate status --schema prisma\\schema.prisma; exit $LASTEXITCODE",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Check Prisma quoted table access",
+			"type": "shell",
+			"command": "Set-Location backend; @'\nrequire('dotenv').config();\nconst { PrismaClient } = require('@prisma/client');\nconst prisma = new PrismaClient();\n(async () => {\n  for (const sql of [`SELECT \"id\" FROM \"Coupon\" LIMIT 0`, `SELECT \"id\" FROM public.\"Coupon\" LIMIT 0`, `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Coupon'`]) {\n    try {\n      const result = await prisma.$queryRawUnsafe(sql);\n      console.log('Query succeeded:', sql, 'rows:', result.length);\n    } catch (error) {\n      console.log('Query failed:', sql);\n      console.log(error && error.message ? error.message : 'unknown error');\n    }\n  }\n  await prisma.$disconnect();\n})();\n'@ | node",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Verify quoted Prisma identifiers",
+			"type": "shell",
+			"command": "Set-Location backend; @'\nrequire('dotenv').config();\nconst { PrismaClient } = require('@prisma/client');\nconst prisma = new PrismaClient();\n(async () => {\n  const q = String.fromCharCode(34);\n  const sql = `SELECT ${q}id${q} FROM ${q}Coupon${q} LIMIT 0`;\n  try {\n    const result = await prisma.$queryRawUnsafe(sql);\n    console.log('Quoted Coupon table access succeeded; rows:', result.length);\n  } catch (error) {\n    console.log('Quoted Coupon table access failed:', error && error.message ? error.message : 'unknown error');\n    process.exitCode = 1;\n  } finally { await prisma.$disconnect(); }\n})();\n'@ | node",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Complete approved migration recovery",
+			"type": "shell",
+			"command": "Set-Location backend; @'\nrequire('dotenv').config();\nconst { PrismaClient } = require('@prisma/client');\nconst prisma = new PrismaClient();\nconst migration = '20261031000000_coupon_per_user_limit';\nconst q = String.fromCharCode(34);\n(async () => {\n  let unlocked = false;\n  let failure;\n  try {\n    const rows = await prisma.$queryRawUnsafe(`SELECT migration_name, finished_at, rolled_back_at FROM ${q}_prisma_migrations${q} WHERE migration_name = '${migration}'`);\n    const columns = await prisma.$queryRawUnsafe(`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'Coupon' AND column_name = 'perUserLimit'`);\n    const indexes = await prisma.$queryRawUnsafe(`SELECT index_name FROM information_schema.statistics WHERE table_schema = 'public' AND table_name = 'Order' AND index_name = 'Order_userId_couponCode_status_idx'`);\n    if (rows.length !== 1 || rows[0].finished_at !== null || rows[0].rolled_back_at !== null) throw new Error('Precondition failed: migration is not in the expected failed state.');\n    if (columns.length !== 0 || indexes.length !== 0) throw new Error('Precondition failed: migration objects already exist.');\n    await prisma.$executeRawUnsafe(`ALTER TABLE ${q}Coupon${q} SET (schema_locked = false)`);\n    unlocked = true;\n    await prisma.$executeRawUnsafe(`ALTER TABLE ${q}Coupon${q} ADD COLUMN IF NOT EXISTS ${q}perUserLimit${q} INT8`);\n    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS ${q}Order_userId_couponCode_status_idx${q} ON ${q}Order${q} (${q}userId${q}, ${q}couponCode${q}, ${q}status${q})`);\n    console.log('Migration DDL completed.');\n  } catch (error) { failure = error; }\n  finally {\n    if (unlocked) {\n      try {\n        await prisma.$executeRawUnsafe(`ALTER TABLE ${q}Coupon${q} SET (schema_locked = true)`);\n        console.log('Coupon schema lock restored.');\n      } catch (error) {\n        console.error('CRITICAL: failed to restore Coupon schema lock:', error && error.message ? error.message : 'unknown error');\n        failure = error;\n      }\n    }\n  }\n  try {\n    if (failure) throw failure;\n    const columns = await prisma.$queryRawUnsafe(`SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'Coupon' AND column_name = 'perUserLimit'`);\n    const indexes = await prisma.$queryRawUnsafe(`SELECT index_name, column_name FROM information_schema.statistics WHERE table_schema = 'public' AND table_name = 'Order' AND index_name = 'Order_userId_couponCode_status_idx'`);\n    if (columns.length !== 1 || indexes.length !== 3) throw new Error(`Postcondition failed: column count ${columns.length}; index column count ${indexes.length}.`);\n    console.log('Verified nullable column:', JSON.stringify(columns[0]));\n    console.log('Verified index columns:', JSON.stringify(indexes.map((item) => item.column_name)));\n  } catch (error) {\n    console.error('Migration recovery incomplete:', error && error.message ? error.message : 'unknown error');\n    process.exitCode = 1;\n  } finally { await prisma.$disconnect(); }\n})();\n'@ | node; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; .\\node_modules\\.bin\\prisma.cmd migrate resolve --applied 20261031000000_coupon_per_user_limit --schema prisma\\schema.prisma; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; .\\node_modules\\.bin\\prisma.cmd migrate status --schema prisma\\schema.prisma; exit $LASTEXITCODE",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Verify created migration objects",
+			"type": "shell",
+			"command": "Set-Location backend; @'\nrequire('dotenv').config();\nconst { PrismaClient } = require('@prisma/client');\nconst prisma = new PrismaClient();\n(async () => {\n  try {\n    const columns = await prisma.$queryRawUnsafe(`SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'Coupon' AND column_name = 'perUserLimit'`);\n    const indexes = await prisma.$queryRawUnsafe(`SELECT index_name, column_name, direction, storing FROM information_schema.statistics WHERE table_schema = 'public' AND table_name = 'Order' AND index_name = 'Order_userId_couponCode_status_idx' ORDER BY seq_in_index`);\n    console.log('Coupon column:', JSON.stringify(columns));\n    console.log('Index entries:', JSON.stringify(indexes));\n    const migration = await prisma.$queryRawUnsafe(`SELECT migration_name, finished_at, rolled_back_at FROM \"_prisma_migrations\" WHERE migration_name = '20261031000000_coupon_per_user_limit'`);\n    console.log('Migration record:', JSON.stringify(migration, (_, value) => typeof value === 'bigint' ? value.toString() : value));\n  } catch (error) {\n    console.error('Verification query failed:', error && error.message ? error.message : 'unknown error');\n    process.exitCode = 1;\n  } finally { await prisma.$disconnect(); }\n})();\n'@ | node",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Resolve failed Prisma migration",
+			"type": "shell",
+			"command": "Set-Location backend; .\\node_modules\\.bin\\prisma.cmd migrate resolve --applied 20261031000000_coupon_per_user_limit --schema prisma\\schema.prisma; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; .\\node_modules\\.bin\\prisma.cmd migrate status --schema prisma\\schema.prisma; exit $LASTEXITCODE",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Verify migration and backend build",
+			"type": "shell",
+			"command": "Set-Location backend; Write-Output 'Prisma migration state:'; .\\node_modules\\.bin\\prisma.cmd migrate status --schema prisma\\schema.prisma; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Output 'TypeScript build:'; npm run build; exit $LASTEXITCODE",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Locate JDK and connected device",
+			"type": "shell",
+			"command": "Write-Output '--- Java on PATH ---'; Get-Command java.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source; Write-Output '--- Common JDK locations ---'; $candidates = @('C:\\Program Files\\Eclipse Adoptium', 'C:\\Program Files\\Java', 'C:\\Program Files\\Microsoft', 'C:\\Program Files\\Android\\Android Studio\\jbr', 'C:\\Program Files\\Android Studio\\jbr', 'C:\\Users\\Siddhant\\AppData\\Local\\Programs\\Android Studio\\jbr', 'C:\\Users\\Siddhant\\AppData\\Local\\Android\\Sdk\\jbr', 'C:\\Users\\Siddhant\\.jdks', 'D:\\Android\\Android Studio\\jbr'); foreach ($path in $candidates) { if (Test-Path $path) { if (Test-Path (Join-Path $path 'bin\\java.exe')) { Write-Output (Join-Path $path 'bin\\java.exe') } else { Get-ChildItem -Path $path -Directory -ErrorAction SilentlyContinue | ForEach-Object { $java = Join-Path $_.FullName 'bin\\java.exe'; if (Test-Path $java) { Write-Output $java } } } } }; Write-Output '--- Connected Android devices ---'; $adb = Join-Path $env:LOCALAPPDATA 'Android\\Sdk\\platform-tools\\adb.exe'; if (Test-Path $adb) { & $adb devices } else { Write-Output \"ADB not found at $adb\" }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Search installed Java runtimes",
+			"type": "shell",
+			"command": "$roots = @('C:\\Program Files (x86)\\Java', 'C:\\Program Files\\Android', 'C:\\Program Files\\Android Studio', 'C:\\Program Files\\JetBrains', 'C:\\Program Files\\Microsoft VS Code', 'C:\\Users\\Siddhant\\AppData\\Local\\Programs', 'C:\\Users\\Siddhant\\AppData\\Local\\JetBrains', 'C:\\Users\\Siddhant\\AppData\\Local\\Microsoft\\WinGet\\Packages', 'C:\\Users\\Siddhant\\scoop\\apps', 'C:\\ProgramData\\chocolatey\\lib', 'D:\\Program Files\\Android', 'D:\\Android'); foreach ($root in $roots) { if (Test-Path $root) { Write-Output \"Searching $root\"; Get-ChildItem -Path $root -Filter java.exe -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 10 -ExpandProperty FullName } }; Write-Output \"ANDROID_HOME=$env:ANDROID_HOME\"; Write-Output \"ANDROID_SDK_ROOT=$env:ANDROID_SDK_ROOT\"; Write-Output \"STUDIO_JDK=$env:STUDIO_JDK\"; Write-Output \"JAVA_HOME=$env:JAVA_HOME\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Check Java installer availability",
+			"type": "shell",
+			"command": "Write-Output 'Package managers:'; Get-Command winget.exe,choco.exe,scoop.ps1 -ErrorAction SilentlyContinue | Select-Object Name,Source; Write-Output 'Drive install roots:'; Get-PSDrive -PSProvider FileSystem | ForEach-Object { Get-ChildItem -Path $_.Root -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName }; Write-Output 'Android Studio locations:'; Get-ChildItem -Path 'C:\\Program Files','C:\\Program Files (x86)','C:\\Users\\Siddhant\\AppData\\Local\\Programs' -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'Android|Java|JDK|Studio|JetBrains|Eclipse' } | Select-Object -ExpandProperty FullName",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Check bundled Android Studio JDK",
+			"type": "shell",
+			"command": "$paths = @('D:\\Android_Studio\\jbr\\bin\\java.exe', 'D:\\Android_Studio\\jre\\bin\\java.exe', 'D:\\Android_Studio\\bin\\java.exe'); foreach ($java in $paths) { if (Test-Path $java) { Write-Output \"Found $java\"; & $java -version } }; Get-ChildItem 'D:\\Android_Studio' -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName; Get-ChildItem 'D:\\Android_Studio' -Filter java.exe -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 10 -ExpandProperty FullName",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Build and launch FastStore on device",
+			"type": "shell",
+			"command": "$ErrorActionPreference = 'Stop'; flutter config --jdk-dir='D:\\Android_Studio\\jbr'; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $apiBaseUrl = 'https://ram-prasad-kirana-backend.onrender.com/api/v1'; flutter build apk --release \"--dart-define=API_BASE_URL=$apiBaseUrl\"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $apk = 'build\\app\\outputs\\flutter-apk\\app-release.apk'; if (-not (Test-Path $apk)) { Write-Error \"Release APK missing: $apk\"; exit 2 }; $adb = 'C:\\Users\\Siddhant\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe'; if (-not (Test-Path $adb)) { Write-Error \"ADB missing: $adb\"; exit 3 }; & $adb devices; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; & $adb -s RZCY11PM4NT install -r $apk; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; & $adb -s RZCY11PM4NT shell monkey -p com.freshharvest.grocery_app -c android.intent.category.LAUNCHER 1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Start-Sleep -Seconds 3; & $adb -s RZCY11PM4NT shell pm path com.freshharvest.grocery_app; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Get-Item $apk | Select-Object FullName, Length",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Inspect Flutter Java configuration",
+			"type": "shell",
+			"command": "flutter config --list; Write-Output '--- Gradle Java settings ---'; Select-String -Path 'android\\gradle.properties','android\\local.properties' -Pattern 'org.gradle.java.home|jdk-dir|java' -ErrorAction SilentlyContinue; Write-Output '--- JDK confirmation ---'; Test-Path 'D:\\Android_Studio\\jbr\\bin\\java.exe'; Write-Output \"Current JAVA_HOME=$env:JAVA_HOME\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Install compatible Java 21 runtime",
+			"type": "shell",
+			"command": "winget install --id EclipseAdoptium.Temurin.21.JDK --scope user --silent --accept-package-agreements --accept-source-agreements; exit $LASTEXITCODE",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Find compatible Java package",
+			"type": "shell",
+			"command": "winget search --id EclipseAdoptium.Temurin.21.JDK --exact --source winget; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; winget install --id EclipseAdoptium.Temurin.21.JDK --exact --source winget --scope user --silent --accept-package-agreements --accept-source-agreements; exit $LASTEXITCODE",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Install portable Java 21 for build",
+			"type": "shell",
+			"command": "$ErrorActionPreference = 'Stop'; $installRoot = Join-Path $env:LOCALAPPDATA 'Programs\\Eclipse Adoptium\\jdk-21-portable'; $archive = Join-Path $env:TEMP 'faststore-temurin21.zip'; New-Item -ItemType Directory -Path (Split-Path $installRoot -Parent) -Force | Out-Null; curl.exe -L --fail --show-error 'https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jdk/hotspot/normal/eclipse' -o $archive; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Expand-Archive -Path $archive -DestinationPath (Split-Path $installRoot -Parent) -Force; $jdk = Get-ChildItem (Split-Path $installRoot -Parent) -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'bin\\javac.exe') } | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if (-not $jdk) { Write-Error 'Downloaded archive did not contain a JDK.'; exit 2 }; if ($jdk.FullName -ne $installRoot) { Move-Item -Path $jdk.FullName -Destination $installRoot -Force }; & (Join-Path $installRoot 'bin\\java.exe') -version; & (Join-Path $installRoot 'bin\\javac.exe') -version; Remove-Item -LiteralPath $archive -Force",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Locate Java installed on E drive",
+			"type": "shell",
+			"command": "Write-Output '--- Java installation folders ---'; Get-ChildItem 'E:\\Java' -Force | Select-Object Mode,FullName; Write-Output '--- JDK executables ---'; Get-ChildItem 'E:\\Java' -Filter java.exe -File -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName; Write-Output '--- JDK compiler ---'; Get-ChildItem 'E:\\Java' -Filter javac.exe -File -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName; Write-Output '--- Connected Android devices ---'; & 'C:\\Users\\Siddhant\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe' devices",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Find installed Java on E drive",
+			"type": "shell",
+			"command": "Write-Output '--- E drive root ---'; Get-ChildItem 'E:\\' -Force -ErrorAction Continue | Select-Object Mode,FullName; Write-Output '--- Java executables in likely folders ---'; $roots = @('E:\\Program Files', 'E:\\Program Files (x86)', 'E:\\Java', 'E:\\Apps', 'E:\\Development', 'E:\\Android', 'E:\\Tools'); foreach ($root in $roots) { if (Test-Path $root) { Get-ChildItem $root -Filter java.exe -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 10 -ExpandProperty FullName } }; Write-Output '--- Java environment paths ---'; [Environment]::GetEnvironmentVariable('JAVA_HOME','User'); [Environment]::GetEnvironmentVariable('JAVA_HOME','Machine')",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Requested production APK build install validation",
+			"type": "shell",
+			"command": "$ErrorActionPreference='Stop'; Write-Output '=== Inspect D:\\Java for paired JDK executables ==='; $pairs=@(Get-ChildItem -LiteralPath 'D:\\Java' -Filter java.exe -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object { $compiler=Join-Path $_.DirectoryName 'javac.exe'; if (Test-Path -LiteralPath $compiler) { $version=(& $_.FullName -version 2>&1 | Out-String); $javacVersion=(& $compiler -version 2>&1 | Out-String); [PSCustomObject]@{Home=$_.Directory.Parent.FullName; Java=$_.FullName; Javac=$compiler; JavaVersion=$version.Trim(); JavacVersion=$javacVersion.Trim()} } }); if ($pairs.Count -eq 0) { Write-Output 'No java.exe with matching javac.exe found under D:\\Java.' } else { $pairs | ForEach-Object { Write-Output (\"JAVA=\"+$_.Java); Write-Output (\"JAVAC=\"+$_.Javac); Write-Output (\"JAVA_VERSION=\"+$_.JavaVersion); Write-Output (\"JAVAC_VERSION=\"+$_.JavacVersion) } }; $jdk21=$pairs | Where-Object { $_.JavaVersion -match '(?m)version \"21(?:\\.|\"|\\+)' -and $_.JavacVersion -match 'javac 21(?:\\.|$)' } | Select-Object -First 1; if ($jdk21) { Write-Output (\"Configuring Flutter to JDK home: \"+$jdk21.Home); flutter config --jdk-dir=$jdk21.Home; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } } else { Write-Output 'No Java 21 JDK found under D:\\Java; retaining current Flutter JDK configuration.' }; Write-Output '=== Connected device ==='; $adb=Join-Path $env:LOCALAPPDATA 'Android\\Sdk\\platform-tools\\adb.exe'; if (-not (Test-Path -LiteralPath $adb)) { $adb=(Get-Command adb -ErrorAction SilentlyContinue).Source }; if (-not $adb) { Write-Error 'adb.exe not found.'; exit 3 }; & $adb devices -l; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $connected=& $adb devices | Select-String '^RZCY11PM4NT\\s+device$'; if (-not $connected) { Write-Error 'Device RZCY11PM4NT is not connected and authorized.'; exit 4 }; Write-Output '=== Production release APK build ==='; flutter build apk --release --dart-define=API_BASE_URL=https://ram-prasad-kirana-backend.onrender.com/api/v1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $apk='build\\app\\outputs\\flutter-apk\\app-release.apk'; if (-not (Test-Path -LiteralPath $apk)) { Write-Error \"APK not found: $apk\"; exit 5 }; $item=Get-Item -LiteralPath $apk; Write-Output (\"APK_PATH=\"+$item.FullName); Write-Output (\"APK_SIZE_BYTES=\"+$item.Length); Write-Output (\"APK_SIZE_MiB=\"+[math]::Round($item.Length/1MB,2)); Write-Output '=== Install APK ==='; & $adb -s RZCY11PM4NT install -r $item.FullName; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Output '=== Launch app ==='; & $adb -s RZCY11PM4NT shell monkey -p com.freshharvest.grocery_app -c android.intent.category.LAUNCHER 1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Start-Sleep -Seconds 3; Write-Output '=== Verify installed package path ==='; & $adb -s RZCY11PM4NT shell pm path com.freshharvest.grocery_app; exit $LASTEXITCODE",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Retry production APK build install validation",
+			"type": "shell",
+			"command": "$ErrorActionPreference='Continue'; Write-Output '=== Inspect D:\\Java for paired JDK executables ==='; $pairs=@(Get-ChildItem -LiteralPath 'D:\\Java' -Filter java.exe -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object { $compiler=Join-Path $_.DirectoryName 'javac.exe'; if (Test-Path -LiteralPath $compiler) { $version=(& $_.FullName -version 2>&1 | Out-String); $javacVersion=(& $compiler -version 2>&1 | Out-String); [PSCustomObject]@{Home=$_.Directory.Parent.FullName; Java=$_.FullName; Javac=$compiler; JavaVersion=$version.Trim(); JavacVersion=$javacVersion.Trim()} } }); if ($pairs.Count -eq 0) { Write-Output 'No java.exe with matching javac.exe found under D:\\Java.' } else { $pairs | ForEach-Object { Write-Output (\"JAVA=\"+$_.Java); Write-Output (\"JAVAC=\"+$_.Javac); Write-Output (\"JAVA_VERSION=\"+$_.JavaVersion); Write-Output (\"JAVAC_VERSION=\"+$_.JavacVersion) } }; $jdk21=$pairs | Where-Object { $_.JavaVersion -match '(?m)version \"21(?:\\.|\"|\\+)' -and $_.JavacVersion -match 'javac 21(?:\\.|$)' } | Select-Object -First 1; if ($jdk21) { Write-Output (\"Configuring Flutter to JDK home: \"+$jdk21.Home); flutter config --jdk-dir=$jdk21.Home; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } } else { Write-Output 'No Java 21 JDK found under D:\\Java; retaining current Flutter JDK configuration.' }; Write-Output '=== Connected device ==='; $adb=Join-Path $env:LOCALAPPDATA 'Android\\Sdk\\platform-tools\\adb.exe'; if (-not (Test-Path -LiteralPath $adb)) { $adb=(Get-Command adb -ErrorAction SilentlyContinue).Source }; if (-not $adb) { Write-Error 'adb.exe not found.'; exit 3 }; & $adb devices -l; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $connected=& $adb devices | Select-String '^RZCY11PM4NT\\s+device$'; if (-not $connected) { Write-Error 'Device RZCY11PM4NT is not connected and authorized.'; exit 4 }; Write-Output '=== Production release APK build ==='; flutter build apk --release --dart-define=API_BASE_URL=https://ram-prasad-kirana-backend.onrender.com/api/v1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $apk='build\\app\\outputs\\flutter-apk\\app-release.apk'; if (-not (Test-Path -LiteralPath $apk)) { Write-Error \"APK not found: $apk\"; exit 5 }; $item=Get-Item -LiteralPath $apk; Write-Output (\"APK_PATH=\"+$item.FullName); Write-Output (\"APK_SIZE_BYTES=\"+$item.Length); Write-Output (\"APK_SIZE_MiB=\"+[math]::Round($item.Length/1MB,2)); Write-Output '=== Install APK ==='; & $adb -s RZCY11PM4NT install -r $item.FullName; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Output '=== Launch app ==='; & $adb -s RZCY11PM4NT shell monkey -p com.freshharvest.grocery_app -c android.intent.category.LAUNCHER 1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Start-Sleep -Seconds 3; Write-Output '=== Verify installed package path ==='; & $adb -s RZCY11PM4NT shell pm path com.freshharvest.grocery_app; exit $LASTEXITCODE",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Read-only APK and install verification",
+			"type": "shell",
+			"command": "$apk='build\\app\\outputs\\flutter-apk\\app-release.apk'; if (Test-Path -LiteralPath $apk) { $f=Get-Item -LiteralPath $apk; Write-Output ('APK_PATH='+$f.FullName); Write-Output ('APK_SIZE_BYTES='+$f.Length); Write-Output ('APK_SIZE_MiB='+[math]::Round($f.Length/1MB,2)); Write-Output ('APK_LAST_WRITE='+$f.LastWriteTime.ToString('o')) } else { Write-Output 'APK_NOT_FOUND' }; $adb=Join-Path $env:LOCALAPPDATA 'Android\\Sdk\\platform-tools\\adb.exe'; if (Test-Path -LiteralPath $adb) { Write-Output 'DEVICE_STATE'; & $adb devices -l; Write-Output 'INSTALLED_PACKAGE_PATH'; & $adb -s RZCY11PM4NT shell pm path com.freshharvest.grocery_app; Write-Output 'FOREGROUND_ACTIVITY'; & $adb -s RZCY11PM4NT shell dumpsys activity activities | Select-String 'mResumedActivity|topResumedActivity' | Select-Object -Last 1 } else { Write-Output 'ADB_NOT_FOUND' }",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Build and validate production release APK",
+			"type": "shell",
+			"command": "$ErrorActionPreference='Continue'; $javaFiles=Get-ChildItem -LiteralPath 'D:\\Java' -Filter java.exe -File -Recurse -ErrorAction SilentlyContinue; $jdk21=$null; foreach($j in $javaFiles){$c=Join-Path $j.DirectoryName 'javac.exe'; if(Test-Path -LiteralPath $c){$v=(& $j.FullName -version 2>&1 | Out-String); $cv=(& $c -version 2>&1 | Out-String); if($v -match 'version \"21(?:\\.|\"|\\+)' -and $cv -match 'javac 21(?:\\.|$)'){$jdk21=$j.Directory.Parent.FullName; Write-Output ('JDK21_JAVA='+$j.FullName); Write-Output ('JDK21_JAVAC='+$c); Write-Output ('JDK_HOME='+$jdk21); break}}}; if($jdk21){flutter config --jdk-dir=$jdk21; $configExit=$LASTEXITCODE; if($configExit -ne 0){Write-Output ('FLUTTER_CONFIG_EXIT='+$configExit); exit $configExit}; flutter config --list | Select-String 'jdk-dir'}else{Write-Output 'No paired Java 21 JDK found in D:\\Java; build will use Flutter current JDK.'}; Write-Output '=== Release build ==='; $buildOutput=& flutter build apk --release --dart-define=API_BASE_URL=https://ram-prasad-kirana-backend.onrender.com/api/v1 2>&1; $buildExit=$LASTEXITCODE; $buildOutput | Select-Object -Last 55 | ForEach-Object { Write-Output ([string]$_) }; Write-Output ('FLUTTER_BUILD_EXIT='+$buildExit); if($buildExit -ne 0){exit $buildExit}; $apk='build\\app\\outputs\\flutter-apk\\app-release.apk'; if(-not(Test-Path -LiteralPath $apk)){Write-Output 'BUILD_ERROR: APK not found'; exit 5}; $f=Get-Item -LiteralPath $apk; Write-Output ('APK_PATH='+$f.FullName); Write-Output ('APK_SIZE_BYTES='+$f.Length); Write-Output ('APK_SIZE_MiB='+[math]::Round($f.Length/1MB,2)); $adb=Join-Path $env:LOCALAPPDATA 'Android\\Sdk\\platform-tools\\adb.exe'; if(-not(Test-Path -LiteralPath $adb)){$adb=(Get-Command adb -ErrorAction SilentlyContinue).Source}; if(-not $adb){Write-Output 'INSTALL_ERROR: adb.exe not found'; exit 6}; $devices=& $adb devices; $devices | ForEach-Object { Write-Output ([string]$_) }; if(-not($devices | Select-String '^RZCY11PM4NT\\s+device$')){Write-Output 'INSTALL_ERROR: requested device not connected/authorized'; exit 7}; Write-Output '=== Install ==='; & $adb -s RZCY11PM4NT install -r $f.FullName; $installExit=$LASTEXITCODE; Write-Output ('ADB_INSTALL_EXIT='+$installExit); if($installExit -ne 0){exit $installExit}; Write-Output '=== Launch ==='; & $adb -s RZCY11PM4NT shell monkey -p com.freshharvest.grocery_app -c android.intent.category.LAUNCHER 1; $launchExit=$LASTEXITCODE; Write-Output ('LAUNCH_EXIT='+$launchExit); if($launchExit -ne 0){exit $launchExit}; Start-Sleep -Seconds 3; Write-Output '=== Installed package ==='; & $adb -s RZCY11PM4NT shell pm path com.freshharvest.grocery_app; Write-Output '=== App process ==='; & $adb -s RZCY11PM4NT shell pidof com.freshharvest.grocery_app; exit $LASTEXITCODE",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Diagnose D Java executables",
+			"type": "shell",
+			"command": "$ErrorActionPreference='Continue'; Write-Output 'JAVA_EXECUTABLES'; Get-ChildItem -LiteralPath 'D:\\Java' -Filter java.exe -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Output ('JAVA_PATH='+$_.FullName); $c=Join-Path $_.DirectoryName 'javac.exe'; Write-Output ('MATCHING_JAVAC_EXISTS='+(Test-Path -LiteralPath $c)); if(Test-Path -LiteralPath $c){Write-Output ('JAVAC_PATH='+$c); $cv=& $c -version 2>&1; $cv | ForEach-Object {Write-Output ('JAVAC_VERSION_LINE='+[string]$_)}}; $v=& $_.FullName -version 2>&1; $v | ForEach-Object {Write-Output ('JAVA_VERSION_LINE='+[string]$_)} }; Write-Output 'ALL_JAVAC_EXECUTABLES'; Get-ChildItem -LiteralPath 'D:\\Java' -Filter javac.exe -File -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName; Write-Output 'FLUTTER_JDK_CONFIG'; flutter config --list | Select-String 'jdk-dir'",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Build install with verified Java 21",
+			"type": "shell",
+			"command": "$ErrorActionPreference='Continue'; $jdkHome='D:\\Java'; $java=Join-Path $jdkHome 'bin\\java.exe'; $javac=Join-Path $jdkHome 'bin\\javac.exe'; if(-not(Test-Path $java) -or -not(Test-Path $javac)){Write-Output 'JDK_ERROR: java.exe or javac.exe missing under D:\\Java\\bin'; exit 2}; $javaVersion=(& $java -version 2>&1 | Out-String); $javacVersion=(& $javac -version 2>&1 | Out-String); Write-Output ('JAVA='+$java); Write-Output ('JAVA_VERSION='+$javaVersion.Trim()); Write-Output ('JAVAC='+$javac); Write-Output ('JAVAC_VERSION='+$javacVersion.Trim()); if($javaVersion -notmatch 'version \"21(?:\\.|\"|\\+)' -or $javacVersion -notmatch 'javac 21(?:\\.|$)'){Write-Output 'JDK_ERROR: D:\\Java is not Java 21'; exit 3}; Write-Output '=== Configure Flutter ==='; flutter config --jdk-dir=$jdkHome; $configExit=$LASTEXITCODE; if($configExit -ne 0){exit $configExit}; flutter config --list | Select-String 'jdk-dir'; Write-Output '=== Build production release APK ==='; $buildOutput=& flutter build apk --release --dart-define=API_BASE_URL=https://ram-prasad-kirana-backend.onrender.com/api/v1 2>&1; $buildExit=$LASTEXITCODE; $buildOutput | Select-Object -Last 45 | ForEach-Object { Write-Output ([string]$_) }; Write-Output ('FLUTTER_BUILD_EXIT='+$buildExit); if($buildExit -ne 0){exit $buildExit}; $apk='build\\app\\outputs\\flutter-apk\\app-release.apk'; if(-not(Test-Path $apk)){Write-Output 'BUILD_ERROR: APK missing'; exit 4}; $f=Get-Item $apk; Write-Output ('APK_PATH='+$f.FullName); Write-Output ('APK_SIZE_BYTES='+$f.Length); Write-Output ('APK_SIZE_MiB='+[math]::Round($f.Length/1MB,2)); $adb=Join-Path $env:LOCALAPPDATA 'Android\\Sdk\\platform-tools\\adb.exe'; if(-not(Test-Path $adb)){$adb=(Get-Command adb -ErrorAction SilentlyContinue).Source}; if(-not $adb){Write-Output 'INSTALL_ERROR: adb.exe not found'; exit 5}; Write-Output '=== Devices ==='; & $adb devices -l; if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}; $deviceList=& $adb devices; if(-not($deviceList | Select-String '^RZCY11PM4NT\\s+device$')){Write-Output 'INSTALL_ERROR: RZCY11PM4NT not connected/authorized'; exit 6}; Write-Output '=== Install ==='; & $adb -s RZCY11PM4NT install -r $f.FullName; $installExit=$LASTEXITCODE; Write-Output ('ADB_INSTALL_EXIT='+$installExit); if($installExit -ne 0){exit $installExit}; Write-Output '=== Launch ==='; & $adb -s RZCY11PM4NT shell monkey -p com.freshharvest.grocery_app -c android.intent.category.LAUNCHER 1; $launchExit=$LASTEXITCODE; Write-Output ('LAUNCH_EXIT='+$launchExit); if($launchExit -ne 0){exit $launchExit}; Start-Sleep -Seconds 3; Write-Output '=== Verify package path ==='; & $adb -s RZCY11PM4NT shell pm path com.freshharvest.grocery_app; if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}; Write-Output '=== App process ==='; & $adb -s RZCY11PM4NT shell pidof com.freshharvest.grocery_app",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Configure Java 21 build install APK",
+			"type": "shell",
+			"command": "$ErrorActionPreference='Continue'; $jdkHome='D:\\Java'; $java=Join-Path $jdkHome 'bin\\java.exe'; $javac=Join-Path $jdkHome 'bin\\javac.exe'; $javaVersion=(& $java -version 2>&1 | Out-String); $javacVersion=(& $javac -version 2>&1 | Out-String); Write-Output ('JAVA_PATH='+$java); Write-Output ('JAVA_VERSION='+$javaVersion.Trim()); Write-Output ('JAVAC_PATH='+$javac); Write-Output ('JAVAC_VERSION='+$javacVersion.Trim()); if($javaVersion -notlike '*openjdk version \"21.*' -or $javacVersion -notlike '*javac 21.*'){Write-Output 'JDK_CHECK_FAILED'; exit 3}; Write-Output '=== Configure Flutter ==='; $jdkArg='--jdk-dir='+$jdkHome; flutter config $jdkArg; $configExit=$LASTEXITCODE; Write-Output ('FLUTTER_CONFIG_EXIT='+$configExit); if($configExit -ne 0){exit $configExit}; flutter config --list | Select-String 'jdk-dir'; Write-Output '=== Build release APK ==='; $buildOutput=& flutter build apk --release --dart-define=API_BASE_URL=https://ram-prasad-kirana-backend.onrender.com/api/v1 2>&1; $buildExit=$LASTEXITCODE; $buildOutput | Select-Object -Last 35 | ForEach-Object { Write-Output ([string]$_) }; Write-Output ('FLUTTER_BUILD_EXIT='+$buildExit); if($buildExit -ne 0){exit $buildExit}; $apk='build\\app\\outputs\\flutter-apk\\app-release.apk'; if(-not(Test-Path -LiteralPath $apk)){Write-Output 'APK_NOT_FOUND'; exit 4}; $f=Get-Item -LiteralPath $apk; Write-Output ('APK_PATH='+$f.FullName); Write-Output ('APK_SIZE_BYTES='+$f.Length); Write-Output ('APK_SIZE_MiB='+[math]::Round($f.Length/1MB,2)); $adb=Join-Path $env:LOCALAPPDATA 'Android\\Sdk\\platform-tools\\adb.exe'; if(-not(Test-Path -LiteralPath $adb)){$adb=(Get-Command adb -ErrorAction SilentlyContinue).Source}; if(-not $adb){Write-Output 'ADB_NOT_FOUND'; exit 5}; Write-Output '=== Device ==='; & $adb devices -l; $devs=& $adb devices; if(-not($devs | Select-String '^RZCY11PM4NT\\s+device$')){Write-Output 'DEVICE_NOT_CONNECTED'; exit 6}; Write-Output '=== Install ==='; & $adb -s RZCY11PM4NT install -r $f.FullName; $installExit=$LASTEXITCODE; Write-Output ('ADB_INSTALL_EXIT='+$installExit); if($installExit -ne 0){exit $installExit}; Write-Output '=== Launch ==='; & $adb -s RZCY11PM4NT shell monkey -p com.freshharvest.grocery_app -c android.intent.category.LAUNCHER 1; $launchExit=$LASTEXITCODE; Write-Output ('LAUNCH_EXIT='+$launchExit); if($launchExit -ne 0){exit $launchExit}; Start-Sleep -Seconds 3; Write-Output '=== Package path ==='; & $adb -s RZCY11PM4NT shell pm path com.freshharvest.grocery_app; Write-Output '=== App pid ==='; & $adb -s RZCY11PM4NT shell pidof com.freshharvest.grocery_app",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Build release using Java 21 and install",
+			"type": "shell",
+			"command": "$ErrorActionPreference='Continue'; Write-Output '=== Configure verified JDK 21 ==='; flutter config --jdk-dir=D:\\Java; $configExit=$LASTEXITCODE; Write-Output ('FLUTTER_CONFIG_EXIT='+$configExit); if($configExit -ne 0){exit $configExit}; flutter config --list | Select-String 'jdk-dir'; Write-Output '=== Production release APK build ==='; $buildOutput=& flutter build apk --release --dart-define=API_BASE_URL=https://ram-prasad-kirana-backend.onrender.com/api/v1 2>&1; $buildExit=$LASTEXITCODE; $buildOutput | Select-Object -Last 45 | ForEach-Object { Write-Output ([string]$_) }; Write-Output ('FLUTTER_BUILD_EXIT='+$buildExit); if($buildExit -ne 0){exit $buildExit}; $apk='build\\app\\outputs\\flutter-apk\\app-release.apk'; if(-not(Test-Path -LiteralPath $apk)){Write-Output 'APK_NOT_FOUND'; exit 4}; $f=Get-Item -LiteralPath $apk; Write-Output ('APK_PATH='+$f.FullName); Write-Output ('APK_SIZE_BYTES='+$f.Length); Write-Output ('APK_SIZE_MiB='+[math]::Round($f.Length/1MB,2)); $adb=Join-Path $env:LOCALAPPDATA 'Android\\Sdk\\platform-tools\\adb.exe'; if(-not(Test-Path -LiteralPath $adb)){$adb=(Get-Command adb -ErrorAction SilentlyContinue).Source}; if(-not $adb){Write-Output 'ADB_NOT_FOUND'; exit 5}; Write-Output '=== Devices ==='; & $adb devices -l; if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}; $devices=& $adb devices; if(-not($devices | Select-String '^RZCY11PM4NT\\s+device$')){Write-Output 'DEVICE_NOT_CONNECTED'; exit 6}; Write-Output '=== Install ==='; & $adb -s RZCY11PM4NT install -r $f.FullName; $installExit=$LASTEXITCODE; Write-Output ('ADB_INSTALL_EXIT='+$installExit); if($installExit -ne 0){exit $installExit}; Write-Output '=== Launch ==='; & $adb -s RZCY11PM4NT shell monkey -p com.freshharvest.grocery_app -c android.intent.category.LAUNCHER 1; $launchExit=$LASTEXITCODE; Write-Output ('LAUNCH_EXIT='+$launchExit); if($launchExit -ne 0){exit $launchExit}; Start-Sleep -Seconds 3; Write-Output '=== Package path ==='; & $adb -s RZCY11PM4NT shell pm path com.freshharvest.grocery_app; Write-Output '=== App process ==='; & $adb -s RZCY11PM4NT shell pidof com.freshharvest.grocery_app",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Verify FastStore on connected phone",
+			"type": "shell",
+			"command": "$adb = 'C:\\Users\\Siddhant\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe'; $apk = 'E:\\Ram Prasad APP Host\\build\\app\\outputs\\flutter-apk\\app-release.apk'; Write-Output '--- APK artifact ---'; Get-Item $apk | Select-Object FullName,Length,LastWriteTime; Write-Output '--- Installed package ---'; & $adb -s RZCY11PM4NT shell pm path com.freshharvest.grocery_app; Write-Output '--- Running app process ---'; & $adb -s RZCY11PM4NT shell pidof com.freshharvest.grocery_app; Write-Output '--- Flutter JDK ---'; flutter config --list | Select-String 'jdk-dir'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Install current release on phone",
+			"type": "shell",
+			"command": "$ErrorActionPreference = 'Stop'; $adb = 'C:\\Users\\Siddhant\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe'; $apk = 'E:\\Ram Prasad APP Host\\build\\app\\outputs\\flutter-apk\\app-release.apk'; if (-not (Test-Path $apk)) { throw \"Release APK not found at $apk\" }; Get-Item $apk | Select-Object FullName,Length; & $adb -s RZCY11PM4NT install -r $apk; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; & $adb -s RZCY11PM4NT shell monkey -p com.freshharvest.grocery_app -c android.intent.category.LAUNCHER 1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Start-Sleep -Seconds 2; & $adb -s RZCY11PM4NT shell pm path com.freshharvest.grocery_app; & $adb -s RZCY11PM4NT shell pidof com.freshharvest.grocery_app",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Audit current source and installed APK",
+			"type": "shell",
+			"command": "$ErrorActionPreference='Continue'; Write-Output '--- Git status ---'; git status --short; Write-Output '--- Tracked diff summary ---'; git diff --stat; Write-Output '--- Optimization diff ---'; git diff -- lib/providers/product_provider.dart lib/screens/search/search_screen.dart lib/screens/order/order_tracking_screen.dart lib/widgets/unread_notification_indicator.dart lib/navigation/main_bottom_nav.dart lib/screens/admin/admin_orders_screen.dart lib/screens/delivery/delivery_panel_screen.dart test/unit/product_provider_test.dart test/widget/order_tracking_live_progress_test.dart test/widget/unread_notification_indicator_test.dart test/widget/admin_orders_test.dart; Write-Output '--- App version / package / build config ---'; Select-String -Path pubspec.yaml -Pattern '^version:|^name:'; Select-String -Path android\\app\\build.gradle -Pattern 'applicationId |applicationIdSuffix|versionCode|versionName|minifyEnabled|shrinkResources'; Write-Output '--- APK artifact ---'; Get-Item build\\app\\outputs\\flutter-apk\\app-release.apk | Select-Object FullName,Length,LastWriteTime; Write-Output '--- Installed APK and version ---'; $adb='C:\\Users\\Siddhant\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe'; & $adb -s RZCY11PM4NT shell dumpsys package com.freshharvest.grocery_app | Select-String 'versionCode=|versionName=|codePath=|firstInstallTime=|lastUpdateTime='; Write-Output '--- Active process ---'; & $adb -s RZCY11PM4NT shell pidof com.freshharvest.grocery_app; Write-Output '--- Display refresh ---'; & $adb -s RZCY11PM4NT shell dumpsys display | Select-String 'RefreshRate|modeId|supportedModes' | Select-Object -First 12;",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Check APK version and device state",
+			"type": "shell",
+			"command": "Write-Output '--- version/package configuration ---'; Select-String -Path pubspec.yaml -Pattern '^version:|^name:'; Select-String -Path android\\app\\build.gradle -Pattern 'applicationId |applicationIdSuffix|versionCode|versionName|minifyEnabled|shrinkResources'; Write-Output '--- APK file ---'; Get-Item build\\app\\outputs\\flutter-apk\\app-release.apk | Select-Object FullName,Length,LastWriteTime; $adb='C:\\Users\\Siddhant\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe'; Write-Output '--- Installed package ---'; & $adb -s RZCY11PM4NT shell dumpsys package com.freshharvest.grocery_app | Select-String 'versionCode=|versionName=|codePath=|firstInstallTime=|lastUpdateTime='; Write-Output '--- Process ---'; & $adb -s RZCY11PM4NT shell pidof com.freshharvest.grocery_app; Write-Output '--- Device display ---'; & $adb -s RZCY11PM4NT shell dumpsys display | Select-String 'mActiveMode|RefreshRate|supportedModes' | Select-Object -First 10; Write-Output '--- Flutter JDK ---'; flutter config --list | Select-String 'jdk-dir'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Measure installed release baseline",
+			"type": "shell",
+			"command": "$ErrorActionPreference='Continue'; $adb='C:\\Users\\Siddhant\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe'; $pkg='com.freshharvest.grocery_app'; $apk='build\\app\\outputs\\flutter-apk\\app-release.apk'; Write-Output '--- Targeted source change summary ---'; git diff --stat -- lib\\providers\\product_provider.dart lib\\screens\\search\\search_screen.dart lib\\screens\\order\\order_tracking_screen.dart lib\\widgets\\unread_notification_indicator.dart lib\\navigation\\main_bottom_nav.dart lib\\screens\\admin\\admin_orders_screen.dart lib\\screens\\delivery\\delivery_panel_screen.dart; Write-Output '--- APK build and modified source timestamps ---'; Get-Item $apk,lib\\providers\\product_provider.dart,lib\\screens\\search\\search_screen.dart,lib\\screens\\order\\order_tracking_screen.dart,lib\\widgets\\unread_notification_indicator.dart | Select-Object Name,Length,LastWriteTime; Write-Output '--- Pull installed base APK and compare hashes ---'; $deviceApk='/data/local/tmp/faststore-installed-base.apk'; & $adb -s RZCY11PM4NT shell pm path $pkg; & $adb -s RZCY11PM4NT shell pm path $pkg | ForEach-Object { $remote = ($_ -replace '^package:','').Trim(); if ($remote) { & $adb -s RZCY11PM4NT pull $remote $deviceApk | Out-Null } }; if (Test-Path $deviceApk) { Get-FileHash $apk,$deviceApk -Algorithm SHA256 | Select-Object Path,Hash } else { Write-Output 'Installed APK pull unavailable.' }; Write-Output '--- Five cold start timings (ms) ---'; 1..5 | ForEach-Object { & $adb -s RZCY11PM4NT shell am force-stop $pkg | Out-Null; $line = & $adb -s RZCY11PM4NT shell am start -W -n \"$pkg/.MainActivity\" 2>&1 | Select-String 'ThisTime|TotalTime|WaitTime'; Write-Output ($line -join '; '); Start-Sleep -Seconds 2 }; Write-Output '--- Frame stats reset and scroll run ---'; & $adb -s RZCY11PM4NT shell dumpsys gfxinfo $pkg reset | Out-Null; 1..12 | ForEach-Object { & $adb -s RZCY11PM4NT shell input swipe 540 1950 540 500 280 | Out-Null; Start-Sleep -Milliseconds 300 }; Write-Output '--- Gfx frame summary ---'; & $adb -s RZCY11PM4NT shell dumpsys gfxinfo $pkg | Select-String 'Total frames rendered|Janky frames|50th percentile|90th percentile|95th percentile|99th percentile|Number Missed Vsync|HISTOGRAM|PROFILEDATA' -Context 0,2; Write-Output '--- Recent app errors ---'; & $adb -s RZCY11PM4NT logcat -d -t 1200 | Select-String 'FATAL EXCEPTION|FlutterError|E/flutter|Skipped [0-9]+ frames' | Select-Object -Last 25",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Inspect release frames and device screen",
+			"type": "shell",
+			"command": "$ErrorActionPreference='Continue'; $adb='C:\\Users\\Siddhant\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe'; $apk='E:\\Ram Prasad APP Host\\build\\app\\outputs\\flutter-apk\\app-release.apk'; $remote = (& $adb -s RZCY11PM4NT shell pm path com.freshharvest.grocery_app | Select-Object -First 1) -replace '^package:',''; $local = Join-Path $env:TEMP 'faststore-installed-base.apk'; & $adb -s RZCY11PM4NT pull $remote $local; if (Test-Path $local) { Get-FileHash $apk,$local -Algorithm SHA256 | Select-Object Path,Hash }; Write-Output '--- gfxinfo standard summary ---'; & $adb -s RZCY11PM4NT shell dumpsys gfxinfo com.freshharvest.grocery_app | Select-Object -First 90; Write-Output '--- gfxinfo framestats ---'; & $adb -s RZCY11PM4NT shell dumpsys gfxinfo com.freshharvest.grocery_app framestats | Select-Object -First 50; Write-Output '--- screenshot ---'; & $adb -s RZCY11PM4NT shell screencap -p /sdcard/faststore-audit-screen.png; & $adb -s RZCY11PM4NT pull /sdcard/faststore-audit-screen.png (Join-Path $env:TEMP 'faststore-audit-screen.png'); Write-Output '--- Java / APK package metadata ---'; & $adb -s RZCY11PM4NT shell dumpsys package com.freshharvest.grocery_app | Select-String 'versionCode=|versionName=|lastUpdateTime='",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Separate idle scroll and navigation metrics",
+			"type": "shell",
+			"command": "$ErrorActionPreference='Continue'; $adb='C:\\Users\\Siddhant\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe'; $pkg='com.freshharvest.grocery_app'; function Metrics($name) { $out = & $adb -s RZCY11PM4NT shell dumpsys gfxinfo $pkg; Write-Output \"--- $name ---\"; $out | Select-String '^Total frames rendered:|^Janky frames:|^50th percentile:|^90th percentile:|^95th percentile:|^99th percentile:|^Number Slow UI thread:|^Number Frame deadline missed:' }; & $adb -s RZCY11PM4NT shell am start -W -n \"$pkg/.MainActivity\" | Out-Null; Start-Sleep -Seconds 8; & $adb -s RZCY11PM4NT shell dumpsys gfxinfo $pkg reset | Out-Null; Start-Sleep -Seconds 6; Metrics 'warm idle 6 seconds'; & $adb -s RZCY11PM4NT shell dumpsys gfxinfo $pkg reset | Out-Null; 1..10 | ForEach-Object { & $adb -s RZCY11PM4NT shell input swipe 540 1700 540 650 260 | Out-Null; Start-Sleep -Milliseconds 400 }; Metrics '10 home scroll swipes'; & $adb -s RZCY11PM4NT shell dumpsys gfxinfo $pkg reset | Out-Null; & $adb -s RZCY11PM4NT shell input tap 255 1840 | Out-Null; Start-Sleep -Seconds 3; & $adb -s RZCY11PM4NT shell input tap 120 1840 | Out-Null; Start-Sleep -Seconds 3; & $adb -s RZCY11PM4NT shell input tap 530 1840 | Out-Null; Start-Sleep -Seconds 3; Metrics 'three bottom-nav transitions'; Write-Output '--- current screen capture path ---'; & $adb -s RZCY11PM4NT shell screencap -p /sdcard/faststore-audit-current.png; & $adb -s RZCY11PM4NT pull /sdcard/faststore-audit-current.png (Join-Path $env:TEMP 'faststore-audit-current.png') | Out-Null",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Restore test device to home screen",
+			"type": "shell",
+			"command": "$adb='C:\\Users\\Siddhant\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe'; & $adb -s RZCY11PM4NT shell input keyevent 4; Start-Sleep -Seconds 1; & $adb -s RZCY11PM4NT shell input keyevent 4; Start-Sleep -Seconds 1; & $adb -s RZCY11PM4NT shell screencap -p /sdcard/faststore-current.png; & $adb -s RZCY11PM4NT pull /sdcard/faststore-current.png (Join-Path $env:TEMP 'faststore-current.png')",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Open app and inspect home navigation",
+			"type": "shell",
+			"command": "$adb='C:\\Users\\Siddhant\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe'; $pkg='com.freshharvest.grocery_app'; & $adb -s RZCY11PM4NT shell monkey -p $pkg -c android.intent.category.LAUNCHER 1 | Out-Null; Start-Sleep -Seconds 5; & $adb -s RZCY11PM4NT shell screencap -p /sdcard/faststore-home.png; & $adb -s RZCY11PM4NT pull /sdcard/faststore-home.png (Join-Path $env:TEMP 'faststore-home.png') | Out-Null; & $adb -s RZCY11PM4NT shell dumpsys window | Select-String 'mCurrentFocus' | Select-Object -First 1",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Isolate startup offer UI cost",
+			"type": "shell",
+			"command": "$adb='C:\\Users\\Siddhant\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe'; $pkg='com.freshharvest.grocery_app'; function Metrics($name) { $out=& $adb -s RZCY11PM4NT shell dumpsys gfxinfo $pkg; Write-Output \"--- $name ---\"; $out | Select-String '^Total frames rendered:|^Janky frames:|^50th percentile:|^90th percentile:|^95th percentile:|^99th percentile:|^Number Slow UI thread:|^Number Slow bitmap uploads:|^Number Frame deadline missed:' }; & $adb -s RZCY11PM4NT shell dumpsys gfxinfo $pkg reset | Out-Null; Start-Sleep -Seconds 5; Metrics 'offer popup idle'; & $adb -s RZCY11PM4NT shell input tap 540 1970; Start-Sleep -Seconds 2; & $adb -s RZCY11PM4NT shell screencap -p /sdcard/faststore-dismissed-offer.png; & $adb -s RZCY11PM4NT pull /sdcard/faststore-dismissed-offer.png (Join-Path $env:TEMP 'faststore-dismissed-offer.png') | Out-Null; & $adb -s RZCY11PM4NT shell dumpsys gfxinfo $pkg reset | Out-Null; 1..10 | ForEach-Object { & $adb -s RZCY11PM4NT shell input swipe 540 1800 540 600 300 | Out-Null; Start-Sleep -Milliseconds 500 }; Metrics 'home scroll after dismissing offer'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Locate animation dismiss control",
+			"type": "shell",
+			"command": "$adb='C:\\Users\\Siddhant\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe'; & $adb -s RZCY11PM4NT shell uiautomator dump /sdcard/window.xml | Out-Null; & $adb -s RZCY11PM4NT pull /sdcard/window.xml (Join-Path $env:TEMP 'faststore-window.xml') | Out-Null; Select-String -Path (Join-Path $env:TEMP 'faststore-window.xml') -Pattern 'Dismiss Diwali|Close|Search store|Home|FESTIVAL|text=' | Select-Object -First 30",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Read animation control bounds",
+			"type": "shell",
+			"command": "$p = Join-Path $env:TEMP 'faststore-window.xml'; [xml]$xml = [IO.File]::ReadAllText($p); $xml.SelectNodes('//node') | Where-Object { $_.GetAttribute('content-desc') -match 'Diwali|Close' -or $_.GetAttribute('text') -match 'Maybe later|Search|Home|Vending' } | ForEach-Object { '{0} text={1} desc={2} bounds={3}' -f $_.GetAttribute('class'),$_.GetAttribute('text'),$_.GetAttribute('content-desc'),$_.GetAttribute('bounds') }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Inspect current worktree",
+			"type": "shell",
+			"command": "git status --short; git diff -- .vscode/tasks.json; Get-Item assets\\animations\\diwali_greeting.lottie | Select-Object FullName,Length,LastWriteTime; Get-Content pubspec.yaml -TotalCount 18",
+			"isBackground": false,
+			"problemMatcher": []
 		}
 	]
 }

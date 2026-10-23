@@ -334,7 +334,6 @@ class _AddressFormDialogState extends State<_AddressFormDialog> {
     final location = await Navigator.push<PickedAddressLocation>(
       context,
       MaterialPageRoute(
-        fullscreenDialog: true,
         builder: (_) => AddressMapPicker(
           initialLatitude: _latitude,
           initialLongitude: _longitude,

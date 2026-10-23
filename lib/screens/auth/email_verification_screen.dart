@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../navigation/app_shell_route.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/auth_surface.dart';
+import '../../services/customer_location_consent.dart';
 
 class EmailVerificationScreen extends StatefulWidget {
   final String email;
@@ -95,6 +96,14 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
         profileImageError =
             'Your email is verified, but the photo could not be uploaded. You can add it later from Profile.';
       }
+    }
+    if (!mounted) return;
+    final userId = auth.currentUser?.id;
+    if (userId != null) {
+      await CustomerLocationConsent.requestAfterSignIn(
+        context,
+        userId: userId,
+      );
     }
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);

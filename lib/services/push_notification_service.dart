@@ -11,10 +11,10 @@ class PushNotificationService {
       String.fromEnvironment('FIREBASE_MESSAGING_SENDER_ID');
   static const _projectId = String.fromEnvironment('FIREBASE_PROJECT_ID');
   static const _authDomain = String.fromEnvironment('FIREBASE_AUTH_DOMAIN');
-  static const _storageBucket = String.fromEnvironment('FIREBASE_STORAGE_BUCKET');
+  static const _storageBucket =
+      String.fromEnvironment('FIREBASE_STORAGE_BUCKET');
   static const _iosBundleId = String.fromEnvironment('FIREBASE_IOS_BUNDLE_ID');
-  static const _webVapidKey =
-      String.fromEnvironment('FIREBASE_WEB_VAPID_KEY');
+  static const _webVapidKey = String.fromEnvironment('FIREBASE_WEB_VAPID_KEY');
 
   static bool get isConfigured =>
       _apiKey.isNotEmpty &&
@@ -29,7 +29,7 @@ class PushNotificationService {
         'In-app notifications are available on this device.',
       );
     }
-    if (!isConfigured) {
+    if (!isConfigured && defaultTargetPlatform != TargetPlatform.android) {
       throw StateError(
         'Push alerts need Firebase app settings. Configure the FIREBASE_* '
         'build values and platform push credentials first.',
@@ -37,17 +37,26 @@ class PushNotificationService {
     }
 
     if (Firebase.apps.isEmpty) {
-      await Firebase.initializeApp(
-        options: FirebaseOptions(
-          apiKey: _apiKey,
-          appId: _appId,
-          messagingSenderId: _messagingSenderId,
-          projectId: _projectId,
-          authDomain: _authDomain.isEmpty ? null : _authDomain,
-          storageBucket: _storageBucket.isEmpty ? null : _storageBucket,
-          iosBundleId: _iosBundleId.isEmpty ? null : _iosBundleId,
-        ),
-      );
+      if (isConfigured) {
+        await Firebase.initializeApp(
+          options: FirebaseOptions(
+            apiKey: _apiKey,
+            appId: _appId,
+            messagingSenderId: _messagingSenderId,
+            projectId: _projectId,
+            authDomain: _authDomain.isEmpty ? null : _authDomain,
+            storageBucket: _storageBucket.isEmpty ? null : _storageBucket,
+            iosBundleId: _iosBundleId.isEmpty ? null : _iosBundleId,
+          ),
+        );
+      } else if (defaultTargetPlatform == TargetPlatform.android) {
+        await Firebase.initializeApp();
+      } else {
+        throw StateError(
+          'Push alerts need Firebase app settings. Configure the FIREBASE_* '
+          'build values and platform push credentials first.',
+        );
+      }
     }
 
     final messaging = FirebaseMessaging.instance;
@@ -62,7 +71,8 @@ class PushNotificationService {
       vapidKey: kIsWeb && _webVapidKey.isNotEmpty ? _webVapidKey : null,
     );
     if (token == null || token.isEmpty) {
-      throw StateError('Firebase did not provide a push token for this device.');
+      throw StateError(
+          'Firebase did not provide a push token for this device.');
     }
 
     final platform = kIsWeb

@@ -34,6 +34,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen>
   AdminOrderPage? _page;
   List<AdminDeliveryPerson> _deliveryPeople = const [];
   String? _status;
+  DateTime? _selectedDay;
   String? _error;
   String? _deliveryError;
   String? _savingId;
@@ -126,9 +127,8 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen>
         _hasPollBaseline = true;
         return;
       }
-      final newOrders = incoming
-          .where((order) => _seenOrderIds.add(order.id))
-          .toList();
+      final newOrders =
+          incoming.where((order) => _seenOrderIds.add(order.id)).toList();
       if (newOrders.isNotEmpty) {
         for (final order in newOrders) {
           unawaited(_notificationService.showNewOrder(order.orderNumber));
@@ -169,6 +169,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen>
               page: _pageNumber,
               search: _searchController.text,
               status: _status,
+              day: _selectedDay,
             )
             .then<void>((value) => result = value),
         _adminApi.getDeliveryPeople().then<void>((value) {
@@ -361,6 +362,20 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen>
     return status.replaceAll('_', ' ');
   }
 
+  Future<void> _selectDay() async {
+    final now = DateTime.now();
+    final day = await showDatePicker(
+      context: context,
+      initialDate: _selectedDay ?? now,
+      firstDate: DateTime(2020),
+      lastDate: now,
+    );
+    if (!mounted || day == null) return;
+    setState(() => _selectedDay = day);
+    _pageNumber = 1;
+    await _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     final orders = _page?.orders ?? const <AdminOrder>[];
@@ -422,6 +437,34 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen>
                   ),
               ],
             ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _loading ? null : _selectDay,
+                icon: const Icon(Icons.calendar_month_rounded, size: 18),
+                label: Text(
+                  _selectedDay == null
+                      ? 'Filter by day'
+                      : DateFormat('EEE, d MMM yyyy').format(_selectedDay!),
+                ),
+              ),
+              if (_selectedDay != null)
+                TextButton(
+                  onPressed: _loading
+                      ? null
+                      : () {
+                          setState(() => _selectedDay = null);
+                          _pageNumber = 1;
+                          _load();
+                        },
+                  child: const Text('Clear day'),
+                ),
+            ],
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),

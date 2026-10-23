@@ -30,6 +30,8 @@ class AdminCategory {
 class AdminCoupon {
   final String id;
   final String code;
+  final String? productId;
+  final String? assignedUserId;
   final String discountType;
   final double? discountPercent;
   final double? discountAmount;
@@ -39,11 +41,14 @@ class AdminCoupon {
   final int? perUserLimit;
   final int usedCount;
   final bool isActive;
+  final bool isAnnounced;
   final DateTime? expiresAt;
 
   const AdminCoupon({
     required this.id,
     required this.code,
+    this.productId,
+    this.assignedUserId,
     required this.discountType,
     required this.discountPercent,
     required this.discountAmount,
@@ -53,6 +58,7 @@ class AdminCoupon {
     required this.perUserLimit,
     required this.usedCount,
     required this.isActive,
+    this.isAnnounced = false,
     required this.expiresAt,
   });
 
@@ -77,6 +83,8 @@ class AdminCoupon {
     return AdminCoupon(
       id: id,
       code: code,
+      productId: json['productId']?.toString(),
+      assignedUserId: json['assignedUserId']?.toString(),
       discountType: discountType == 'FIXED' ? 'FIXED' : 'PERCENTAGE',
       discountPercent: json['discountPercent'] == null
           ? null
@@ -93,6 +101,7 @@ class AdminCoupon {
           json['perUserLimit'] == null ? null : _asInt(json['perUserLimit']),
       usedCount: _asInt(json['usedCount']),
       isActive: isActive,
+      isAnnounced: json['isAnnounced'] as bool? ?? false,
       expiresAt: expiresAt,
     );
   }
@@ -103,8 +112,8 @@ class AdminRestockReceipt {
   final String productName;
   final String productSku;
   final String unitLabel;
-  final int quantity;
-  final int balanceAfter;
+  final double quantity;
+  final double balanceAfter;
   final String? staffName;
   final String? notes;
   final DateTime createdAt;
@@ -138,8 +147,8 @@ class AdminRestockReceipt {
       productName: product['name']?.toString() ?? '',
       productSku: product['sku']?.toString() ?? '',
       unitLabel: product['unitLabel']?.toString() ?? 'unit',
-      quantity: _asInt(json['quantity']),
-      balanceAfter: _asInt(json['balanceAfter']),
+      quantity: _asDouble(json['quantity']),
+      balanceAfter: _asDouble(json['balanceAfter']),
       staffName:
           staff is Map<String, dynamic> ? staff['name']?.toString() : null,
       notes: json['notes']?.toString(),
@@ -148,14 +157,136 @@ class AdminRestockReceipt {
   }
 }
 
+class AdminInventoryBatch {
+  final String id;
+  final String productId;
+  final String productName;
+  final String sku;
+  final String? barcode;
+  final String? imageUrl;
+  final String categoryName;
+  final String unitLabel;
+  final String? lotNumber;
+  final DateTime? manufacturedAt;
+  final DateTime? expiresAt;
+  final double receivedQuantity;
+  final double remainingQuantity;
+  final int? daysRemaining;
+  final String expiryStatus;
+  final bool datesVerified;
+
+  const AdminInventoryBatch({
+    required this.id,
+    required this.productId,
+    required this.productName,
+    required this.sku,
+    required this.barcode,
+    required this.imageUrl,
+    required this.categoryName,
+    required this.unitLabel,
+    required this.lotNumber,
+    required this.manufacturedAt,
+    required this.expiresAt,
+    required this.receivedQuantity,
+    required this.remainingQuantity,
+    required this.daysRemaining,
+    required this.expiryStatus,
+    required this.datesVerified,
+  });
+
+  factory AdminInventoryBatch.fromJson(Map<String, dynamic> json) {
+    DateTime? parseDate(Object? value) =>
+        value is String ? DateTime.tryParse(value) : null;
+
+    return AdminInventoryBatch(
+      id: json['id']?.toString() ?? '',
+      productId: json['productId']?.toString() ?? '',
+      productName: json['productName']?.toString() ?? '',
+      sku: json['sku']?.toString() ?? '',
+      barcode: json['barcode']?.toString(),
+      imageUrl: json['imageUrl']?.toString(),
+      categoryName: json['categoryName']?.toString() ?? '',
+      unitLabel: json['unitLabel']?.toString() ?? '',
+      lotNumber: json['lotNumber']?.toString(),
+      manufacturedAt: parseDate(json['manufacturedAt']),
+      expiresAt: parseDate(json['expiresAt']),
+      receivedQuantity: _asDouble(json['receivedQuantity']),
+      remainingQuantity: _asDouble(json['remainingQuantity']),
+      daysRemaining: json['daysRemaining'] is num
+          ? (json['daysRemaining'] as num).toInt()
+          : null,
+      expiryStatus: json['expiryStatus']?.toString() ?? 'dates_unverified',
+      datesVerified: json['datesVerified'] as bool? ?? false,
+    );
+  }
+}
+
+class AdminInventoryExpiryPage {
+  final List<AdminInventoryBatch> batches;
+  final int warningDays;
+  final int expiringSoonBatches;
+  final int expiringSoonProducts;
+  final int expiredBatches;
+  final int expiredProducts;
+  final int expiringTodayBatches;
+  final int expiringTodayProducts;
+  final int page;
+  final int pageSize;
+  final int total;
+
+  const AdminInventoryExpiryPage({
+    required this.batches,
+    required this.warningDays,
+    required this.expiringSoonBatches,
+    required this.expiringSoonProducts,
+    required this.expiredBatches,
+    required this.expiredProducts,
+    required this.expiringTodayBatches,
+    required this.expiringTodayProducts,
+    required this.page,
+    required this.pageSize,
+    required this.total,
+  });
+
+  factory AdminInventoryExpiryPage.fromJson(Map<String, dynamic> json) {
+    final summary = json['summary'];
+    final pagination = json['pagination'];
+    final rawBatches = json['batches'];
+    if (summary is! Map<String, dynamic> ||
+        pagination is! Map<String, dynamic> ||
+        rawBatches is! List ||
+        rawBatches.any((batch) => batch is! Map<String, dynamic>)) {
+      throw const FormatException('The server returned invalid expiry data.');
+    }
+    return AdminInventoryExpiryPage(
+      batches: rawBatches
+          .cast<Map<String, dynamic>>()
+          .map(AdminInventoryBatch.fromJson)
+          .toList(growable: false),
+      warningDays: _asInt(summary['warningDays']),
+      expiringSoonBatches: _asInt(summary['expiringSoonBatches']),
+      expiringSoonProducts: _asInt(summary['expiringSoonProducts']),
+      expiredBatches: _asInt(summary['expiredBatches']),
+      expiredProducts: _asInt(summary['expiredProducts']),
+      expiringTodayBatches: _asInt(summary['expiringTodayBatches']),
+      expiringTodayProducts: _asInt(summary['expiringTodayProducts']),
+      page: _asInt(pagination['page'], fallback: 1),
+      pageSize: _asInt(pagination['pageSize'], fallback: 25),
+      total: _asInt(pagination['total']),
+    );
+  }
+}
+
 class AdminProduct {
   final String id;
   final String name;
   final String sku;
+  final String? barcode;
   final String slug;
   final String categoryId;
   final String categoryName;
   final String? imageUrl;
+  final List<String> imageUrls;
   final String? brand;
   final String? description;
   final String? origin;
@@ -167,19 +298,31 @@ class AdminProduct {
   final int wholesaleMinimumQuantity;
   final int lowStockThreshold;
   final int stock;
+  final double? weightStockKg;
   final bool isActive;
   final bool isFeatured;
   final bool isVendingDrink;
+  final String? vendingSection;
   final bool isBestSeller;
+
+  double get availableStock => weightStockKg ?? stock.toDouble();
+  String get availableStockLabel => weightStockKg == null
+      ? stock.toString()
+      : weightStockKg!.toStringAsFixed(3).replaceFirst(
+            RegExp(r'\.?0+$'),
+            '',
+          );
 
   const AdminProduct({
     required this.id,
     required this.name,
     required this.sku,
+    this.barcode,
     required this.slug,
     required this.categoryId,
     required this.categoryName,
     required this.imageUrl,
+    this.imageUrls = const [],
     this.brand,
     this.description,
     this.origin,
@@ -191,15 +334,18 @@ class AdminProduct {
     this.wholesaleMinimumQuantity = 1,
     this.lowStockThreshold = 10,
     required this.stock,
+    this.weightStockKg,
     required this.isActive,
     required this.isFeatured,
     this.isVendingDrink = false,
+    this.vendingSection,
     this.isBestSeller = false,
   });
 
   factory AdminProduct.fromJson(Map<String, dynamic> json) {
     final category = json['category'];
     final inventory = json['inventory'];
+    final rawImageUrls = json['imageUrls'];
     final stockValue = json['stock'] ??
         json['totalStock'] ??
         (inventory is Map<String, dynamic> ? inventory['totalStock'] : null);
@@ -208,6 +354,7 @@ class AdminProduct {
       id: json['id']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
       sku: json['sku']?.toString() ?? '',
+      barcode: json['barcode']?.toString(),
       slug: json['slug']?.toString() ?? '',
       categoryId: json['categoryId']?.toString() ??
           (category is Map<String, dynamic>
@@ -218,6 +365,9 @@ class AdminProduct {
           ? category['name']?.toString() ?? ''
           : '',
       imageUrl: json['imageUrl']?.toString(),
+      imageUrls: rawImageUrls is List
+          ? rawImageUrls.whereType<String>().toList(growable: false)
+          : const [],
       brand: json['brand']?.toString(),
       description: json['description']?.toString(),
       origin: json['origin']?.toString(),
@@ -234,9 +384,13 @@ class AdminProduct {
       wholesaleMinimumQuantity: _asInt(json['wholesaleMinimumQuantity'] ?? 1),
       lowStockThreshold: _asInt(json['lowStockThreshold'] ?? 10),
       stock: _asInt(stockValue),
+      weightStockKg: json['weightStockKg'] == null
+          ? null
+          : _asDouble(json['weightStockKg']),
       isActive: json['isActive'] as bool? ?? true,
       isFeatured: json['isFeatured'] as bool? ?? false,
       isVendingDrink: json['isVendingDrink'] as bool? ?? false,
+      vendingSection: json['vendingSection'] as String?,
       isBestSeller: json['isBestSeller'] as bool? ?? false,
     );
   }
@@ -245,8 +399,10 @@ class AdminProduct {
     String? sku,
     bool? isFeatured,
     bool? isVendingDrink,
+    String? vendingSection,
     bool? isBestSeller,
     String? imageUrl,
+    List<String>? imageUrls,
     double? price,
     double? originalPrice,
     bool clearOriginalPrice = false,
@@ -259,6 +415,7 @@ class AdminProduct {
       categoryId: categoryId,
       categoryName: categoryName,
       imageUrl: imageUrl ?? this.imageUrl,
+      imageUrls: imageUrls ?? this.imageUrls,
       brand: brand,
       description: description,
       origin: origin,
@@ -271,9 +428,11 @@ class AdminProduct {
       wholesaleMinimumQuantity: wholesaleMinimumQuantity,
       lowStockThreshold: lowStockThreshold,
       stock: stock,
+      weightStockKg: weightStockKg,
       isActive: isActive,
       isFeatured: isFeatured ?? this.isFeatured,
       isVendingDrink: isVendingDrink ?? this.isVendingDrink,
+      vendingSection: vendingSection ?? this.vendingSection,
       isBestSeller: isBestSeller ?? this.isBestSeller,
     );
   }
@@ -654,21 +813,59 @@ class AdminCustomer {
   }
 }
 
+class AdminCustomerRemovalRecord {
+  final String profileId;
+  final DateTime removedAt;
+  final String removedByName;
+  final String removedByProfileId;
+
+  const AdminCustomerRemovalRecord({
+    required this.profileId,
+    required this.removedAt,
+    required this.removedByName,
+    required this.removedByProfileId,
+  });
+
+  factory AdminCustomerRemovalRecord.fromJson(Map<String, dynamic> json) {
+    final removedAt = DateTime.tryParse(json['removedAt']?.toString() ?? '');
+    if (json['profileId'] is! String ||
+        removedAt == null ||
+        json['removedByName'] is! String ||
+        json['removedByProfileId'] is! String) {
+      throw const FormatException(
+        'The server returned invalid customer removal history.',
+      );
+    }
+    return AdminCustomerRemovalRecord(
+      profileId: json['profileId'] as String,
+      removedAt: removedAt,
+      removedByName: json['removedByName'] as String,
+      removedByProfileId: json['removedByProfileId'] as String,
+    );
+  }
+}
+
 class AdminStreakReward {
   final int day;
   final String title;
   final String description;
+  final String? couponId;
+  final String? couponCode;
 
   const AdminStreakReward({
     required this.day,
     required this.title,
     required this.description,
+    this.couponId,
+    this.couponCode,
   });
 
   factory AdminStreakReward.fromJson(Map<String, dynamic> json) {
     if (json['day'] is! int ||
         json['title'] is! String ||
-        json['description'] is! String) {
+        json['description'] is! String ||
+        (json['couponId'] != null && json['couponId'] is! String) ||
+        (json['couponCode'] != null && json['couponCode'] is! String)) {
       throw const FormatException(
           'The server returned an invalid streak reward.');
     }
@@ -676,13 +873,14 @@ class AdminStreakReward {
       day: json['day'] as int,
       title: json['title'] as String,
       description: json['description'] as String,
+      couponId: json['couponId'] as String?,
+      couponCode: json['couponCode'] as String?,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'day': day,
-        'title': title,
-        'description': description,
+        if (couponId != null) 'couponId': couponId,
       };
 }
 
@@ -729,7 +927,7 @@ double _asDouble(dynamic value) {
   return double.tryParse(value?.toString() ?? '') ?? 0;
 }
 
-int _asInt(dynamic value) {
+int _asInt(dynamic value, {int fallback = 0}) {
   if (value is num) return value.toInt();
-  return int.tryParse(value?.toString() ?? '') ?? 0;
+  return int.tryParse(value?.toString() ?? '') ?? fallback;
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/constants.dart';
@@ -22,16 +24,22 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
   final _bodyController = TextEditingController();
   final _couponCodeController = TextEditingController();
   final _customerSearchController = TextEditingController();
+  final _customerSearchOverlay = OverlayPortalController();
+  final _customerSearchLink = LayerLink();
   List<AdminCustomer> _customerResults = const [];
   String? _selectedCustomerId;
   String _recipientMode = 'all';
   bool _searchingCustomers = false;
+  bool _showCustomerSuggestions = false;
+  int _customerSearchGeneration = 0;
+  Timer? _customerSearchDebounce;
   bool _sending = false;
   String? _error;
   AdminBroadcastResult? _lastResult;
 
   @override
   void dispose() {
+    _customerSearchDebounce?.cancel();
     _titleController.dispose();
     _bodyController.dispose();
     _couponCodeController.dispose();
@@ -39,24 +47,64 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
     super.dispose();
   }
 
-  Future<void> _searchCustomers() async {
-    setState(() => _searchingCustomers = true);
+  void _onCustomerSearchChanged(String value) {
+    _customerSearchDebounce?.cancel();
+    final search = value.trim();
+    ++_customerSearchGeneration;
+    setState(() {
+      _selectedCustomerId = null;
+      _customerResults = const [];
+      _error = null;
+      _searchingCustomers = false;
+      _showCustomerSuggestions = search.length >= 2;
+    });
+    if (search.length < 2) {
+      _customerSearchOverlay.hide();
+      return;
+    }
+    _customerSearchOverlay.show();
+    _customerSearchDebounce = Timer(
+      const Duration(milliseconds: 300),
+      () => unawaited(_searchCustomers(search)),
+    );
+  }
+
+  Future<void> _searchCustomers([String? query]) async {
+    final search = (query ?? _customerSearchController.text).trim();
+    final generation = ++_customerSearchGeneration;
+    if (search.isEmpty) {
+      setState(() {
+        _customerResults = const [];
+        _selectedCustomerId = null;
+        _showCustomerSuggestions = false;
+        _error = 'Enter a customer ID, name, phone, or email to search.';
+      });
+      _customerSearchOverlay.hide();
+      return;
+    }
+    setState(() {
+      _searchingCustomers = true;
+      _showCustomerSuggestions = true;
+      _error = null;
+    });
+    _customerSearchOverlay.show();
     try {
       final page = await _adminApi.getCustomers(
-        pageSize: 100,
-        search: _customerSearchController.text,
+        pageSize: 20,
+        search: search,
       );
-      if (!mounted) return;
+      if (!mounted || generation != _customerSearchGeneration) return;
       setState(() {
         _customerResults =
             page.customers.where((customer) => customer.isActive).toList();
-        _selectedCustomerId = null;
         _searchingCustomers = false;
+        _showCustomerSuggestions = true;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || generation != _customerSearchGeneration) return;
       setState(() {
         _searchingCustomers = false;
+        _showCustomerSuggestions = true;
         _error = error.toString().replaceFirst('Exception: ', '');
       });
     }
@@ -179,61 +227,131 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                             setState(() {
                               _recipientMode = value;
                               _error = null;
+                              _showCustomerSuggestions = false;
                             });
+                            _customerSearchOverlay.hide();
                           },
                   ),
                   if (_recipientMode == 'customer') ...[
                     const SizedBox(height: 10),
-                    TextField(
-                      controller: _customerSearchController,
-                      textInputAction: TextInputAction.search,
-                      onSubmitted: (_) => _searchCustomers(),
-                      decoration: InputDecoration(
-                        labelText: 'Find a customer',
-                        hintText: 'Search by customer ID, name, phone or email',
-                        suffixIcon: IconButton(
-                          onPressed:
-                              _searchingCustomers ? null : _searchCustomers,
-                          icon: _searchingCustomers
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.search_rounded),
+                    OverlayPortal(
+                      controller: _customerSearchOverlay,
+                      overlayChildBuilder: (context) {
+                        if (!_showCustomerSuggestions) {
+                          return const SizedBox.shrink();
+                        }
+                        final width = (MediaQuery.sizeOf(context).width - 64)
+                            .clamp(0.0, 448.0)
+                            .toDouble();
+                        return CompositedTransformFollower(
+                          link: _customerSearchLink,
+                          showWhenUnlinked: false,
+                          targetAnchor: Alignment.bottomLeft,
+                          followerAnchor: Alignment.topLeft,
+                          offset: const Offset(0, 6),
+                          child: Material(
+                            elevation: 12,
+                            borderRadius: BorderRadius.circular(14),
+                            clipBehavior: Clip.antiAlias,
+                            child: SizedBox(
+                              width: width,
+                              child: ConstrainedBox(
+                                constraints:
+                                    const BoxConstraints(maxHeight: 260),
+                                child: _searchingCustomers
+                                    ? const Padding(
+                                        padding: EdgeInsets.all(20),
+                                        child: Center(
+                                          child: CircularProgressIndicator(),
+                                        ),
+                                      )
+                                    : _customerResults.isEmpty
+                                        ? const Padding(
+                                            padding: EdgeInsets.all(16),
+                                            child: Text(
+                                              'No active customer found. Check the ID, name, phone or email.',
+                                            ),
+                                          )
+                                        : ListView.builder(
+                                            padding: EdgeInsets.zero,
+                                            shrinkWrap: true,
+                                            itemCount: _customerResults.length,
+                                            itemBuilder: (context, index) {
+                                              final customer =
+                                                  _customerResults[index];
+                                              return ListTile(
+                                                dense: true,
+                                                title: Text(customer.name),
+                                                subtitle: Text(
+                                                  '${customer.profileId} · ${customer.email}',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                                onTap: () {
+                                                  setState(() {
+                                                    _selectedCustomerId =
+                                                        customer.id;
+                                                    _showCustomerSuggestions =
+                                                        false;
+                                                  });
+                                                  _customerSearchController
+                                                          .text =
+                                                      '${customer.profileId} · ${customer.name}';
+                                                  _customerSearchOverlay.hide();
+                                                },
+                                              );
+                                            },
+                                          ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                      child: CompositedTransformTarget(
+                        link: _customerSearchLink,
+                        child: TextField(
+                          controller: _customerSearchController,
+                          textInputAction: TextInputAction.search,
+                          onChanged: _onCustomerSearchChanged,
+                          decoration: InputDecoration(
+                            labelText: 'Find a customer',
+                            hintText:
+                                'Search by customer ID, name, phone or email',
+                            suffixIcon: _searchingCustomers
+                                ? const Padding(
+                                    padding: EdgeInsets.all(14),
+                                    child: SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  )
+                                : const Icon(Icons.search_rounded),
+                          ),
                         ),
                       ),
                     ),
                     const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: _selectedCustomerId,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Active customer',
+                    if (_selectedCustomerId != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          'Customer selected: ${_customerResults.firstWhere((customer) => customer.id == _selectedCustomerId).name}',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
-                      items: _customerResults
-                          .map(
-                            (customer) => DropdownMenuItem(
-                              value: customer.id,
-                              child: Text(
-                                '${customer.profileId} · ${customer.name} · ${customer.email}',
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: _sending
-                          ? null
-                          : (value) =>
-                              setState(() => _selectedCustomerId = value),
-                    ),
-                    if (_customerResults.isEmpty)
+                    if (_selectedCustomerId == null)
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
-                          'Search to load active customers.',
+                          'Search by profile ID (for example USR-000042), name, phone, or email.',
                           style: TextStyle(
                             color: AppConstants.textMuted,
                             fontSize: 11,
