@@ -39,7 +39,7 @@ const transaction = {
     },
   },
   orderBatchAllocation: {
-    create: async () => undefined,
+    createMany: async () => ({ count: 1 }),
   },
   inventoryTransaction: {
     create: async ({ data }: { data: Record<string, unknown> }) => {

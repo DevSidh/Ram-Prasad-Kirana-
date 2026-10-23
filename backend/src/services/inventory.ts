@@ -358,6 +358,7 @@ export class InventoryService {
       FOR UPDATE
     `;
     let remaining = quantity;
+    const allocations: Prisma.OrderBatchAllocationCreateManyInput[] = [];
     for (const batch of batches) {
       if (remaining === 0) break;
       const allocated = Math.min(remaining, batch.remainingQuantity);
@@ -370,8 +371,11 @@ export class InventoryService {
           `INSUFFICIENT_STOCK: A product batch changed while reserving ${productId}.`,
         );
       }
-      await tx.orderBatchAllocation.create({
-        data: { orderId, productId, batchId: batch.id, quantity: allocated },
+      allocations.push({
+        orderId,
+        productId,
+        batchId: batch.id,
+        quantity: allocated,
       });
       remaining -= allocated;
     }
@@ -379,6 +383,9 @@ export class InventoryService {
       throw new Error(
         `INSUFFICIENT_STOCK: Product ${productId} has insufficient unexpired batch stock.`,
       );
+    }
+    if (allocations.length > 0) {
+      await tx.orderBatchAllocation.createMany({ data: allocations });
     }
   }
 

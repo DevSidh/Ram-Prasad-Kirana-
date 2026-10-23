@@ -40,6 +40,7 @@ import { normalizeCustomerMenuFeatures } from './services/customer-menu-features
 import { recordBuyingStreakPurchase, removeCancelledOrderPurchaseDay } from './services/buying-streak.js';
 import { orderInput } from './schemas/order.js';
 import { InventoryService } from './services/inventory.js';
+import { runTransactionWithRetry } from './services/transaction-retry.js';
 import { canCustomerCancelOrder } from './services/order-cancellation.js';
 import { orderCartCleanupWhere } from './services/order-cart-cleanup.js';
 import {
@@ -1070,7 +1071,9 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
       }
     }
 
-    const createdOrderId = await prisma.$transaction(async (transaction) => {
+    const createOrderTransaction = async (
+      transaction: Prisma.TransactionClient,
+    ) => {
       const storeSettings = await transaction.storeSetting.findUnique({
         where: { id: 'store' },
       });
@@ -1374,10 +1377,12 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
         });
       }
       return created.id;
-    }, {
-      maxWait: 10_000,
-      timeout: 20_000,
-    });
+    };
+    const createdOrderId = await runTransactionWithRetry(
+      prisma,
+      createOrderTransaction,
+      { maxWait: 10_000, timeout: 20_000 },
+    );
     const created = await prisma.order.findUnique({
       where: { id: createdOrderId },
       include: orderInclude,

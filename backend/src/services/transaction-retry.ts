@@ -16,10 +16,11 @@ function isRetryableTransactionError(error: unknown): boolean {
 export async function runTransactionWithRetry<T>(
   prisma: Pick<PrismaClient, '$transaction'>,
   operation: (transaction: Prisma.TransactionClient) => Promise<T>,
+  options: { maxWait: number; timeout: number } = TRANSACTION_OPTIONS,
 ): Promise<T> {
   for (let attempt = 1; ; attempt += 1) {
     try {
-      return await prisma.$transaction(operation, TRANSACTION_OPTIONS);
+      return await prisma.$transaction(operation, options);
     } catch (error) {
       if (!isRetryableTransactionError(error) || attempt >= MAX_ATTEMPTS) {
         throw error;

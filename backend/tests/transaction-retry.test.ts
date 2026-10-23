@@ -13,6 +13,7 @@ function transactionError(code: string): Prisma.PrismaClientKnownRequestError {
 
 async function run(): Promise<void> {
   let attempts = 0;
+  const transactionOptions = { maxWait: 10_000, timeout: 15_000 };
   const prisma = {
     $transaction: async (
       operation: (transaction: Prisma.TransactionClient) => Promise<string>,
@@ -31,6 +32,26 @@ async function run(): Promise<void> {
     'saved',
   );
   assert.equal(attempts, 3);
+
+  let customOptionsUsed: { maxWait: number; timeout: number } | undefined;
+  const customOptionsPrisma = {
+    $transaction: async (
+      operation: (transaction: Prisma.TransactionClient) => Promise<string>,
+      options: { maxWait: number; timeout: number },
+    ) => {
+      customOptionsUsed = options;
+      return operation({} as Prisma.TransactionClient);
+    },
+  } as unknown as Pick<PrismaClient, '$transaction'>;
+  assert.equal(
+    await runTransactionWithRetry(
+      customOptionsPrisma,
+      async () => 'saved',
+      { maxWait: 10_000, timeout: 20_000 },
+    ),
+    'saved',
+  );
+  assert.deepEqual(customOptionsUsed, { maxWait: 10_000, timeout: 20_000 });
 
   let closedTransactionAttempts = 0;
   const closedTransactionPrisma = {

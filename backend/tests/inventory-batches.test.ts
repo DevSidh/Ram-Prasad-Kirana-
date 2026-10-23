@@ -6,6 +6,7 @@ async function run(): Promise<void> {
   const service = new InventoryService({} as never);
   const batchDates: Array<Record<string, unknown>> = [];
   const allocations: Array<Record<string, unknown>> = [];
+  const allocationBatchSizes: number[] = [];
   const decremented: Array<{ id: string; quantity: number }> = [];
   const sqlQueries: string[] = [];
   const orderedBatches = [
@@ -49,9 +50,10 @@ async function run(): Promise<void> {
       },
     },
     orderBatchAllocation: {
-      create: async ({ data }: { data: Record<string, unknown> }) => {
-        allocations.push(data);
-        return data;
+      createMany: async ({ data }: { data: Array<Record<string, unknown>> }) => {
+        allocationBatchSizes.push(data.length);
+        allocations.push(...data);
+        return { count: data.length };
       },
     },
     inventoryTransaction: {
@@ -98,6 +100,7 @@ async function run(): Promise<void> {
       { batchId: 'next', quantity: 3 },
     ],
   );
+  assert.deepEqual(allocationBatchSizes, [2]);
   const allocationQuery = sqlQueries.find((query) =>
     query.includes('"InventoryBatch"'),
   );
