@@ -307,6 +307,100 @@ export function createAccountRouter(
   router.get('/coupons/used', getUsedCoupons);
   router.get('/coupon/used', getUsedCoupons);
 
+  router.get('/coupons/available', async (_req, res) => {
+    const userId = authenticatedUserId(res);
+    if (!userId) return res.status(401).json({ error: 'Authentication is required.' });
+    try {
+      const notifications = await prisma.notification.findMany({
+        where: { userId, type: 'PROMOTIONAL' },
+        orderBy: { createdAt: 'desc' },
+        take: 500,
+        select: { metadata: true },
+      });
+      const notifiedCodes = new Set<string>();
+      for (const notification of notifications) {
+        const metadata = notification.metadata;
+        if (
+          typeof metadata === 'object' &&
+          metadata !== null &&
+          !Array.isArray(metadata) &&
+          'couponCode' in metadata &&
+          typeof metadata.couponCode === 'string'
+        ) {
+          notifiedCodes.add(metadata.couponCode.trim().toUpperCase());
+        }
+      }
+
+      const codes = [...notifiedCodes];
+      const [coupons, usageCounts] = await Promise.all([
+        prisma.coupon.findMany({
+          where: {
+            isActive: true,
+            isDeleted: false,
+            AND: [
+              {
+                OR: [
+                  {
+                    isAnnounced: true,
+                    productId: null,
+                    assignedUserId: null,
+                  },
+                  { code: { in: codes } },
+                ],
+              },
+              {
+                OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+              },
+            ],
+          },
+          select: {
+            code: true,
+            assignedUserId: true,
+            usageLimit: true,
+            perUserLimit: true,
+            usedCount: true,
+          },
+        }),
+        codes.length === 0
+          ? Promise.resolve([])
+          : prisma.order.groupBy({
+            by: ['couponCode'],
+            where: {
+              userId,
+              status: { not: 'CANCELLED' },
+              couponCode: { in: codes },
+            },
+            _count: { couponCode: true },
+          }),
+      ]);
+      const userUsage = new Map(
+        usageCounts.map((row) => [
+          row.couponCode?.toUpperCase() ?? '',
+          row._count.couponCode,
+        ]),
+      );
+      const availableCouponCodes = coupons
+        .filter((coupon) => {
+          if (
+            coupon.assignedUserId !== null &&
+            coupon.assignedUserId !== userId
+          ) return false;
+          if (
+            coupon.usageLimit !== null &&
+            coupon.usedCount >= coupon.usageLimit
+          ) return false;
+          const customerUses = userUsage.get(coupon.code.toUpperCase()) ?? 0;
+          return coupon.perUserLimit === null ||
+            customerUses < coupon.perUserLimit;
+        })
+        .map((coupon) => coupon.code.toUpperCase());
+      return res.json({ availableCouponCodes });
+    } catch (error) {
+      console.error('Available customer coupons lookup failed:', error);
+      return res.status(500).json({ error: 'Unable to load your available coupons.' });
+    }
+  });
+
   router.get('/notifications', async (_req, res) => {
     const userId = authenticatedUserId(res);
     if (!userId) return res.status(401).json({ error: 'Authentication is required.' });

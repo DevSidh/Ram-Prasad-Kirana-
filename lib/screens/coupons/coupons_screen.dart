@@ -42,6 +42,7 @@ class _CouponsScreenState extends State<CouponsScreen> {
     String? offerError;
     var notificationCoupons = <_CouponEntry>[];
     String? notificationError;
+    Set<String>? availableCouponCodes;
 
     try {
       offer = await OfferService(api).getActiveOffer();
@@ -55,11 +56,37 @@ class _CouponsScreenState extends State<CouponsScreen> {
     if (userId != null) {
       _loadingNotifications = true;
       try {
+        final availableResponse = await api.get('/account/coupons/available');
+        if (availableResponse is! Map<String, dynamic> ||
+            availableResponse['availableCouponCodes'] is! List) {
+          throw const FormatException(
+            'The store returned invalid available coupon data.',
+          );
+        }
+        availableCouponCodes =
+            (availableResponse['availableCouponCodes'] as List)
+                .whereType<String>()
+                .map((code) => code.trim().toUpperCase())
+                .toSet();
+      } catch (error) {
+        notificationError =
+            'Available coupons could not be checked: ${error.toString().replaceFirst('Exception: ', '')}';
+      }
+      if (availableCouponCodes == null) {
+        offer = null;
+      }
+
+      try {
         final response = await api.get('/account/notifications');
         if (response is! Map<String, dynamic> || response['data'] is! List) {
           throw const FormatException(
             'The store returned invalid notification data.',
           );
+        }
+        if (offer != null &&
+            availableCouponCodes != null &&
+            !availableCouponCodes.contains(offer.code.toUpperCase())) {
+          offer = null;
         }
         final seenCodes = <String>{if (offer != null) offer.code};
         for (final notification
@@ -67,26 +94,39 @@ class _CouponsScreenState extends State<CouponsScreen> {
           final metadata = notification['metadata'];
           final code =
               metadata is Map<String, dynamic> ? metadata['couponCode'] : null;
+          final productId =
+              metadata is Map<String, dynamic> ? metadata['productId'] : null;
+          final notificationTitle = notification['title']?.toString().trim();
           if (code is! String) continue;
           final normalized = code.trim().toUpperCase();
           if (!RegExp(r'^[A-Z0-9][A-Z0-9_-]{2,39}$').hasMatch(normalized) ||
+              availableCouponCodes == null ||
+              !availableCouponCodes.contains(normalized) ||
               !seenCodes.add(normalized)) {
             continue;
           }
           notificationCoupons.add(
             _CouponEntry(
               code: normalized,
-              title:
-                  (notification['title'] as String?)?.trim().isNotEmpty == true
-                      ? (notification['title'] as String).trim()
+              title: notificationTitle?.isNotEmpty == true
+                  ? notificationTitle!
+                  : productId is String
+                      ? 'Product-specific coupon'
                       : 'Coupon from a notification',
-              description:
-                  'Shared with you in your store notifications. The checkout will confirm whether it is still valid.',
+              description: (notification['body'] as String?)
+                          ?.trim()
+                          .isNotEmpty ==
+                      true
+                  ? (notification['body'] as String).trim()
+                  : 'Shared with you in your store notifications; checkout will confirm whether it is still valid.',
             ),
           );
         }
       } catch (error) {
-        notificationError = error.toString().replaceFirst('Exception: ', '');
+        final message = error.toString().replaceFirst('Exception: ', '');
+        notificationError = notificationError == null
+            ? message
+            : '$notificationError\n$message';
       } finally {
         _loadingNotifications = false;
       }

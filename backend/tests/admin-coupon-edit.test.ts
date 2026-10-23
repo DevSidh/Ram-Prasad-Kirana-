@@ -16,6 +16,7 @@ async function main(): Promise<void> {
     perUserLimit: 2,
     usedCount: 3,
     isActive: true,
+    isAnnounced: false,
     expiresAt: null as Date | null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
   };
@@ -89,6 +90,8 @@ async function main(): Promise<void> {
     assert.equal(removed.status, 200);
     assert.equal(coupon.isActive, false);
     assert.equal(coupon.isDeleted, true);
+    assert.equal(coupon.code, 'REMOVED-coupon-1');
+    assert.equal(coupon.isAnnounced, false);
     assert.equal(updateCount, 2);
     console.log('Admin coupon editing tests passed.');
   } finally {

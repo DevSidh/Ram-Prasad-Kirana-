@@ -488,6 +488,7 @@ function couponResponse(coupon: {
   perUserLimit: number | null;
   usedCount: number;
   isActive: boolean;
+  isAnnounced: boolean;
   expiresAt: Date | null;
   createdAt: Date;
 }) {
@@ -822,6 +823,9 @@ export function createAdminRouter(
           where: { code: parsed.data.couponCode },
           select: {
             isActive: true,
+            isDeleted: true,
+            productId: true,
+            assignedUserId: true,
             expiresAt: true,
             usageLimit: true,
             usedCount: true,
@@ -829,6 +833,9 @@ export function createAdminRouter(
         });
         if (!coupon ||
             !coupon.isActive ||
+            coupon.isDeleted ||
+            coupon.productId !== null ||
+            coupon.assignedUserId !== null ||
             (coupon.expiresAt !== null && coupon.expiresAt <= new Date()) ||
             (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit)) {
           return res.status(400).json({ error: 'That coupon is not currently available.' });
@@ -851,6 +858,12 @@ export function createAdminRouter(
                 ? { metadata: { couponCode: parsed.data.couponCode } }
                 : {}),
             })),
+          });
+        }
+        if (parsed.data.couponCode) {
+          await tx.coupon.updateMany({
+            where: { code: parsed.data.couponCode, isDeleted: false },
+            data: { isAnnounced: true },
           });
         }
       });
@@ -924,6 +937,8 @@ export function createAdminRouter(
           where: { code: parsed.data.couponCode },
           select: {
             isActive: true,
+            isDeleted: true,
+            assignedUserId: true,
             expiresAt: true,
             usageLimit: true,
             usedCount: true,
@@ -931,6 +946,9 @@ export function createAdminRouter(
         });
         if (!coupon ||
             !coupon.isActive ||
+            coupon.isDeleted ||
+            (coupon.assignedUserId !== null &&
+                coupon.assignedUserId !== recipient.id) ||
             (coupon.expiresAt !== null && coupon.expiresAt <= new Date()) ||
             (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit)) {
           return res.status(400).json({ error: 'That coupon is not currently available.' });
@@ -1172,7 +1190,12 @@ export function createAdminRouter(
     try {
       const removed = await prisma.coupon.updateMany({
         where: { id: id.data, isDeleted: false },
-        data: { isActive: false, isDeleted: true },
+        data: {
+          code: `REMOVED-${id.data}`,
+          isActive: false,
+          isDeleted: true,
+          isAnnounced: false,
+        },
       });
       if (removed.count !== 1) {
         return res.status(404).json({ error: 'Coupon not found.' });

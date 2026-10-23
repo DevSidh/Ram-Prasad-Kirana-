@@ -18,6 +18,7 @@ async function main(): Promise<void> {
   ];
   const createdBatches: Array<Array<Record<string, unknown>>> = [];
   const customerNotifications: Array<Record<string, unknown>> = [];
+  const announcedCoupons: Array<Record<string, unknown>> = [];
   let transactionCount = 0;
   const prisma = {
     user: {
@@ -63,10 +64,20 @@ async function main(): Promise<void> {
         assert.equal(where.code, 'DIWALI50');
         return {
           isActive: true,
+          isDeleted: false,
+          productId: null,
+          assignedUserId: null,
           expiresAt: null,
           usageLimit: 100,
           usedCount: 2,
         };
+      },
+      updateMany: async ({ where, data }: {
+        where: Record<string, unknown>;
+        data: Record<string, unknown>;
+      }) => {
+        announcedCoupons.push({ where, data });
+        return { count: 1 };
       },
     },
     $transaction: async <T>(work: (tx: unknown) => Promise<T>) => {
@@ -128,6 +139,10 @@ async function main(): Promise<void> {
       pushDelivery: { available: false, sent: 0, failed: 0 },
     });
     assert.equal(transactionCount, 1);
+    assert.deepEqual(announcedCoupons, [{
+      where: { code: 'DIWALI50', isDeleted: false },
+      data: { isAnnounced: true },
+    }]);
     assert.deepEqual(createdBatches.map((batch) => batch.length), [500, 2]);
     assert.ok(createdBatches.flat().every((notification) =>
       notification.type === 'PROMOTIONAL' &&

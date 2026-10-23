@@ -47,6 +47,11 @@ class _CouponsApi extends ApiService {
         ],
       };
     }
+    if (endpoint == '/account/coupons/available') {
+      return {
+        'availableCouponCodes': ['DIWALI50', 'SAVE20'],
+      };
+    }
     throw StateError('Unexpected endpoint: $endpoint');
   }
 }
