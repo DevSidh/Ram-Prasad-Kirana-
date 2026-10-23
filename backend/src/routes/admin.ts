@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { sendAdminError } from '../middleware/auth.js';
 import { InventoryAdjustmentError, InventoryService } from '../services/inventory.js';
+import { runTransactionWithRetry } from '../services/transaction-retry.js';
 import {
   getImageMimeType,
   receiveSingleImage,
@@ -2723,7 +2724,7 @@ export function createAdminRouter(
       });
       if (unitError) return res.status(400).json({ error: unitError });
 
-      const product = await prisma.$transaction(async (tx) => {
+      const product = await runTransactionWithRetry(prisma, async (tx) => {
         const created = await tx.product.create({
           data: {
             ...data,
@@ -2853,7 +2854,7 @@ export function createAdminRouter(
       if (salePriceError) {
         return res.status(400).json({ error: salePriceError });
       }
-      const product = await prisma.$transaction(async (tx) => {
+      const product = await runTransactionWithRetry(prisma, async (tx) => {
         const existing = await tx.product.findUnique({
           where: { id },
           select: { id: true, unitLabel: true },
@@ -2915,7 +2916,7 @@ export function createAdminRouter(
     const parsed = receiveBatchInput.safeParse(req.body);
     if (!parsed.success) return invalidInput(res, parsed.error);
     try {
-      const product = await prisma.$transaction(async (tx) => {
+      const product = await runTransactionWithRetry(prisma, async (tx) => {
         const existing = await tx.product.findUnique({
           where: { id },
           select: { id: true, unitLabel: true },
@@ -3121,7 +3122,7 @@ export function createAdminRouter(
     const parsed = restockInput.safeParse(req.body);
     if (!parsed.success) return invalidInput(res, parsed.error);
     try {
-      const product = await prisma.$transaction(async (tx) => {
+      const product = await runTransactionWithRetry(prisma, async (tx) => {
         const existing = await tx.product.findUnique({
           where: { id },
           select: { id: true, unitLabel: true },
