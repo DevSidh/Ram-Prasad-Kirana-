@@ -157,6 +157,136 @@ class AdminRestockReceipt {
   }
 }
 
+class AdminSupplierPurchaseBillItem {
+  const AdminSupplierPurchaseBillItem({
+    required this.name,
+    required this.sku,
+    required this.unitLabel,
+    required this.quantity,
+    required this.unitCost,
+    required this.lineTotal,
+  });
+
+  final String name;
+  final String sku;
+  final String unitLabel;
+  final double quantity;
+  final double unitCost;
+  final double lineTotal;
+
+  factory AdminSupplierPurchaseBillItem.fromJson(Map<String, dynamic> json) {
+    return AdminSupplierPurchaseBillItem(
+      name: json['name']?.toString() ?? '',
+      sku: json['sku']?.toString() ?? '',
+      unitLabel: json['unitLabel']?.toString() ?? 'unit',
+      quantity: _asDouble(json['quantity']),
+      unitCost: _asDouble(json['unitCost']),
+      lineTotal: _asDouble(json['lineTotal']),
+    );
+  }
+}
+
+class AdminSupplierPurchaseBill {
+  const AdminSupplierPurchaseBill({
+    required this.id,
+    required this.supplierName,
+    required this.supplierPhone,
+    required this.invoiceNumber,
+    required this.invoiceDate,
+    required this.deliveryPerson,
+    required this.notes,
+    required this.totalCost,
+    required this.status,
+    required this.createdAt,
+    required this.hasPhoto,
+    required this.items,
+  });
+
+  final String id;
+  final String supplierName;
+  final String? supplierPhone;
+  final String invoiceNumber;
+  final DateTime invoiceDate;
+  final String? deliveryPerson;
+  final String? notes;
+  final double totalCost;
+  final String status;
+  final DateTime createdAt;
+  final bool hasPhoto;
+  final List<AdminSupplierPurchaseBillItem> items;
+
+  factory AdminSupplierPurchaseBill.fromJson(Map<String, dynamic> json) {
+    final invoiceDate = DateTime.tryParse(json['invoiceDate'] as String? ?? '');
+    final createdAt = DateTime.tryParse(json['createdAt'] as String? ?? '');
+    final rawItems = json['items'];
+    if (json['id'] is! String ||
+        json['supplierName'] is! String ||
+        json['invoiceNumber'] is! String ||
+        invoiceDate == null ||
+        createdAt == null ||
+        rawItems is! List ||
+        rawItems.any((item) => item is! Map<String, dynamic>)) {
+      throw const FormatException(
+        'The server returned invalid supplier purchase bill details.',
+      );
+    }
+    return AdminSupplierPurchaseBill(
+      id: json['id'] as String,
+      supplierName: json['supplierName'] as String,
+      supplierPhone: json['supplierPhone'] as String?,
+      invoiceNumber: json['invoiceNumber'] as String,
+      invoiceDate: invoiceDate,
+      deliveryPerson: json['deliveryPerson'] as String?,
+      notes: json['notes'] as String?,
+      totalCost: _asDouble(json['totalCost']),
+      status: json['status'] as String? ?? 'RECEIVED',
+      createdAt: createdAt,
+      hasPhoto: json['hasPhoto'] == true,
+      items: rawItems
+          .cast<Map<String, dynamic>>()
+          .map(AdminSupplierPurchaseBillItem.fromJson)
+          .toList(growable: false),
+    );
+  }
+}
+
+class AdminSupplierPurchaseBillPage {
+  const AdminSupplierPurchaseBillPage({
+    required this.bills,
+    required this.page,
+    required this.pageSize,
+    required this.total,
+  });
+
+  final List<AdminSupplierPurchaseBill> bills;
+  final int page;
+  final int pageSize;
+  final int total;
+
+  factory AdminSupplierPurchaseBillPage.fromJson(
+    Map<String, dynamic> json, {
+    required int page,
+    required int pageSize,
+  }) {
+    final rawBills = json['bills'];
+    final rawPagination = json['pagination'];
+    if (rawBills is! List || rawPagination is! Map<String, dynamic>) {
+      throw const FormatException(
+        'The server returned invalid supplier bill history.',
+      );
+    }
+    return AdminSupplierPurchaseBillPage(
+      bills: rawBills
+          .whereType<Map<String, dynamic>>()
+          .map(AdminSupplierPurchaseBill.fromJson)
+          .toList(growable: false),
+      page: _asInt(rawPagination['page'], fallback: page),
+      pageSize: _asInt(rawPagination['pageSize'], fallback: pageSize),
+      total: _asInt(rawPagination['total']),
+    );
+  }
+}
+
 class AdminInventoryBatch {
   final String id;
   final String productId;

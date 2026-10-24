@@ -112,20 +112,6 @@ class AdminApiService {
         .toList(growable: false);
   }
 
-  Future<PosShiftHistoryPage> getPosShiftHistory({
-    int page = 1,
-    int pageSize = 20,
-  }) async {
-    if (page < 1 || pageSize < 1 || pageSize > 100) {
-      throw ArgumentError('Shift-history pagination is out of range.');
-    }
-    final response = _asMap(await _api.get(
-      '/admin/billing/shifts',
-      queryParams: {'page': '$page', 'pageSize': '$pageSize'},
-    ));
-    return PosShiftHistoryPage.fromJson(response);
-  }
-
   Future<BillingStaffAccount> setBillingStaffRole({
     required String userId,
     required String role,
@@ -156,39 +142,6 @@ class AdminApiService {
         .whereType<Map<String, dynamic>>()
         .map(PosProduct.fromJson)
         .toList(growable: false);
-  }
-
-  Future<({String id, DateTime openedAt})> openPosShift(
-    double openingCash,
-  ) async {
-    final response = _asMap(await _api.post(
-      '/admin/billing/shifts/open',
-      {'openingCash': openingCash},
-    ));
-    final shift = response['shift'];
-    if (shift is! Map<String, dynamic> ||
-        shift['id'] is! String ||
-        DateTime.tryParse(shift['openedAt'] as String? ?? '') == null) {
-      throw const FormatException(
-          'The server did not return the opened register.');
-    }
-    return (
-      id: shift['id'] as String,
-      openedAt: DateTime.parse(shift['openedAt'] as String),
-    );
-  }
-
-  Future<double> closePosShift(String shiftId, double actualCash) async {
-    final response = _asMap(await _api.post(
-      '/admin/billing/shifts/${Uri.encodeComponent(shiftId)}/close',
-      {'actualCash': actualCash},
-    ));
-    final expected = response['expected'];
-    if (expected is! num) {
-      throw const FormatException(
-          'The server did not return closing cash totals.');
-    }
-    return expected.toDouble();
   }
 
   Future<List<PosHeldSale>> getPosHeldSales() async {
@@ -278,11 +231,28 @@ class AdminApiService {
   Future<void> recordPosPayment(
     String id, {
     required String paymentMethod,
+    required double amount,
+    String? note,
   }) async {
-    await _api.patch(
-      '/admin/billing/sales/${Uri.encodeComponent(id)}/payment',
-      {'paymentMethod': paymentMethod},
+    await _api.post(
+      '/admin/billing/sales/${Uri.encodeComponent(id)}/payments',
+      {
+        'paymentMethod': paymentMethod,
+        'amount': amount,
+        'note': note,
+      },
     );
+  }
+
+  Future<PosSalesPage> getPosPendingPayments({
+    int page = 1,
+    int pageSize = 50,
+  }) async {
+    final response = _asMap(await _api.get(
+      '/admin/billing/pending-payments',
+      queryParams: {'page': '$page', 'pageSize': '$pageSize'},
+    ));
+    return PosSalesPage.fromJson(response);
   }
 
   Future<void> createPosRefund({
@@ -779,6 +749,7 @@ class AdminApiService {
   Future<AdminProductPage> getProducts({
     required int page,
     int pageSize = 20,
+    String? search,
     String? stock,
     bool? wholesale,
     bool? vendingDrink,
@@ -791,6 +762,8 @@ class AdminApiService {
           'page': '$page',
           'pageSize': '$pageSize',
           'sort': sort,
+          if (search != null && search.trim().isNotEmpty)
+            'search': search.trim(),
           if (stock != null) 'stock': stock,
           if (wholesale != null) 'wholesale': '$wholesale',
           if (vendingDrink != null) 'vendingDrink': '$vendingDrink',
@@ -1071,6 +1044,60 @@ class AdminApiService {
               pageSize: pageSize,
               total: receipts.length,
             ),
+    );
+  }
+
+  Future<AdminSupplierPurchaseBill> createSupplierPurchaseBill(
+    Map<String, dynamic> data, {
+    required Uint8List photoBytes,
+    required String photoFileName,
+  }) async {
+    final response = _asMap(
+      await _api.postFile(
+        '/admin/inventory/purchase-bills',
+        fieldName: 'image',
+        bytes: photoBytes,
+        fileName: photoFileName,
+        fields: {'bill': jsonEncode(data)},
+      ),
+    );
+    final bill = response['bill'];
+    if (bill is! Map<String, dynamic>) {
+      throw const FormatException(
+        'The server did not confirm the supplier purchase bill.',
+      );
+    }
+    return AdminSupplierPurchaseBill.fromJson(bill);
+  }
+
+  Future<Uint8List> getSupplierPurchaseBillPhoto(String billId) {
+    return _api.getBytes(
+      '/admin/inventory/purchase-bills/$billId/photo',
+    );
+  }
+
+  Future<AdminSupplierPurchaseBillPage> getSupplierPurchaseBills({
+    required int page,
+    int pageSize = 25,
+    String? search,
+    DateTime? day,
+  }) async {
+    final response = _asMap(
+      await _api.get(
+        '/admin/inventory/purchase-bills',
+        queryParams: {
+          'page': '$page',
+          'pageSize': '$pageSize',
+          if (search != null && search.trim().isNotEmpty)
+            'search': search.trim(),
+          if (day != null) 'day': _storeDayKey(day),
+        },
+      ),
+    );
+    return AdminSupplierPurchaseBillPage.fromJson(
+      response,
+      page: page,
+      pageSize: pageSize,
     );
   }
 

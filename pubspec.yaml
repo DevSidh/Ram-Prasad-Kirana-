@@ -1,7 +1,7 @@
 name: freshharvest_grocery
 description: "A production-grade grocery shopping & delivery mobile application built with Flutter & Material 3."
 publish_to: 'none'
-version: 3.0.3+17
+version: 3.0.5+19
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
@@ -24,6 +24,7 @@ dependencies:
 
   # Storage & Caching
   shared_preferences: ^2.2.2
+  path_provider: ^2.1.4
   cached_network_image: ^3.3.1
   cached_network_image_platform_interface: ^4.1.1
 
@@ -49,6 +50,7 @@ dependencies:
   pdf: ^3.13.1
   printing: ^5.15.1
   mobile_scanner: ^7.4.2
+  image_picker: ^1.2.4
 dev_dependencies:
   flutter_test:
     sdk: flutter

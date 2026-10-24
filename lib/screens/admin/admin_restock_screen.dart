@@ -3,12 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../../core/constants.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../theme/admin_widgets.dart';
+import '../../theme/app_colors.dart';
 import '../../widgets/store_animation.dart';
 import 'admin_inventory_expiry_screen.dart';
+import 'admin_supplier_bills_screen.dart';
 
 class AdminRestockScreen extends StatefulWidget {
   final ApiService api;
@@ -91,6 +93,15 @@ class _AdminRestockScreenState extends State<AdminRestockScreen> {
     );
   }
 
+  Future<void> _openSupplierBills() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => AdminSupplierBillsScreen(api: widget.api),
+      ),
+    );
+    if (mounted) await _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading && _products.isEmpty) {
@@ -111,44 +122,43 @@ class _AdminRestockScreenState extends State<AdminRestockScreen> {
       onRefresh: _load,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
         children: [
           Text(
-            'Restock queue',
-            style: TextStyle(
-              color: AppConstants.textDark,
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
             'Active products at or below their low-stock threshold.',
-            style: TextStyle(color: AppConstants.textMuted, fontSize: 13),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _QueueCount(
-                label: '${_products.length} to replenish',
-                icon: Icons.inventory_2_outlined,
-                color: AppConstants.primaryDark,
-              ),
-              _QueueCount(
-                label: '$outOfStockCount out of stock',
-                icon: Icons.error_outline_rounded,
-                color: outOfStockCount == 0
-                    ? AppConstants.textMuted
-                    : Colors.red.shade700,
-              ),
-            ],
+          AppSurface(
+            padding: const EdgeInsets.all(16),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _QueueCount(
+                  label: '${_products.length} to replenish',
+                  icon: Icons.inventory_2_outlined,
+                  color: AppColors.primary,
+                ),
+                _QueueCount(
+                  label: '$outOfStockCount out of stock',
+                  icon: Icons.error_outline_rounded,
+                  color: outOfStockCount == 0
+                      ? AppColors.muted
+                      : AppColors.errorText,
+                ),
+              ],
+            ),
           ),
           Wrap(
             alignment: WrapAlignment.end,
             spacing: 4,
             children: [
+              FilledButton.icon(
+                onPressed: _openSupplierBills,
+                icon: const Icon(Icons.receipt_long_outlined),
+                label: const Text('Supplier bills'),
+              ),
               TextButton.icon(
                 onPressed: _openExpiry,
                 icon: const Icon(Icons.event_busy_outlined),
@@ -163,7 +173,7 @@ class _AdminRestockScreenState extends State<AdminRestockScreen> {
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
-            Text(_error!, style: const TextStyle(color: Colors.red)),
+            Text(_error!, style: const TextStyle(color: AppColors.errorText)),
           ],
           if (_loading) ...[
             const SizedBox(height: 12),
@@ -276,11 +286,11 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
         onRefresh: () => _load(page: _page),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+          padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
           children: [
-            Text(
+            const Text(
               'Stock receipts recorded by admin staff.',
-              style: TextStyle(color: AppConstants.textMuted, fontSize: 13),
+              style: TextStyle(color: AppColors.muted),
             ),
             const SizedBox(height: 10),
             Wrap(
@@ -311,7 +321,7 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
             ),
             if (_error != null) ...[
               const SizedBox(height: 10),
-              Text(_error!, style: const TextStyle(color: Colors.red)),
+              Text(_error!, style: const TextStyle(color: AppColors.errorText)),
             ],
             if (_loading) ...[
               const SizedBox(height: 12),
@@ -364,9 +374,15 @@ class _RestockReceiptCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppConstants.surfaceLight,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppConstants.borderLight),
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        boxShadow: const [
+          BoxShadow(
+            color: AppColors.cardShadow,
+            offset: Offset(0, 6),
+            blurRadius: 24,
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -375,15 +391,12 @@ class _RestockReceiptCard extends StatelessWidget {
             receipt.productName,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: AppConstants.textDark,
-              fontWeight: FontWeight.w800,
-            ),
+            style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 3),
           Text(
             '${receipt.productSku} · $date · $time',
-            style: TextStyle(color: AppConstants.textMuted, fontSize: 11),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 9),
           Wrap(
@@ -392,14 +405,14 @@ class _RestockReceiptCard extends StatelessWidget {
             children: [
               Text(
                 _receiptQuantityLabel(receipt),
-                style: TextStyle(
-                  color: AppConstants.primaryDark,
+                style: const TextStyle(
+                  color: AppColors.primary,
                   fontWeight: FontWeight.w800,
                 ),
               ),
               Text(
                 '${_formatQuantity(receipt.balanceAfter)} available after receipt',
-                style: TextStyle(color: AppConstants.textMuted),
+                style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
           ),
@@ -408,17 +421,16 @@ class _RestockReceiptCard extends StatelessWidget {
             receipt.staffName == null
                 ? 'Staff account unavailable for this receipt'
                 : 'Recorded by ${receipt.staffName}',
-            style: TextStyle(
-              color: AppConstants.textDark,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w600,
+                ),
           ),
           if (receipt.notes?.isNotEmpty == true) ...[
             const SizedBox(height: 4),
             Text(
               receipt.notes!,
-              style: TextStyle(color: AppConstants.textMuted, fontSize: 12),
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
         ],
@@ -448,14 +460,11 @@ class _RestockHistoryEmptyState extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 48),
       child: Column(
         children: [
-          Icon(Icons.history_rounded, size: 40, color: AppConstants.textMuted),
+          const Icon(Icons.history_rounded, size: 40, color: AppColors.muted),
           const SizedBox(height: 10),
           Text(
             'No stock receipts yet',
-            style: TextStyle(
-              color: AppConstants.textDark,
-              fontWeight: FontWeight.w800,
-            ),
+            style: Theme.of(context).textTheme.titleMedium,
           ),
         ],
       ),
@@ -476,29 +485,12 @@ class _QueueCount extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.09),
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 16, color: color),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-      ),
+    return AppStatusPill(
+      label,
+      icon: icon,
+      variant: color == AppColors.errorText
+          ? AppStatusVariant.error
+          : AppStatusVariant.neutral,
     );
   }
 }
@@ -515,76 +507,26 @@ class _RestockProductCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isOutOfStock = product.availableStock == 0;
-    final statusColor =
-        isOutOfStock ? Colors.red.shade700 : Colors.orange.shade800;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppConstants.surfaceLight,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppConstants.borderLight),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                isOutOfStock
-                    ? Icons.remove_shopping_cart_outlined
-                    : Icons.inventory_2_outlined,
-                color: statusColor,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  product.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppConstants.textDark,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            product.brand?.isNotEmpty == true ? product.brand! : product.sku,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: AppConstants.textMuted, fontSize: 12),
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              Text(
-                '${product.availableStockLabel} available',
-                style: TextStyle(
-                  color: statusColor,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              Text(
-                'Alert at ${product.lowStockThreshold}',
-                style: TextStyle(color: AppConstants.textMuted),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton.icon(
-              onPressed: onRestock,
-              icon: const Icon(Icons.add_box_outlined, size: 18),
-              label: const Text('Restock'),
-            ),
-          ),
-        ],
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: AppRowCard(
+        title: product.name,
+        subtitle:
+            '${product.brand?.isNotEmpty == true ? product.brand : product.sku}'
+            ' · ${product.availableStockLabel} available'
+            ' · Alert at ${product.lowStockThreshold}',
+        leading: Icon(
+          isOutOfStock
+              ? Icons.remove_shopping_cart_outlined
+              : Icons.inventory_2_outlined,
+          size: 20,
+        ),
+        tint: isOutOfStock ? AppColors.thumbnailRed : AppColors.thumbnailAmber,
+        trailing: FilledButton.icon(
+          onPressed: onRestock,
+          icon: const Icon(Icons.add_box_outlined, size: 18),
+          label: const Text('Restock'),
+        ),
       ),
     );
   }
@@ -599,17 +541,16 @@ class _RestockEmptyState extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 52),
       child: Column(
         children: [
-          Icon(
+          const Icon(
             Icons.task_alt_rounded,
             size: 42,
-            color: AppConstants.primaryDark,
+            color: AppColors.primary,
           ),
           const SizedBox(height: 12),
-          Text(
+          const Text(
             'Nothing to replenish',
             style: TextStyle(
-              color: AppConstants.textDark,
-              fontSize: 16,
+              color: AppColors.primary,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -617,7 +558,7 @@ class _RestockEmptyState extends StatelessWidget {
           Text(
             'Products needing stock will appear here.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppConstants.textMuted),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ),
@@ -752,7 +693,7 @@ class _RestockDialogState extends State<_RestockDialog> {
                 const SizedBox(height: 4),
                 Text(
                   'Current available stock: ${widget.product.availableStockLabel}',
-                  style: TextStyle(color: AppConstants.textMuted, fontSize: 12),
+                  style: const TextStyle(color: AppColors.muted),
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
@@ -880,7 +821,10 @@ class _RestockDialogState extends State<_RestockDialog> {
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 8),
-                  Text(_error!, style: const TextStyle(color: Colors.red)),
+                  Text(
+                    _error!,
+                    style: const TextStyle(color: AppColors.errorText),
+                  ),
                 ],
               ],
             ),

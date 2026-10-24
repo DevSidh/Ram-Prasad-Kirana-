@@ -2,11 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../core/constants.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
 import '../../widgets/store_animation.dart';
+import '../../theme/admin_widgets.dart';
+import '../../theme/app_colors.dart';
 
 class AdminInventoryExpiryScreen extends StatefulWidget {
   final ApiService api;
@@ -130,196 +131,199 @@ class _AdminInventoryExpiryScreenState
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: () => _load(page: _page),
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-          children: [
-            Text(
-              'Review dated stock and prioritize batches with the earliest expiry.',
-              style: TextStyle(color: AppConstants.textMuted, fontSize: 13),
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _ExpirySummary(
-                  count: result.expiredBatches,
-                  label: 'expired batches',
-                  color: Colors.red.shade700,
-                  icon: Icons.error_outline_rounded,
-                ),
-                _ExpirySummary(
-                  count: result.expiringTodayBatches,
-                  label: 'expire today',
-                  color: Colors.deepOrange.shade700,
-                  icon: Icons.today_outlined,
-                ),
-                _ExpirySummary(
-                  count: result.expiringSoonBatches,
-                  label: 'within ${result.warningDays} days',
-                  color: Colors.orange.shade800,
-                  icon: Icons.schedule_rounded,
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 10,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                SizedBox(
-                  width: 155,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _status,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Show batches',
-                      border: OutlineInputBorder(),
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 'all', child: Text('All dated')),
-                      DropdownMenuItem(
-                        value: 'expiring',
-                        child: Text('Expiring soon'),
-                      ),
-                      DropdownMenuItem(value: 'today', child: Text('Today')),
-                      DropdownMenuItem(
-                          value: 'expired', child: Text('Expired')),
-                    ],
-                    onChanged: _loading
-                        ? null
-                        : (value) {
-                            if (value != null) {
-                              _changeFilter(status: value);
-                            }
-                          },
-                  ),
-                ),
-                SizedBox(
-                  width: 155,
-                  child: DropdownButtonFormField<int>(
-                    initialValue: _warningDays,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Warning window',
-                      border: OutlineInputBorder(),
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    ),
-                    items: const [7, 15, 30, 60]
-                        .map(
-                          (days) => DropdownMenuItem(
-                            value: days,
-                            child: Text('$days days'),
-                          ),
-                        )
-                        .toList(growable: false),
-                    onChanged: _loading
-                        ? null
-                        : (value) {
-                            if (value != null) {
-                              _changeFilter(warningDays: value);
-                            }
-                          },
-                  ),
-                ),
-                FilterChip(
-                  label: const Text('Low stock only'),
-                  selected: _lowStockOnly,
-                  onSelected: _loading
-                      ? null
-                      : (value) => _changeFilter(lowStockOnly: value),
-                ),
-                SizedBox(
-                  width: 190,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _categoryId ?? '',
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Category',
-                      border: OutlineInputBorder(),
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    ),
-                    items: [
-                      const DropdownMenuItem(
-                        value: '',
-                        child: Text('All categories'),
-                      ),
-                      ..._categories.map(
-                        (category) => DropdownMenuItem(
-                          value: category.id,
-                          child: Text(
-                            category.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                    ],
-                    onChanged: _loading
-                        ? null
-                        : (value) => _changeCategory(
-                              value == null || value.isEmpty ? null : value,
-                            ),
-                  ),
-                ),
-              ],
-            ),
-            if (_categoryError != null) ...[
-              const SizedBox(height: 8),
+      body: AdminGradientBackground(
+        child: RefreshIndicator(
+          onRefresh: () => _load(page: _page),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(8, 24, 30, 28),
+            children: [
               Text(
-                'Category filters unavailable: $_categoryError',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                  fontSize: 12,
-                ),
+                'Review dated stock and prioritize batches with the earliest expiry.',
+                style: Theme.of(context).textTheme.bodySmall,
               ),
-            ],
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(_error!, style: const TextStyle(color: Colors.red)),
-            ],
-            if (_loading) ...[
-              const SizedBox(height: 12),
-              const LinearProgressIndicator(),
-            ],
-            const SizedBox(height: 14),
-            if (result.batches.isEmpty)
-              const _ExpiryEmptyState()
-            else
-              ...result.batches.map(
-                (batch) => _ExpiryBatchCard(batch: batch),
-              ),
-            if (pageCount > 1)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: [
-                  TextButton.icon(
-                    onPressed: _loading || _page <= 1
-                        ? null
-                        : () => _load(page: _page - 1),
-                    icon: const Icon(Icons.chevron_left_rounded),
-                    label: const Text('Previous'),
+                  _ExpirySummary(
+                    count: result.expiredBatches,
+                    label: 'expired batches',
+                    color: AppColors.errorText,
+                    icon: Icons.error_outline_rounded,
                   ),
-                  Text('Page $_page of $pageCount'),
-                  TextButton.icon(
-                    onPressed: _loading || _page >= pageCount
-                        ? null
-                        : () => _load(page: _page + 1),
-                    icon: const Icon(Icons.chevron_right_rounded),
-                    label: const Text('Next'),
-                    iconAlignment: IconAlignment.end,
+                  _ExpirySummary(
+                    count: result.expiringTodayBatches,
+                    label: 'expire today',
+                    color: AppColors.warningText,
+                    icon: Icons.today_outlined,
+                  ),
+                  _ExpirySummary(
+                    count: result.expiringSoonBatches,
+                    label: 'within ${result.warningDays} days',
+                    color: AppColors.warningText,
+                    icon: Icons.schedule_rounded,
                   ),
                 ],
               ),
-          ],
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 155,
+                    child: DropdownButtonFormField<String>(
+                      initialValue: _status,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Show batches',
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                            value: 'all', child: Text('All dated')),
+                        DropdownMenuItem(
+                          value: 'expiring',
+                          child: Text('Expiring soon'),
+                        ),
+                        DropdownMenuItem(value: 'today', child: Text('Today')),
+                        DropdownMenuItem(
+                            value: 'expired', child: Text('Expired')),
+                      ],
+                      onChanged: _loading
+                          ? null
+                          : (value) {
+                              if (value != null) {
+                                _changeFilter(status: value);
+                              }
+                            },
+                    ),
+                  ),
+                  SizedBox(
+                    width: 155,
+                    child: DropdownButtonFormField<int>(
+                      initialValue: _warningDays,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Warning window',
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                      items: const [7, 15, 30, 60]
+                          .map(
+                            (days) => DropdownMenuItem(
+                              value: days,
+                              child: Text('$days days'),
+                            ),
+                          )
+                          .toList(growable: false),
+                      onChanged: _loading
+                          ? null
+                          : (value) {
+                              if (value != null) {
+                                _changeFilter(warningDays: value);
+                              }
+                            },
+                    ),
+                  ),
+                  FilterChip(
+                    label: const Text('Low stock only'),
+                    selected: _lowStockOnly,
+                    onSelected: _loading
+                        ? null
+                        : (value) => _changeFilter(lowStockOnly: value),
+                  ),
+                  SizedBox(
+                    width: 190,
+                    child: DropdownButtonFormField<String>(
+                      initialValue: _categoryId ?? '',
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Category',
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                      items: [
+                        const DropdownMenuItem(
+                          value: '',
+                          child: Text('All categories'),
+                        ),
+                        ..._categories.map(
+                          (category) => DropdownMenuItem(
+                            value: category.id,
+                            child: Text(
+                              category.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      ],
+                      onChanged: _loading
+                          ? null
+                          : (value) => _changeCategory(
+                                value == null || value.isEmpty ? null : value,
+                              ),
+                    ),
+                  ),
+                ],
+              ),
+              if (_categoryError != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Category filters unavailable: $_categoryError',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                ),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                AppBanner(
+                  message: _error!,
+                  variant: AppStatusVariant.error,
+                  icon: Icons.error_outline_rounded,
+                ),
+              ],
+              if (_loading) ...[
+                const SizedBox(height: 12),
+                const LinearProgressIndicator(),
+              ],
+              const SizedBox(height: 14),
+              if (result.batches.isEmpty)
+                const _ExpiryEmptyState()
+              else
+                ...result.batches.map(
+                  (batch) => _ExpiryBatchCard(batch: batch),
+                ),
+              if (pageCount > 1)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton.icon(
+                      onPressed: _loading || _page <= 1
+                          ? null
+                          : () => _load(page: _page - 1),
+                      icon: const Icon(Icons.chevron_left_rounded),
+                      label: const Text('Previous'),
+                    ),
+                    Text('Page $_page of $pageCount'),
+                    TextButton.icon(
+                      onPressed: _loading || _page >= pageCount
+                          ? null
+                          : () => _load(page: _page + 1),
+                      icon: const Icon(Icons.chevron_right_rounded),
+                      label: const Text('Next'),
+                      iconAlignment: IconAlignment.end,
+                    ),
+                  ],
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -400,11 +404,11 @@ class _ExpiryBatchCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = switch (batch.expiryStatus) {
-      'expired' => Colors.red.shade700,
-      'today' => Colors.deepOrange.shade700,
-      'expiring' => Colors.orange.shade800,
-      'dates_unverified' => AppConstants.textMuted,
-      _ => Colors.green.shade700,
+      'expired' => AppColors.errorText,
+      'today' => AppColors.warningText,
+      'expiring' => AppColors.warningText,
+      'dates_unverified' => AppColors.muted,
+      _ => AppColors.successText,
     };
     final statusText = switch (batch.expiryStatus) {
       'expired' => 'Expired',
@@ -439,7 +443,7 @@ class _ExpiryBatchCard extends StatelessWidget {
                 height: 42,
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(AppRadii.thumbnail),
                 ),
                 child: Icon(Icons.inventory_2_outlined, color: color),
               ),
@@ -450,25 +454,19 @@ class _ExpiryBatchCard extends StatelessWidget {
                   children: [
                     Text(
                       batch.productName,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: 3),
                     Text(
                       '${batch.sku} · $quantity ${weightStock ? 'kg' : 'units'} remaining',
-                      style: TextStyle(
-                        color: AppConstants.textMuted,
-                        fontSize: 12,
-                      ),
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                     if (batch.lotNumber != null &&
                         batch.lotNumber!.trim().isNotEmpty) ...[
                       const SizedBox(height: 3),
                       Text(
                         'Lot ${batch.lotNumber}',
-                        style: TextStyle(
-                          color: AppConstants.textMuted,
-                          fontSize: 12,
-                        ),
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
                     if (manufacturedDate != null || expiryDate != null) ...[
@@ -478,37 +476,24 @@ class _ExpiryBatchCard extends StatelessWidget {
                           if (manufacturedDate != null) 'MFG $manufacturedDate',
                           if (expiryDate != null) 'EXP $expiryDate',
                         ].join(' · '),
-                        style: TextStyle(
-                          color: AppConstants.textMuted,
-                          fontSize: 12,
-                        ),
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
                     const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 9, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        statusText,
-                        style: TextStyle(
-                          color: color,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                    AppStatusPill(
+                      statusText,
+                      variant: switch (batch.expiryStatus) {
+                        'expired' => AppStatusVariant.error,
+                        'today' || 'expiring' => AppStatusVariant.warning,
+                        'dates_unverified' => AppStatusVariant.neutral,
+                        _ => AppStatusVariant.success,
+                      },
                     ),
                     if (batch.barcode != null && batch.barcode!.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
                         'Barcode ${batch.barcode}',
-                        style: TextStyle(
-                          color: AppConstants.textMuted,
-                          fontSize: 11,
-                        ),
+                        style: Theme.of(context).textTheme.labelSmall,
                       ),
                     ],
                   ],
@@ -534,10 +519,10 @@ class _ExpiryEmptyState extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 42),
       child: Column(
         children: [
-          Icon(
+          const Icon(
             Icons.event_available_outlined,
             size: 42,
-            color: AppConstants.textMuted,
+            color: AppColors.muted,
           ),
           const SizedBox(height: 10),
           const Text(
@@ -548,7 +533,7 @@ class _ExpiryEmptyState extends StatelessWidget {
           Text(
             'New receipts with verified dates will appear here.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppConstants.textMuted, fontSize: 13),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ),

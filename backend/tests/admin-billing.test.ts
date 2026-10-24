@@ -133,16 +133,15 @@ async function main(): Promise<void> {
     await new Promise<void>((resolve) => server.once('listening', resolve));
     const address = server.address();
     assert(address && typeof address !== 'string');
-    const endpoint = `http://127.0.0.1:${address.port}/billing/shifts/open`;
-    const open = (openingCash: unknown) => fetch(endpoint, {
+    const endpoint = `http://127.0.0.1:${address.port}/billing`;
+    const removedOpenRoute = await fetch(`${endpoint}/shifts/open`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ openingCash }),
+      body: JSON.stringify({ openingCash: 500 }),
     });
-    assert.equal((await open('not-a-number')).status, 400);
-    assert.equal((await open(500)).status, 201);
-    assert.equal((await open(250)).status, 409);
-    const saleEndpoint = `http://127.0.0.1:${address.port}/billing/sales`;
+    assert.equal(removedOpenRoute.status, 404);
+    assert.equal((await fetch(`${endpoint}/shifts`)).status, 404);
+    const saleEndpoint = `${endpoint}/sales`;
     const saleResponse = await fetch(saleEndpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -193,11 +192,11 @@ async function main(): Promise<void> {
         paymentMethod: 'CASH',
       }),
     });
-    assert.equal(staffSaleResponse.status, 409);
-    assert.equal(activeShift, null);
+    assert.equal(staffSaleResponse.status, 201);
+    assert.equal(activeShift?.cashierId, 'admin-1');
 
     const heldSaleResponse = await fetch(
-      `${endpoint.replace('/shifts/open', '/held-sales')}`,
+      `${endpoint}/held-sales`,
       {
         method: 'POST',
         headers: {
@@ -241,14 +240,14 @@ async function main(): Promise<void> {
     assert.equal(stockConsumptionCashierId, 'admin-1');
 
     assert.equal(
-      (await fetch(`${endpoint.replace('/shifts/open', '/refunds')}`)).status,
+      (await fetch(`${endpoint}/refunds`)).status,
       403,
     );
     assert.equal(
-      (await fetch(`${endpoint.replace('/shifts/open', '/staff')}`)).status,
+      (await fetch(`${endpoint}/staff`)).status,
       403,
     );
-    console.log('POS staff shift enforcement and Admin automatic register passed.');
+    console.log('POS billing works without cashier shift management.');
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => error ? reject(error) : resolve());

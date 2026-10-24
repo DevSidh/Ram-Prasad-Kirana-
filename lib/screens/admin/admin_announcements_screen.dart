@@ -2,10 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../core/constants.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../theme/admin_widgets.dart';
+import '../../theme/app_colors.dart';
 
 class AdminAnnouncementsScreen extends StatefulWidget {
   final ApiService api;
@@ -177,26 +178,16 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+      padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
       children: [
         Text(
-          'Faststore',
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
-        ),
-        const SizedBox(height: 6),
-        Text(
           'Send a promotion or update to all active accounts or one selected customer. Customers see Faststore as the notification title; your announcement title appears in the message.',
-          style: TextStyle(color: AppConstants.textMuted, height: 1.4),
+          style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 18),
         Card(
-          elevation: 0,
-          color: AppConstants.surfaceLight,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: BorderSide(color: AppConstants.borderLight),
+            borderRadius: BorderRadius.circular(AppRadii.card),
           ),
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -251,7 +242,8 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                           offset: const Offset(0, 6),
                           child: Material(
                             elevation: 12,
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius:
+                                BorderRadius.circular(AppRadii.thumbnail),
                             clipBehavior: Clip.antiAlias,
                             child: SizedBox(
                               width: width,
@@ -340,11 +332,13 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
                           'Customer selected: ${_customerResults.firstWhere((customer) => customer.id == _selectedCustomerId).name}',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                          ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontWeight: FontWeight.w700,
+                              ),
                         ),
                       ),
                     if (_selectedCustomerId == null)
@@ -352,10 +346,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
                           'Search by profile ID (for example USR-000042), name, phone, or email.',
-                          style: TextStyle(
-                            color: AppConstants.textMuted,
-                            fontSize: 11,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),
                   ],
@@ -432,7 +423,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                     const SizedBox(height: 10),
                     _AnnouncementStatus(
                       icon: Icons.check_circle_outline_rounded,
-                      color: AppConstants.primaryDark,
+                      color: AppColors.successBannerText,
                       message: _resultMessage(_lastResult!),
                     ),
                   ],
@@ -452,12 +443,6 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                           : _recipientMode == 'all'
                               ? 'Review and send to all'
                               : 'Review and send to customer',
-                    ),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(50),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
                     ),
                   ),
                 ],
@@ -503,22 +488,11 @@ class _AnnouncementStatus extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: .08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: .22)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(width: 8),
-          Expanded(child: Text(message, style: TextStyle(color: color))),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => AppBanner(
+        message: message,
+        icon: icon,
+        variant: color == AppColors.error || color == AppColors.errorText
+            ? AppStatusVariant.error
+            : AppStatusVariant.success,
+      );
 }

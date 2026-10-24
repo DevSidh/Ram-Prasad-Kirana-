@@ -14,7 +14,6 @@ import '../../models/coupon_quote.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/cart_provider.dart';
 import '../../providers/order_provider.dart';
-import '../../providers/store_availability_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../services/address_service.dart';
@@ -542,26 +541,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
 
     setState(() => _isSubmitting = true);
+    var orderRequestStarted = false;
 
     try {
-      final storeAvailability = context.read<StoreAvailabilityProvider>();
-      await storeAvailability.refresh();
-      if (!mounted) return;
-      final availability = storeAvailability.availability;
-      if (availability != null && !availability.isAcceptingOrders) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              context
-                      .read<AppLanguageProvider?>()
-                      ?.translate(availability.statusMessage) ??
-                  availability.statusMessage,
-            ),
-          ),
-        );
-        return;
-      }
-
+      orderRequestStarted = true;
       final order = await orderProvider.placeOrder(
         items: cart.itemList,
         address: address,
@@ -584,10 +567,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
     } catch (error) {
       if (mounted) {
+        final message = orderRequestStarted &&
+                (error is ApiTimeoutException || error is ApiNetworkException)
+            ? 'We could not confirm whether your order was accepted. Check My Orders before retrying. Retrying from this checkout is protected against duplicates.'
+            : error.toString().replaceFirst('Exception: ', '');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(error.toString().replaceFirst('Exception: ', '')),
-          ),
+          SnackBar(content: Text(message)),
         );
       }
     } finally {

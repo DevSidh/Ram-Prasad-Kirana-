@@ -1,13 +1,14 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
-import '../../core/constants.dart';
 import '../../core/product_sku.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../theme/app_colors.dart';
 import '../../widgets/product_thumbnail.dart';
 import '../../widgets/store_animation.dart';
 
@@ -27,6 +28,8 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
   String? _error;
   bool _loading = true;
   int _pageNumber = 1;
+  int _loadRequest = 0;
+  Timer? _searchTimer;
 
   @override
   void initState() {
@@ -36,11 +39,13 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
 
   @override
   void dispose() {
+    _searchTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
 
   Future<void> _load({int page = 1}) async {
+    final request = ++_loadRequest;
     setState(() {
       _loading = true;
       _error = null;
@@ -50,19 +55,26 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
         page: page,
         search: _searchController.text,
       );
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _page = result;
         _pageNumber = page;
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _error = _cleanError(error);
         _loading = false;
       });
     }
+  }
+
+  void _onSearchChanged(String value) {
+    _searchTimer?.cancel();
+    _searchTimer = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) _load(page: 1);
+    });
   }
 
   Future<void> _editItem([AdminWholesaleItem? item]) async {
@@ -146,29 +158,29 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
     return RefreshIndicator(
       onRefresh: () => _load(page: _pageNumber),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+        padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
         children: [
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: const Color(0xFF103D32),
-              borderRadius: BorderRadius.circular(18),
+              color: AppColors.darkGreen,
+              borderRadius: BorderRadius.circular(AppRadii.card),
             ),
-            child: const Column(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   'Wholesale inventory',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 21,
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: AppColors.surface,
+                      ),
                 ),
-                SizedBox(height: 5),
+                const SizedBox(height: 5),
                 Text(
                   'Separate items, prices and stock for bulk orders.',
-                  style: TextStyle(color: Color(0xFFD6E9DF), fontSize: 12),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.pageEnd,
+                      ),
                 ),
               ],
             ),
@@ -180,14 +192,32 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
               final search = TextField(
                 controller: _searchController,
                 textInputAction: TextInputAction.search,
-                onSubmitted: (_) => _load(page: 1),
+                onChanged: _onSearchChanged,
+                onSubmitted: (_) {
+                  _searchTimer?.cancel();
+                  _load(page: 1);
+                },
                 decoration: InputDecoration(
                   hintText: 'Find a wholesale item',
                   prefixIcon: const Icon(Icons.search_rounded),
                   suffixIcon: IconButton(
-                    tooltip: 'Search',
-                    onPressed: () => _load(page: 1),
-                    icon: const Icon(Icons.arrow_forward_rounded),
+                    tooltip: _searchController.text.isEmpty
+                        ? 'Search'
+                        : 'Clear search',
+                    onPressed: _searchController.text.isEmpty
+                        ? () {
+                            _searchTimer?.cancel();
+                            _load(page: 1);
+                          }
+                        : () {
+                            _searchController.clear();
+                            _load(page: 1);
+                          },
+                    icon: Icon(
+                      _searchController.text.isEmpty
+                          ? Icons.arrow_forward_rounded
+                          : Icons.close_rounded,
+                    ),
                   ),
                 ),
               );
@@ -214,11 +244,9 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
             const SizedBox(height: 12),
             Text(
               '${_page!.pagination.total} separate wholesale items',
-              style: TextStyle(
-                color: AppConstants.textMuted,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
             ),
           ],
           if (_error != null) ...[
@@ -273,18 +301,24 @@ class _WholesaleItemCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppConstants.surfaceLight,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppConstants.borderLight),
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        boxShadow: const [
+          BoxShadow(
+            color: AppColors.cardShadow,
+            offset: Offset(0, 6),
+            blurRadius: 24,
+          ),
+        ],
       ),
       child: Row(
         children: [
           ProductThumbnail(
             imageUrl: item.imageUrl ?? '',
-            size: 64,
+            size: 42,
             fit: BoxFit.contain,
-            borderRadius: BorderRadius.circular(12),
-            backgroundColor: Colors.white,
+            borderRadius: BorderRadius.circular(AppRadii.thumbnail),
+            backgroundColor: AppColors.thumbnailBlue,
             imageWidthFactor: .77,
           ),
           const SizedBox(width: 12),
@@ -296,14 +330,14 @@ class _WholesaleItemCard extends StatelessWidget {
                   item.name,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 3),
                 Text(
                   '${item.sku} · ${item.categoryName}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: AppConstants.textMuted, fontSize: 11),
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 5),
                 Text(
@@ -311,11 +345,10 @@ class _WholesaleItemCard extends StatelessWidget {
                   'Min ${item.minimumQuantity} · Stock ${item.stock}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppConstants.primary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
                 ),
               ],
             ),
@@ -650,7 +683,10 @@ class _WholesaleItemFormState extends State<_WholesaleItemForm> {
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
-                  Text(_error!, style: const TextStyle(color: Colors.red)),
+                  Text(
+                    _error!,
+                    style: const TextStyle(color: AppColors.errorText),
+                  ),
                 ],
               ],
             ),
@@ -750,8 +786,11 @@ class _InlineWholesaleError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListTile(
-        leading: const Icon(Icons.cloud_off_outlined, color: Colors.red),
-        title: Text(message, style: const TextStyle(fontSize: 12)),
+        leading: const Icon(
+          Icons.cloud_off_outlined,
+          color: AppColors.errorText,
+        ),
+        title: Text(message, style: Theme.of(context).textTheme.bodySmall),
         trailing: IconButton(
           tooltip: 'Retry',
           onPressed: onRetry,
@@ -764,25 +803,25 @@ class _WholesaleEmptyState extends StatelessWidget {
   const _WholesaleEmptyState();
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 44, horizontal: 24),
+  Widget build(BuildContext context) => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 44, horizontal: 24),
         child: Column(
           children: [
             Icon(
               Icons.inventory_2_outlined,
               size: 42,
-              color: AppConstants.textMuted,
+              color: AppColors.muted,
             ),
-            const SizedBox(height: 10),
-            const Text(
+            SizedBox(height: 10),
+            Text(
               'No wholesale items yet',
               style: TextStyle(fontWeight: FontWeight.w800),
             ),
-            const SizedBox(height: 4),
+            SizedBox(height: 4),
             Text(
               'Add a separate wholesale item to make it available to bulk customers.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppConstants.textMuted, fontSize: 12),
+              style: TextStyle(color: AppColors.muted),
             ),
           ],
         ),

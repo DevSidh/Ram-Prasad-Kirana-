@@ -25,11 +25,11 @@
 	<key>NSFaceIDUsageDescription</key>
 	<string>Use Face ID to unlock your saved store sign-in.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Scan product barcodes when recording store inventory.</string>
+	<string>Take supplier bill photos and scan product barcodes when recording store inventory.</string>
 	<key>GoogleMapsApiKey</key>
 	<string>$(GOOGLE_MAPS_API_KEY)</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Use your current location to fill in a delivery address.</string>
+	<string>Use your current location to fill in a delivery address and, with your consent, share live delivery progress with the assigned delivery partner while an order is out for delivery.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../../core/constants.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../theme/admin_widgets.dart';
+import '../../theme/app_colors.dart';
 
 class AdminDeliveryPeopleScreen extends StatefulWidget {
   final ApiService api;
@@ -269,28 +270,11 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+        padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
         children: [
           Row(
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Delivery team',
-                      style:
-                          TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Create staff accounts and check who is on duty.',
-                      style: TextStyle(color: AppConstants.textMuted),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
+              const Spacer(),
               FilledButton.icon(
                 onPressed: _savingId == 'new' ? null : _createPerson,
                 icon: _savingId == 'new'
@@ -348,14 +332,11 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Delivery board',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-        ),
+        const AppSectionLabel('Delivery board'),
         const SizedBox(height: 4),
-        Text(
+        const Text(
           'Review orders, customer details and rider progress. Assign ready orders to an on-duty rider.',
-          style: TextStyle(color: AppConstants.textMuted, height: 1.4),
+          style: TextStyle(color: AppColors.muted, height: 1.4),
         ),
         const SizedBox(height: 10),
         Wrap(
@@ -434,11 +415,11 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
             child: Center(child: CircularProgressIndicator()),
           )
         else if (orders.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 18),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 18),
             child: Text(
               'No orders match this delivery view.',
-              style: TextStyle(color: AppConstants.textMuted),
+              style: TextStyle(color: AppColors.muted),
             ),
           )
         else
@@ -489,9 +470,9 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
             ],
           ),
         const Divider(height: 28),
-        const Text(
+        Text(
           'Delivery team',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+          style: Theme.of(context).textTheme.titleLarge,
         ),
       ],
     );
@@ -515,12 +496,6 @@ class _DeliveryFilterChip extends StatelessWidget {
       label: Text(label),
       selected: selected,
       onSelected: (_) => onTap(),
-      selectedColor: AppConstants.primaryLight,
-      labelStyle: TextStyle(
-        color: selected ? AppConstants.primaryDark : AppConstants.textMuted,
-        fontSize: 12,
-        fontWeight: FontWeight.w700,
-      ),
     );
   }
 }
@@ -546,10 +521,8 @@ class _DeliveryOrderAdminCard extends StatelessWidget {
         order.deliveryStatus?.replaceAll('_', ' ') ?? 'Not assigned';
     return Card(
       margin: const EdgeInsets.only(bottom: 9),
-      elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(15),
-        side: BorderSide(color: AppConstants.borderLight),
+        borderRadius: BorderRadius.circular(AppRadii.row),
       ),
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 3),
@@ -558,17 +531,14 @@ class _DeliveryOrderAdminCard extends StatelessWidget {
           '${order.orderNumber} · ${order.customerName}',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+          style: Theme.of(context).textTheme.titleMedium,
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4),
           child: Text(
             '$deliveryStatus · ${order.status.replaceAll('_', ' ')} · '
             'Rs. ${order.total.toStringAsFixed(0)}',
-            style: TextStyle(
-              color: AppConstants.textMuted,
-              fontSize: 11,
-            ),
+            style: Theme.of(context).textTheme.labelSmall,
           ),
         ),
         trailing: isAssigning
@@ -608,12 +578,12 @@ class _DeliveryOrderAdminCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       '${item.name} × ${item.quantity}',
-                      style: const TextStyle(fontSize: 12),
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
                   Text(
                     'Rs. ${item.total.toStringAsFixed(0)}',
-                    style: const TextStyle(fontSize: 12),
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
               ),
@@ -641,10 +611,7 @@ class _DeliveryOrderAdminCard extends StatelessWidget {
                       .whereType<String>()
                       .where((value) => value.isNotEmpty)
                       .join(' · '),
-                  style: TextStyle(
-                    color: AppConstants.textMuted,
-                    fontSize: 11,
-                  ),
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
           ],
@@ -669,8 +636,8 @@ class _DeliveryOrderAdminCard extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
                   decoration: BoxDecoration(
-                    color: AppConstants.primaryLight,
-                    borderRadius: BorderRadius.circular(11),
+                    color: AppColors.pageEnd,
+                    borderRadius: BorderRadius.circular(AppRadii.row),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -713,13 +680,15 @@ class _AdminDeliveryDetail extends StatelessWidget {
             width: 82,
             child: Text(
               label,
-              style: TextStyle(
-                color: AppConstants.textMuted,
-                fontSize: 11,
-              ),
+              style: Theme.of(context).textTheme.labelSmall,
             ),
           ),
-          Expanded(child: Text(value, style: const TextStyle(fontSize: 12))),
+          Expanded(
+            child: Text(
+              value,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
         ],
       ),
     );
@@ -747,10 +716,8 @@ class _CashHandoverSection extends StatelessWidget {
     );
     return Card(
       margin: EdgeInsets.zero,
-      elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: AppConstants.borderLight),
+        borderRadius: BorderRadius.circular(AppRadii.card),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -776,11 +743,9 @@ class _CashHandoverSection extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               'Confirm only after the delivery staff hands the collected cash to the store.',
-              style: TextStyle(
-                color: AppConstants.textMuted,
-                fontSize: 12,
-                height: 1.35,
-              ),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    height: 1.35,
+                  ),
             ),
             if (isLoading && deliveries.isEmpty)
               const Padding(
@@ -793,11 +758,11 @@ class _CashHandoverSection extends StatelessWidget {
                 ),
               )
             else if (deliveries.isEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
+              const Padding(
+                padding: EdgeInsets.only(top: 12),
                 child: Text(
                   'No customer cash is waiting for store handover.',
-                  style: TextStyle(color: AppConstants.textMuted, fontSize: 12),
+                  style: TextStyle(color: AppColors.muted),
                 ),
               )
             else
@@ -818,10 +783,7 @@ class _CashHandoverSection extends StatelessWidget {
                             '${delivery.deliveryPersonName} · Rs. ${delivery.cashCollected.toStringAsFixed(2)}',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: AppConstants.textMuted,
-                              fontSize: 12,
-                            ),
+                            style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ],
                       ),
@@ -862,11 +824,9 @@ class _DeliveryPersonCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 9),
-      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: AppConstants.borderLight),
+        borderRadius: BorderRadius.circular(AppRadii.row),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -874,13 +834,11 @@ class _DeliveryPersonCard extends StatelessWidget {
           children: [
             CircleAvatar(
               backgroundColor: person.isActive
-                  ? AppConstants.primaryLight
-                  : const Color(0xFFE9ECE9),
+                  ? AppColors.thumbnailGreen
+                  : AppColors.pageEnd,
               child: Icon(
                 Icons.delivery_dining_rounded,
-                color: person.isActive
-                    ? AppConstants.primaryDark
-                    : AppConstants.textMuted,
+                color: person.isActive ? AppColors.primary : AppColors.muted,
               ),
             ),
             const SizedBox(width: 12),
@@ -899,20 +857,16 @@ class _DeliveryPersonCard extends StatelessWidget {
                         : '${person.phone} · ${person.email}',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: AppConstants.textMuted,
-                      fontSize: 11,
-                    ),
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 5),
                   Text(
                     '${person.isAvailable ? 'On duty' : 'Off duty'} · '
                     '${person.activeDeliveries} active deliveries',
-                    style: TextStyle(
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: person.isActive
-                          ? AppConstants.primaryDark
-                          : AppConstants.textMuted,
-                      fontSize: 11,
+                          ? AppColors.successText
+                          : AppColors.muted,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -936,7 +890,7 @@ class _DeliveryPersonCard extends StatelessWidget {
                       ? Icons.person_remove_outlined
                       : Icons.person_add_alt_1_rounded,
                   color:
-                      person.isActive ? Colors.redAccent : AppConstants.primary,
+                      person.isActive ? AppColors.errorText : AppColors.primary,
                 ),
               ),
           ],
@@ -1079,25 +1033,10 @@ class _SalaryNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(13),
-      decoration: BoxDecoration(
-        color: AppConstants.primaryLight,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.info_outline_rounded, color: AppConstants.primaryDark),
-          const SizedBox(width: 10),
-          const Expanded(
-            child: Text(
-              'Delivery staff are monthly salaried. No per-order wages or incentive amounts are configured here.',
-              style: TextStyle(fontSize: 12, height: 1.35),
-            ),
-          ),
-        ],
-      ),
+    return const AppBanner(
+      icon: Icons.info_outline_rounded,
+      message:
+          'Delivery staff are monthly salaried. No per-order wages or incentive amounts are configured here.',
     );
   }
 }
@@ -1107,22 +1046,22 @@ class _EmptyRiders extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(36),
+    return const Padding(
+      padding: EdgeInsets.all(36),
       child: Column(
         children: [
-          const Icon(Icons.people_outline_rounded,
-              size: 42, color: AppConstants.primary),
-          const SizedBox(height: 10),
-          const Text(
+          Icon(Icons.people_outline_rounded,
+              size: 42, color: AppColors.primary),
+          SizedBox(height: 10),
+          Text(
             'No delivery staff yet',
             style: TextStyle(fontWeight: FontWeight.w800),
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: 4),
           Text(
             'Add a staff account to start assigning prepared orders.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppConstants.textMuted),
+            style: TextStyle(color: AppColors.muted),
           ),
         ],
       ),
@@ -1140,12 +1079,12 @@ class _DeliveryAdminNotice extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF0E9),
-        borderRadius: BorderRadius.circular(12),
+        color: AppColors.errorPill,
+        borderRadius: BorderRadius.circular(AppRadii.row),
       ),
       child: Text(
         message,
-        style: const TextStyle(color: Color(0xFF8A3312)),
+        style: const TextStyle(color: AppColors.errorText),
       ),
     );
   }

@@ -56,6 +56,7 @@ class _ProductCardState extends State<ProductCard> {
       product: product,
       sourceRect: sourceRect,
       targetKey: targetKey,
+      sourceImageWidthFactor: widget.compact ? .73 : 1,
     );
   }
 

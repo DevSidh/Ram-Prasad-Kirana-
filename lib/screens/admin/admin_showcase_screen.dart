@@ -3,18 +3,18 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
-import '../../core/constants.dart';
 import '../../core/media.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../theme/admin_widgets.dart';
+import '../../theme/app_colors.dart';
 import '../../widgets/store_animation.dart';
 
 class AdminShowcaseScreen extends StatefulWidget {
   final ApiService api;
   final void Function(String productId, bool isFeatured)? onFeaturedChanged;
-  final void Function(String productId, String imageUrl)?
-      onProductImageChanged;
+  final void Function(String productId, String imageUrl)? onProductImageChanged;
 
   const AdminShowcaseScreen({
     super.key,
@@ -275,48 +275,29 @@ class _AdminShowcaseScreenState extends State<AdminShowcaseScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
         children: [
-          const Text(
+          Text(
             'Homepage carousel',
-            style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
+            style: Theme.of(context).textTheme.titleLarge,
           ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 8),
           Text(
             'Choose the products that rotate in the customer storefront. '
             'Images fill a fixed, responsive slide area, so source-image proportions do not resize the card. '
             'Changing a carousel image also updates that product image across the store.',
-            style: TextStyle(color: AppConstants.textMuted, fontSize: 13),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 14),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppConstants.primaryLight,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.view_carousel_rounded,
-                    color: AppConstants.primaryDark),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    '$featuredCount ${featuredCount == 1 ? 'product' : 'products'} '
-                    'currently featured • active products rotate automatically',
-                    style: TextStyle(
-                      color: AppConstants.primaryDark,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Refresh products',
-                  onPressed: _loading ? null : _load,
-                  icon: const Icon(Icons.refresh_rounded),
-                ),
-              ],
+          AppBanner(
+            icon: Icons.view_carousel_rounded,
+            message: '$featuredCount '
+                '${featuredCount == 1 ? 'product' : 'products'} '
+                'currently featured • active products rotate automatically',
+            trailing: IconButton(
+              tooltip: 'Refresh products',
+              onPressed: _loading ? null : _load,
+              icon: const Icon(Icons.refresh_rounded),
             ),
           ),
           if (_error != null) ...[
@@ -370,30 +351,36 @@ class _ShowcaseProductTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: AppConstants.surfaceLight,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppConstants.borderLight),
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.row),
+        boxShadow: const [
+          BoxShadow(
+            color: AppColors.cardShadow,
+            offset: Offset(0, 6),
+            blurRadius: 24,
+          ),
+        ],
       ),
       child: Row(
         children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppRadii.thumbnail),
             child: SizedBox(
-              width: 76,
-              height: 64,
+              width: 42,
+              height: 42,
               child: product.imageUrl == null || product.imageUrl!.isEmpty
-                  ? ColoredBox(
-                      color: AppConstants.primaryLight,
-                      child: const Icon(Icons.shopping_basket_outlined,
-                          color: AppConstants.primary),
+                  ? const ColoredBox(
+                      color: AppColors.thumbnailBlue,
+                      child: Icon(Icons.shopping_basket_outlined,
+                          color: AppColors.primary),
                     )
                   : Image.network(
                       optimizedProductImageUrl(product.imageUrl!),
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => ColoredBox(
-                        color: AppConstants.primaryLight,
-                        child: const Icon(Icons.broken_image_outlined,
-                            color: AppConstants.primary),
+                      errorBuilder: (_, __, ___) => const ColoredBox(
+                        color: AppColors.thumbnailBlue,
+                        child: Icon(Icons.broken_image_outlined,
+                            color: AppColors.primary),
                       ),
                     ),
             ),
@@ -407,7 +394,7 @@ class _ShowcaseProductTile extends StatelessWidget {
                   product.name,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 3),
                 Text(
@@ -416,8 +403,7 @@ class _ShowcaseProductTile extends StatelessWidget {
                   '${product.isActive ? '' : ' • Inactive'}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      color: AppConstants.textMuted, fontSize: 11),
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
                 if (onPricesChanged != null)
                   TextButton.icon(
@@ -465,7 +451,6 @@ class _ShowcaseProductTile extends StatelessWidget {
               child: Switch(
                 value: product.isFeatured,
                 onChanged: onChanged,
-                activeThumbColor: AppConstants.primary,
               ),
             ),
         ],
@@ -484,10 +469,13 @@ class _ShowcaseNotice extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF3E0),
-        borderRadius: BorderRadius.circular(12),
+        color: AppColors.warningPill,
+        borderRadius: BorderRadius.circular(AppRadii.row),
       ),
-      child: Text(message, style: const TextStyle(color: Color(0xFF7A4A00))),
+      child: Text(
+        message,
+        style: const TextStyle(color: AppColors.warningText),
+      ),
     );
   }
 }
@@ -497,21 +485,20 @@ class _ShowcaseEmpty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 42),
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 42),
       child: Column(
         children: [
-          Icon(Icons.inventory_2_outlined,
-              size: 42, color: AppConstants.textMuted),
-          const SizedBox(height: 12),
-          const Text(
+          Icon(Icons.inventory_2_outlined, size: 42, color: AppColors.muted),
+          SizedBox(height: 12),
+          Text(
             'No products to feature yet',
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
-          const SizedBox(height: 5),
+          SizedBox(height: 5),
           Text(
             'Add products in the Products section first.',
-            style: TextStyle(color: AppConstants.textMuted, fontSize: 12),
+            style: TextStyle(color: AppColors.muted),
           ),
         ],
       ),

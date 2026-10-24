@@ -8,6 +8,10 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024, files: 1 },
 });
+const supplierBillUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+});
 export function getUploadsDirectory(): string {
   const configuredDirectory = process.env.UPLOADS_DIRECTORY?.trim();
   return path.resolve(
@@ -23,6 +27,21 @@ export const receiveSingleImage: RequestHandler = (req, res, next) => {
         error: error.code === 'LIMIT_FILE_SIZE'
           ? 'Images must be 5 MB or smaller.'
           : 'Choose one image file to upload.',
+      });
+    }
+    if (error) return next(error);
+    return next();
+  });
+};
+
+export const receiveSingleSupplierBillImage: RequestHandler = (req, res, next) => {
+  supplierBillUpload.single('image')(req, res, (error: unknown) => {
+    if (error instanceof multer.MulterError) {
+      const status = error.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+      return res.status(status).json({
+        error: error.code === 'LIMIT_FILE_SIZE'
+          ? 'Supplier bill photos must be 5 MB or smaller.'
+          : 'Choose one supplier bill photo to upload.',
       });
     }
     if (error) return next(error);

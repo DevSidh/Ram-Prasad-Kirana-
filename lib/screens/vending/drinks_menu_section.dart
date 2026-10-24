@@ -64,11 +64,6 @@ String drinkCategoryFor(Product product) {
       .toLowerCase();
   final searchable =
       '$category ${product.name} ${product.description}'.toLowerCase();
-  if (searchable.contains('milk') ||
-      searchable.contains('lassi') ||
-      searchable.contains('water')) {
-    return 'Hidden';
-  }
   switch (product.vendingSection?.toUpperCase()) {
     case 'SODA':
       return 'Soda';
@@ -76,6 +71,11 @@ String drinkCategoryFor(Product product) {
       return 'Tea & Coffee';
     case 'ENERGY':
       return 'Energy';
+  }
+  if (searchable.contains('milk') ||
+      searchable.contains('lassi') ||
+      searchable.contains('water')) {
+    return 'Hidden';
   }
   if (searchable.contains('energy') ||
       searchable.contains('power') ||

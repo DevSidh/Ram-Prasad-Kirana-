@@ -3,11 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/constants.dart';
 import '../../models/store_availability.dart';
 import '../../providers/store_availability_provider.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../theme/admin_widgets.dart';
+import '../../theme/app_colors.dart';
 
 class AdminStoreHoursScreen extends StatefulWidget {
   const AdminStoreHoursScreen({super.key});
@@ -150,51 +151,15 @@ class _AdminStoreHoursScreenState extends State<AdminStoreHoursScreen> {
   Widget _buildAvailabilityCard() {
     final availability = _availability;
     final isAcceptingOrders = availability?.isAcceptingOrders ?? false;
-    final color =
-        isAcceptingOrders ? Colors.green.shade700 : Colors.orange.shade800;
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color.withAlpha(16),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withAlpha(70)),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            isAcceptingOrders
-                ? Icons.storefront_rounded
-                : Icons.schedule_rounded,
-            color: color,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isAcceptingOrders
-                      ? 'Accepting orders'
-                      : 'Not accepting orders',
-                  style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  availability?.statusMessage ??
-                      'Save your weekly hours to show customers when you are open.',
-                  style: TextStyle(
-                    color: AppConstants.textMuted,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return AppBanner(
+      icon:
+          isAcceptingOrders ? Icons.storefront_rounded : Icons.schedule_rounded,
+      message:
+          '${isAcceptingOrders ? 'Accepting orders' : 'Not accepting orders'}'
+          ' · ${availability?.statusMessage ?? 'Save your weekly hours to show customers when you are open.'}',
+      variant: isAcceptingOrders
+          ? AppStatusVariant.success
+          : AppStatusVariant.warning,
     );
   }
 
@@ -203,10 +168,11 @@ class _AdminStoreHoursScreenState extends State<AdminStoreHoursScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       child: Material(
-        color: AppConstants.surfaceLight,
+        color: AppColors.surface,
+        elevation: 1,
+        shadowColor: AppColors.cardShadow,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: BorderSide(color: AppConstants.borderLight),
+          borderRadius: BorderRadius.circular(AppRadii.row),
         ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 8, 8),
@@ -272,7 +238,7 @@ class _AdminStoreHoursScreenState extends State<AdminStoreHoursScreen> {
               Text(
                 _error ?? 'Store hours could not be loaded.',
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.red),
+                style: const TextStyle(color: AppColors.errorText),
               ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
@@ -289,51 +255,56 @@ class _AdminStoreHoursScreenState extends State<AdminStoreHoursScreen> {
       );
     }
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
       children: [
         _buildAvailabilityCard(),
         const SizedBox(height: 18),
-        SwitchListTile(
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          tileColor: AppConstants.surfaceLight,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-            side: BorderSide(color: AppConstants.borderLight),
+        Card(
+          child: SwitchListTile(
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            title: Text(
+              'Accept online orders',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            subtitle: Text(
+              _isOrderingEnabled
+                  ? 'Orders follow the weekly hours below. Switching off pauses orders immediately.'
+                  : 'Ordering is paused for every customer.',
+            ),
+            value: _isOrderingEnabled,
+            onChanged: _saving ? null : _toggleOrdering,
           ),
-          title: const Text(
-            'Accept online orders',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-          subtitle: Text(
-            _isOrderingEnabled
-                ? 'Orders follow the weekly hours below. Switching off pauses orders immediately.'
-                : 'Ordering is paused for every customer.',
-          ),
-          value: _isOrderingEnabled,
-          onChanged: _saving ? null : _toggleOrdering,
         ),
         const SizedBox(height: 20),
-        Text(
-          'Weekly opening hours',
-          style: TextStyle(
-            color: AppConstants.textDark,
-            fontSize: 17,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
+        const AppSectionLabel('Weekly opening hours'),
         const SizedBox(height: 4),
         Text(
           'Times use Nepal Standard Time (${_availability?.timeZone ?? 'Asia/Kathmandu'}).',
-          style: TextStyle(color: AppConstants.textMuted, fontSize: 12),
+          style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 12),
-        for (final hours in _weeklyHours) _buildDayRow(hours),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final cardWidth = constraints.maxWidth >= 640
+                ? (constraints.maxWidth - 10) / 2
+                : constraints.maxWidth;
+            return Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (final hours in _weeklyHours)
+                  SizedBox(width: cardWidth, child: _buildDayRow(hours)),
+              ],
+            );
+          },
+        ),
         if (_error != null) ...[
           const SizedBox(height: 8),
-          Text(
-            _error!,
-            style: const TextStyle(color: Colors.red, fontSize: 13),
+          AppBanner(
+            message: _error!,
+            icon: Icons.error_outline_rounded,
+            variant: AppStatusVariant.error,
           ),
         ],
         const SizedBox(height: 12),

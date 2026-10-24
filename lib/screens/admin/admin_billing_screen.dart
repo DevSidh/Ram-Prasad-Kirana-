@@ -13,6 +13,9 @@ import '../../models/scanned_product_barcode.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
 import '../../services/pos_receipt_service.dart';
+import '../../theme/admin_widgets.dart';
+import '../../theme/app_colors.dart';
+import '../../widgets/product_thumbnail.dart';
 import 'barcode_scanner_screen.dart';
 import 'admin_billing_staff_screen.dart';
 
@@ -22,6 +25,7 @@ enum AdminBillingSection {
   heldBills,
   billHistory,
   payments,
+  pendingPayments,
   cashRegister,
   customers,
   returns,
@@ -49,17 +53,26 @@ class AdminBillingScreen extends StatefulWidget {
 }
 
 class AdminBillingScreenState extends State<AdminBillingScreen> {
+  bool get _isWindowsOperatorMode =>
+      !widget.isBillingStaff &&
+      !kIsWeb &&
+      defaultTargetPlatform == TargetPlatform.windows;
+
   late final AdminApiService _adminApi = AdminApiService(widget.api);
   PosOverview? _overview;
+  PosOverview? _reportOverview;
   List<PosSale> _sales = const [];
+  PosSalesPage? _pendingPaymentPage;
   int _salesPage = 1;
   int _salesPageSize = 50;
   int _salesTotal = 0;
+  int _pendingPaymentPageNumber = 1;
   List<PosRefund> _refunds = const [];
   List<PosHeldSale> _heldSales = const [];
   List<PosExchange> _exchanges = const [];
   String? _exchangeError;
-  DateTime? _historyDay;
+  DateTime? _billHistoryDay;
+  DateTime? _reportDay;
   bool _loading = true;
   String? _error;
   bool _working = false;
@@ -70,8 +83,6 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     for (final section in AdminBillingSection.values) section: GlobalKey(),
   };
 
-  Color get _primary => Theme.of(context).colorScheme.primary;
-  Color get _accent => Theme.of(context).colorScheme.secondary;
   Color get _surface => Theme.of(context).colorScheme.surface;
   Color get _border => Theme.of(context).colorScheme.outlineVariant;
   Color get _muted => Theme.of(context).colorScheme.onSurfaceVariant;
@@ -128,31 +139,37 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     }
   }
 
-  String? get _dayKey {
-    final day = _historyDay;
+  String? _formatDayKey(DateTime? day) {
     if (day == null) return null;
     return '${day.year.toString().padLeft(4, '0')}-'
         '${day.month.toString().padLeft(2, '0')}-'
         '${day.day.toString().padLeft(2, '0')}';
   }
 
-  bool get _requiresOpenShiftBeforePos => widget.isBillingStaff;
+  String? get _billHistoryDayKey => _formatDayKey(_billHistoryDay);
+  String? get _reportDayKey => _formatDayKey(_reportDay);
 
-  Future<void> _load({int? salesPage}) async {
+  Future<void> _load({int? salesPage, int? pendingPage}) async {
     final requestedSalesPage = salesPage ?? _salesPage;
+    final requestedPendingPage = pendingPage ?? _pendingPaymentPageNumber;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final overview = await _adminApi.getPosOverview(day: _dayKey);
+      final overview = await _adminApi.getPosOverview();
       final results = await Future.wait([
-        _adminApi.getPosSales(page: requestedSalesPage, day: _dayKey),
+        if (_reportDayKey != null) _adminApi.getPosOverview(day: _reportDayKey),
+        _adminApi.getPosSales(
+          page: requestedSalesPage,
+          day: _billHistoryDayKey,
+        ),
         if (widget.isBillingStaff)
           Future<List<PosRefund>>.value(const [])
         else
           _adminApi.getPosRefunds(),
         _adminApi.getPosHeldSales(),
+        _adminApi.getPosPendingPayments(page: requestedPendingPage),
       ]);
       List<PosExchange> exchanges = const [];
       String? exchangeError;
@@ -162,15 +179,22 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         exchangeError = error.toString().replaceFirst('Exception: ', '');
       }
       if (!mounted) return;
-      final loadedSalesPage = results[0] as PosSalesPage;
+      final reportOverview =
+          _reportDayKey == null ? overview : results[0] as PosOverview;
+      final salesIndex = _reportDayKey == null ? 0 : 1;
+      final loadedSalesPage = results[salesIndex] as PosSalesPage;
       setState(() {
         _overview = overview;
+        _reportOverview = reportOverview;
         _sales = loadedSalesPage.sales;
         _salesPage = loadedSalesPage.page;
         _salesPageSize = loadedSalesPage.pageSize;
         _salesTotal = loadedSalesPage.total;
-        _refunds = results[1] as List<PosRefund>;
-        _heldSales = results[2] as List<PosHeldSale>;
+        _refunds = results[salesIndex + 1] as List<PosRefund>;
+        _heldSales = results[salesIndex + 2] as List<PosHeldSale>;
+        _pendingPaymentPage = results[salesIndex + 3] as PosSalesPage;
+        _pendingPaymentPageNumber =
+            (results[salesIndex + 3] as PosSalesPage).page;
         _exchanges = exchanges;
         _exchangeError = exchangeError;
         _loading = false;
@@ -233,11 +257,6 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   }
 
   void startNewBill() {
-    if (_requiresOpenShiftBeforePos && _overview?.shiftId == null) {
-      _showMessage('Open the cash register before starting a new bill.');
-      activateSection(AdminBillingSection.cashRegister);
-      return;
-    }
     unawaited(_newBill());
   }
 
@@ -300,29 +319,6 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     }
   }
 
-  Future<void> _openShift() async {
-    final amount = await _amountDialog(
-      title: 'Open cash register',
-      label: 'Opening cash',
-      confirmLabel: 'Open shift',
-    );
-    if (amount == null) return;
-    await _perform(() => _adminApi.openPosShift(amount));
-  }
-
-  Future<void> _closeShift() async {
-    final overview = _overview;
-    final shiftId = overview?.shiftId;
-    if (shiftId == null) return;
-    final amount = await _amountDialog(
-      title: 'Close cash register',
-      label: 'Counted cash in drawer',
-      confirmLabel: 'Close shift',
-    );
-    if (amount == null) return;
-    await _perform(() => _adminApi.closePosShift(shiftId, amount));
-  }
-
   Future<void> _cashMovement(String type) async {
     final amountController = TextEditingController();
     final noteController = TextEditingController();
@@ -376,42 +372,6 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           amount: amount,
           note: note,
         ));
-  }
-
-  Future<double?> _amountDialog({
-    required String title,
-    required String label,
-    required String confirmLabel,
-  }) async {
-    final controller = TextEditingController();
-    final amount = await showDialog<double>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: InputDecoration(labelText: label),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final value = double.tryParse(controller.text.trim());
-              if (value == null || value < 0) return;
-              Navigator.pop(dialogContext, value);
-            },
-            child: Text(confirmLabel),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    return amount;
   }
 
   Future<void> _requestRefund(PosSale sale) async {
@@ -848,16 +808,28 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   Future<void> _selectHistoryDay() async {
     final selected = await showDatePicker(
       context: context,
-      initialDate: _historyDay ?? DateTime.now(),
+      initialDate: _billHistoryDay ?? DateTime.now(),
       firstDate: DateTime(2020),
       lastDate: DateTime.now(),
     );
     if (selected == null) return;
     setState(() {
-      _historyDay = selected;
+      _billHistoryDay = selected;
       _salesPage = 1;
     });
     await _load(salesPage: 1);
+  }
+
+  Future<void> _selectReportDay() async {
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: _reportDay ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+    );
+    if (selected == null) return;
+    setState(() => _reportDay = selected);
+    await _load();
   }
 
   @override
@@ -886,6 +858,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       );
     }
     if (overview == null) return const SizedBox.shrink();
+    final reportOverview = _reportOverview ?? overview;
 
     return Stack(
       children: [
@@ -893,7 +866,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           onRefresh: _load,
           child: ListView(
             controller: _scrollController,
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 36),
+            padding: const EdgeInsets.fromLTRB(8, 8, 30, 36),
             children: [
               Container(
                 key: _sectionKeys[AdminBillingSection.dashboard],
@@ -909,7 +882,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                 ),
               Container(
                 key: _sectionKeys[AdminBillingSection.cashRegister],
-                child: _buildShiftCard(overview),
+                child: _buildCashRegisterCard(),
               ),
               const SizedBox(height: 14),
               Wrap(
@@ -942,18 +915,12 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                 key: _sectionKeys[AdminBillingSection.essential],
                 actions: [
                   FilledButton.icon(
-                    onPressed: _working ||
-                            (_requiresOpenShiftBeforePos &&
-                                overview.shiftId == null)
-                        ? null
-                        : () => _newBill(),
+                    onPressed: _working ? null : () => _newBill(),
                     icon: const Icon(Icons.add_shopping_cart_rounded),
                     label: const Text('New bill'),
                   ),
                   OutlinedButton.icon(
                     onPressed: _working ||
-                            (_requiresOpenShiftBeforePos &&
-                                overview.shiftId == null) ||
                             defaultTargetPlatform == TargetPlatform.windows
                         ? null
                         : () async {
@@ -970,7 +937,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                     icon: const Icon(Icons.analytics_outlined),
                     label: const Text('Daily report'),
                   ),
-                  if (!widget.isBillingStaff)
+                  if (!widget.isBillingStaff && !_isWindowsOperatorMode)
                     OutlinedButton.icon(
                       onPressed: () => Navigator.of(context).push(
                         MaterialPageRoute<void>(
@@ -996,14 +963,14 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                   OutlinedButton.icon(
                     onPressed: _selectHistoryDay,
                     icon: const Icon(Icons.calendar_today_outlined),
-                    label: Text(_dayKey ?? 'All days'),
+                    label: Text(_billHistoryDayKey ?? 'All days'),
                   ),
-                  if (_historyDay != null)
+                  if (_billHistoryDay != null)
                     IconButton(
                       tooltip: 'Clear date filter',
                       onPressed: () {
                         setState(() {
-                          _historyDay = null;
+                          _billHistoryDay = null;
                           _salesPage = 1;
                         });
                         unawaited(_load(salesPage: 1));
@@ -1022,7 +989,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                         '${((_salesPage - 1) * _salesPageSize) + 1}–'
                         '${(_salesPage * _salesPageSize).clamp(0, _salesTotal)}'
                         ' of $_salesTotal bills',
-                        style: TextStyle(color: _muted, fontSize: 12),
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                       IconButton(
                         tooltip: 'Previous bills page',
@@ -1057,9 +1024,31 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               ),
               _buildCustomers(),
               const SizedBox(height: 20),
-              Container(
+              Column(
                 key: _sectionKeys[AdminBillingSection.reports],
-                child: _buildInsights(overview),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _sectionHeading(
+                    'Sales report · ${reportOverview.day}',
+                    actions: [
+                      OutlinedButton.icon(
+                        onPressed: _selectReportDay,
+                        icon: const Icon(Icons.calendar_today_outlined),
+                        label: Text(_reportDayKey ?? 'Today'),
+                      ),
+                      if (_reportDay != null)
+                        IconButton(
+                          tooltip: 'Show today’s report',
+                          onPressed: () {
+                            setState(() => _reportDay = null);
+                            unawaited(_load());
+                          },
+                          icon: const Icon(Icons.clear),
+                        ),
+                    ],
+                  ),
+                  _buildInsights(reportOverview),
+                ],
               ),
               const SizedBox(height: 20),
               _buildNotifications(),
@@ -1070,13 +1059,14 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               ),
               const SizedBox(height: 20),
               Container(
+                key: _sectionKeys[AdminBillingSection.pendingPayments],
+                child: _buildPendingPayments(),
+              ),
+              const SizedBox(height: 20),
+              Container(
                 key: _sectionKeys[AdminBillingSection.payments],
                 child: _buildPayments(),
               ),
-              if (!widget.isBillingStaff) ...[
-                const SizedBox(height: 16),
-                _buildRefundRequests(),
-              ],
               const SizedBox(height: 14),
               Container(
                 key: _sectionKeys[AdminBillingSection.printer],
@@ -1085,16 +1075,16 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               Text(
                 'Connected · synced ${TimeOfDay.fromDateTime(DateTime.now()).format(context)}',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: _muted, fontSize: 11),
+                style: Theme.of(context).textTheme.labelSmall,
               ),
             ],
           ),
         ),
         if (_working)
-          const Positioned.fill(
+          Positioned.fill(
             child: ColoredBox(
-              color: Color(0x22000000),
-              child: Center(child: CircularProgressIndicator()),
+              color: AppColors.primary.withValues(alpha: 0.13),
+              child: const Center(child: CircularProgressIndicator()),
             ),
           ),
       ],
@@ -1106,20 +1096,10 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     return Row(
       children: [
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Store billing',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                '${overview.cashierName ?? 'Admin'} · '
-                '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
-                style: TextStyle(color: _muted),
-              ),
-            ],
+          child: Text(
+            '${overview.cashierName ?? 'Admin'} · '
+            '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ),
         IconButton(
@@ -1132,90 +1112,50 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     );
   }
 
-  Widget _buildShiftCard(PosOverview overview) {
-    final opened = overview.shiftId != null;
-    return Container(
+  Widget _buildCashRegisterCard() {
+    return AppSurface(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: opened ? _accent.withAlpha(48) : _surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _border),
-      ),
       child: Wrap(
         spacing: 10,
         runSpacing: 10,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          Icon(
-            Icons.point_of_sale_rounded,
-            color: opened ? _primary : _muted,
-          ),
-          SizedBox(
-            width: 240,
+          const Icon(Icons.point_of_sale_rounded),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  opened ? 'Register open' : 'Register closed',
-                  style: const TextStyle(fontWeight: FontWeight.w800),
+                  'Cash register',
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
                 Text(
-                  opened
-                      ? 'Opening ${_money(overview.openingCash)} · '
-                          'Expected close ${_money(overview.expectedClosingCash ?? overview.openingCash)}'
-                      : widget.isBillingStaff
-                          ? 'Open a shift to create and complete bills.'
-                          : 'Opening cash is optional; the register starts automatically when POS activity needs it.',
-                  style: TextStyle(color: _muted, fontSize: 12),
+                  'Record cash added to or taken from the drawer.',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
             ),
           ),
-          if (opened) ...[
-            OutlinedButton(
-              onPressed: _working ? null : () => _cashMovement('CASH_IN'),
-              child: const Text('Cash in'),
-            ),
-            OutlinedButton(
-              onPressed: _working ? null : () => _cashMovement('CASH_OUT'),
-              child: const Text('Cash out'),
-            ),
-            FilledButton.tonal(
-              onPressed: _working ? null : _closeShift,
-              child: const Text('Close shift'),
-            ),
-          ] else
-            FilledButton.icon(
-              onPressed: _working ? null : _openShift,
-              icon: const Icon(Icons.lock_open_rounded),
-              label: const Text('Open register'),
-            ),
+          OutlinedButton(
+            onPressed: _working ? null : () => _cashMovement('CASH_IN'),
+            child: const Text('Cash in'),
+          ),
+          OutlinedButton(
+            onPressed: _working ? null : () => _cashMovement('CASH_OUT'),
+            child: const Text('Cash out'),
+          ),
         ],
       ),
     );
   }
 
   Widget _metric(String title, String value, IconData icon) {
-    return SizedBox(
-      width: 172,
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: _surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 19, color: _primary),
-            const SizedBox(height: 9),
-            Text(value, style: const TextStyle(fontWeight: FontWeight.w900)),
-            const SizedBox(height: 2),
-            Text(title, style: TextStyle(color: _muted, fontSize: 11)),
-          ],
-        ),
-      ),
+    return AppStatCard(
+      label: title,
+      value: value,
+      icon: icon,
+      tint: AppColors.thumbnailGreen,
     );
   }
 
@@ -1231,8 +1171,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       spacing: 8,
       runSpacing: 6,
       children: [
-        Text(title,
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+        AppSectionLabel(title),
         ...actions,
       ],
     );
@@ -1540,39 +1479,114 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     );
   }
 
-  Widget _buildPayments() {
-    final pending =
-        _sales.where((sale) => sale.paymentStatus == 'PENDING').toList();
+  Widget _buildPayments() => _buildRefundRequests();
+
+  Widget _buildPendingPayments() {
+    final pending = _pendingPaymentPage?.sales ?? const <PosSale>[];
+    final page = _pendingPaymentPage;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionHeading('Payments'),
+        _sectionHeading(
+          'Pending cash',
+          actions: [
+            if (page != null)
+              Chip(
+                avatar: const Icon(Icons.account_balance_wallet_outlined),
+                label: Text(
+                  '${page.total} bill${page.total == 1 ? '' : 's'}',
+                ),
+              ),
+          ],
+        ),
         if (pending.isEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(
-              'No bills are waiting for payment.',
-              style: TextStyle(color: AppConstants.textMuted),
+              'No customer balances are waiting for collection.',
+              style: TextStyle(color: _muted),
             ),
           )
         else
-          ...pending.map(
-            (sale) => ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.pending_actions_outlined),
-              title: Text(sale.receiptNumber),
-              subtitle: Text('${_money(sale.total)} · awaiting payment'),
-              trailing: PopupMenuButton<String>(
-                tooltip: 'Record payment',
-                onSelected: (method) => _markPaid(sale, method: method),
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'CASH', child: Text('Received cash')),
-                  PopupMenuItem(
-                      value: 'DIGITAL', child: Text('Received digital')),
+          ...pending.map((sale) {
+            final paid = sale.paidAmount ?? 0;
+            final outstanding = sale.outstandingAmount ??
+                (sale.total - paid).clamp(0, sale.total);
+            return Card(
+              margin: const EdgeInsets.only(top: 8),
+              child: ExpansionTile(
+                leading: const CircleAvatar(
+                  child: Icon(Icons.pending_actions_outlined),
+                ),
+                title: Text(
+                  sale.customerName?.trim().isNotEmpty == true
+                      ? sale.customerName!
+                      : 'Customer',
+                ),
+                subtitle: Text(
+                  '${sale.customerPhone ?? 'No phone'} · ${sale.receiptNumber} · '
+                  'Bill ${_money(sale.total)} · Paid ${_money(paid)} · '
+                  'Due ${_money(outstanding)}',
+                ),
+                trailing: FilledButton.tonal(
+                  onPressed: _working || outstanding <= 0
+                      ? null
+                      : () => _markPaid(sale),
+                  child: const Text('Record payment'),
+                ),
+                children: [
+                  for (final item in sale.items)
+                    ListTile(
+                      dense: true,
+                      title: Text(item.productName),
+                      subtitle: Text(
+                        item.weightGrams == null
+                            ? 'Qty ${item.quantity}'
+                            : '${item.weightGrams} g',
+                      ),
+                      trailing: Text(_money(item.lineTotal)),
+                    ),
+                  if (sale.paymentCollections.isNotEmpty)
+                    const Divider(height: 1),
+                  for (final payment in sale.paymentCollections)
+                    ListTile(
+                      dense: true,
+                      leading: Icon(
+                        payment.method == 'DIGITAL'
+                            ? Icons.phone_android_rounded
+                            : Icons.payments_outlined,
+                      ),
+                      title: Text(
+                        '${_money(payment.amount)} · '
+                        '${payment.method == 'DIGITAL' ? 'PhonePe / UPI' : 'Cash'}',
+                      ),
+                      subtitle: Text(
+                        '${_dateTime(payment.createdAt)}'
+                        '${payment.note?.isNotEmpty == true ? ' · ${payment.note}' : ''}',
+                      ),
+                    ),
                 ],
-                child: const Chip(label: Text('Record payment')),
               ),
-            ),
+            );
+          }),
+        if (page != null && page.pageCount > 1)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: _working || page.page <= 1
+                    ? null
+                    : () => _load(pendingPage: page.page - 1),
+                child: const Text('Previous'),
+              ),
+              Text('Page ${page.page} of ${page.pageCount}'),
+              TextButton(
+                onPressed: _working || page.page >= page.pageCount
+                    ? null
+                    : () => _load(pendingPage: page.page + 1),
+                child: const Text('Next'),
+              ),
+            ],
           ),
       ],
     );
@@ -1603,11 +1617,6 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
             ),
           ],
         ),
-        if (widget.isBillingStaff && overview.shiftId == null)
-          Text(
-            'Open the register to print receipts for completed bills.',
-            style: TextStyle(color: _muted, fontSize: 12),
-          ),
       ],
     );
   }
@@ -1621,7 +1630,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           actions: [
             Text(
               '${_heldSales.length} waiting',
-              style: TextStyle(color: _muted, fontSize: 12),
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
         ),
@@ -1670,7 +1679,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         leading: const CircleAvatar(child: Icon(Icons.receipt_long_outlined)),
         title: Text(sale.receiptNumber),
         subtitle: Text(
-          '${_money(sale.total)} · ${sale.paymentMethod} · ${_dateTime(sale.createdAt)}',
+          '${_money(sale.total)} · ${sale.paymentStatus == 'PENDING' ? 'Due ${_money(sale.outstandingAmount ?? sale.total)}' : _paymentLabel(sale.paymentMethod)} · ${_dateTime(sale.createdAt)}',
         ),
         trailing: sale.paymentStatus == 'PENDING'
             ? Wrap(
@@ -1680,7 +1689,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                     onPressed: () => _markPaid(sale),
                     icon: const Icon(Icons.payments_outlined),
                   ),
-                  if (!widget.isBillingStaff)
+                  if (!widget.isBillingStaff && (sale.paidAmount ?? 0) <= 0)
                     IconButton(
                       tooltip: 'Cancel unpaid bill',
                       onPressed: () => _cancelSale(sale),
@@ -1716,6 +1725,14 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               dense: true,
               title: const Text('Refunded'),
               trailing: Text(_money(sale.refundedAmount)),
+            ),
+          for (final payment in sale.paymentCollections)
+            ListTile(
+              dense: true,
+              title: Text(
+                '${_money(payment.amount)} · ${_paymentLabel(payment.method)}',
+              ),
+              subtitle: Text(_dateTime(payment.createdAt)),
             ),
         ],
       ),
@@ -1760,7 +1777,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: _surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(AppRadii.input),
         border: Border.all(color: _border),
       ),
       child: Column(
@@ -1847,34 +1864,129 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     );
   }
 
-  Future<void> _markPaid(PosSale sale, {String? method}) async {
-    method ??= await showDialog<String>(
+  Future<void> _markPaid(PosSale sale) async {
+    final remaining = sale.outstandingAmount ??
+        (sale.total - (sale.paidAmount ?? 0)).clamp(0, sale.total).toDouble();
+    final amountController =
+        TextEditingController(text: remaining.toStringAsFixed(2));
+    final noteController = TextEditingController();
+    var paymentMethod = 'CASH';
+    String? validationError;
+    final payment =
+        await showDialog<({double amount, String method, String? note})>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Record payment received'),
-        content: const Text('Choose how the customer paid this pending bill.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Receive payment · ${sale.receiptNumber}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Remaining balance ${_money(remaining)}',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: amountController,
+                autofocus: true,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Amount received',
+                  prefixText: 'Rs ',
+                ),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                initialValue: paymentMethod,
+                decoration: const InputDecoration(labelText: 'Received by'),
+                items: const [
+                  DropdownMenuItem(value: 'CASH', child: Text('Cash')),
+                  DropdownMenuItem(
+                    value: 'DIGITAL',
+                    child: Text('PhonePe / UPI (verify manually)'),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value != null) {
+                    setDialogState(() => paymentMethod = value);
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: noteController,
+                maxLength: 240,
+                decoration: const InputDecoration(
+                  labelText: 'Note (optional)',
+                ),
+              ),
+              if (validationError != null)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    validationError!,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: Theme.of(context).colorScheme.error),
+                  ),
+                ),
+            ],
           ),
-          OutlinedButton(
-            onPressed: () => Navigator.pop(dialogContext, 'CASH'),
-            child: const Text('Cash'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, 'DIGITAL'),
-            child: const Text('Digital'),
-          ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final amount = double.tryParse(amountController.text.trim());
+                if (amount == null ||
+                    !amount.isFinite ||
+                    (amount * 100).round() < 1 ||
+                    amount > remaining) {
+                  setDialogState(() {
+                    validationError =
+                        'Enter an amount from Rs 0.01 up to ${_money(remaining)}.';
+                  });
+                  return;
+                }
+                Navigator.pop(dialogContext, (
+                  amount: amount,
+                  method: paymentMethod,
+                  note: noteController.text.trim().isEmpty
+                      ? null
+                      : noteController.text.trim(),
+                ));
+              },
+              child: const Text('Save payment'),
+            ),
+          ],
+        ),
       ),
     );
-    final selectedMethod = method;
-    if (selectedMethod == null) return;
+    amountController.dispose();
+    noteController.dispose();
+    if (payment == null) return;
     await _perform(
-      () => _adminApi.recordPosPayment(sale.id, paymentMethod: selectedMethod),
+      () => _adminApi.recordPosPayment(
+        sale.id,
+        amount: payment.amount,
+        paymentMethod: payment.method,
+        note: payment.note,
+      ),
     );
   }
+
+  String _paymentLabel(String method) => switch (method) {
+        'DIGITAL' => 'PhonePe / UPI',
+        'PENDING' => 'Pending',
+        _ => 'Cash',
+      };
 
   Future<void> _cancelSale(PosSale sale) async {
     final confirmed = await showDialog<bool>(
@@ -1901,7 +2013,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   }
 
   Future<void> _showDailyReport() async {
-    final overview = _overview;
+    final overview = _reportOverview ?? _overview;
     if (overview == null) return;
     await showDialog<void>(
       context: context,
@@ -2214,6 +2326,13 @@ class _PosBillDialogState extends State<_PosBillDialog> {
           _error = 'Enter a valid discount not greater than the subtotal.');
       return;
     }
+    if (_paymentMethod == 'PENDING' &&
+        (_customerName.text.trim().isEmpty ||
+            _customerPhone.text.trim().isEmpty)) {
+      setState(() =>
+          _error = 'Enter the customer name and phone for a pending balance.');
+      return;
+    }
     setState(() {
       _saving = true;
       _error = null;
@@ -2335,11 +2454,14 @@ class _PosBillDialogState extends State<_PosBillDialog> {
           Expanded(
             child: Text(
               widget.heldSale == null ? 'New bill' : 'Resume held bill',
-              style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
+              style: Theme.of(context).textTheme.headlineMedium,
             ),
           ),
           if (defaultTargetPlatform == TargetPlatform.windows)
-            const Text('F2 Search · F8 Complete'),
+            Text(
+              'F2 Search · F8 Complete',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           IconButton(
             tooltip: 'Close',
             onPressed: _saving ? null : () => Navigator.pop(context),
@@ -2361,7 +2483,7 @@ class _PosBillDialogState extends State<_PosBillDialog> {
         labelText: isDesktop
             ? 'Scan barcode or search product / SKU'
             : 'Search product, SKU or barcode',
-        prefixIcon: const Icon(Icons.search),
+        prefixIcon: const Icon(Icons.search_rounded),
         suffixIcon: isDesktop
             ? null
             : IconButton(
@@ -2376,11 +2498,25 @@ class _PosBillDialogState extends State<_PosBillDialog> {
   Widget _buildErrorMessage() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Text(
-          _error!,
-          style: const TextStyle(color: Colors.red),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.errorPill,
+          borderRadius: BorderRadius.circular(AppRadii.input),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.error_outline_rounded,
+                color: AppColors.errorText, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _error!,
+                style: const TextStyle(color: AppColors.errorText),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -2401,18 +2537,32 @@ class _PosBillDialogState extends State<_PosBillDialog> {
       itemCount: _matches.length,
       itemBuilder: (context, index) {
         final product = _matches[index];
-        return ListTile(
-          dense: true,
-          title: Text(product.name),
-          subtitle: Text(
-            '${product.sku} · ${_money(product.price)} · '
-            '${product.available} ${product.unitLabel}',
-          ),
-          trailing: IconButton(
-            tooltip: 'Add ${product.name}',
-            onPressed:
-                product.available <= 0 ? null : () => _addProduct(product),
-            icon: const Icon(Icons.add_circle_outline),
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: AppRowCard(
+            title: product.name,
+            subtitle: '${product.sku} · ${_money(product.price)} · '
+                '${product.available} ${product.unitLabel}',
+            leading: product.imageUrl?.isNotEmpty == true
+                ? ProductThumbnail(
+                    imageUrl: product.imageUrl!,
+                    size: 54,
+                    width: 54,
+                    height: 54,
+                    backgroundColor: AppColors.thumbnailGreen,
+                    borderRadius: BorderRadius.circular(AppRadii.thumbnail),
+                  )
+                : Text(
+                    product.name.isEmpty ? '?' : product.name.substring(0, 1),
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+            tint: AppColors.thumbnailGreen,
+            trailing: IconButton(
+              tooltip: 'Add ${product.name}',
+              onPressed:
+                  product.available <= 0 ? null : () => _addProduct(product),
+              icon: const Icon(Icons.add_circle_outline),
+            ),
           ),
         );
       },
@@ -2472,8 +2622,8 @@ class _PosBillDialogState extends State<_PosBillDialog> {
   }
 
   Widget _buildCheckoutControls() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
+    return AppSurface(
+      padding: const EdgeInsets.all(14),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -2482,8 +2632,10 @@ class _PosBillDialogState extends State<_PosBillDialog> {
               Expanded(
                 child: TextField(
                   controller: _customerName,
-                  decoration: const InputDecoration(
-                    labelText: 'Customer (optional)',
+                  decoration: InputDecoration(
+                    labelText: _paymentMethod == 'PENDING'
+                        ? 'Customer name *'
+                        : 'Customer (optional)',
                     isDense: true,
                   ),
                 ),
@@ -2493,8 +2645,10 @@ class _PosBillDialogState extends State<_PosBillDialog> {
                 child: TextField(
                   controller: _customerPhone,
                   keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
-                    labelText: 'Phone',
+                  decoration: InputDecoration(
+                    labelText: _paymentMethod == 'PENDING'
+                        ? 'Customer phone *'
+                        : 'Customer phone',
                     isDense: true,
                   ),
                 ),
@@ -2526,11 +2680,15 @@ class _PosBillDialogState extends State<_PosBillDialog> {
                   ),
                   items: const [
                     DropdownMenuItem(value: 'CASH', child: Text('Cash')),
-                    DropdownMenuItem(value: 'DIGITAL', child: Text('Digital')),
+                    DropdownMenuItem(
+                      value: 'DIGITAL',
+                      child: Text('PhonePe / UPI'),
+                    ),
                     DropdownMenuItem(value: 'PENDING', child: Text('Pending')),
                   ],
                   onChanged: (value) => setState(() {
                     _paymentMethod = value ?? 'CASH';
+                    _error = null;
                   }),
                 ),
               ),
@@ -2543,8 +2701,7 @@ class _PosBillDialogState extends State<_PosBillDialog> {
               Text('Subtotal ${_money(_subtotal)}'),
               Text(
                 'Total ${_money(_total)}',
-                style:
-                    const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                style: Theme.of(context).textTheme.titleLarge,
               ),
             ],
           ),

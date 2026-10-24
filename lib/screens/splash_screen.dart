@@ -6,7 +6,9 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants.dart';
 import '../providers/auth_provider.dart';
+import '../providers/cart_provider.dart';
 import '../providers/product_provider.dart';
+import '../providers/store_availability_provider.dart';
 import 'onboarding_screen.dart';
 import 'auth/login_screen.dart';
 import '../navigation/app_shell_route.dart';
@@ -29,15 +31,32 @@ class _SplashScreenState extends State<SplashScreen> {
       context,
       listen: false,
     );
-    if (defaultTargetPlatform != TargetPlatform.windows) {
-      unawaited(productProvider.loadCatalog());
-    }
+    final cartProvider = Provider.of<CartProvider>(context, listen: false);
+    final availabilityProvider =
+        Provider.of<StoreAvailabilityProvider>(context, listen: false);
     final results = await Future.wait<dynamic>([
       authProvider.sessionReady,
       SharedPreferences.getInstance(),
     ]);
     final prefs = results[1] as SharedPreferences;
     _onboardingSeen = prefs.getBool(AppConstants.keyOnboardingSeen) ?? false;
+
+    if (defaultTargetPlatform == TargetPlatform.windows) return;
+
+    final userId = authProvider.currentUser?.id;
+    productProvider.setAuthenticatedUser(userId);
+    cartProvider.setAuthenticatedUser(userId);
+    final startupLoads = <Future<void>>[
+      productProvider.loadCatalog(),
+      availabilityProvider.refresh(),
+      if (userId != null) cartProvider.refreshSavedCart(),
+    ];
+    try {
+      await Future.wait(startupLoads).timeout(const Duration(seconds: 6));
+    } on TimeoutException {
+      // Keep the splash responsive if the backend is cold; provider loads continue
+      // and the first screens render from cache while they finish.
+    }
   }
 
   void _onLoadingFinished(Object? error) {

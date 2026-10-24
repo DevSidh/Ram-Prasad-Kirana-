@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -12,7 +13,10 @@ class _AdminApi extends ApiService {
   String? requestedOrdersStatus;
   Map<String, String>? requestedOrdersQuery;
   Map<String, String>? posSalesQuery;
-  Map<String, String>? posShiftHistoryQuery;
+  Map<String, String>? pendingPaymentQuery;
+  Map<String, dynamic>? postedPosPayment;
+  Map<String, String>? purchaseBillQuery;
+  Map<String, dynamic>? postedPurchaseBill;
   String? uploadedFileName;
   Uint8List? uploadedBytes;
   String? uploadedEndpoint;
@@ -33,29 +37,6 @@ class _AdminApi extends ApiService {
     String endpoint, {
     Map<String, String>? queryParams,
   }) async {
-    if (endpoint == '/admin/billing/shifts') {
-      posShiftHistoryQuery = queryParams;
-      return {
-        'shifts': [
-          {
-            'id': 'shift-1',
-            'status': 'CLOSED',
-            'cashierName': 'Cashier One',
-            'openingCash': 100,
-            'expectedClosingCash': 250,
-            'actualClosingCash': 240,
-            'variance': -10,
-            'openedAt': '2026-10-24T08:00:00.000Z',
-            'closedAt': '2026-10-24T16:00:00.000Z',
-          },
-        ],
-        'pagination': {
-          'page': int.parse(queryParams?['page'] ?? '1'),
-          'pageSize': int.parse(queryParams?['pageSize'] ?? '20'),
-          'total': 21,
-        },
-      };
-    }
     if (endpoint == '/admin/billing/sales') {
       posSalesQuery = queryParams;
       return {
@@ -64,6 +45,17 @@ class _AdminApi extends ApiService {
           'page': int.parse(queryParams?['page'] ?? '1'),
           'pageSize': int.parse(queryParams?['pageSize'] ?? '50'),
           'total': 63,
+        },
+      };
+    }
+    if (endpoint == '/admin/billing/pending-payments') {
+      pendingPaymentQuery = queryParams;
+      return {
+        'sales': const [],
+        'pagination': {
+          'page': int.parse(queryParams?['page'] ?? '1'),
+          'pageSize': int.parse(queryParams?['pageSize'] ?? '50'),
+          'total': 0,
         },
       };
     }
@@ -268,6 +260,41 @@ class _AdminApi extends ApiService {
         'pagination': {'page': 1, 'pageSize': 25, 'total': 1},
       };
     }
+    if (endpoint == '/admin/inventory/purchase-bills') {
+      purchaseBillQuery = queryParams;
+      return {
+        'bills': [
+          {
+            'id': 'bill-1',
+            'supplierName': 'Local Dealer',
+            'supplierPhone': '9800000000',
+            'invoiceNumber': 'INV-101',
+            'invoiceDate': '2026-10-24T00:00:00.000Z',
+            'deliveryPerson': 'Hari',
+            'notes': 'Delivered in the morning',
+            'hasPhoto': true,
+            'totalCost': 150,
+            'status': 'RECEIVED',
+            'createdAt': '2026-10-24T04:00:00.000Z',
+            'items': [
+              {
+                'name': 'Rice',
+                'sku': 'RICE-1',
+                'unitLabel': '1 kg',
+                'quantity': 2,
+                'unitCost': 75,
+                'lineTotal': 150,
+              },
+            ],
+          },
+        ],
+        'pagination': {
+          'page': int.parse(queryParams?['page'] ?? '1'),
+          'pageSize': int.parse(queryParams?['pageSize'] ?? '25'),
+          'total': 1,
+        },
+      };
+    }
     final page = int.parse(queryParams?['page'] ?? '1');
     return {
       'products': [
@@ -344,6 +371,12 @@ class _AdminApi extends ApiService {
 
   @override
   Future<dynamic> post(String endpoint, Map<String, dynamic> body) async {
+    if (endpoint == '/admin/billing/sales/sale-1/payments') {
+      postedPosPayment = body;
+      return {
+        'payment': {'id': 'payment-1'}
+      };
+    }
     if (endpoint == '/admin/notifications/customer') {
       postedNotification = body;
       return {
@@ -402,6 +435,34 @@ class _AdminApi extends ApiService {
     uploadedFields = fields;
     uploadedFileName = fileName;
     uploadedBytes = bytes;
+    if (endpoint == '/admin/inventory/purchase-bills') {
+      postedPurchaseBill = jsonDecode(fields['bill']!) as Map<String, dynamic>;
+      return {
+        'bill': {
+          'id': 'bill-1',
+          'supplierName': 'Local Dealer',
+          'supplierPhone': '9800000000',
+          'invoiceNumber': 'INV-101',
+          'invoiceDate': '2026-10-24T00:00:00.000Z',
+          'deliveryPerson': 'Hari',
+          'notes': 'Delivered in the morning',
+          'totalCost': 150,
+          'status': 'RECEIVED',
+          'hasPhoto': true,
+          'createdAt': '2026-10-24T04:00:00.000Z',
+          'items': [
+            {
+              'name': 'Rice',
+              'sku': 'RICE-1',
+              'unitLabel': '1 kg',
+              'quantity': 2,
+              'unitCost': 75,
+              'lineTotal': 150,
+            },
+          ],
+        },
+      };
+    }
     if (endpoint == '/admin/uploads/images' ||
         endpoint == '/admin/uploads/product-images') {
       return {'url': '/api/v1/images/asset-1'};
@@ -415,24 +476,6 @@ class _AdminApi extends ApiService {
 }
 
 void main() {
-  test('loads paginated cashier shift history', () async {
-    final api = _AdminApi();
-
-    final page = await AdminApiService(api).getPosShiftHistory(
-      page: 2,
-      pageSize: 10,
-    );
-
-    expect(api.posShiftHistoryQuery, {'page': '2', 'pageSize': '10'});
-    expect(page.page, 2);
-    expect(page.pageSize, 10);
-    expect(page.total, 21);
-    expect(page.shifts.single.cashierName, 'Cashier One');
-    expect(page.shifts.single.variance, -10);
-    expect(page.shifts.single.closedAt,
-        DateTime.parse('2026-10-24T16:00:00.000Z'));
-  });
-
   test('loads POS bill history using the requested page and date', () async {
     final api = _AdminApi();
 
@@ -452,6 +495,30 @@ void main() {
     expect(page.pageSize, 20);
     expect(page.total, 63);
     expect(page.pageCount, 4);
+  });
+
+  test('loads all-date pending balances and records partial payment details',
+      () async {
+    final api = _AdminApi();
+    final adminApi = AdminApiService(api);
+
+    final pending = await adminApi.getPosPendingPayments(page: 2);
+    await adminApi.recordPosPayment(
+      'sale-1',
+      amount: 25,
+      paymentMethod: 'DIGITAL',
+      note: 'PhonePe received',
+    );
+
+    expect(api.pendingPaymentQuery, {'page': '2', 'pageSize': '50'});
+    expect(pending.sales, isEmpty);
+    expect(pending.page, 2);
+    expect(pending.total, 0);
+    expect(api.postedPosPayment, {
+      'paymentMethod': 'DIGITAL',
+      'amount': 25,
+      'note': 'PhonePe received',
+    });
   });
 
   test('loads the restock queue and records received stock', () async {
@@ -486,6 +553,55 @@ void main() {
     await AdminApiService(api).getProducts(page: 1, vendingDrink: true);
 
     expect(api.productQuery?['vendingDrink'], 'true');
+  });
+
+  test('searches the admin product catalog by name or SKU', () async {
+    final api = _AdminApi();
+
+    await AdminApiService(api).getProducts(page: 1, search: 'masala tea');
+
+    expect(api.productQuery?['search'], 'masala tea');
+  });
+
+  test('records and loads supplier bills with their received items', () async {
+    final api = _AdminApi();
+    final service = AdminApiService(api);
+    final request = {
+      'supplierName': 'Local Dealer',
+      'invoiceNumber': 'INV-101',
+      'invoiceDate': '2026-10-24T00:00:00.000Z',
+      'deliveryPerson': 'Hari',
+      'items': [
+        {'productId': 'product-1', 'quantity': 2, 'unitCost': 75},
+      ],
+    };
+
+    final photo = Uint8List.fromList([1, 2, 3]);
+    final saved = await service.createSupplierPurchaseBill(
+      request,
+      photoBytes: photo,
+      photoFileName: 'bill.jpg',
+    );
+    final page = await service.getSupplierPurchaseBills(
+      page: 1,
+      search: 'Local Dealer',
+      day: DateTime(2026, 10, 24),
+    );
+
+    expect(api.postedPurchaseBill, request);
+    expect(api.uploadedEndpoint, '/admin/inventory/purchase-bills');
+    expect(api.uploadedFileName, 'bill.jpg');
+    expect(api.uploadedBytes, photo);
+    expect(saved.status, 'RECEIVED');
+    expect(saved.hasPhoto, isTrue);
+    expect(saved.items.single.quantity, 2);
+    expect(page.bills.single.deliveryPerson, 'Hari');
+    expect(api.purchaseBillQuery, {
+      'page': '1',
+      'pageSize': '25',
+      'search': 'Local Dealer',
+      'day': '2026-10-24',
+    });
   });
 
   test('loads the separate wholesale catalog', () async {

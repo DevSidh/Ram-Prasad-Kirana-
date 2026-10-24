@@ -350,6 +350,7 @@ Future<void> showProductQuickView(
                                     product: product,
                                     sourceRect: sourceRect,
                                     targetKey: cartTargetKey,
+                                    sourceImageWidthFactor: 1,
                                   );
                                   Navigator.pop(sheetContext);
                                   ScaffoldMessenger.of(context)

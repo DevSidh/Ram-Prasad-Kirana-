@@ -10,6 +10,12 @@ authoritative source for accounts, product availability, prices, coupons,
 inventory, delivery rules, and orders. The app must be configured with the URL
 of a running backend to load live data.
 
+The root-level Vite/React app (`src/`, `package.json`) is a standalone UI
+prototype that uses sample data persisted in browser storage. It is not
+connected to the production API and does not provide real authentication,
+payments, inventory, or order processing. Do not deploy it as the live store;
+use the Flutter web build with the authenticated backend integration instead.
+
 ## Contents
 
 - [Features](#features)
@@ -336,6 +342,13 @@ client configuration at build/run time using Dart defines:
   in the backend secret manager.
 
 Do not embed Firebase Admin credentials or private keys in the mobile client.
+The Android debug variant adds `.debug` to the application ID, so its Firebase
+configuration must include a client for
+`com.freshharvest.grocery_app.debug` as well as the release application ID.
+Without that client, `flutter build apk --debug` fails during Google Services
+processing; register the debug app in Firebase and refresh the local
+`google-services.json` rather than removing the debug suffix to bypass the
+check.
 
 ## Database migrations
 

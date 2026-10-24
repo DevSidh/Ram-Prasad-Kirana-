@@ -29,6 +29,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   bool _markAllReadStarted = false;
   String? _error;
   String? _preferencesWarning;
+  String? _readAllWarning;
   Map<String, bool> _notificationPreferences = NotificationPreferences.defaults;
   String? _loadedUserId;
   final Set<String> _deletingNotificationIds = {};
@@ -75,12 +76,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     setState(() {
       _loading = true;
       _error = null;
+      _readAllWarning = null;
     });
     try {
       final api = context.read<ApiService>();
+      String? readAllWarning;
       if (!_markAllReadStarted) {
-        await api.patch('/account/notifications/read-all', const {});
-        _markAllReadStarted = true;
+        try {
+          await api.patch('/account/notifications/read-all', const {});
+          _markAllReadStarted = true;
+        } catch (_) {
+          readAllWarning =
+              'Could not mark notifications as read. Showing updates anyway.';
+        }
       }
       final response = await api.get('/account/notifications');
       if (response is! Map<String, dynamic> || response['data'] is! List) {
@@ -115,6 +123,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             .toList();
         _notificationPreferences = notificationPreferences;
         _preferencesWarning = preferencesWarning;
+        _readAllWarning = readAllWarning;
         _pushAvailable = response['pushAvailable'] == true;
         _loading = false;
       });
@@ -507,6 +516,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                               const SizedBox(height: 10),
                               Text(
                                 '${context.tr('Notification filters could not be loaded:')} $_preferencesWarning. ${context.tr('Showing all updates.')}',
+                                style: TextStyle(
+                                  color: AppConstants.textMuted,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                            if (_readAllWarning != null) ...[
+                              const SizedBox(height: 10),
+                              Text(
+                                context.tr(_readAllWarning!),
                                 style: TextStyle(
                                   color: AppConstants.textMuted,
                                   fontSize: 12,

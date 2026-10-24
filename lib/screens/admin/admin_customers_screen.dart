@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../../core/constants.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../theme/app_colors.dart';
 import 'customer_menu_settings_screen.dart';
 
 class AdminCustomersScreen extends StatefulWidget {
@@ -292,61 +292,59 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+        padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
         children: [
-          const Text(
-            'Customers',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 4),
           Text(
             'Customer contact details, saved addresses and recent orders.',
-            style: TextStyle(color: AppConstants.textMuted),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
-          ExpansionTile(
-            key: const ValueKey('customer-removal-history'),
-            tilePadding: EdgeInsets.zero,
-            title: const Text('Customer removal history'),
-            subtitle:
-                const Text('Review removed profile IDs and audit details'),
-            onExpansionChanged: (expanded) {
-              if (expanded && !_removalHistoryLoaded) {
-                _loadRemovalHistory();
-              }
-            },
-            children: [
-              if (_loadingRemovalHistory)
-                const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: CircularProgressIndicator(),
-                )
-              else if (_removalHistoryError != null)
-                ListTile(
-                  title: Text(_removalHistoryError!),
-                  trailing: IconButton(
-                    tooltip: 'Retry removal history',
-                    onPressed: _loadRemovalHistory,
-                    icon: const Icon(Icons.refresh),
-                  ),
-                )
-              else if (_removalHistory.isEmpty)
-                const ListTile(
-                  title: Text('No customers have been removed.'),
-                )
-              else
-                ..._removalHistory.map((record) {
-                  final removedAt = record.removedAt.toLocal();
-                  final time =
-                      TimeOfDay.fromDateTime(removedAt).format(context);
-                  return ListTile(
-                    leading: const Icon(Icons.person_remove_alt_1_outlined),
-                    title: Text('Profile ${record.profileId}'),
-                    subtitle: Text(
-                      'Removed ${MaterialLocalizations.of(context).formatMediumDate(removedAt)} at $time by ${record.removedByName} (${record.removedByProfileId})',
+          Card(
+            key: const ValueKey('customer-removal-history-card'),
+            child: ExpansionTile(
+              key: const ValueKey('customer-removal-history'),
+              tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+              title: const Text('Customer removal history'),
+              subtitle:
+                  const Text('Review removed profile IDs and audit details'),
+              onExpansionChanged: (expanded) {
+                if (expanded && !_removalHistoryLoaded) {
+                  _loadRemovalHistory();
+                }
+              },
+              children: [
+                if (_loadingRemovalHistory)
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: CircularProgressIndicator(),
+                  )
+                else if (_removalHistoryError != null)
+                  ListTile(
+                    title: Text(_removalHistoryError!),
+                    trailing: IconButton(
+                      tooltip: 'Retry removal history',
+                      onPressed: _loadRemovalHistory,
+                      icon: const Icon(Icons.refresh),
                     ),
-                  );
-                }),
-            ],
+                  )
+                else if (_removalHistory.isEmpty)
+                  const ListTile(
+                    title: Text('No customers have been removed.'),
+                  )
+                else
+                  ..._removalHistory.map((record) {
+                    final removedAt = record.removedAt.toLocal();
+                    final time =
+                        TimeOfDay.fromDateTime(removedAt).format(context);
+                    return ListTile(
+                      leading: const Icon(Icons.person_remove_alt_1_outlined),
+                      title: Text('Profile ${record.profileId}'),
+                      subtitle: Text(
+                        'Removed ${MaterialLocalizations.of(context).formatMediumDate(removedAt)} at $time by ${record.removedByName} (${record.removedByProfileId})',
+                      ),
+                    );
+                  }),
+              ],
+            ),
           ),
           Align(
             alignment: Alignment.centerLeft,
@@ -374,9 +372,6 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
                   _load();
                 },
                 icon: const Icon(Icons.arrow_forward_rounded),
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
               ),
             ),
           ),
@@ -452,27 +447,25 @@ class _CustomerCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
-      elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: AppConstants.borderLight),
+        borderRadius: BorderRadius.circular(AppRadii.row),
       ),
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
         childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
         leading: CircleAvatar(
-          backgroundColor: AppConstants.primaryLight,
+          backgroundColor: AppColors.thumbnailGreen,
           child: Text(
             customer.name.isEmpty ? '?' : customer.name[0].toUpperCase(),
-            style: TextStyle(
-              color: AppConstants.primaryDark,
+            style: const TextStyle(
+              color: AppColors.primary,
               fontWeight: FontWeight.w800,
             ),
           ),
         ),
         title: Text(
           customer.name,
-          style: const TextStyle(fontWeight: FontWeight.w800),
+          style: Theme.of(context).textTheme.titleMedium,
         ),
         subtitle: Text(
           [
@@ -483,7 +476,7 @@ class _CustomerCard extends StatelessWidget {
           ].where((value) => value.trim().isNotEmpty).join(' · '),
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 11, height: 1.4),
+          style: Theme.of(context).textTheme.bodySmall,
         ),
         children: [
           const Divider(height: 1),
@@ -508,9 +501,9 @@ class _CustomerCard extends StatelessWidget {
             ),
           if (customer.addresses.isNotEmpty) ...[
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Saved addresses',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+              style: Theme.of(context).textTheme.labelLarge,
             ),
             for (final address in customer.addresses)
               Padding(
@@ -527,15 +520,15 @@ class _CustomerCard extends StatelessWidget {
                       .whereType<String>()
                       .where((value) => value.trim().isNotEmpty)
                       .join(', '),
-                  style: const TextStyle(fontSize: 12),
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
           ],
           if (customer.recentOrders.isNotEmpty) ...[
             const SizedBox(height: 12),
-            const Text(
+            Text(
               'Recent orders',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+              style: Theme.of(context).textTheme.labelLarge,
             ),
             for (final order in customer.recentOrders)
               Padding(
@@ -547,15 +540,12 @@ class _CustomerCard extends StatelessWidget {
                         '${order['orderNumber']} · ${order['status']}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12),
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ),
                     Text(
                       'Rs. ${_number(order['total']).toStringAsFixed(0)}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: Theme.of(context).textTheme.labelMedium,
                     ),
                   ],
                 ),
@@ -615,13 +605,12 @@ class _CustomerField extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: TextStyle(
-                color: AppConstants.textMuted,
-                fontSize: 12,
+              style: const TextStyle(
+                color: AppColors.muted,
               ),
             ),
           ),
-          Text(value, style: const TextStyle(fontSize: 12)),
+          Text(value, style: Theme.of(context).textTheme.bodySmall),
         ],
       ),
     );
@@ -638,10 +627,13 @@ class _CustomerNotice extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF3E0),
-        borderRadius: BorderRadius.circular(12),
+        color: AppColors.errorPill,
+        borderRadius: BorderRadius.circular(AppRadii.row),
       ),
-      child: Text(message, style: const TextStyle(color: Color(0xFF8A4B08))),
+      child: Text(
+        message,
+        style: const TextStyle(color: AppColors.errorText),
+      ),
     );
   }
 }
@@ -656,14 +648,14 @@ class _EmptyCustomers extends StatelessWidget {
       child: Column(
         children: [
           const Icon(Icons.people_outline_rounded,
-              size: 42, color: AppConstants.primary),
+              size: 42, color: AppColors.primary),
           const SizedBox(height: 12),
           const Text('No customers found',
               style: TextStyle(fontWeight: FontWeight.w800)),
           const SizedBox(height: 4),
           Text(
             'Registered customers will appear here.',
-            style: TextStyle(color: AppConstants.textMuted),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ),

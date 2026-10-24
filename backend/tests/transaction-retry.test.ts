@@ -107,6 +107,25 @@ async function run(): Promise<void> {
   );
   assert.equal(exhaustedAttempts, 3);
 
+  let boundedAttempts = 0;
+  const boundedPrisma = {
+    $transaction: async () => {
+      boundedAttempts += 1;
+      throw transactionError('P2034');
+    },
+  } as unknown as Pick<PrismaClient, '$transaction'>;
+  await assert.rejects(
+    runTransactionWithRetry(
+      boundedPrisma,
+      async () => 'unreachable',
+      { maxWait: 2_000, timeout: 12_000, maxAttempts: 2 },
+    ),
+    (error: unknown) =>
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2034',
+  );
+  assert.equal(boundedAttempts, 2);
+
   let nonRetryableAttempts = 0;
   const nonRetryableError = new Error('Validation failure');
   const nonRetryablePrisma = {

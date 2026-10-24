@@ -36,6 +36,7 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen>
   String? _savingId;
   String? _filter;
   bool _loading = true;
+  bool _refreshInProgress = false;
   int _selectedIndex = 0;
   bool _availabilitySaving = false;
   bool _publishingLocation = false;
@@ -102,7 +103,9 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen>
   Future<void> refresh() => _refresh();
 
   Future<void> _refresh({bool silent = false}) async {
+    if (_refreshInProgress) return;
     if (_loading && _page != null) return;
+    _refreshInProgress = true;
     if (!silent) {
       setState(() {
         _loading = true;
@@ -131,6 +134,8 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen>
         _error = error.toString().replaceFirst('Exception: ', '');
         _loading = false;
       });
+    } finally {
+      _refreshInProgress = false;
     }
   }
 

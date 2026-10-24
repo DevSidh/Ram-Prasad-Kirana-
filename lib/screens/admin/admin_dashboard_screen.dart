@@ -4,6 +4,8 @@ import '../../core/constants.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../theme/admin_widgets.dart';
+import '../../theme/app_colors.dart';
 import '../../widgets/store_animation.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -66,30 +68,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+        padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Store at a glance',
-                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 4),
-                    Text('Live figures from your store', style: TextStyle(color: AppConstants.textMuted)),
-                  ],
-                ),
-              ),
-              IconButton(
-                tooltip: 'Refresh dashboard',
-                onPressed: _load,
-                icon: const Icon(Icons.refresh_rounded),
-              ),
-            ],
+          Align(
+            alignment: Alignment.centerRight,
+            child: IconButton(
+              tooltip: 'Refresh dashboard',
+              onPressed: _load,
+              icon: const Icon(Icons.refresh_rounded),
+            ),
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
@@ -105,7 +92,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   label: 'Today',
                   value: _money(dashboard.sales['today']),
                   icon: Icons.wb_sunny_outlined,
-                  color: const Color(0xFF047857),
+                  color: AppColors.successText,
                 ),
               ),
               const SizedBox(width: 12),
@@ -114,7 +101,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   label: 'All time',
                   value: _money(dashboard.sales['total']),
                   icon: Icons.account_balance_wallet_outlined,
-                  color: const Color(0xFFB45309),
+                  color: AppColors.warningText,
                 ),
               ),
             ],
@@ -124,10 +111,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           const SizedBox(height: 10),
           _MetricGrid(
             items: [
-              _Metric('Total', _number(dashboard.products['total']), Icons.inventory_2_outlined),
-              _Metric('Active', _number(dashboard.products['active']), Icons.check_circle_outline, green: true),
-              _Metric('Out of stock', _number(dashboard.products['outOfStock']), Icons.remove_shopping_cart_outlined, alert: true),
-              _Metric('Low stock', _number(dashboard.products['lowStock']), Icons.warning_amber_rounded, alert: true),
+              _Metric('Total', _number(dashboard.products['total']),
+                  Icons.inventory_2_outlined),
+              _Metric('Active', _number(dashboard.products['active']),
+                  Icons.check_circle_outline,
+                  green: true),
+              _Metric('Out of stock', _number(dashboard.products['outOfStock']),
+                  Icons.remove_shopping_cart_outlined,
+                  alert: true),
+              _Metric('Low stock', _number(dashboard.products['lowStock']),
+                  Icons.warning_amber_rounded,
+                  alert: true),
             ],
           ),
           const SizedBox(height: 22),
@@ -135,12 +129,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           const SizedBox(height: 10),
           _MetricGrid(
             items: [
-              _Metric('Total', _number(dashboard.orders['total']), Icons.receipt_long_outlined),
-              _Metric('Pending', _number(dashboard.orders['pending']), Icons.hourglass_empty_rounded),
-              _Metric('Processing', _number(dashboard.orders['processing']), Icons.sync_rounded),
-              _Metric('Out for delivery', _number(dashboard.orders['outForDelivery']), Icons.delivery_dining_outlined),
-              _Metric('Delivered', _number(dashboard.orders['delivered']), Icons.task_alt_rounded, green: true),
-              _Metric('Cancelled', _number(dashboard.orders['cancelled']), Icons.cancel_outlined, alert: true),
+              _Metric('Total', _number(dashboard.orders['total']),
+                  Icons.receipt_long_outlined),
+              _Metric('Pending', _number(dashboard.orders['pending']),
+                  Icons.hourglass_empty_rounded),
+              _Metric('Processing', _number(dashboard.orders['processing']),
+                  Icons.sync_rounded),
+              _Metric(
+                  'Out for delivery',
+                  _number(dashboard.orders['outForDelivery']),
+                  Icons.delivery_dining_outlined),
+              _Metric('Delivered', _number(dashboard.orders['delivered']),
+                  Icons.task_alt_rounded,
+                  green: true),
+              _Metric('Cancelled', _number(dashboard.orders['cancelled']),
+                  Icons.cancel_outlined,
+                  alert: true),
             ],
           ),
           const SizedBox(height: 22),
@@ -150,13 +154,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             label: 'Total customers',
             value: _number(dashboard.customers['total']),
             icon: Icons.people_outline_rounded,
-            color: const Color(0xFF4F46E5),
+            color: AppColors.muted,
           ),
           const SizedBox(height: 24),
           Row(
             children: [
               const Expanded(
-                child: _SectionHeading(title: 'Recent orders', trailing: 'LATEST'),
+                child:
+                    _SectionHeading(title: 'Recent orders', trailing: 'LATEST'),
               ),
               TextButton(
                 onPressed: widget.onOrdersRequested,
@@ -191,7 +196,8 @@ class _Metric {
   final bool green;
   final bool alert;
 
-  const _Metric(this.label, this.value, this.icon, {this.green = false, this.alert = false});
+  const _Metric(this.label, this.value, this.icon,
+      {this.green = false, this.alert = false});
 }
 
 class _MetricGrid extends StatelessWidget {
@@ -216,42 +222,15 @@ class _MetricGrid extends StatelessWidget {
           ),
           itemBuilder: (context, index) {
             final item = items[index];
-            final color = item.alert
-                ? const Color(0xFFB45309)
-                : item.green
-                    ? const Color(0xFF047857)
-                    : AppConstants.primary;
-            return Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppConstants.surfaceLight,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppConstants.borderLight),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Icon(item.icon, size: 17, color: color),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          item.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 11, color: AppConstants.textMuted),
-                        ),
-                      ),
-                    ],
-                  ),
-                  Text(
-                    item.value,
-                    style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
-                  ),
-                ],
-              ),
+            return AppStatCard(
+              label: item.label,
+              value: item.value,
+              icon: item.icon,
+              tint: item.alert
+                  ? AppColors.thumbnailAmber
+                  : item.green
+                      ? AppColors.thumbnailGreen
+                      : AppColors.thumbnailBlue,
             );
           },
         );
@@ -275,34 +254,15 @@ class _SalesCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppConstants.surfaceLight,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppConstants.borderLight),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(color: color.withValues(alpha: .1), borderRadius: BorderRadius.circular(13)),
-            child: Icon(icon, color: color, size: 20),
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: AppConstants.textMuted)),
-                const SizedBox(height: 2),
-                Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return AppStatCard(
+      label: label,
+      value: value,
+      icon: icon,
+      tint: color == AppColors.successText
+          ? AppColors.thumbnailGreen
+          : color == AppColors.warningText
+              ? AppColors.thumbnailAmber
+              : AppColors.thumbnailLavender,
     );
   }
 }
@@ -315,42 +275,19 @@ class _RecentOrderTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final orderId = order['orderNumber']?.toString() ?? order['id']?.toString() ?? 'Order';
+    final orderId =
+        order['orderNumber']?.toString() ?? order['id']?.toString() ?? 'Order';
     final status = order['status']?.toString() ?? '—';
     final total = order['total'];
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-      decoration: BoxDecoration(
-        color: AppConstants.surfaceLight,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppConstants.borderLight),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 19,
-            backgroundColor: AppConstants.primaryLight,
-            child: const Icon(Icons.receipt_long_outlined, color: AppConstants.primary, size: 19),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(orderId, style: const TextStyle(fontWeight: FontWeight.w700)),
-                const SizedBox(height: 3),
-                Text(status.replaceAll('_', ' '), style: TextStyle(color: AppConstants.textMuted, fontSize: 12)),
-              ],
-            ),
-          ),
-          if (total != null)
-            Text(_money(total), style: const TextStyle(fontWeight: FontWeight.w700)),
-        ],
-      ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: AppRowCard(
+        title: orderId,
+        subtitle: status.replaceAll('_', ' '),
+        leading: const Icon(Icons.receipt_long_outlined, size: 21),
+        tint: AppColors.thumbnailBlue,
+        onTap: onTap,
+        trailing: total == null ? null : Text(_money(total)),
       ),
     );
   }
@@ -366,9 +303,14 @@ class _SectionHeading extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800))),
+        Expanded(child: AppSectionLabel(title)),
         if (trailing.isNotEmpty)
-          Text(trailing, style: TextStyle(fontSize: 9, letterSpacing: 1, color: AppConstants.textMuted, fontWeight: FontWeight.w700)),
+          Text(
+            trailing,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  letterSpacing: 0.72,
+                ),
+          ),
       ],
     );
   }
@@ -396,10 +338,13 @@ class _InlineError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => DecoratedBox(
-        decoration: BoxDecoration(color: const Color(0xFFFFF7ED), borderRadius: BorderRadius.circular(12)),
+        decoration: BoxDecoration(
+            color: AppColors.warningPill,
+            borderRadius: BorderRadius.circular(AppRadii.input)),
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Text(message, style: const TextStyle(color: Color(0xFF9A3412))),
+          child: Text(message,
+              style: const TextStyle(color: AppColors.warningText)),
         ),
       );
 }
@@ -424,20 +369,35 @@ class _EmptyPanel extends StatelessWidget {
   final String title;
   final String message;
 
-  const _EmptyPanel({required this.icon, required this.title, required this.message});
+  const _EmptyPanel(
+      {required this.icon, required this.title, required this.message});
 
   @override
   Widget build(BuildContext context) => Container(
         width: double.infinity,
         padding: const EdgeInsets.all(22),
-        decoration: BoxDecoration(        color: AppConstants.surfaceLight, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppConstants.borderLight)),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppRadii.card),
+          boxShadow: const [
+            BoxShadow(
+              color: AppColors.cardShadow,
+              offset: Offset(0, 6),
+              blurRadius: 24,
+            ),
+          ],
+        ),
         child: Column(
           children: [
-            Icon(icon, size: 28, color: AppConstants.textMuted),
+            Icon(icon, size: 28, color: AppColors.muted),
             const SizedBox(height: 9),
             Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
-            Text(message, textAlign: TextAlign.center, style: TextStyle(color: AppConstants.textMuted, fontSize: 12)),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ],
         ),
       );
@@ -451,4 +411,5 @@ String _money(dynamic value) {
   return '${AppConstants.currencySymbol}${amount.toStringAsFixed(2)}';
 }
 
-String _cleanError(Object error) => error.toString().replaceFirst('Exception: ', '');
+String _cleanError(Object error) =>
+    error.toString().replaceFirst('Exception: ', '');

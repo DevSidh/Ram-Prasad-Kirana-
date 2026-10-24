@@ -14,7 +14,7 @@ const _drinks = <String>[
   'Cola',
   'Lime Fizz',
   'Orange',
-  'Strawberry Milk Special',
+  'Milk Tea',
   'Choco Milk',
   'Matcha Latte',
   'Kiwi Crush',
@@ -61,6 +61,7 @@ class _VendingApi extends ApiService {
             'imageUrl': '',
             'isBestSeller': index == 0,
             'isVendingDrink': true,
+            if (index == 3) 'vendingSection': 'TEA_COFFEE',
           },
       ],
     };
@@ -138,9 +139,9 @@ void main() {
       'limit': '100',
     });
 
-    expect(find.text('13 drinks'), findsOneWidget);
+    expect(find.text('14 drinks'), findsOneWidget);
     expect(find.text('Cola'), findsWidgets);
-    expect(find.text('Strawberry Milk Special'), findsNothing);
+    expect(find.text('Milk Tea'), findsWidgets);
     expect(find.text('Mineral Water'), findsNothing);
     expect(find.byKey(const ValueKey('drink-category-Milk')), findsNothing);
     expect(find.byKey(const ValueKey('drink-category-Water')), findsNothing);
@@ -155,7 +156,8 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('drink-category-Tea & Coffee')));
     await tester.pumpAndSettle();
-    expect(find.text('4 drinks'), findsOneWidget);
+    expect(find.text('5 drinks'), findsOneWidget);
+    expect(find.text('Milk Tea'), findsWidgets);
     expect(find.text('Matcha Latte'), findsOneWidget);
     expect(find.text('Cola'), findsNothing);
     expect(tester.takeException(), isNull);

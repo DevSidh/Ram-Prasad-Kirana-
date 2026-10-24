@@ -16,13 +16,21 @@ function isRetryableTransactionError(error: unknown): boolean {
 export async function runTransactionWithRetry<T>(
   prisma: Pick<PrismaClient, '$transaction'>,
   operation: (transaction: Prisma.TransactionClient) => Promise<T>,
-  options: { maxWait: number; timeout: number } = TRANSACTION_OPTIONS,
+  options: {
+    maxWait: number;
+    timeout: number;
+    maxAttempts?: number;
+  } = TRANSACTION_OPTIONS,
 ): Promise<T> {
+  const { maxAttempts = MAX_ATTEMPTS, maxWait, timeout } = options;
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1) {
+    throw new RangeError('Transaction attempts must be a positive integer.');
+  }
   for (let attempt = 1; ; attempt += 1) {
     try {
-      return await prisma.$transaction(operation, options);
+      return await prisma.$transaction(operation, { maxWait, timeout });
     } catch (error) {
-      if (!isRetryableTransactionError(error) || attempt >= MAX_ATTEMPTS) {
+      if (!isRetryableTransactionError(error) || attempt >= maxAttempts) {
         throw error;
       }
       await new Promise((resolve) => setTimeout(resolve, attempt * 50));

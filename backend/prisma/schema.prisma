@@ -46,6 +46,8 @@ model User {
   posCashMovements       PosCashMovement[]            @relation("PosCashActor")
   posExchanges           PosExchange[]                @relation("PosExchangeCashier")
   posExchangeDecisions   PosExchange[]                @relation("PosExchangeResolver")
+  posPaymentCollections  PosPaymentCollection[]       @relation("PosPaymentCollector")
+  supplierPurchaseBills  SupplierPurchaseBill[]
 
   @@index([role])
   @@index([createdAt])
@@ -220,6 +222,7 @@ model Product {
   coupons                  Coupon[]
   posSaleItems             PosSaleItem[]
   posExchangeItems         PosExchangeItem[]
+  supplierPurchaseBillItems SupplierPurchaseBillItem[]
 
   @@index([categoryId])
   @@index([isActive])
@@ -302,6 +305,47 @@ model InventoryBatch {
 
   @@index([productId, expiresAt])
   @@index([expiresAt])
+}
+
+model SupplierPurchaseBill {
+  id             String                       @id @default(cuid())
+  supplierName   String
+  supplierPhone  String?
+  invoiceNumber  String
+  invoiceDate    DateTime
+  deliveryPerson String?
+  notes          String?
+  photoData      Bytes?
+  photoMimeType  String?
+  totalCost      Decimal                      @db.Decimal
+  status         SupplierPurchaseBillStatus   @default(RECEIVED)
+  createdById    String?
+  createdAt      DateTime                     @default(now())
+  updatedAt      DateTime                     @updatedAt
+  createdBy      User?                        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  items          SupplierPurchaseBillItem[]
+
+  @@index([invoiceDate])
+  @@index([createdAt])
+  @@index([supplierName])
+  @@unique([supplierName, invoiceNumber])
+}
+
+model SupplierPurchaseBillItem {
+  id        String               @id @default(cuid())
+  billId    String
+  productId String
+  name      String
+  sku       String
+  unitLabel String
+  quantity  Decimal              @db.Decimal
+  unitCost  Decimal              @db.Decimal
+  lineTotal Decimal              @db.Decimal
+  bill      SupplierPurchaseBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+  product   Product              @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([billId])
+  @@index([productId])
 }
 
 model OrderBatchAllocation {
@@ -468,6 +512,7 @@ model PosSale {
   status         PosSaleStatus    @default(COMPLETED)
   paymentMethod  PosPaymentMethod
   paymentStatus  PaymentStatus    @default(COMPLETED)
+  paidAmount     Decimal          @default(0) @db.Decimal(12, 2)
   subtotal       Decimal          @db.Decimal(12, 2)
   discount       Decimal          @default(0) @db.Decimal(12, 2)
   total          Decimal          @db.Decimal(12, 2)
@@ -478,10 +523,27 @@ model PosSale {
   items          PosSaleItem[]
   refunds        PosRefund[]
   exchanges      PosExchange[]
+  paymentCollections PosPaymentCollection[]
 
   @@index([shiftId, createdAt])
   @@index([createdAt, status])
   @@index([paymentStatus])
+}
+
+model PosPaymentCollection {
+  id           String         @id @default(cuid())
+  saleId       String
+  recordedById String
+  amount       Decimal        @db.Decimal(12, 2)
+  method       PosPaymentMethod
+  note         String?
+  createdAt    DateTime       @default(now())
+  sale         PosSale        @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  recordedBy   User           @relation("PosPaymentCollector", fields: [recordedById], references: [id], onDelete: Restrict)
+
+  @@index([createdAt])
+  @@index([saleId, createdAt])
+  @@index([recordedById, createdAt])
 }
 
 model PosSaleItem {
@@ -833,6 +895,10 @@ enum PaymentStatus {
 enum PosShiftStatus {
   OPEN
   CLOSED
+}
+
+enum SupplierPurchaseBillStatus {
+  RECEIVED
 }
 
 enum PosSaleStatus {

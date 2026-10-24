@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../../core/constants.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_order_notification_service.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../theme/app_colors.dart';
 
 class AdminOrdersScreen extends StatefulWidget {
   final ApiService api;
@@ -383,18 +383,13 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen>
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+        padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
         children: [
-          const Text(
-            'Orders',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 4),
           Text(
             'Review customer details and update delivery status. Cancelling preserves order, payment, and fulfillment history.',
-            style: TextStyle(color: AppConstants.textMuted),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           TextField(
             controller: _searchController,
             textInputAction: TextInputAction.search,
@@ -414,13 +409,18 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen>
                 icon: const Icon(Icons.arrow_forward_rounded),
               ),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(AppRadii.input),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppRadii.input),
+                borderSide: BorderSide.none,
               ),
             ),
           ),
           const SizedBox(height: 10),
           SizedBox(
-            height: 42,
+            height: 36,
             child: ListView(
               scrollDirection: Axis.horizontal,
               children: [
@@ -588,17 +588,15 @@ class _AdminOrderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
-      elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: AppConstants.borderLight),
+        borderRadius: BorderRadius.circular(AppRadii.row),
       ),
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
         childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
         title: Text(
           order.orderNumber,
-          style: const TextStyle(fontWeight: FontWeight.w800),
+          style: Theme.of(context).textTheme.titleMedium,
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 5),
@@ -608,7 +606,7 @@ class _AdminOrderCard extends StatelessWidget {
             '${order.paymentStatus} · Rs. ${order.total.toStringAsFixed(0)}',
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 11, height: 1.4),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ),
         trailing: isSaving
@@ -711,9 +709,9 @@ class _AdminOrderCard extends StatelessWidget {
               ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: const EdgeInsets.only(bottom: 8),
-                title: const Text(
+                title: Text(
                   'Delivery history',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                  style: Theme.of(context).textTheme.labelLarge,
                 ),
                 children: [
                   for (final entry in order.deliveryHistory)
@@ -723,14 +721,11 @@ class _AdminOrderCard extends StatelessWidget {
                       leading: const Icon(
                         Icons.circle,
                         size: 8,
-                        color: AppConstants.primary,
+                        color: AppColors.primary,
                       ),
                       title: Text(
                         entry['status']?.toString().replaceAll('_', ' ') ?? '',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
+                        style: Theme.of(context).textTheme.labelMedium,
                       ),
                       subtitle: Text(
                         [
@@ -740,7 +735,7 @@ class _AdminOrderCard extends StatelessWidget {
                             .whereType<String>()
                             .where((value) => value.isNotEmpty)
                             .join('\n'),
-                        style: const TextStyle(fontSize: 11),
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ),
                 ],
@@ -768,8 +763,8 @@ class _AdminOrderCard extends StatelessWidget {
                       vertical: 10,
                     ),
                     decoration: BoxDecoration(
-                      color: AppConstants.primaryLight,
-                      borderRadius: BorderRadius.circular(12),
+                      color: AppColors.pageEnd,
+                      borderRadius: BorderRadius.circular(AppRadii.row),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -809,8 +804,8 @@ class _AdminOrderCard extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
-                    color: AppConstants.primaryLight,
-                    borderRadius: BorderRadius.circular(12),
+                    color: AppColors.pageEnd,
+                    borderRadius: BorderRadius.circular(AppRadii.row),
                   ),
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
@@ -847,16 +842,13 @@ class _DetailLine extends StatelessWidget {
             width: 92,
             child: Text(
               label,
-              style: TextStyle(
-                color: AppConstants.textMuted,
-                fontSize: 12,
-              ),
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(fontSize: 12),
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
         ],
@@ -899,10 +891,13 @@ class _OrderNotice extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF3E0),
-        borderRadius: BorderRadius.circular(12),
+        color: AppColors.warningPill,
+        borderRadius: BorderRadius.circular(AppRadii.row),
       ),
-      child: Text(message, style: const TextStyle(color: Color(0xFF8A4B08))),
+      child: Text(
+        message,
+        style: const TextStyle(color: AppColors.warningText),
+      ),
     );
   }
 }
@@ -912,19 +907,19 @@ class _EmptyOrders extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 44),
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 44),
       child: Column(
         children: [
-          const Icon(Icons.receipt_long_outlined,
-              size: 42, color: AppConstants.primary),
-          const SizedBox(height: 12),
-          const Text('No orders found',
+          Icon(Icons.receipt_long_outlined,
+              size: 42, color: AppColors.primary),
+          SizedBox(height: 12),
+          Text('No orders found',
               style: TextStyle(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 4),
+          SizedBox(height: 4),
           Text(
             'New customer orders will appear here.',
-            style: TextStyle(color: AppConstants.textMuted),
+            style: TextStyle(color: AppColors.muted),
           ),
         ],
       ),

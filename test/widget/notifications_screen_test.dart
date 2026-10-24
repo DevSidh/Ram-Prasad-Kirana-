@@ -16,6 +16,7 @@ class _NotificationsApi extends ApiService {
   String? deletedEndpoint;
   String? patchedEndpoint;
   bool failDelete = false;
+  bool failReadAll = false;
   final List<Map<String, dynamic>> notifications = [
     {
       'id': 'notification-1',
@@ -60,6 +61,9 @@ class _NotificationsApi extends ApiService {
   ) async {
     patchedEndpoint = endpoint;
     if (endpoint == '/account/notifications/read-all') {
+      if (failReadAll) {
+        throw StateError('Read-all request failed.');
+      }
       for (final notification in notifications) {
         notification['isRead'] = true;
       }
@@ -132,6 +136,47 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Coupon SAVE10 copied.'), findsOneWidget);
     expect(copiedValues, ['SAVE10']);
+  });
+
+  testWidgets('notification list stays available when mark-all-read fails',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({
+      AppConstants.keyToken: 'test-token',
+      AppConstants.keyUser: jsonEncode({
+        'id': 'customer-1',
+        'email': 'customer@example.com',
+        'fullName': 'Test Customer',
+        'role': 'CUSTOMER',
+      }),
+    });
+
+    final api = _NotificationsApi()..failReadAll = true;
+    final auth = AuthProvider(apiService: api);
+    final theme = ThemeProvider();
+    addTearDown(auth.dispose);
+    addTearDown(theme.dispose);
+    await auth.sessionReady;
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<ApiService>.value(value: api),
+          ChangeNotifierProvider<AuthProvider>.value(value: auth),
+          ChangeNotifierProvider<ThemeProvider>.value(value: theme),
+        ],
+        child: const MaterialApp(home: NotificationsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Order update'), findsOneWidget);
+    expect(
+      find.text(
+          'Could not mark notifications as read. Showing updates anyway.'),
+      findsOneWidget,
+    );
+    expect(find.text('Notifications could not load'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('opening notifications marks all read before deleting',

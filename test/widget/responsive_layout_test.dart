@@ -16,6 +16,7 @@ import 'package:freshharvest_grocery/screens/admin/admin_shell.dart';
 import 'package:freshharvest_grocery/screens/admin/admin_store_hours_screen.dart';
 import 'package:freshharvest_grocery/screens/admin/admin_coupons_screen.dart';
 import 'package:freshharvest_grocery/screens/admin/admin_restock_screen.dart';
+import 'package:freshharvest_grocery/theme/admin_widgets.dart';
 import 'package:freshharvest_grocery/widgets/product_card.dart';
 import 'package:freshharvest_grocery/widgets/custom_button.dart';
 import 'package:freshharvest_grocery/navigation/main_bottom_nav.dart';
@@ -487,6 +488,8 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Store setup & other tools'));
+    await tester.pumpAndSettle();
     final productSkusTile = find.descendant(
       of: find.byType(Drawer),
       matching: find.text('Product SKUs'),
@@ -569,6 +572,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    final billingToolsGroup = find.text('More billing tools');
+    await tester.ensureVisible(billingToolsGroup);
+    await tester.tap(billingToolsGroup);
+    await tester.pumpAndSettle();
+
     for (final label in [
       'Dashboard',
       'Billing',
@@ -577,6 +585,7 @@ void main() {
       'Barcode Scanner',
       'Held / Suspended Bills',
       'Bill History / Invoices',
+      'Pending Cash',
       'Payments & Refunds',
       'Cash Register',
       'Customers',
@@ -613,17 +622,22 @@ void main() {
         await tester.pumpAndSettle();
       }
     }
+    expect(find.text('Cashier Shift History'), findsNothing);
     expect(find.text('Cashier / Shift Management'), findsNothing);
-    expect(find.text('Billing staff'), findsOneWidget);
-    expect(find.text('1 active product(s) are low on stock.'), findsOneWidget);
-    final newBillButton = find.widgetWithText(FilledButton, 'New bill');
-    expect(newBillButton, findsOneWidget);
-    expect(tester.widget<FilledButton>(newBillButton).onPressed, isNotNull);
     expect(
-      Theme.of(tester.element(find.byType(ListTile).first))
-          .scaffoldBackgroundColor,
-      const Color(0xFFEAF0E8),
+      find.text('STORE ADMIN'),
+      findsWidgets,
     );
+    expect(find.text('Notifications'), findsWidgets);
+    final posNavigationItem = find.descendant(
+      of: find.byKey(const ValueKey('admin-navigation-list')),
+      matching: find.text('New Bill / POS'),
+    );
+    await tester.ensureVisible(posNavigationItem);
+    await tester.tap(posNavigationItem);
+    await tester.pumpAndSettle();
+    expect(find.text('New bill'), findsOneWidget);
+    expect(find.byType(AdminGradientBackground), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 
@@ -650,7 +664,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Weekly opening hours'), findsOneWidget);
+    expect(find.text('WEEKLY OPENING HOURS'), findsOneWidget);
     expect(find.text('Monday'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('Sunday'),
@@ -658,12 +672,8 @@ void main() {
       scrollable: find.byType(Scrollable).last,
     );
     expect(find.text('Sunday'), findsOneWidget);
-    await tester.drag(find.byType(ListView).first, const Offset(0, 1000));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(
-      SwitchListTile,
-      'Accept online orders',
-    ));
+    await tester.ensureVisible(find.text('Accept online orders'));
+    await tester.tap(find.text('Accept online orders'));
     await tester.pumpAndSettle();
     expect(apiService.storeSettingsUpdate?['isOrderingEnabled'], isFalse);
     expect(find.text('Ordering is paused for every customer.'), findsOneWidget);
@@ -692,7 +702,7 @@ void main() {
       debugPrint(initialLayoutError.toStringDeep());
     }
     expect(initialLayoutError, isNull);
-    expect(find.text('Promotions'), findsOneWidget);
+    expect(find.text('Add code'), findsOneWidget);
     expect(find.text('No promotions yet'), findsOneWidget);
     await tester.tap(find.text('Add code'));
     await tester.pumpAndSettle();
@@ -720,9 +730,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Restock queue'), findsOneWidget);
+    expect(
+      find.text('Active products at or below their low-stock threshold.'),
+      findsOneWidget,
+    );
     expect(find.text('Rice'), findsOneWidget);
-    expect(find.text('2 available'), findsOneWidget);
+    expect(find.textContaining('· 2 available ·'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.text('Restock'));

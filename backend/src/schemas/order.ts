@@ -9,9 +9,7 @@ export const orderInput = z.object({
   }).strict()).min(1).max(50),
   addressId: z.string().trim().min(1),
   paymentMethod: z.enum(['COD'], {
-    errorMap: () => ({
-      message: 'Online payment is not available yet. Choose Cash on Delivery.',
-    }),
+    error: 'Online payment is not available yet. Choose Cash on Delivery.',
   }),
   scheduledDeliveryAt: z.string().datetime().nullable().optional(),
   tip: z.number().finite().min(0).max(10000).default(0),

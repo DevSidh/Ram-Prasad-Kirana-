@@ -6,6 +6,8 @@ import '../../core/constants.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../theme/admin_widgets.dart';
+import '../../theme/app_colors.dart';
 import '../../widgets/store_animation.dart';
 
 class AdminCouponsScreen extends StatefulWidget {
@@ -170,109 +172,141 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
       : '${AppConstants.currencySymbol}${coupon.discountAmount?.toStringAsFixed(0) ?? '0'} off';
 
   Widget _buildCouponCard(AdminCoupon coupon) {
-    final statusColor =
-        coupon.isActive ? Colors.green.shade700 : AppConstants.textMuted;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: AppConstants.surfaceLight,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppConstants.borderLight),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
-        child: Row(
+    final details = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          coupon.code,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        if (coupon.productId != null || coupon.assignedUserId != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 3),
+            child: Text(
+              'Product-specific · assigned to one customer',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.warningText,
+                  ),
+            ),
+          ),
+        const SizedBox(height: 3),
+        Text(
+          '${_discountLabel(coupon)} · Min. ${AppConstants.currencySymbol}${coupon.minOrderAmount.toStringAsFixed(0)}',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 3),
+        Text(
+          coupon.usageLimit == null
+              ? '${coupon.usedCount} uses'
+              : '${coupon.usedCount}/${coupon.usageLimit} uses',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          children: [
+            AppStatusPill(
+              coupon.isActive ? 'Active' : 'Inactive',
+              variant: coupon.isActive
+                  ? AppStatusVariant.success
+                  : AppStatusVariant.neutral,
+            ),
+            AppStatusPill(
+              coupon.isAnnounced ? 'Announced' : 'Draft',
+              variant: AppStatusVariant.neutral,
+            ),
+          ],
+        ),
+        const SizedBox(height: 3),
+        Text(
+          coupon.perUserLimit == null
+              ? 'Unlimited uses per customer'
+              : '${coupon.perUserLimit} use${coupon.perUserLimit == 1 ? '' : 's'} per customer',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        if (coupon.expiresAt != null)
+          Text(
+            'Expires ${MaterialLocalizations.of(context).formatMediumDate(coupon.expiresAt!.toLocal())} at ${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(coupon.expiresAt!.toLocal()))}',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+      ],
+    );
+    final actions = Wrap(
+      spacing: 0,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Switch(
+          value: coupon.isActive,
+          onChanged: (value) => _setActive(coupon, value),
+        ),
+        IconButton(
+          tooltip: 'Edit ${coupon.code}',
+          onPressed: () => _editCoupon(coupon),
+          icon: const Icon(Icons.edit_outlined),
+        ),
+        IconButton(
+          tooltip: 'Remove ${coupon.code}',
+          onPressed: () => _removeCoupon(coupon),
+          icon: const Icon(Icons.delete_outline, color: AppColors.errorText),
+        ),
+      ],
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 620;
+        final productInfo = Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
               width: 42,
               height: 42,
               decoration: BoxDecoration(
-                color: AppConstants.primaryLight,
-                borderRadius: BorderRadius.circular(12),
+                color: AppColors.thumbnailAmber,
+                borderRadius: BorderRadius.circular(AppRadii.thumbnail),
               ),
-              child: Icon(Icons.local_offer_outlined,
-                  color: AppConstants.primaryDark),
+              child: const Icon(
+                Icons.local_offer_outlined,
+                color: AppColors.primary,
+              ),
             ),
             const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    coupon.code,
-                    style: TextStyle(
-                      color: AppConstants.textDark,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.6,
-                    ),
-                  ),
-                  if (coupon.productId != null || coupon.assignedUserId != null)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 3),
-                      child: Text(
-                        'Product-specific · assigned to one customer',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.deepOrange,
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 3),
-                  Text(
-                    '${_discountLabel(coupon)} · Min. ${AppConstants.currencySymbol}${coupon.minOrderAmount.toStringAsFixed(0)}',
-                    style: TextStyle(
-                      color: AppConstants.textMuted,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    coupon.usageLimit == null
-                        ? '${coupon.usedCount} uses · ${coupon.isActive ? 'Active' : 'Paused'} · ${coupon.isAnnounced ? 'Announced' : 'Draft'}'
-                        : '${coupon.usedCount}/${coupon.usageLimit} uses · ${coupon.isActive ? 'Active' : 'Paused'} · ${coupon.isAnnounced ? 'Announced' : 'Draft'}',
-                    style: TextStyle(
-                      color: statusColor,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(
-                    coupon.perUserLimit == null
-                        ? 'Unlimited uses per customer'
-                        : '${coupon.perUserLimit} use${coupon.perUserLimit == 1 ? '' : 's'} per customer',
-                    style: TextStyle(
-                      color: AppConstants.textMuted,
-                      fontSize: 11,
-                    ),
-                  ),
-                  if (coupon.expiresAt != null)
-                    Text(
-                      'Expires ${MaterialLocalizations.of(context).formatMediumDate(coupon.expiresAt!.toLocal())} at ${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(coupon.expiresAt!.toLocal()))}',
-                      style: TextStyle(
-                        color: AppConstants.textMuted,
-                        fontSize: 11,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            Switch(
-              value: coupon.isActive,
-              onChanged: (value) => _setActive(coupon, value),
-            ),
-            IconButton(
-              tooltip: 'Edit ${coupon.code}',
-              onPressed: () => _editCoupon(coupon),
-              icon: const Icon(Icons.edit_outlined),
-            ),
-            IconButton(
-              tooltip: 'Remove ${coupon.code}',
-              onPressed: () => _removeCoupon(coupon),
-              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-            ),
+            Expanded(child: details),
+            if (!compact) ...[
+              const SizedBox(width: 10),
+              actions,
+            ],
           ],
-        ),
-      ),
+        );
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadii.card),
+            boxShadow: const [
+              BoxShadow(
+                color: AppColors.cardShadow,
+                offset: Offset(0, 6),
+                blurRadius: 24,
+              ),
+            ],
+          ),
+          child: compact
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    productInfo,
+                    const SizedBox(height: 6),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: actions,
+                    ),
+                  ],
+                )
+              : productInfo,
+        );
+      },
     );
   }
 
@@ -292,30 +326,13 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+        padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
         children: [
           LayoutBuilder(
             builder: (context, constraints) {
-              final heading = Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Promotions',
-                    style: TextStyle(
-                      color: AppConstants.textDark,
-                      fontSize: 21,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'New store-wide codes stay as drafts until you attach them to an announcement. Product discounts go to one customer.',
-                    style: TextStyle(
-                      color: AppConstants.textMuted,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
+              final heading = Text(
+                'New store-wide codes stay as drafts until you attach them to an announcement. Product discounts go to one customer.',
+                style: Theme.of(context).textTheme.bodySmall,
               );
               final addButton = FilledButton.icon(
                 onPressed: _createCoupon,
@@ -356,7 +373,7 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
-            Text(_error!, style: const TextStyle(color: Colors.red)),
+            Text(_error!, style: const TextStyle(color: AppColors.errorText)),
           ],
           const SizedBox(height: 16),
           if (_coupons.isEmpty)
@@ -364,20 +381,17 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
               padding: const EdgeInsets.symmetric(vertical: 44),
               child: Column(
                 children: [
-                  Icon(Icons.local_offer_outlined,
-                      color: AppConstants.textMuted, size: 36),
+                  const Icon(Icons.local_offer_outlined,
+                      color: AppColors.muted, size: 36),
                   const SizedBox(height: 10),
                   Text(
                     'No promotions yet',
-                    style: TextStyle(
-                      color: AppConstants.textDark,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 4),
                   Text(
                     'Create a discount code for your customers.',
-                    style: TextStyle(color: AppConstants.textMuted),
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
               ),
@@ -565,8 +579,8 @@ class _ProductCouponDialogState extends State<_ProductCouponDialog> {
                     constraints: const BoxConstraints(maxHeight: 180),
                     margin: const EdgeInsets.only(top: 6),
                     decoration: BoxDecoration(
-                      border: Border.all(color: AppConstants.borderLight),
-                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.outline),
+                      borderRadius: BorderRadius.circular(AppRadii.input),
                     ),
                     child: ListView.builder(
                       shrinkWrap: true,
@@ -600,7 +614,7 @@ class _ProductCouponDialogState extends State<_ProductCouponDialog> {
                     padding: const EdgeInsets.only(top: 6),
                     child: Text(
                       'Selected: ${_selectedCustomer!.profileId}',
-                      style: TextStyle(color: AppConstants.primaryDark),
+                      style: const TextStyle(color: AppColors.primary),
                     ),
                   ),
                 const SizedBox(height: 12),
@@ -882,10 +896,7 @@ class _AdminCouponFormDialogState extends State<AdminCouponFormDialog> {
                   alignment: Alignment.centerLeft,
                   child: Text(
                     'Coupon names and start dates are not stored by this system yet. Expiration date and time are supported.',
-                    style: TextStyle(
-                      color: AppConstants.textMuted,
-                      fontSize: 11,
-                    ),
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -1020,7 +1031,7 @@ class _AdminCouponFormDialogState extends State<AdminCouponFormDialog> {
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(
                         _error!,
-                        style: const TextStyle(color: Colors.red),
+                        style: const TextStyle(color: AppColors.errorText),
                       ),
                     ),
                   ),

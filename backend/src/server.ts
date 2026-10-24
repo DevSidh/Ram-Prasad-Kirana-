@@ -26,6 +26,7 @@ import { createReviewRouter } from './routes/reviews.js';
 import { sendPushToUser } from './services/push-notifications.js';
 import { getUploadsDirectory } from './services/image-upload.js';
 import { getLocalDayRange } from './services/local-day.js';
+import { calculateOrderPricing } from './services/order-pricing.js';
 import {
   getNormalizedProductImage,
   getNormalizedWholesaleImage,
@@ -1280,7 +1281,12 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
       }
 
       const deliveryFee = DEFAULT_DELIVERY_FEE;
-      const total = subtotal + deliveryFee - discount;
+      const { tip, total } = calculateOrderPricing({
+        subtotal,
+        deliveryFee,
+        discount,
+        tip: input.tip ?? 0,
+      });
       const orderNumber = `FH-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
       const created = await transaction.order.create({
@@ -1294,7 +1300,7 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
           subtotal,
           deliveryFee,
           discount,
-          tip: 0,
+          tip,
           total,
           couponCode,
           idempotencyKey: input.idempotencyKey,
@@ -1347,12 +1353,7 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
           quantity,
         }));
         if (retailStock.length > 0) {
-          await inventoryService.reserveStockForOrder(
-            transaction,
-            retailStock,
-            created.id,
-          );
-          await inventoryService.commitReservedStock(
+          await inventoryService.commitOrderStock(
             transaction,
             retailStock,
             created.id,
@@ -1389,7 +1390,7 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
     const createdOrderId = await runTransactionWithRetry(
       prisma,
       createOrderTransaction,
-      { maxWait: 10_000, timeout: 20_000 },
+      { maxWait: 10_000, timeout: 30_000, maxAttempts: 2 },
     );
     const created = await prisma.order.findUnique({
       where: { id: createdOrderId },

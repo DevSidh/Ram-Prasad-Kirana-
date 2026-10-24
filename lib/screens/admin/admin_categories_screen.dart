@@ -3,10 +3,11 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
-import '../../core/constants.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../theme/admin_widgets.dart';
+import '../../theme/app_colors.dart';
 import '../../widgets/product_thumbnail.dart';
 import '../../widgets/store_animation.dart';
 
@@ -95,7 +96,8 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -110,18 +112,14 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+        padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
         children: [
           Row(
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Organize the shelves', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 4),
-                    Text('Categories are shared with your store catalog.', style: TextStyle(color: AppConstants.textMuted, fontSize: 12)),
-                  ],
+                child: Text(
+                  'Categories are shared with your store catalog.',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
               FilledButton.icon(
@@ -143,7 +141,8 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
               (category) => _CategoryCard(
                 category: category,
                 onEdit: () => _editCategory(category),
-                onDeactivate: category.isActive ? () => _deactivate(category) : null,
+                onDeactivate:
+                    category.isActive ? () => _deactivate(category) : null,
               ),
             ),
         ],
@@ -178,7 +177,8 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
     super.initState();
     _nameController = TextEditingController(text: widget.category?.name ?? '');
     _slugController = TextEditingController(text: widget.category?.slug ?? '');
-    _descriptionController = TextEditingController(text: widget.category?.description ?? '');
+    _descriptionController =
+        TextEditingController(text: widget.category?.description ?? '');
     _imageUrlController =
         TextEditingController(text: widget.category?.imageUrl ?? '');
   }
@@ -301,7 +301,8 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
                   controller: _descriptionController,
                   minLines: 2,
                   maxLines: 3,
-                  decoration: const InputDecoration(labelText: 'Description (optional)'),
+                  decoration: const InputDecoration(
+                      labelText: 'Description (optional)'),
                 ),
                 const SizedBox(height: 14),
                 Row(
@@ -360,7 +361,9 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
         FilledButton(
           onPressed: _saving || _uploadingImage ? null : _save,
           child: _saving
-              ? const SizedBox.square(dimension: 17, child: CircularProgressIndicator(strokeWidth: 2))
+              ? const SizedBox.square(
+                  dimension: 17,
+                  child: CircularProgressIndicator(strokeWidth: 2))
               : const Text('Save category'),
         ),
       ],
@@ -385,23 +388,29 @@ class _CategoryCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.fromLTRB(14, 13, 8, 13),
       decoration: BoxDecoration(
-        color: AppConstants.surfaceLight,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppConstants.borderLight),
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        boxShadow: const [
+          BoxShadow(
+            color: AppColors.cardShadow,
+            offset: Offset(0, 6),
+            blurRadius: 24,
+          ),
+        ],
       ),
       child: Row(
         children: [
           Container(
-            width: 48,
-            height: 48,
+            width: 42,
+            height: 42,
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
-              color: AppConstants.primaryLight,
-              borderRadius: BorderRadius.circular(13),
+              color: AppColors.thumbnailGreen,
+              borderRadius: BorderRadius.circular(AppRadii.thumbnail),
             ),
             child: ProductThumbnail(
               imageUrl: category.imageUrl ?? '',
-              size: 48,
+              size: 42,
               fit: BoxFit.cover,
               borderRadius: BorderRadius.zero,
               fallbackIcon: Icons.category_outlined,
@@ -414,16 +423,32 @@ class _CategoryCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Flexible(child: Text(category.name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700))),
+                    Flexible(
+                      child: Text(
+                        category.name,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
                     const SizedBox(width: 7),
                     _StatusTag(active: category.isActive),
                   ],
                 ),
                 const SizedBox(height: 3),
-                Text(category.slug, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: AppConstants.textMuted, fontSize: 12)),
+                Text(
+                  category.slug,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
                 if (category.description?.isNotEmpty == true) ...[
                   const SizedBox(height: 3),
-                  Text(category.description!, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: AppConstants.textMuted, fontSize: 11)),
+                  Text(
+                    category.description!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 ],
               ],
             ),
@@ -437,7 +462,8 @@ class _CategoryCard extends StatelessWidget {
             itemBuilder: (_) => [
               const PopupMenuItem(value: 'edit', child: Text('Edit')),
               if (onDeactivate != null)
-                const PopupMenuItem(value: 'deactivate', child: Text('Deactivate')),
+                const PopupMenuItem(
+                    value: 'deactivate', child: Text('Deactivate')),
             ],
           ),
         ],
@@ -452,20 +478,9 @@ class _StatusTag extends StatelessWidget {
   const _StatusTag({required this.active});
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-        decoration: BoxDecoration(
-          color: active ? const Color(0xFFECFDF5) : const Color(0xFFF4F4F5),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(
-          active ? 'Active' : 'Inactive',
-          style: TextStyle(
-            fontSize: 9,
-            fontWeight: FontWeight.w700,
-            color: active ? const Color(0xFF047857) : AppConstants.textMuted,
-          ),
-        ),
+  Widget build(BuildContext context) => AppStatusPill(
+        active ? 'Active' : 'Inactive',
+        variant: active ? AppStatusVariant.success : AppStatusVariant.neutral,
       );
 }
 
@@ -477,14 +492,28 @@ class _EmptyCategories extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.all(28),
-        decoration: BoxDecoration(color: AppConstants.surfaceLight, borderRadius: BorderRadius.circular(18), border: Border.all(color: AppConstants.borderLight)),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppRadii.card),
+          boxShadow: const [
+            BoxShadow(
+              color: AppColors.cardShadow,
+              offset: Offset(0, 6),
+              blurRadius: 24,
+            ),
+          ],
+        ),
         child: Column(
           children: [
-            Icon(Icons.category_outlined, size: 34, color: AppConstants.textMuted),
+            const Icon(Icons.category_outlined,
+                size: 34, color: AppColors.muted),
             const SizedBox(height: 10),
-            const Text('No categories yet', style: TextStyle(fontWeight: FontWeight.w700)),
+            const Text('No categories yet',
+                style: TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 5),
-            Text('Create your first category to group store products.', textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: AppConstants.textMuted)),
+            Text('Create your first category to group store products.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 14),
             FilledButton.icon(
               onPressed: onAdd,
@@ -520,8 +549,16 @@ class _ErrorBanner extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         width: double.infinity,
         padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(color: const Color(0xFFFFF7ED), borderRadius: BorderRadius.circular(10)),
-        child: Text(message, style: const TextStyle(color: Color(0xFF9A3412), fontSize: 12)),
+        decoration: BoxDecoration(
+          color: AppColors.errorPill,
+          borderRadius: BorderRadius.circular(AppRadii.row),
+        ),
+        child: Text(
+          message,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AppColors.errorText,
+              ),
+        ),
       );
 }
 
@@ -531,4 +568,5 @@ String _slugify(String value) => value
     .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
     .replaceAll(RegExp(r'^-+|-+$'), '');
 
-String _cleanError(Object error) => error.toString().replaceFirst('Exception: ', '');
+String _cleanError(Object error) =>
+    error.toString().replaceFirst('Exception: ', '');

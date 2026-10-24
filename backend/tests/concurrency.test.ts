@@ -8,11 +8,35 @@ let batchStock = 1;
 const transactions: Array<Record<string, unknown>> = [];
 
 const transaction = {
-  $queryRaw: async (query: TemplateStringsArray) => {
-    const statement = query.join('');
-    return statement.includes('FROM "InventoryBatch"')
-      ? batchStock > 0 ? [{ id: 'batch-1', remainingQuantity: batchStock }] : []
-      : [];
+  $queryRaw: async (
+    query: TemplateStringsArray | Prisma.Sql,
+    ..._values: unknown[]
+  ) => {
+    const statement = Array.isArray(query) ? query.join('') : query.sql;
+    if (statement.includes('SELECT') && statement.includes('"InventoryBatch"')) {
+      return batchStock > 0
+        ? [{
+            id: 'batch-1',
+            productId: 'prod-apple-1',
+            remainingQuantity: batchStock,
+          }]
+        : [];
+    }
+    if (statement.includes('UPDATE "InventoryBatch"')) {
+      batchStock -= 1;
+      return [{ id: 'batch-1' }];
+    }
+    if (statement.includes('UPDATE "Inventory"')) {
+      totalStock -= 1;
+      reservedStock -= 1;
+      return [{
+        id: 'inventory-1',
+        productId: 'prod-apple-1',
+        totalStock,
+        reservedStock,
+      }];
+    }
+    throw new Error(`Unexpected inventory query: ${statement}`);
   },
   $executeRaw: async (query: TemplateStringsArray, ...values: unknown[]) => {
     const statement = query.join('?');
@@ -44,6 +68,10 @@ const transaction = {
   inventoryTransaction: {
     create: async ({ data }: { data: Record<string, unknown> }) => {
       transactions.push(data);
+    },
+    createMany: async ({ data }: { data: Array<Record<string, unknown>> }) => {
+      transactions.push(...data);
+      return { count: data.length };
     },
   },
 } as unknown as Prisma.TransactionClient;

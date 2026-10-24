@@ -16,6 +16,7 @@ class ProductThumbnail extends StatefulWidget {
   final IconData fallbackIcon;
   final Color backgroundColor;
   final double imageWidthFactor;
+  final int? imageTargetWidth;
 
   const ProductThumbnail({
     super.key,
@@ -28,6 +29,7 @@ class ProductThumbnail extends StatefulWidget {
     this.fallbackIcon = Icons.shopping_basket_outlined,
     this.backgroundColor = Colors.transparent,
     this.imageWidthFactor = 1,
+    this.imageTargetWidth,
   });
 
   @override
@@ -93,7 +95,7 @@ class _ProductThumbnailState extends State<ProductThumbnail> {
         );
         final url = optimizedProductImageUrl(
           widget.imageUrl,
-          targetWidth: cacheWidth,
+          targetWidth: widget.imageTargetWidth ?? cacheWidth,
         );
         final fallback = Container(
           width: photoWidth,

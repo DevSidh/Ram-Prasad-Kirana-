@@ -10,6 +10,7 @@ import { createAdminBillingRouter } from './admin-billing.js';
 import {
   getImageMimeType,
   receiveSingleImage,
+  receiveSingleSupplierBillImage,
 } from '../services/image-upload.js';
 import {
   displayInventoryQuantity,
@@ -216,7 +217,7 @@ const customersQuery = z.object({
   search: z.string().trim().max(200).optional(),
   includeInactive: z.enum(['true', 'false'])
     .transform((value) => value === 'true')
-    .default('false'),
+    .default(false),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
@@ -405,6 +406,28 @@ const restockInput = batchDetailsFields.extend({
 }).strict().superRefine(validateBatchDetails);
 const restockHistoryQuery = z.object({
   day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+const supplierPurchaseBillInput = z.object({
+  supplierName: z.string().trim().min(1).max(160),
+  supplierPhone: z.string().trim().max(40).nullable().optional(),
+  invoiceNumber: z.string().trim().min(1).max(100),
+  invoiceDate: z.string().datetime({ offset: true }),
+  deliveryPerson: z.string().trim().max(120).nullable().optional(),
+  notes: z.string().trim().max(1000).nullable().optional(),
+  items: z.array(z.object({
+    productId: z.string().trim().min(1).max(100),
+    quantity: z.number().finite().positive().max(1000000),
+    unitCost: z.number().finite().nonnegative().max(999999999),
+  }).strict()).min(1).max(100).refine(
+    (items) => new Set(items.map((item) => item.productId)).size === items.length,
+    'Each product can appear only once on a supplier bill.',
+  ),
+}).strict();
+const supplierPurchaseBillsQuery = z.object({
+  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  search: z.string().trim().max(100).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });
@@ -3298,6 +3321,258 @@ export function createAdminRouter(
         return res.status(409).json({ error: error.message });
       }
       if (handleKnownError(error, res)) return;
+      sendAdminError(error, res);
+    }
+  });
+
+  router.post('/inventory/purchase-bills', receiveSingleSupplierBillImage, async (req, res) => {
+    let payload: unknown = req.body;
+    if (typeof req.body.bill === 'string') {
+      try {
+        payload = JSON.parse(req.body.bill);
+      } catch {
+        return res.status(400).json({ error: 'Supplier bill details are invalid.' });
+      }
+    }
+    const parsed = supplierPurchaseBillInput.safeParse(payload);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+    const photoBuffer = req.file?.buffer;
+    const photoMimeType = photoBuffer ? getImageMimeType(photoBuffer) : null;
+    if (photoBuffer && !photoMimeType) {
+      return res.status(400).json({
+        error: 'Choose a valid JPG, PNG, or WEBP supplier bill photo.',
+      });
+    }
+    const totalCost = Math.round(
+      parsed.data.items.reduce(
+        (total, item) => total + item.quantity * item.unitCost,
+        0,
+      ) * 100,
+    ) / 100;
+    if (!Number.isFinite(totalCost) || totalCost > 999999999) {
+      return res.status(400).json({ error: 'Supplier bill total is too large.' });
+    }
+    try {
+      const bill = await runTransactionWithRetry(prisma, async (tx) => {
+        const products = await tx.product.findMany({
+          where: {
+            id: { in: parsed.data.items.map((item) => item.productId) },
+            isActive: true,
+          },
+          select: { id: true, name: true, sku: true, unitLabel: true },
+        });
+        if (products.length !== parsed.data.items.length) {
+          throw new Error('SUPPLIER_BILL_PRODUCT_UNAVAILABLE');
+        }
+        const productById = new Map(products.map((product) => [product.id, product]));
+        const hasFractionalUnitQuantity = parsed.data.items.some((item) => {
+          const product = productById.get(item.productId)!;
+          return !isWeightUnitLabel(product.unitLabel) &&
+            !Number.isSafeInteger(item.quantity);
+        });
+        if (hasFractionalUnitQuantity) {
+          throw new Error('SUPPLIER_BILL_INVALID_QUANTITY');
+        }
+        const created = await tx.supplierPurchaseBill.create({
+          data: {
+            supplierName: parsed.data.supplierName,
+            supplierPhone: parsed.data.supplierPhone?.trim() || null,
+            invoiceNumber: parsed.data.invoiceNumber,
+            invoiceDate: new Date(parsed.data.invoiceDate),
+            deliveryPerson: parsed.data.deliveryPerson?.trim() || null,
+            notes: parsed.data.notes?.trim() || null,
+            photoData: photoBuffer,
+            photoMimeType,
+            totalCost,
+            status: 'RECEIVED',
+            createdById: res.locals.authenticatedUserId,
+            items: {
+              create: parsed.data.items.map((item) => {
+                const product = productById.get(item.productId)!;
+                return {
+                  productId: product.id,
+                  name: product.name,
+                  sku: product.sku,
+                  unitLabel: product.unitLabel,
+                  quantity: item.quantity,
+                  unitCost: item.unitCost,
+                  lineTotal: Math.round(item.quantity * item.unitCost * 100) / 100,
+                };
+              }),
+            },
+          },
+          include: { items: true },
+        });
+
+        for (const item of parsed.data.items) {
+          const product = productById.get(item.productId)!;
+          await inventoryService.receiveBatch(
+            tx,
+            product.id,
+            inventoryQuantityForUnit(item.quantity, product.unitLabel),
+            `supplier-bill:${created.id}`,
+            {
+              lotNumber: parsed.data.invoiceNumber.slice(0, 120),
+              manufacturedAt: null,
+              expiresAt: null,
+              noExpiry: false,
+              datesVerified: false,
+              purchasePrice: item.unitCost,
+            },
+            res.locals.authenticatedUserId,
+            `Supplier bill ${parsed.data.invoiceNumber} from ${parsed.data.supplierName}`,
+          );
+        }
+        return created;
+      });
+      return res.status(201).json({
+        bill: {
+          ...bill,
+          photoData: undefined,
+          hasPhoto: bill.photoMimeType !== null,
+          totalCost: Number(bill.totalCost),
+          invoiceDate: bill.invoiceDate.toISOString(),
+          createdAt: bill.createdAt.toISOString(),
+          items: bill.items.map((item) => ({
+            ...item,
+            quantity: Number(item.quantity),
+            unitCost: Number(item.unitCost),
+            lineTotal: Number(item.lineTotal),
+          })),
+        },
+      });
+    } catch (error) {
+      if (error instanceof Error &&
+          error.message === 'SUPPLIER_BILL_PRODUCT_UNAVAILABLE') {
+        return res.status(409).json({
+          error: 'One or more bill products are inactive or no longer available.',
+        });
+      }
+      if (error instanceof Error &&
+          error.message === 'SUPPLIER_BILL_INVALID_QUANTITY') {
+        return res.status(400).json({
+          error: 'Received quantity must be a whole number for countable products.',
+        });
+      }
+      if (error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002') {
+        return res.status(409).json({
+          error: 'This invoice number has already been recorded for this supplier.',
+        });
+      }
+      if (error instanceof InventoryAdjustmentError) {
+        return res.status(409).json({ error: error.message });
+      }
+      if (handleKnownError(error, res)) return;
+      sendAdminError(error, res);
+    }
+  });
+
+  router.get('/inventory/purchase-bills/:id/photo', async (req, res) => {
+    const id = parseRecordId(req.params.id, res);
+    if (!id) return;
+    try {
+      const bill = await prisma.supplierPurchaseBill.findUnique({
+        where: { id },
+        select: { photoData: true, photoMimeType: true },
+      });
+      if (!bill) return res.status(404).json({ error: 'Supplier bill not found.' });
+      if (!bill.photoData || !bill.photoMimeType) {
+        return res.status(404).json({ error: 'No photo is attached to this bill.' });
+      }
+      res.setHeader('Content-Type', bill.photoMimeType);
+      res.setHeader('Cache-Control', 'private, no-store');
+      return res.send(Buffer.from(bill.photoData));
+    } catch (error) {
+      sendAdminError(error, res);
+    }
+  });
+
+  router.get('/inventory/purchase-bills', async (req, res) => {
+    const parsed = supplierPurchaseBillsQuery.safeParse(req.query);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+    let dayRange: { start: Date; end: Date } | undefined;
+    try {
+      dayRange = parsed.data.day
+        ? getLocalDayRangeForKey(parsed.data.day)
+        : undefined;
+    } catch {
+      return res.status(400).json({ error: 'Choose a valid store calendar day.' });
+    }
+    const search = parsed.data.search ?? '';
+    const where: Prisma.SupplierPurchaseBillWhereInput = {
+      ...(dayRange
+        ? { invoiceDate: { gte: dayRange.start, lt: dayRange.end } }
+        : {}),
+      ...(search
+        ? {
+          OR: [
+            { supplierName: { contains: search, mode: 'insensitive' } },
+            { invoiceNumber: { contains: search, mode: 'insensitive' } },
+            { deliveryPerson: { contains: search, mode: 'insensitive' } },
+          ],
+        }
+        : {}),
+    };
+    try {
+      const [total, bills] = await Promise.all([
+        prisma.supplierPurchaseBill.count({ where }),
+        prisma.supplierPurchaseBill.findMany({
+          where,
+          orderBy: [{ invoiceDate: 'desc' }, { createdAt: 'desc' }],
+          skip: (parsed.data.page - 1) * parsed.data.pageSize,
+          take: parsed.data.pageSize,
+          select: {
+            id: true,
+            supplierName: true,
+            supplierPhone: true,
+            invoiceNumber: true,
+            invoiceDate: true,
+            deliveryPerson: true,
+            notes: true,
+            photoMimeType: true,
+            totalCost: true,
+            status: true,
+            createdAt: true,
+            items: {
+              orderBy: { name: 'asc' },
+              select: {
+                id: true,
+                billId: true,
+                productId: true,
+                name: true,
+                sku: true,
+                unitLabel: true,
+                quantity: true,
+                unitCost: true,
+                lineTotal: true,
+              },
+            },
+          },
+        }),
+      ]);
+      return res.json({
+        bills: bills.map((bill) => ({
+          ...bill,
+          hasPhoto: bill.photoMimeType !== null,
+          photoMimeType: undefined,
+          totalCost: Number(bill.totalCost),
+          invoiceDate: bill.invoiceDate.toISOString(),
+          createdAt: bill.createdAt.toISOString(),
+          items: bill.items.map((item) => ({
+            ...item,
+            quantity: Number(item.quantity),
+            unitCost: Number(item.unitCost),
+            lineTotal: Number(item.lineTotal),
+          })),
+        })),
+        pagination: {
+          page: parsed.data.page,
+          pageSize: parsed.data.pageSize,
+          total,
+        },
+      });
+    } catch (error) {
       sendAdminError(error, res);
     }
   });

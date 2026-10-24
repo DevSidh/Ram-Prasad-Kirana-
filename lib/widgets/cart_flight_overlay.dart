@@ -27,6 +27,7 @@ void animateProductToCart({
   required Product product,
   required Rect? sourceRect,
   required GlobalKey? targetKey,
+  double sourceImageWidthFactor = 1,
 }) {
   if (sourceRect == null || targetKey?.currentContext == null) return;
   final overlay = Overlay.maybeOf(context, rootOverlay: true);
@@ -47,6 +48,12 @@ void animateProductToCart({
   );
   final endCenter = target - overlayOrigin;
   final end = Rect.fromCenter(center: endCenter, width: 26, height: 26);
+  final imageTargetWidth = (sourceRect.width *
+          MediaQuery.devicePixelRatioOf(context) *
+          sourceImageWidthFactor)
+      .round()
+      .clamp(320, 1400)
+      .toInt();
 
   late final OverlayEntry entry;
   entry = OverlayEntry(
@@ -54,6 +61,7 @@ void animateProductToCart({
       product: product,
       start: start,
       end: end,
+      imageTargetWidth: imageTargetWidth,
       onComplete: () {
         if (entry.mounted) entry.remove();
       },
@@ -66,12 +74,14 @@ class _ProductFlight extends StatefulWidget {
   final Product product;
   final Rect start;
   final Rect end;
+  final int imageTargetWidth;
   final VoidCallback onComplete;
 
   const _ProductFlight({
     required this.product,
     required this.start,
     required this.end,
+    required this.imageTargetWidth,
     required this.onComplete,
   });
 
@@ -143,6 +153,7 @@ class _ProductFlightState extends State<_ProductFlight>
                         size: rect.width,
                         width: rect.width,
                         height: rect.height,
+                        imageTargetWidth: widget.imageTargetWidth,
                         fit: BoxFit.contain,
                         borderRadius: BorderRadius.zero,
                         backgroundColor: Colors.white,

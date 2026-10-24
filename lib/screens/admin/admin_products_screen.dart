@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -13,6 +14,8 @@ import '../../screens/admin/barcode_scanner_screen.dart';
 import '../../providers/product_provider.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../theme/admin_widgets.dart';
+import '../../theme/app_colors.dart';
 import '../../widgets/store_animation.dart';
 
 class AdminProductsScreen extends StatefulWidget {
@@ -31,11 +34,14 @@ class AdminProductsScreen extends StatefulWidget {
 
 class _AdminProductsScreenState extends State<AdminProductsScreen> {
   late final AdminApiService _adminApi = AdminApiService(widget.api);
+  final _searchController = TextEditingController();
   List<AdminCategory> _categories = [];
   AdminProductPage? _productPage;
   String? _error;
   bool _loading = true;
   int _page = 1;
+  int _loadRequest = 0;
+  Timer? _searchTimer;
   bool _observedTabVisibility = false;
   bool _wasTabVisible = true;
 
@@ -43,6 +49,13 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _searchTimer?.cancel();
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -57,6 +70,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
   }
 
   Future<void> _load({int page = 1}) async {
+    final request = ++_loadRequest;
     setState(() {
       _loading = true;
       _error = null;
@@ -66,10 +80,11 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
         _adminApi.getCategories(),
         _adminApi.getProducts(
           page: page,
+          search: _searchController.text,
           vendingDrink: widget.vendingOnly ? true : null,
         ),
       ]);
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _categories = results[0] as List<AdminCategory>;
         _productPage = results[1] as AdminProductPage;
@@ -77,12 +92,19 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _error = _cleanError(error);
         _loading = false;
       });
     }
+  }
+
+  void _onSearchChanged(String value) {
+    _searchTimer?.cancel();
+    _searchTimer = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) _load(page: 1);
+    });
   }
 
   Future<void> _editProduct([AdminProduct? product]) async {
@@ -170,34 +192,20 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
     return RefreshIndicator(
       onRefresh: () => _load(page: _page),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+        padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
         children: [
           Row(
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.vendingOnly ? 'Drinks' : 'Store catalog',
-                      style: const TextStyle(
-                        fontSize: 21,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _productPage == null
-                          ? widget.vendingOnly
-                              ? 'Manage drinks shown in the customer drinks menu.'
-                              : 'Manage products and stock.'
-                          : widget.vendingOnly
-                              ? '${_productPage!.pagination.total} drinks'
-                              : '${_productPage!.pagination.total} products in the catalog',
-                      style: TextStyle(
-                          color: AppConstants.textMuted, fontSize: 12),
-                    ),
-                  ],
+                child: Text(
+                  _productPage == null
+                      ? widget.vendingOnly
+                          ? 'Manage drinks shown in the customer drinks menu.'
+                          : 'Manage products and stock.'
+                      : widget.vendingOnly
+                          ? '${_productPage!.pagination.total} drinks'
+                          : '${_productPage!.pagination.total} products in the catalog',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
               IconButton(
@@ -221,6 +229,32 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
               icon: Icons.info_outline_rounded,
             ),
           ],
+          const SizedBox(height: 14),
+          TextField(
+            controller: _searchController,
+            textInputAction: TextInputAction.search,
+            onChanged: _onSearchChanged,
+            onSubmitted: (_) {
+              _searchTimer?.cancel();
+              _load(page: 1);
+            },
+            decoration: InputDecoration(
+              hintText: widget.vendingOnly
+                  ? 'Search drinks by name, brand or SKU'
+                  : 'Search products by name, brand or SKU',
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: IconButton(
+                tooltip: 'Clear search',
+                onPressed: _searchController.text.isEmpty
+                    ? null
+                    : () {
+                        _searchController.clear();
+                        _load(page: 1);
+                      },
+                icon: const Icon(Icons.close_rounded),
+              ),
+            ),
+          ),
           if (_error != null) ...[
             const SizedBox(height: 12),
             _Notice(message: _error!, icon: Icons.warning_amber_rounded),
@@ -894,10 +928,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                 if (_isBiscuitOrCookie)
                   Text(
                     'Biscuits and cookies are sold by pack or piece, not by weight or volume.',
-                    style: TextStyle(
-                      color: AppConstants.textMuted,
-                      fontSize: 12,
-                    ),
+                    style: Theme.of(context).textTheme.bodySmall,
                   )
                 else
                   DropdownButtonFormField<String>(
@@ -1015,10 +1046,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                     alignment: Alignment.centerLeft,
                     child: Text(
                       'Opening batch dates are required when adding starting stock.',
-                      style: TextStyle(
-                        color: AppConstants.textMuted,
-                        fontSize: 12,
-                      ),
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -1165,7 +1193,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                     child: Row(
                       children: [
                         ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(AppRadii.brand),
                           child: SizedBox(
                             width: 72,
                             height: 72,
@@ -1378,7 +1406,7 @@ class _GalleryImagePreview extends StatelessWidget {
     return Stack(
       children: [
         ClipRRect(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppRadii.thumbnail),
           child: SizedBox(
             width: 68,
             height: 68,
@@ -1424,9 +1452,15 @@ class _ProductCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppConstants.surfaceLight,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppConstants.borderLight),
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        boxShadow: const [
+          BoxShadow(
+            color: AppColors.cardShadow,
+            offset: Offset(0, 6),
+            blurRadius: 24,
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -1455,7 +1489,7 @@ class _ProductCard extends StatelessWidget {
                       : '${product.categoryName} · ${product.sku}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, color: AppConstants.textMuted),
+                  style: const TextStyle(color: AppColors.muted),
                 ),
                 if (product.brand?.isNotEmpty == true) ...[
                   const SizedBox(height: 3),
@@ -1463,10 +1497,7 @@ class _ProductCard extends StatelessWidget {
                     product.brand!,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: AppConstants.textMuted,
-                    ),
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
                 const SizedBox(height: 6),
@@ -1477,28 +1508,20 @@ class _ProductCard extends StatelessWidget {
                   children: [
                     Text(
                       '${AppConstants.currencySymbol}${product.price.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 13,
-                      ),
+                      style: Theme.of(context).textTheme.labelLarge,
                     ),
                     if (product.originalPrice != null &&
                         product.originalPrice! > product.price)
                       Text(
                         '${AppConstants.currencySymbol}${product.originalPrice!.toStringAsFixed(2)}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppConstants.textMuted,
-                          decoration: TextDecoration.lineThrough,
-                        ),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              decoration: TextDecoration.lineThrough,
+                            ),
                       ),
                     Text(
                       '${product.unitLabel} · stock '
                       '${product.weightStockKg?.toStringAsFixed(3) ?? product.stock}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppConstants.textMuted,
-                      ),
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
                 ),
@@ -1518,8 +1541,8 @@ class _ProductCard extends StatelessWidget {
                       ? Icons.delete_outline_rounded
                       : Icons.restore_rounded,
                   color: product.isActive
-                      ? Colors.redAccent
-                      : AppConstants.primary,
+                      ? AppColors.errorText
+                      : AppColors.primary,
                 ),
               ),
               PopupMenuButton<String>(
@@ -1548,20 +1571,19 @@ class _ProductImage extends StatelessWidget {
   Widget build(BuildContext context) {
     final imageUrl = url?.trim() ?? '';
     return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(AppRadii.thumbnail),
       child: Container(
-        width: 54,
-        height: 54,
-        color: AppConstants.primaryLight,
+        width: 42,
+        height: 42,
+        color: AppColors.thumbnailBlue,
         child: imageUrl.isEmpty
-            ? const Icon(Icons.inventory_2_outlined,
-                color: AppConstants.primary)
+            ? const Icon(Icons.inventory_2_outlined, color: AppColors.primary)
             : Image.network(
                 optimizedProductImageUrl(imageUrl),
                 fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) => const Icon(
                     Icons.broken_image_outlined,
-                    color: AppConstants.primary),
+                    color: AppColors.primary),
               ),
       ),
     );
@@ -1574,19 +1596,9 @@ class _ProductStatus extends StatelessWidget {
   const _ProductStatus({required this.active});
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-        decoration: BoxDecoration(
-          color: active ? const Color(0xFFECFDF5) : const Color(0xFFF4F4F5),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(
-          active ? 'Active' : 'Inactive',
-          style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              color: active ? const Color(0xFF047857) : AppConstants.textMuted),
-        ),
+  Widget build(BuildContext context) => AppStatusPill(
+        active ? 'Active' : 'Inactive',
+        variant: active ? AppStatusVariant.success : AppStatusVariant.neutral,
       );
 }
 
@@ -1611,7 +1623,7 @@ class _PaginationBar extends StatelessWidget {
             icon: const Icon(Icons.chevron_left),
           ),
           Text('${pagination.page} of $pages',
-              style: TextStyle(color: AppConstants.textMuted)),
+              style: const TextStyle(color: AppColors.muted)),
           IconButton(
             tooltip: 'Next page',
             onPressed: pagination.page < pages
@@ -1649,9 +1661,16 @@ class _EmptyProducts extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.all(28),
         decoration: BoxDecoration(
-            color: AppConstants.surfaceLight,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: AppConstants.borderLight)),
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppRadii.card),
+          boxShadow: const [
+            BoxShadow(
+              color: AppColors.cardShadow,
+              offset: Offset(0, 6),
+              blurRadius: 24,
+            ),
+          ],
+        ),
         child: Column(
           children: [
             Icon(
@@ -1659,7 +1678,7 @@ class _EmptyProducts extends StatelessWidget {
                     ? Icons.local_drink_outlined
                     : Icons.inventory_2_outlined,
                 size: 34,
-                color: AppConstants.textMuted),
+                color: AppColors.muted),
             const SizedBox(height: 10),
             Text(vendingOnly ? 'No drinks yet' : 'No products found',
                 style: const TextStyle(fontWeight: FontWeight.w700)),
@@ -1669,7 +1688,7 @@ class _EmptyProducts extends StatelessWidget {
                     ? 'Add a drink to list it in the customer drinks menu.'
                     : 'Products from your catalog will appear here.',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 12, color: AppConstants.textMuted)),
+                style: Theme.of(context).textTheme.bodySmall),
           ],
         ),
       );
@@ -1686,16 +1705,18 @@ class _Notice extends StatelessWidget {
         width: double.infinity,
         padding: const EdgeInsets.all(11),
         decoration: BoxDecoration(
-            color: const Color(0xFFFFF7ED),
-            borderRadius: BorderRadius.circular(11)),
+          color: AppColors.warningPill,
+          borderRadius: BorderRadius.circular(AppRadii.row),
+        ),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: const Color(0xFFB45309)),
+            Icon(icon, size: 18, color: AppColors.warningText),
             const SizedBox(width: 8),
             Expanded(
-                child: Text(message,
-                    style: const TextStyle(
-                        fontSize: 12, color: Color(0xFF9A3412)))),
+                child: Text(
+              message,
+              style: const TextStyle(color: AppColors.warningText),
+            )),
           ],
         ),
       );

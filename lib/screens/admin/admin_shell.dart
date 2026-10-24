@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/constants.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/product_provider.dart';
 import '../../services/api_service.dart';
+import '../../theme/admin_widgets.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_theme.dart';
 import '../auth/login_screen.dart';
 import 'admin_categories_screen.dart';
 import 'admin_announcements_screen.dart';
@@ -54,6 +56,45 @@ class _AdminShellState extends State<AdminShell> {
   late final List<Widget> _screens;
   final _billingKey = GlobalKey<AdminBillingScreenState>();
 
+  static const _windowsOperatorOrder = [
+    0,
+    1,
+    2,
+    15,
+    3,
+    5,
+    8,
+    7,
+    6,
+    9,
+    10,
+    11,
+    12,
+    14,
+    4,
+    13,
+  ];
+  static const _primaryNavigationIndices = [
+    0,
+    1,
+    2,
+    22,
+    16,
+    19,
+    20,
+    3,
+  ];
+
+  bool _storeToolsExpanded = false;
+  bool _billingToolsExpanded = false;
+
+  List<int> get _adminScreenOrder => _windowsOperatorOrder;
+
+  List<NavigationRailDestination> get _adminNavigationDestinations => [
+        for (final index in _adminScreenOrder) _destinations[index],
+        ..._billingDestinations.skip(1),
+      ];
+
   static const _titles = [
     'Dashboard',
     'Orders',
@@ -77,48 +118,60 @@ class _AdminShellState extends State<AdminShell> {
   void initState() {
     super.initState();
     final api = context.read<ApiService>();
-    _screens = widget.isBillingStaff
-        ? [
-            AdminBillingScreen(
-              key: _billingKey,
-              api: api,
-              isBillingStaff: true,
-            ),
-          ]
-        : [
-            AdminDashboardScreen(
-              api: api,
-              onOrdersRequested: () {
-                if (mounted) _selectIndex(1);
-              },
-            ),
-            AdminOrdersScreen(api: api, isActive: true),
-            AdminDeliveryPeopleScreen(api: api),
-            AdminCustomersScreen(api: api),
-            AdminAnnouncementsScreen(api: api),
-            AdminProductsScreen(api: api),
-            AdminProductsScreen(api: api, vendingOnly: true),
-            AdminWholesaleScreen(api: api),
-            AdminRestockScreen(api: api),
-            AdminCategoriesScreen(api: api),
-            AdminShowcaseScreen(
-              api: api,
-              onFeaturedChanged:
-                  context.read<ProductProvider>().setFeaturedLocally,
-              onProductImageChanged:
-                  context.read<ProductProvider>().setProductImageLocally,
-            ),
-            AdminSkusScreen(api: api),
-            const AdminStoreHoursScreen(),
-            AdminStreakScreen(api: api),
-            AdminCouponsScreen(api: api),
-            AdminBillingScreen(key: _billingKey, api: api),
-          ];
+    if (widget.isBillingStaff) {
+      _screens = [
+        AdminBillingScreen(
+          key: _billingKey,
+          api: api,
+          isBillingStaff: true,
+        ),
+      ];
+      return;
+    }
+
+    final productProvider = context.read<ProductProvider>();
+    final adminScreens = <Widget>[
+      AdminDashboardScreen(
+        api: api,
+        onOrdersRequested: () {
+          if (mounted) _selectIndex(1);
+        },
+      ),
+      AdminOrdersScreen(api: api, isActive: true),
+      AdminDeliveryPeopleScreen(api: api),
+      AdminCustomersScreen(api: api),
+      AdminAnnouncementsScreen(api: api),
+      AdminProductsScreen(api: api),
+      AdminProductsScreen(api: api, vendingOnly: true),
+      AdminWholesaleScreen(api: api),
+      AdminRestockScreen(api: api),
+      AdminCategoriesScreen(api: api),
+      AdminShowcaseScreen(
+        api: api,
+        onFeaturedChanged: productProvider.setFeaturedLocally,
+        onProductImageChanged: productProvider.setProductImageLocally,
+      ),
+      AdminSkusScreen(api: api),
+      const AdminStoreHoursScreen(),
+      AdminStreakScreen(api: api),
+      AdminCouponsScreen(api: api),
+      AdminBillingScreen(key: _billingKey, api: api),
+    ];
+    _screens = [
+      for (final index in _adminScreenOrder) adminScreens[index],
+    ];
   }
 
   void _selectIndex(int index) {
     setState(() {
       _selectedIndex = index;
+      if (!widget.isBillingStaff) {
+        if (index >= _titles.length) {
+          _billingToolsExpanded = true;
+        } else if (index >= 4 && index < _titles.length) {
+          _storeToolsExpanded = true;
+        }
+      }
     });
     final moduleIndex = widget.isBillingStaff
         ? index
@@ -232,257 +285,385 @@ class _AdminShellState extends State<AdminShell> {
   @override
   Widget build(BuildContext context) {
     final showSidebar = MediaQuery.sizeOf(context).width >= 900;
-    final colors = Theme.of(context).colorScheme.copyWith(
-          primary: const Color(0xFF25372B),
-          secondary: const Color(0xFFC7EF69),
-          secondaryContainer: const Color(0xFFE4F4C4),
-          surface: const Color(0xFFF8F9F4),
-          onSurface: const Color(0xFF172019),
-          onSurfaceVariant: const Color(0xFF667267),
-          outlineVariant: const Color(0xFFD8E0D6),
-        );
-    final adminTheme = Theme.of(context).copyWith(
-      colorScheme: colors,
-      scaffoldBackgroundColor: const Color(0xFFEAF0E8),
-      appBarTheme: Theme.of(context).appBarTheme.copyWith(
-            backgroundColor: const Color(0xFFEAF0E8),
-            foregroundColor: const Color(0xFF172019),
-            elevation: 0,
-            surfaceTintColor: Colors.transparent,
-          ),
-      cardTheme: Theme.of(context).cardTheme.copyWith(
-            color: const Color(0xFFF8F9F4),
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-              side: const BorderSide(color: Color(0xFFD8E0D6)),
-            ),
-          ),
-      navigationRailTheme: Theme.of(context).navigationRailTheme.copyWith(
-            backgroundColor: const Color(0xFFEAF0E8),
-            indicatorColor: const Color(0xFFC7EF69),
-            selectedIconTheme: const IconThemeData(
-              color: Color(0xFF25372B),
-            ),
-            selectedLabelTextStyle: const TextStyle(
-              color: Color(0xFF25372B),
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-      inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(
-            filled: true,
-            fillColor: const Color(0xFFF8F9F4),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(color: Color(0xFFD8E0D6)),
-            ),
-          ),
-    );
+    final adminTitles = [
+      for (final index in _adminScreenOrder) _titles[index],
+    ];
+    final billingScreenIndex =
+        widget.isBillingStaff ? 0 : _adminScreenOrder.indexOf(15);
     final activeScreenIndex = widget.isBillingStaff
         ? 0
         : _selectedIndex >= _screens.length
-            ? _screens.length - 1
+            ? billingScreenIndex
             : _selectedIndex;
     final title = widget.isBillingStaff
         ? _billingStaffModules[_selectedIndex].title
         : _selectedIndex < _titles.length
-            ? _titles[_selectedIndex]
+            ? adminTitles[_selectedIndex]
             : _billingModules[_selectedIndex - _titles.length + 1].title;
     final destinations = widget.isBillingStaff
         ? _billingStaffDestinations
-        : [..._destinations, ..._billingDestinations.skip(1)];
+        : _adminNavigationDestinations;
+    final subtitle = _subtitleFor(title);
 
     return Theme(
-      data: adminTheme,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title),
-              Text(
-                widget.isBillingStaff ? 'STORE STAFF' : 'STORE ADMIN',
-                style: TextStyle(
-                  fontSize: 10,
-                  letterSpacing: 1.3,
-                  color: AppConstants.textMuted,
-                  fontWeight: FontWeight.w700,
+      data: AppTheme.data,
+      child: AdminGradientBackground(
+        child: Scaffold(
+          appBar: showSidebar
+              ? null
+              : AppBar(
+                  title: Text(title),
+                  actions: [
+                    IconButton(
+                      tooltip: 'Sign out',
+                      onPressed: _signOut,
+                      icon: const Icon(Icons.logout_rounded),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
                 ),
-              ),
-            ],
-          ),
-          actions: [
-            IconButton(
-              tooltip: 'Sign out',
-              onPressed: _signOut,
-              icon: const Icon(Icons.logout_rounded),
-            ),
-            const SizedBox(width: 4),
-          ],
-        ),
-        drawer: showSidebar ? null : _buildAdminDrawer(),
-        body: SafeArea(
-          top: false,
-          child: Row(
-            children: [
-              if (showSidebar) ...[
-                SizedBox(
-                  width: 276,
+          drawer: showSidebar ? null : _buildAdminDrawer(destinations),
+          body: SafeArea(
+            top: showSidebar,
+            child: Row(
+              children: [
+                if (showSidebar)
+                  SizedBox(
+                    width: 250,
+                    child: _buildSidebar(destinations),
+                  ),
+                Expanded(
                   child: Column(
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 20, 12, 20),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.storefront_rounded,
-                                color: Color(0xFF25372B)),
-                            const SizedBox(width: 10),
-                            Text(
-                              widget.isBillingStaff
-                                  ? 'STORE STAFF'
-                                  : 'STORE ADMIN',
-                              style: const TextStyle(
-                                color: Color(0xFF667267),
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 1.1,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Divider(height: 1),
+                      if (showSidebar)
+                        _buildPageHeader(title: title, subtitle: subtitle),
                       Expanded(
-                        child: ListView(
-                          key: const ValueKey('admin-navigation-list'),
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          children: _buildNavigationItems(destinations),
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 1440),
+                            child: IndexedStack(
+                              index: activeScreenIndex,
+                              children: [
+                                for (var index = 0;
+                                    index < _screens.length;
+                                    index++)
+                                  TickerMode(
+                                    enabled: index == activeScreenIndex,
+                                    child: _screens[index],
+                                  ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
-                const VerticalDivider(width: 1, thickness: 1),
               ],
-              Expanded(
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1280),
-                    child: IndexedStack(
-                      index: activeScreenIndex,
-                      children: [
-                        for (var index = 0; index < _screens.length; index++)
-                          TickerMode(
-                            enabled: index == activeScreenIndex,
-                            child: _screens[index],
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildAdminDrawer() {
-    final destinations = widget.isBillingStaff
-        ? _billingStaffDestinations
-        : [..._destinations, ..._billingDestinations.skip(1)];
-    return Drawer(
-      child: SafeArea(
-        child: Column(
+  String _subtitleFor(String title) => switch (title) {
+        'Dashboard' => 'A clear view of what is happening in your store today',
+        'Orders' => 'Review and manage incoming customer orders',
+        'Delivery' => 'Dispatch orders and track delivery activity',
+        'Cash Register' => 'Operate the counter and review today’s activity',
+        'New Bill / POS' => 'Build and complete an in-store bill',
+        'Held / Suspended Bills' => 'Resume an in-progress counter sale',
+        'Bill History / Invoices' => 'Find, review, and print completed bills',
+        'Pending Cash' =>
+          'Review customer balances and record partial or full payments',
+        'Billing' => 'Manage in-store sales and billing tools',
+        'Customers' => 'View customer details and purchase history',
+        'Products' => 'Manage the products available in your store',
+        'Restock' => 'Review stock requests and supplier quantities',
+        'Wholesale' => 'Manage wholesale pricing and availability',
+        'Drinks' => 'Manage products shown in the drinks menu',
+        'Categories' => 'Organize the store product catalog',
+        'Showcase' => 'Choose products featured across the storefront',
+        'Product SKUs' => 'Maintain product identifiers for billing',
+        'Store hours' => 'Set opening hours and online order availability',
+        'Promotions' => 'Manage coupons and customer offers',
+        'Announcements' => 'Share updates with store customers',
+        'Buying streak' => 'Review customer milestones and claims',
+        _ => widget.isBillingStaff
+            ? 'Operate the store billing counter'
+            : 'Store management and operations',
+      };
+
+  Widget _buildPageHeader({required String title, required String subtitle}) =>
+      Padding(
+        padding: const EdgeInsets.fromLTRB(8, 24, 30, 16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-              child: Row(
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.storefront_rounded,
-                      color: AppConstants.primary, size: 24),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.isBillingStaff ? 'STORE STAFF' : 'STORE ADMIN',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: AppConstants.textDark,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          'Ram Prasad General Store',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: AppConstants.textMuted,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
+                  Text(title, style: Theme.of(context).textTheme.headlineLarge),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
               ),
             ),
-            const Divider(height: 1),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                children: _buildNavigationItems(destinations),
-              ),
+            IconButton(
+              tooltip: 'Sign out',
+              onPressed: _signOut,
+              icon: const Icon(Icons.logout_rounded),
             ),
           ],
         ),
-      ),
+      );
+
+  Widget _buildAdminDrawer(List<NavigationRailDestination> destinations) =>
+      Drawer(
+        child: SafeArea(child: _buildSidebar(destinations)),
+      );
+
+  Widget _buildSidebar(List<NavigationRailDestination> destinations) {
+    final user = context.read<AuthProvider>().currentUser;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 20, 12, 20),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(AppRadii.brand),
+                ),
+                child: const Icon(
+                  Icons.storefront_rounded,
+                  color: AppColors.accent,
+                  size: 21,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.isBillingStaff ? 'STORE STAFF' : 'STORE ADMIN',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            color: AppColors.primary,
+                          ),
+                    ),
+                    Text(
+                      'Ram Prasad General Store',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView(
+            key: const ValueKey('admin-navigation-list'),
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
+            children: _buildNavigationItems(destinations),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 16),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 17,
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.accent,
+                child: Text(
+                  (user?.fullName.isNotEmpty == true
+                          ? user!.fullName.substring(0, 1)
+                          : 'S')
+                      .toUpperCase(),
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  user?.fullName ?? 'Store staff',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'My profile / logout',
+                onPressed: _showProfile,
+                icon: const Icon(Icons.more_horiz_rounded),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
   List<Widget> _buildNavigationItems(
     List<NavigationRailDestination> destinations,
   ) {
-    return List<Widget>.generate(destinations.length, (index) {
-      final moduleIndex = widget.isBillingStaff
-          ? index
-          : index < _titles.length
-              ? null
-              : index - _titles.length + 1;
-      final title = moduleIndex == null
-          ? _titles[index]
-          : (widget.isBillingStaff
-              ? _billingStaffModules[moduleIndex].title
-              : _billingModules[moduleIndex].title);
+    final adminTitles = [
+      for (final index in _adminScreenOrder) _titles[index],
+    ];
+    String titleForIndex(int index) {
+      if (widget.isBillingStaff) {
+        return _billingStaffModules[index].title;
+      }
+      return index < _titles.length
+          ? adminTitles[index]
+          : _billingModules[index - _titles.length + 1].title;
+    }
+
+    Widget navigationTile(int index) {
       final destination = destinations[index];
       final selected = index == _selectedIndex;
-      return ListTile(
-        minLeadingWidth: 28,
-        leading: Icon(
-          selected
-              ? (destination.selectedIcon as Icon).icon
-              : (destination.icon as Icon).icon,
-          color: selected ? const Color(0xFFC7EF69) : const Color(0xFF667267),
+      final icon = selected
+          ? (destination.selectedIcon as Icon).icon
+          : (destination.icon as Icon).icon;
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Material(
+          color: selected ? AppColors.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppRadii.navigation),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(AppRadii.navigation),
+            onTap: () {
+              _selectIndex(index);
+              if (MediaQuery.sizeOf(context).width < 900) {
+                Navigator.pop(context);
+              }
+            },
+            child: SizedBox(
+              height: 32,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 5),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 25,
+                      height: 25,
+                      decoration: BoxDecoration(
+                        color: selected ? AppColors.accent : AppColors.surface,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        icon,
+                        size: 15,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        titleForIndex(index),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: selected
+                                  ? AppColors.accent
+                                  : AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
-        title: Text(title),
-        selected: selected,
-        selectedTileColor: const Color(0xFF25372B),
-        selectedColor: const Color(0xFFC7EF69),
-        onTap: () {
-          _selectIndex(index);
-          if (MediaQuery.sizeOf(context).width < 900) {
-            Navigator.pop(context);
-          }
-        },
       );
-    });
+    }
+
+    if (widget.isBillingStaff) {
+      return List<Widget>.generate(destinations.length, navigationTile);
+    }
+
+    final primaryIndices = _primaryNavigationIndices.toSet();
+    final children = <Widget>[
+      for (final index in _primaryNavigationIndices) navigationTile(index),
+      _buildNavigationGroup(
+        title: 'Store setup & other tools',
+        expanded: _storeToolsExpanded,
+        onChanged: (expanded) => _storeToolsExpanded = expanded,
+        children: [
+          for (var index = 4; index < _titles.length; index++)
+            navigationTile(index),
+        ],
+      ),
+      _buildNavigationGroup(
+        title: 'More billing tools',
+        expanded: _billingToolsExpanded,
+        onChanged: (expanded) => _billingToolsExpanded = expanded,
+        children: [
+          for (var index = _titles.length; index < destinations.length; index++)
+            if (!primaryIndices.contains(index)) navigationTile(index),
+        ],
+      ),
+    ];
+    return children;
   }
+
+  Widget _buildNavigationGroup({
+    required String title,
+    required bool expanded,
+    required ValueChanged<bool> onChanged,
+    required List<Widget> children,
+  }) =>
+      Column(
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Divider(),
+          ),
+          Theme(
+            data: Theme.of(context).copyWith(
+              listTileTheme: const ListTileThemeData(
+                dense: true,
+                minVerticalPadding: 0,
+              ),
+            ),
+            child: ExpansionTile(
+              key: ValueKey('$title-$expanded'),
+              initiallyExpanded: expanded,
+              tilePadding: const EdgeInsets.symmetric(horizontal: 5),
+              childrenPadding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+              onExpansionChanged: onChanged,
+              title: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: AppColors.muted,
+                      letterSpacing: 0,
+                    ),
+              ),
+              children: children,
+            ),
+          ),
+        ],
+      );
 
   static const _destinations = [
     NavigationRailDestination(
@@ -605,6 +786,12 @@ class _AdminShellState extends State<AdminShell> {
       section: AdminBillingSection.billHistory,
     ),
     _BillingModule(
+      'Pending Cash',
+      Icons.account_balance_wallet_outlined,
+      Icons.account_balance_wallet_rounded,
+      section: AdminBillingSection.pendingPayments,
+    ),
+    _BillingModule(
       'Payments & Refunds',
       Icons.payments_outlined,
       Icons.payments_rounded,
@@ -662,7 +849,7 @@ class _AdminShellState extends State<AdminShell> {
           ))
       .toList(growable: false);
 
-  static final _billingStaffModules = _billingModules.toList(growable: false);
+  static const _billingStaffModules = _billingModules;
 
   static final _billingStaffDestinations = _billingStaffModules
       .map((module) => NavigationRailDestination(

@@ -70,9 +70,26 @@ class AuthProvider extends ChangeNotifier {
     final savedUserJson = prefs.getString(AppConstants.keyUser);
 
     if (savedToken != null && savedUserJson != null) {
+      late final User savedUser;
+      try {
+        savedUser = User.fromJson(jsonDecode(savedUserJson));
+      } catch (_) {
+        await prefs.remove(AppConstants.keyToken);
+        await prefs.remove(AppConstants.keyUser);
+        if (_usesSecureSessionStorage) {
+          await _secureStorage.delete(key: AppConstants.keyToken);
+        }
+        _token = null;
+        _currentUser = null;
+        _isLoading = false;
+        _errorMessage = 'Saved session data was invalid. Please sign in again.';
+        _apiService.clearAuthToken();
+        notifyListeners();
+        return;
+      }
+
       _token = savedToken;
       _apiService.setAuthToken(savedToken);
-      final savedUser = User.fromJson(jsonDecode(savedUserJson));
       _currentUser = savedUser.copyWith(
         avatarUrl: _resolveAvatarUrl(savedUser.avatarUrl),
       );

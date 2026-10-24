@@ -2,10 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../core/constants.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../theme/admin_widgets.dart';
+import '../../theme/app_colors.dart';
 import 'admin_coupons_screen.dart';
 import '../../widgets/store_animation.dart';
 
@@ -140,24 +141,27 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
     return Column(
       children: [
         if (_error != null)
-          MaterialBanner(
-            content: Text(_error!),
-            actions: [
-              TextButton(onPressed: _load, child: const Text('Retry')),
-            ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 30, 0),
+            child: AppBanner(
+              message: _error!,
+              icon: Icons.error_outline_rounded,
+              variant: AppStatusVariant.error,
+              trailing: TextButton(
+                onPressed: _load,
+                child: const Text('Retry'),
+              ),
+            ),
           ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+          padding: const EdgeInsets.fromLTRB(8, 12, 30, 10),
           child: Wrap(
             spacing: 6,
             runSpacing: 4,
             crossAxisAlignment: WrapCrossAlignment.center,
             alignment: WrapAlignment.spaceBetween,
             children: [
-              const Text(
-                'Reward milestones',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-              ),
+              const AppSectionLabel('Reward milestones'),
               TextButton.icon(
                 onPressed: _saving ? null : () => _editReward(),
                 icon: const Icon(Icons.add),
@@ -188,7 +192,7 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
               if (_rewards.isEmpty)
                 const SliverToBoxAdapter(
                   child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                    padding: EdgeInsets.fromLTRB(8, 8, 30, 8),
                     child: Text(
                       'No milestones yet. Add a day and describe what the customer can claim.',
                     ),
@@ -199,58 +203,57 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
                   itemCount: _rewards.length,
                   itemBuilder: (context, index) {
                     final reward = _rewards[index];
-                    return ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: AppConstants.primaryLight,
-                        child: Text('${reward.day}'),
-                      ),
-                      title: Text('Day ${reward.day} · ${reward.title}'),
-                      subtitle: Text(
-                        reward.couponCode == null
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 0, 30, 10),
+                      child: AppRowCard(
+                        title: 'Day ${reward.day} · ${reward.title}',
+                        subtitle: reward.couponCode == null
                             ? 'No coupon selected. Edit this milestone to choose a coupon gift.'
                             : 'Gift coupon ${reward.couponCode}',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            tooltip: 'Edit day ${reward.day}',
-                            onPressed:
-                                _saving ? null : () => _editReward(reward),
-                            icon: const Icon(Icons.edit_outlined),
-                          ),
-                          IconButton(
-                            tooltip: 'Remove day ${reward.day}',
-                            onPressed: _saving
-                                ? null
-                                : () => setState(
-                                      () => _rewards = _rewards
-                                          .where(
-                                              (item) => item.day != reward.day)
-                                          .toList(growable: false),
-                                    ),
-                            icon: const Icon(Icons.delete_outline),
-                          ),
-                        ],
+                        leading: Text(
+                          '${reward.day}',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        tint: AppColors.thumbnailAmber,
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: 'Edit day ${reward.day}',
+                              onPressed:
+                                  _saving ? null : () => _editReward(reward),
+                              icon: const Icon(Icons.edit_outlined),
+                            ),
+                            IconButton(
+                              tooltip: 'Remove day ${reward.day}',
+                              onPressed: _saving
+                                  ? null
+                                  : () => setState(
+                                        () => _rewards = _rewards
+                                            .where((item) =>
+                                                item.day != reward.day)
+                                            .toList(growable: false),
+                                      ),
+                              icon: const Icon(Icons.delete_outline),
+                            ),
+                          ],
+                        ),
                       ),
                     );
                   },
                 ),
               const SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.fromLTRB(18, 22, 18, 8),
-                  child: Text(
+                  padding: EdgeInsets.fromLTRB(8, 22, 30, 8),
+                  child: AppSectionLabel(
                     'Customer reward claims',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                   ),
                 ),
               ),
               if (_claims.isEmpty)
                 const SliverToBoxAdapter(
                   child: Padding(
-                    padding: EdgeInsets.fromLTRB(18, 0, 18, 24),
+                    padding: EdgeInsets.fromLTRB(8, 0, 30, 24),
                     child: Text('No rewards have been claimed yet.'),
                   ),
                 )
@@ -259,28 +262,19 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
                   itemCount: _claims.length,
                   itemBuilder: (context, index) {
                     final claim = _claims[index];
-                    return ListTile(
-                      leading: const Icon(
-                        Icons.card_giftcard_rounded,
-                        color: AppConstants.primary,
-                      ),
-                      title: Text(
-                        '${claim.customerName} · ${claim.profileId}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Text(
-                        'Day ${claim.day} · ${claim.title} · ${claim.description}',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      trailing: Text(
-                        MaterialLocalizations.of(context).formatShortDate(
-                          DateTime.parse(claim.claimedAt).toLocal(),
-                        ),
-                        style: TextStyle(
-                          color: AppConstants.textMuted,
-                          fontSize: 11,
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 0, 30, 10),
+                      child: AppRowCard(
+                        title: '${claim.customerName} · ${claim.profileId}',
+                        subtitle:
+                            'Day ${claim.day} · ${claim.title} · ${claim.description}',
+                        leading: const Icon(Icons.card_giftcard_rounded),
+                        tint: AppColors.thumbnailGreen,
+                        trailing: Text(
+                          MaterialLocalizations.of(context).formatShortDate(
+                            DateTime.parse(claim.claimedAt).toLocal(),
+                          ),
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),
                     );
@@ -397,7 +391,7 @@ class _StreakRewardDialogState extends State<_StreakRewardDialog> {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   _error!,
-                  style: const TextStyle(color: Colors.red),
+                  style: const TextStyle(color: AppColors.errorText),
                 ),
               ),
           ],

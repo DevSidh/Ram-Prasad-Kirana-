@@ -61,23 +61,6 @@ async function main(): Promise<void> {
         return { count: 1 };
       },
     },
-    posShift: {
-      findMany: async ({ skip, take }: { skip: number; take: number }) => {
-        assert.equal(skip, 10);
-        assert.equal(take, 10);
-        return [{
-          id: 'shift-1',
-          status: 'CLOSED',
-          openingCash: 100,
-          expectedClosingCash: 250,
-          actualClosingCash: 240,
-          openedAt: new Date('2026-10-24T08:00:00.000Z'),
-          closedAt: new Date('2026-10-24T16:00:00.000Z'),
-          cashier: { name: 'Cashier One' },
-        }];
-      },
-      count: async () => 21,
-    },
   } as unknown as PrismaClient;
   const adminOnly: RequestHandler = (req, res, next) => {
     if (req.header('x-test-role') !== 'ADMIN') {
@@ -106,7 +89,6 @@ async function main(): Promise<void> {
     const address = server.address();
     assert(address && typeof address !== 'string');
     const baseUrl = `http://127.0.0.1:${address.port}/billing/staff`;
-    const billingUrl = `http://127.0.0.1:${address.port}/billing`;
     const adminHeaders = {
       'content-type': 'application/json',
       'x-test-role': 'ADMIN',
@@ -115,34 +97,6 @@ async function main(): Promise<void> {
       headers: { 'x-test-role': 'BILLING_STAFF' },
     });
     assert.equal(denied.status, 403);
-
-    const deniedShiftHistory = await fetch(`${billingUrl}/shifts`, {
-      headers: { 'x-test-role': 'BILLING_STAFF' },
-    });
-    assert.equal(deniedShiftHistory.status, 403);
-    const shiftHistory = await fetch(
-      `${billingUrl}/shifts?page=2&pageSize=10`,
-      { headers: { 'x-test-role': 'ADMIN' } },
-    );
-    assert.equal(shiftHistory.status, 200);
-    const listedShifts = await shiftHistory.json() as {
-      shifts: Array<{
-        cashierName: string;
-        expectedClosingCash: number;
-        actualClosingCash: number;
-        variance: number;
-      }>;
-      pagination: { page: number; pageSize: number; total: number };
-    };
-    assert.equal(listedShifts.shifts[0].cashierName, 'Cashier One');
-    assert.equal(listedShifts.shifts[0].expectedClosingCash, 250);
-    assert.equal(listedShifts.shifts[0].actualClosingCash, 240);
-    assert.equal(listedShifts.shifts[0].variance, -10);
-    assert.deepEqual(listedShifts.pagination, {
-      page: 2,
-      pageSize: 10,
-      total: 21,
-    });
 
     const list = await fetch(baseUrl, { headers: { 'x-test-role': 'ADMIN' } });
     assert.equal(list.status, 200);

@@ -12,11 +12,6 @@ import {
 import { isWeightUnitLabel } from '../services/product-validation.js';
 import { runTransactionWithRetry } from '../services/transaction-retry.js';
 
-const openShiftInput = z.object({
-  openingCash: z.number().finite().min(0).max(999999999)
-    .refine((value) => Number.isSafeInteger(Math.round(value * 100))),
-}).strict();
-
 const saleItemsInput = z.array(z.object({
   productId: z.string().trim().min(1).max(100),
   quantity: z.number().int().min(1).max(100000),
@@ -33,7 +28,16 @@ const saleInput = z.object({
   customerName: z.string().trim().max(120).nullable().optional(),
   customerPhone: z.string().trim().max(32).nullable().optional(),
   heldSaleId: z.string().trim().min(1).max(100).nullable().optional(),
-}).strict();
+}).strict().superRefine((sale, context) => {
+  if (sale.paymentMethod === 'PENDING' &&
+      (!sale.customerName || !sale.customerPhone)) {
+    context.addIssue({
+      code: 'custom',
+      path: ['customerPhone'],
+      message: 'A customer name and phone are required for pending bills.',
+    });
+  }
+});
 
 const holdInput = z.object({
   items: z.array(z.object({
@@ -69,6 +73,14 @@ const refundResolutionInput = z.object({
 
 const paymentInput = z.object({
   paymentMethod: z.enum(['CASH', 'DIGITAL']),
+}).strict();
+const paymentCollectionInput = z.object({
+  amount: z.number().finite().positive().max(999999999)
+    .refine((value) =>
+      Number.isSafeInteger(Math.round(value * 100)) &&
+      Math.round(value * 100) >= 1),
+  paymentMethod: z.enum(['CASH', 'DIGITAL']),
+  note: z.string().trim().max(240).nullable().optional(),
 }).strict();
 
 const exchangeQuantityFields = {
@@ -113,13 +125,12 @@ function authenticatedRole(res: Parameters<RequestHandler>[1]): string | null {
 async function findOrCreateOpenShift(
   tx: Prisma.TransactionClient,
   cashierId: string,
-  allowAutomaticOpening: boolean,
 ) {
   const shift = await tx.posShift.findFirst({
     where: { cashierId, status: 'OPEN' },
     select: { id: true, openingCash: true },
   });
-  if (shift || !allowAutomaticOpening) return shift;
+  if (shift) return shift;
   return tx.posShift.create({
     data: { cashierId, openingCash: 0 },
     select: { id: true, openingCash: true },
@@ -141,8 +152,16 @@ function serializeSale(sale: {
   subtotal: Prisma.Decimal;
   discount: Prisma.Decimal;
   total: Prisma.Decimal;
+  paidAmount?: Prisma.Decimal;
   refundedAmount: Prisma.Decimal;
   createdAt: Date;
+  paymentCollections?: Array<{
+    id: string;
+    amount: Prisma.Decimal;
+    method: string;
+    note: string | null;
+    createdAt: Date;
+  }>;
   items: Array<{
     id: string;
     productId: string | null;
@@ -165,8 +184,27 @@ function serializeSale(sale: {
     subtotal: Number(sale.subtotal),
     discount: Number(sale.discount),
     total: Number(sale.total),
+    paidAmount: sale.paidAmount === undefined
+      ? sale.paymentStatus === 'COMPLETED' ? Number(sale.total) : 0
+      : Number(sale.paidAmount),
+    outstandingAmount: roundMoney(
+      Math.max(
+        0,
+        Number(sale.total) -
+          (sale.paidAmount === undefined
+            ? sale.paymentStatus === 'COMPLETED' ? Number(sale.total) : 0
+            : Number(sale.paidAmount)),
+      ),
+    ),
     refundedAmount: Number(sale.refundedAmount),
     createdAt: sale.createdAt.toISOString(),
+    paymentCollections: (sale.paymentCollections ?? []).map((payment) => ({
+      id: payment.id,
+      amount: Number(payment.amount),
+      method: payment.method,
+      note: payment.note,
+      createdAt: payment.createdAt.toISOString(),
+    })),
     items: sale.items.map((item) => ({
       id: item.id,
       productId: item.productId,
@@ -188,57 +226,6 @@ export function createAdminBillingRouter(
   const router = Router();
   const adminOnly: RequestHandler = requireAdmin ?? ((_req, res) => {
     res.status(403).json({ error: 'Administrator access required.' });
-  });
-
-  router.get('/shifts', adminOnly, async (req, res) => {
-    const parsed = z.object({
-      page: z.coerce.number().int().min(1).max(10000).default(1),
-      pageSize: z.coerce.number().int().min(1).max(100).default(20),
-    }).strict().safeParse(req.query);
-    if (!parsed.success) {
-      return res.status(400).json({ error: 'Choose a valid shift-history page.' });
-    }
-    try {
-      const [shifts, total] = await Promise.all([
-        prisma.posShift.findMany({
-          orderBy: { openedAt: 'desc' },
-          skip: (parsed.data.page - 1) * parsed.data.pageSize,
-          take: parsed.data.pageSize,
-          include: { cashier: { select: { name: true } } },
-        }),
-        prisma.posShift.count(),
-      ]);
-      return res.json({
-        shifts: shifts.map((shift) => ({
-          id: shift.id,
-          status: shift.status,
-          openingCash: Number(shift.openingCash),
-          expectedClosingCash: shift.expectedClosingCash === null
-            ? null
-            : Number(shift.expectedClosingCash),
-          actualClosingCash: shift.actualClosingCash === null
-            ? null
-            : Number(shift.actualClosingCash),
-          variance: shift.expectedClosingCash === null ||
-              shift.actualClosingCash === null
-            ? null
-            : roundMoney(
-              Number(shift.actualClosingCash) -
-                Number(shift.expectedClosingCash),
-            ),
-          openedAt: shift.openedAt,
-          closedAt: shift.closedAt,
-          cashierName: shift.cashier.name,
-        })),
-        pagination: {
-          page: parsed.data.page,
-          pageSize: parsed.data.pageSize,
-          total,
-        },
-      });
-    } catch (error) {
-      sendAdminError(error, res);
-    }
   });
 
   router.get('/staff', adminOnly, async (req, res) => {
@@ -363,6 +350,7 @@ export function createAdminBillingRouter(
       const [
         currentShift,
         sales,
+        paymentCollections,
         cashier,
         groupedTopProducts,
         products,
@@ -388,9 +376,22 @@ export function createAdminBillingRouter(
             total: true,
             paymentMethod: true,
             paymentStatus: true,
+            paidAmount: true,
             status: true,
             refundedAmount: true,
+            paymentCollections: {
+              select: { amount: true, method: true },
+            },
           },
+        }),
+        prisma.posPaymentCollection.findMany({
+          where: {
+            createdAt: { gte: range.start, lt: range.end },
+            ...(isBillingStaff && cashierId
+              ? { sale: { shift: { cashierId } } }
+              : {}),
+          },
+          select: { amount: true, method: true },
         }),
         cashierId
           ? prisma.user.findUnique({
@@ -461,10 +462,16 @@ export function createAdminBillingRouter(
         sales.reduce((sum, sale) => sum + Number(sale.total), 0) +
           exchangeNet,
       );
-      const paidSales = sales.filter((sale) => sale.paymentStatus === 'COMPLETED');
-      const cashSales = paidSales
-        .filter((sale) => sale.paymentMethod === 'CASH')
-        .reduce((sum, sale) => sum + Number(sale.total), 0) +
+      const cashSales = paymentCollections
+        .filter((payment) => payment.method === 'CASH')
+        .reduce((sum, payment) => sum + Number(payment.amount), 0) +
+        sales
+          .filter((sale) =>
+            sale.paymentCollections.length === 0 &&
+            sale.paymentStatus === 'COMPLETED' &&
+            sale.paymentMethod === 'CASH',
+          )
+          .reduce((sum, sale) => sum + Number(sale.total), 0) +
         exchanges.reduce((sum, exchange) => {
           const difference = Number(exchange.difference);
           if (difference > 0 && exchange.paymentMethod === 'CASH') {
@@ -475,9 +482,16 @@ export function createAdminBillingRouter(
           }
           return sum;
         }, 0);
-      const digitalSales = paidSales
-        .filter((sale) => sale.paymentMethod === 'DIGITAL')
-        .reduce((sum, sale) => sum + Number(sale.total), 0) +
+      const digitalSales = paymentCollections
+        .filter((payment) => payment.method === 'DIGITAL')
+        .reduce((sum, payment) => sum + Number(payment.amount), 0) +
+        sales
+          .filter((sale) =>
+            sale.paymentCollections.length === 0 &&
+            sale.paymentStatus === 'COMPLETED' &&
+            sale.paymentMethod === 'DIGITAL',
+          )
+          .reduce((sum, sale) => sum + Number(sale.total), 0) +
         exchanges.reduce((sum, exchange) => {
           const difference = Number(exchange.difference);
           if (difference > 0 && exchange.paymentMethod === 'DIGITAL') {
@@ -490,7 +504,8 @@ export function createAdminBillingRouter(
         }, 0);
       const pendingSales = sales
         .filter((sale) => sale.paymentStatus === 'PENDING')
-        .reduce((sum, sale) => sum + Number(sale.total), 0);
+        .reduce((sum, sale) =>
+          sum + Number(sale.total) - Number(sale.paidAmount), 0);
       const topProductIds = groupedTopProducts
         .map((entry) => entry.productId)
         .filter((id): id is string => id !== null);
@@ -533,6 +548,9 @@ export function createAdminBillingRouter(
             select: {
               total: true,
               paymentMethod: true,
+              paymentCollections: {
+                select: { amount: true, method: true },
+              },
               refunds: {
                 where: { status: 'APPROVED' },
                 select: { amount: true },
@@ -558,12 +576,16 @@ export function createAdminBillingRouter(
         expectedClosingCash = roundMoney(
           Number(currentShift.openingCash) +
           shiftSales.reduce((sum, sale) => {
-            if (sale.paymentMethod !== 'CASH') return sum;
+            const receivedCash = sale.paymentCollections.length > 0
+              ? sale.paymentCollections
+                .filter((payment) => payment.method === 'CASH')
+                .reduce((amount, payment) => amount + Number(payment.amount), 0)
+              : sale.paymentMethod === 'CASH' ? Number(sale.total) : 0;
             const refunds = sale.refunds.reduce(
               (amount, refund) => amount + Number(refund.amount),
               0,
             );
-            return sum + Number(sale.total) - refunds;
+            return sum + receivedCash - refunds;
           }, 0) +
           shiftExchanges.reduce((sum, exchange) => {
             const difference = Number(exchange.difference);
@@ -624,153 +646,6 @@ export function createAdminBillingRouter(
     }
   });
 
-  router.post('/shifts/open', async (req, res) => {
-    const cashierId = authenticatedAdminId(res);
-    if (!cashierId) return res.status(401).json({ error: 'Authentication is required.' });
-    const parsed = openShiftInput.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ error: 'Enter a valid opening cash amount.' });
-    }
-    try {
-      const shift = await runTransactionWithRetry(prisma, async (tx) => {
-        const existing = await tx.posShift.findFirst({
-          where: { status: 'OPEN', cashierId },
-          select: { id: true },
-        });
-        if (existing) throw new Error('POS_SHIFT_ALREADY_OPEN');
-        return tx.posShift.create({
-          data: {
-            cashierId,
-            openingCash: parsed.data.openingCash,
-          },
-          include: { cashier: { select: { id: true, name: true } } },
-        });
-      });
-      return res.status(201).json({
-        shift: {
-          id: shift.id,
-          openingCash: Number(shift.openingCash),
-          openedAt: shift.openedAt.toISOString(),
-          cashier: shift.cashier,
-        },
-      });
-    } catch (error) {
-      if (error instanceof Error && error.message === 'POS_SHIFT_ALREADY_OPEN') {
-        return res.status(409).json({ error: 'You already have an open cash register shift.' });
-      }
-      sendAdminError(error, res);
-    }
-  });
-
-  router.post('/shifts/:id/close', async (req, res) => {
-    const cashierId = authenticatedAdminId(res);
-    if (!cashierId) return res.status(401).json({ error: 'Authentication is required.' });
-    const actualCash = z.number().finite().min(0).max(999999999)
-      .refine((value) => Number.isSafeInteger(Math.round(value * 100)))
-      .safeParse(req.body?.actualCash);
-    if (!actualCash.success) {
-      return res.status(400).json({ error: 'Enter the counted closing cash amount.' });
-    }
-    try {
-      const result = await runTransactionWithRetry(prisma, async (tx) => {
-        const shift = await tx.posShift.findFirst({
-          where: { id: req.params.id, cashierId, status: 'OPEN' },
-          select: { id: true, openingCash: true },
-        });
-        if (!shift) return null;
-        const [heldBillCount, pendingExchangeCount] = await Promise.all([
-          tx.posHeldSale.count({ where: { shiftId: shift.id } }),
-          tx.posExchange.count({
-            where: { shiftId: shift.id, status: 'REFUND_REQUESTED' },
-          }),
-        ]);
-        if (heldBillCount > 0) throw new Error('POS_HELD_BILLS_EXIST');
-        if (pendingExchangeCount > 0) {
-          throw new Error('POS_EXCHANGE_REFUNDS_PENDING');
-        }
-        const [sales, movements, exchanges] = await Promise.all([
-          tx.posSale.findMany({
-            where: { shiftId: shift.id, status: { not: 'CANCELLED' } },
-            select: {
-              total: true,
-              paymentMethod: true,
-              refunds: {
-                where: { status: 'APPROVED' },
-                select: { amount: true },
-              },
-            },
-          }),
-          tx.posCashMovement.findMany({
-            where: { shiftId: shift.id },
-            select: { type: true, amount: true },
-          }),
-          tx.posExchange.findMany({
-            where: {
-              shiftId: shift.id,
-              status: { in: ['COMPLETED', 'REFUND_APPROVED'] },
-            },
-            select: {
-              difference: true,
-              paymentMethod: true,
-              refundPaymentMethod: true,
-            },
-          }),
-        ]);
-        const expected = roundMoney(
-          Number(shift.openingCash) +
-          sales.reduce((sum, sale) => {
-            if (sale.paymentMethod !== 'CASH') return sum;
-            const refunds = sale.refunds.reduce(
-              (amount, refund) => amount + Number(refund.amount),
-              0,
-            );
-            return sum + Number(sale.total) - refunds;
-          }, 0) +
-          exchanges.reduce((sum, exchange) => {
-            const difference = Number(exchange.difference);
-            if (difference > 0 && exchange.paymentMethod === 'CASH') {
-              return sum + difference;
-            }
-            if (difference < 0 && exchange.refundPaymentMethod === 'CASH') {
-              return sum + difference;
-            }
-            return sum;
-          }, 0) +
-          movements.reduce(
-            (sum, movement) => sum +
-              (movement.type === 'CASH_IN' ? 1 : -1) * Number(movement.amount),
-            0,
-          ),
-        );
-        const closed = await tx.posShift.update({
-          where: { id: shift.id },
-          data: {
-            status: 'CLOSED',
-            expectedClosingCash: expected,
-            actualClosingCash: actualCash.data,
-            closedAt: new Date(),
-          },
-        });
-        return { expected, shiftId: closed.id };
-      });
-      if (!result) return res.status(404).json({ error: 'Open register shift not found.' });
-      return res.json(result);
-    } catch (error) {
-      if (error instanceof Error && error.message === 'POS_HELD_BILLS_EXIST') {
-        return res.status(409).json({
-          error: 'Resume or discard held bills before closing this register.',
-        });
-      }
-      if (error instanceof Error &&
-          error.message === 'POS_EXCHANGE_REFUNDS_PENDING') {
-        return res.status(409).json({
-          error: 'Resolve pending exchange refunds before closing this register.',
-        });
-      }
-      sendAdminError(error, res);
-    }
-  });
-
   router.post('/cash-movements', async (req, res) => {
     const actorId = authenticatedAdminId(res);
     if (!actorId) return res.status(401).json({ error: 'Authentication is required.' });
@@ -780,12 +655,7 @@ export function createAdminBillingRouter(
     }
     try {
       const movement = await runTransactionWithRetry(prisma, async (tx) => {
-        const shift = await findOrCreateOpenShift(
-          tx,
-          actorId,
-          authenticatedRole(res) === 'ADMIN',
-        );
-        if (!shift) throw new Error('POS_SHIFT_NOT_OPEN');
+        const shift = await findOrCreateOpenShift(tx, actorId);
         const [sales, movements] = await Promise.all([
           tx.posSale.findMany({
             where: { shiftId: shift.id, status: { not: 'CANCELLED' } },
@@ -835,9 +705,6 @@ export function createAdminBillingRouter(
         },
       });
     } catch (error) {
-      if (error instanceof Error && error.message === 'POS_SHIFT_NOT_OPEN') {
-        return res.status(409).json({ error: 'Open a register shift first.' });
-      }
       if (error instanceof Error && error.message === 'POS_CASH_OUT_EXCEEDS_DRAWER') {
         return res.status(409).json({ error: 'Cash out cannot exceed the expected drawer balance.' });
       }
@@ -879,12 +746,7 @@ export function createAdminBillingRouter(
     if (!parsed.success) return res.status(400).json({ error: 'Check the held bill details.' });
     try {
       const heldSale = await runTransactionWithRetry(prisma, async (tx) => {
-        const shift = await findOrCreateOpenShift(
-          tx,
-          cashierId,
-          authenticatedRole(res) === 'ADMIN',
-        );
-        if (!shift) throw new Error('POS_SHIFT_NOT_OPEN');
+        const shift = await findOrCreateOpenShift(tx, cashierId);
         return tx.posHeldSale.create({
           data: {
             shiftId: shift.id,
@@ -896,9 +758,6 @@ export function createAdminBillingRouter(
       });
       return res.status(201).json({ id: heldSale.id });
     } catch (error) {
-      if (error instanceof Error && error.message === 'POS_SHIFT_NOT_OPEN') {
-        return res.status(409).json({ error: 'Open a register shift first.' });
-      }
       sendAdminError(error, res);
     }
   });
@@ -931,6 +790,9 @@ export function createAdminBillingRouter(
         barcode: true,
         price: true,
         unitLabel: true,
+        imageUrl: true,
+        imageMimeType: true,
+        updatedAt: true,
         inventory: { select: { totalStock: true, reservedStock: true } },
       } satisfies Prisma.ProductSelect;
       const exactProduct = query.data
@@ -979,6 +841,9 @@ export function createAdminBillingRouter(
           barcode: product.barcode,
           price: Number(product.price),
           unitLabel: product.unitLabel,
+          imageUrl: product.imageMimeType
+            ? `/api/v1/products/${encodeURIComponent(product.id)}/image?v=${product.updatedAt.getTime()}`
+            : product.imageUrl,
           available: Math.max(
             0,
             (product.inventory?.totalStock ?? 0) -
@@ -1005,7 +870,11 @@ export function createAdminBillingRouter(
         if (parsed.data.idempotencyKey) {
           const existing = await tx.posSale.findUnique({
             where: { receiptNumber },
-            include: { items: true, shift: { select: { cashierId: true } } },
+            include: {
+              items: true,
+              paymentCollections: true,
+              shift: { select: { cashierId: true } },
+            },
           });
           if (existing) {
             if (existing.shift.cashierId !== cashierId) {
@@ -1015,12 +884,7 @@ export function createAdminBillingRouter(
             return existing;
           }
         }
-        const shift = await findOrCreateOpenShift(
-          tx,
-          cashierId,
-          authenticatedRole(res) === 'ADMIN',
-        );
-        if (!shift) throw new Error('POS_SHIFT_NOT_OPEN');
+        const shift = await findOrCreateOpenShift(tx, cashierId);
         const products = await tx.product.findMany({
           where: {
             id: { in: parsed.data.items.map((item) => item.productId) },
@@ -1096,9 +960,21 @@ export function createAdminBillingRouter(
             paymentStatus: parsed.data.paymentMethod === 'PENDING'
               ? 'PENDING'
               : 'COMPLETED',
+            paidAmount: parsed.data.paymentMethod === 'PENDING' ? 0 : total,
             subtotal,
             discount,
             total,
+            ...(parsed.data.paymentMethod === 'PENDING' || total === 0
+              ? {}
+              : {
+                paymentCollections: {
+                  create: {
+                    recordedById: cashierId,
+                    amount: total,
+                    method: parsed.data.paymentMethod,
+                  },
+                },
+              }),
             items: {
               create: lines.map((line) => ({
                 productId: line.product.id,
@@ -1111,7 +987,7 @@ export function createAdminBillingRouter(
               })),
             },
           },
-          include: { items: true },
+          include: { items: true, paymentCollections: true },
         });
         await inventoryService.consumeStockForPosSale(
           tx,
@@ -1139,7 +1015,11 @@ export function createAdminBillingRouter(
         try {
           const existing = await prisma.posSale.findUnique({
             where: { receiptNumber },
-            include: { items: true, shift: { select: { cashierId: true } } },
+            include: {
+              items: true,
+              paymentCollections: true,
+              shift: { select: { cashierId: true } },
+            },
           });
           if (existing?.shift.cashierId === cashierId) {
             return res.status(200).json({ sale: serializeSale(existing) });
@@ -1155,7 +1035,6 @@ export function createAdminBillingRouter(
           });
         }
         const clientErrors: Record<string, string> = {
-          POS_SHIFT_NOT_OPEN: 'Open a register shift before completing a bill.',
           POS_PRODUCT_UNAVAILABLE: 'One or more products are no longer available.',
           POS_WEIGHT_REQUIRED: 'Enter a weight for each product sold by weight.',
           POS_INSUFFICIENT_STOCK: 'The requested quantity exceeds available stock.',
@@ -1200,7 +1079,7 @@ export function createAdminBillingRouter(
           orderBy: { createdAt: 'desc' },
           skip: (parsed.data.page - 1) * parsed.data.pageSize,
           take: parsed.data.pageSize,
-          include: { items: true },
+          include: { items: true, paymentCollections: true },
         }),
         prisma.posSale.count({ where }),
       ]);
@@ -1217,6 +1096,132 @@ export function createAdminBillingRouter(
     }
   });
 
+  router.get('/pending-payments', async (req, res) => {
+    const parsed = z.object({
+      page: z.coerce.number().int().min(1).max(10000).default(1),
+      pageSize: z.coerce.number().int().min(1).max(100).default(50),
+    }).strict().safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Choose a valid pending-payment page.' });
+    }
+    const cashierId = authenticatedAdminId(res);
+    if (!cashierId) return res.status(401).json({ error: 'Authentication is required.' });
+    const where: Prisma.PosSaleWhereInput = {
+      paymentStatus: 'PENDING',
+      status: { not: 'CANCELLED' },
+      ...(authenticatedRole(res) === 'BILLING_STAFF'
+        ? { shift: { cashierId } }
+        : {}),
+    };
+    try {
+      const total = await prisma.posSale.count({ where });
+      const page = Math.min(
+        parsed.data.page,
+        Math.max(1, Math.ceil(total / parsed.data.pageSize)),
+      );
+      const sales = await prisma.posSale.findMany({
+        where,
+        orderBy: { createdAt: 'asc' },
+        skip: (page - 1) * parsed.data.pageSize,
+        take: parsed.data.pageSize,
+        include: {
+          items: true,
+          paymentCollections: { orderBy: { createdAt: 'asc' } },
+        },
+      });
+      return res.json({
+        sales: sales.map(serializeSale),
+        pagination: {
+          page,
+          pageSize: parsed.data.pageSize,
+          total,
+        },
+      });
+    } catch (error) {
+      sendAdminError(error, res);
+    }
+  });
+
+  router.post('/sales/:id/payments', async (req, res) => {
+    const cashierId = authenticatedAdminId(res);
+    if (!cashierId) return res.status(401).json({ error: 'Authentication is required.' });
+    const parsed = paymentCollectionInput.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Enter a valid received amount and payment method.' });
+    }
+    try {
+      const payment = await runTransactionWithRetry(prisma, async (tx) => {
+        const sale = await tx.posSale.findUnique({
+          where: { id: req.params.id },
+          include: { shift: { select: { cashierId: true } } },
+        });
+        const isBillingStaff = authenticatedRole(res) === 'BILLING_STAFF';
+        if (!sale ||
+            sale.status === 'CANCELLED' ||
+            sale.paymentStatus !== 'PENDING' ||
+            (isBillingStaff && sale.shift.cashierId !== cashierId)) {
+          throw new Error('POS_SALE_NOT_AWAITING_PAYMENT');
+        }
+        const paidAmount = Number(sale.paidAmount);
+        const total = Number(sale.total);
+        const amount = roundMoney(parsed.data.amount);
+        const remaining = roundMoney(total - paidAmount);
+        if (amount > remaining) throw new Error('POS_PAYMENT_EXCEEDS_BALANCE');
+        const nextPaidAmount = roundMoney(paidAmount + amount);
+        const settled = nextPaidAmount >= total;
+        const updated = await tx.posSale.updateMany({
+          where: {
+            id: sale.id,
+            paymentStatus: 'PENDING',
+            paidAmount: sale.paidAmount,
+            status: { not: 'CANCELLED' },
+          },
+          data: {
+            paidAmount: nextPaidAmount,
+            ...(settled
+              ? {
+                paymentStatus: 'COMPLETED',
+                paymentMethod: parsed.data.paymentMethod,
+              }
+              : {}),
+          },
+        });
+        if (updated.count !== 1) throw new Error('POS_PAYMENT_CONCURRENT_UPDATE');
+        return tx.posPaymentCollection.create({
+          data: {
+            saleId: sale.id,
+            recordedById: cashierId,
+            amount,
+            method: parsed.data.paymentMethod,
+            note: parsed.data.note?.trim() || null,
+          },
+        });
+      });
+      return res.status(201).json({
+        payment: {
+          id: payment.id,
+          amount: Number(payment.amount),
+          method: payment.method,
+          note: payment.note,
+          createdAt: payment.createdAt.toISOString(),
+        },
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.message === 'POS_SALE_NOT_AWAITING_PAYMENT') {
+          return res.status(409).json({ error: 'This bill is not awaiting payment.' });
+        }
+        if (error.message === 'POS_PAYMENT_EXCEEDS_BALANCE') {
+          return res.status(409).json({ error: 'The received amount exceeds the remaining balance.' });
+        }
+        if (error.message === 'POS_PAYMENT_CONCURRENT_UPDATE') {
+          return res.status(409).json({ error: 'This bill changed while recording payment. Refresh and retry.' });
+        }
+      }
+      sendAdminError(error, res);
+    }
+  });
+
   router.patch('/sales/:id/payment', async (req, res) => {
     const cashierId = authenticatedAdminId(res);
     if (!cashierId) return res.status(401).json({ error: 'Authentication is required.' });
@@ -1225,19 +1230,46 @@ export function createAdminBillingRouter(
       return res.status(400).json({ error: 'Choose cash or digital payment.' });
     }
     try {
-      const updated = await prisma.posSale.updateMany({
-        where: {
-          id: req.params.id,
-          paymentStatus: 'PENDING',
-          status: { not: 'CANCELLED' },
-          shift: { cashierId },
-        },
-        data: {
-          paymentMethod: parsed.data.paymentMethod,
-          paymentStatus: 'COMPLETED',
-        },
+      const updated = await runTransactionWithRetry(prisma, async (tx) => {
+        const sale = await tx.posSale.findUnique({
+          where: { id: req.params.id },
+          include: { shift: { select: { cashierId: true } } },
+        });
+        const isBillingStaff = authenticatedRole(res) === 'BILLING_STAFF';
+        if (!sale ||
+            sale.status === 'CANCELLED' ||
+            sale.paymentStatus !== 'PENDING' ||
+            (isBillingStaff && sale.shift.cashierId !== cashierId)) {
+          return false;
+        }
+        const remaining = roundMoney(
+          Number(sale.total) - Number(sale.paidAmount),
+        );
+        if (remaining <= 0) return false;
+        const result = await tx.posSale.updateMany({
+          where: {
+            id: sale.id,
+            paymentStatus: 'PENDING',
+            paidAmount: sale.paidAmount,
+          },
+          data: {
+            paymentMethod: parsed.data.paymentMethod,
+            paymentStatus: 'COMPLETED',
+            paidAmount: Number(sale.total),
+          },
+        });
+        if (result.count !== 1) return false;
+        await tx.posPaymentCollection.create({
+          data: {
+            saleId: sale.id,
+            recordedById: cashierId,
+            amount: remaining,
+            method: parsed.data.paymentMethod,
+          },
+        });
+        return true;
       });
-      if (updated.count !== 1) {
+      if (!updated) {
         return res.status(409).json({ error: 'This bill is not awaiting payment.' });
       }
       return res.sendStatus(204);
@@ -1258,6 +1290,7 @@ export function createAdminBillingRouter(
         if (!sale ||
             sale.status === 'CANCELLED' ||
             sale.paymentStatus !== 'PENDING' ||
+            Number(sale.paidAmount) > 0 ||
             sale.refunds.length > 0) {
           return null;
         }
@@ -1555,12 +1588,7 @@ export function createAdminBillingRouter(
           return existing;
         }
 
-        const shift = await findOrCreateOpenShift(
-          tx,
-          cashierId,
-          authenticatedRole(res) === 'ADMIN',
-        );
-        if (!shift) throw new Error('POS_SHIFT_NOT_OPEN');
+        const shift = await findOrCreateOpenShift(tx, cashierId);
 
         const sale = await tx.posSale.findUnique({
           where: { id: req.params.id },
@@ -1809,10 +1837,6 @@ export function createAdminBillingRouter(
           POS_EXCHANGE_IDEMPOTENCY_KEY_REUSED: {
             status: 409,
             message: 'This exchange request key was already used by another cashier.',
-          },
-          POS_SHIFT_NOT_OPEN: {
-            status: 409,
-            message: 'Open a register shift before processing an exchange.',
           },
           POS_SALE_NOT_EXCHANGEABLE: {
             status: 409,

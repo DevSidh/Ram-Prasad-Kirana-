@@ -62,8 +62,59 @@ void main() {
     client.close();
   });
 
-  test('timeout errors give a short connection message without server details',
+  test('getBytes sends the token and returns the image payload', () async {
+    http.Request? capturedRequest;
+    final imageBytes = Uint8List.fromList([0x89, 0x50, 0x4e, 0x47]);
+    final client = MockClient((request) async {
+      capturedRequest = request;
+      return http.Response.bytes(
+        imageBytes,
+        200,
+        headers: {'content-type': 'image/png'},
+      );
+    });
+    final api = ApiService(
+      baseUrl: 'https://store.example/api/v1',
+      client: client,
+    )..setAuthToken('session-token');
+
+    final response = await api.getBytes(
+      '/admin/inventory/purchase-bills/bill-1/photo',
+    );
+
+    expect(response, imageBytes);
+    expect(capturedRequest?.url.path,
+        '/api/v1/admin/inventory/purchase-bills/bill-1/photo');
+    expect(
+      capturedRequest?.headers['authorization'],
+      ['Bearer', 'session-token'].join(' '),
+    );
+    client.close();
+  });
+
+  test('missing supplier-bill routes explain the required backend rollout',
       () async {
+    final client = MockClient((request) async => http.Response(
+          'Cannot GET /api/v1/admin/inventory/purchase-bills',
+          404,
+        ));
+    final api = ApiService(
+      baseUrl: 'https://store.example/api/v1',
+      client: client,
+    );
+
+    await expectLater(
+      api.get('/admin/inventory/purchase-bills'),
+      throwsA(isA<ApiResponseException>().having(
+        (error) => error.message,
+        'message',
+        contains('deploy the backend with supplier-bill routes'),
+      )),
+    );
+    client.close();
+  });
+
+  test('timeout errors are not mislabeled as lost internet access', () async {
     final client = MockClient((request) async {
       await Future<void>.delayed(const Duration(milliseconds: 20));
       return http.Response(jsonEncode({'ok': true}), 200);
@@ -77,18 +128,17 @@ void main() {
     await expectLater(
       api.get('/products'),
       throwsA(
-        isA<ApiNetworkException>().having(
+        isA<ApiTimeoutException>().having(
           (error) => error.message,
           'message',
-          'No internet connection. Check your connection and try again.',
+          'The store server took too long to respond. Please try again.',
         ),
       ),
     );
     client.close();
   });
 
-  test('transport errors never expose backend URLs or exception details',
-      () async {
+  test('connection errors do not assert that the device is offline', () async {
     final client = MockClient((request) async {
       throw http.ClientException('connection aborted', request.url);
     });
@@ -103,9 +153,26 @@ void main() {
         isA<ApiNetworkException>().having(
           (error) => error.toString(),
           'message',
-          'No internet connection. Check your connection and try again.',
+          'Unable to reach the store server. Check your connection or try again later.',
         ),
       ),
+    );
+    client.close();
+  });
+
+  test('unexpected client failures are not disguised as connection errors',
+      () async {
+    final client = MockClient((request) async {
+      throw StateError('unexpected decoding failure');
+    });
+    final api = ApiService(
+      baseUrl: 'https://store.example/api/v1',
+      client: client,
+    );
+
+    await expectLater(
+      api.get('/products'),
+      throwsA(isA<StateError>()),
     );
     client.close();
   });

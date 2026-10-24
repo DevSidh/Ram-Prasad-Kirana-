@@ -258,6 +258,152 @@ export class InventoryService {
    * Prevents race conditions and guarantees that stock never drops below 0,
    * even when 1,000 requests hit simultaneously for a product with 1 unit in stock.
    */
+  async commitOrderStock(
+    tx: Prisma.TransactionClient,
+    items: { productId: string; quantity: number }[],
+    orderId: string,
+    reservedStockAlreadyHeld = false,
+  ): Promise<void> {
+    const quantities = new Map<string, number>();
+    for (const item of items) {
+      if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) {
+        throw new InventoryAdjustmentError(
+          'Order stock quantities must be positive integers.',
+        );
+      }
+      quantities.set(
+        item.productId,
+        (quantities.get(item.productId) ?? 0) + item.quantity,
+      );
+    }
+    if (quantities.size === 0) return;
+
+    const productIds = [...quantities.keys()].sort();
+    const today = getLocalDayRange().start;
+    const batches = await tx.$queryRaw<
+      Array<{ id: string; productId: string; remainingQuantity: number }>
+    >(Prisma.sql`
+      SELECT "id", "productId", "remainingQuantity"
+      FROM "InventoryBatch"
+      WHERE "productId" IN (${Prisma.join(productIds)})
+        AND "remainingQuantity" > 0
+        AND ("expiresAt" IS NULL OR "expiresAt" >= ${today})
+      ORDER BY
+        "productId" ASC,
+        CASE WHEN "expiresAt" IS NULL THEN 1 ELSE 0 END,
+        "expiresAt" ASC,
+        "createdAt" ASC
+      FOR UPDATE
+    `);
+
+    const allocations: Prisma.OrderBatchAllocationCreateManyInput[] = [];
+    let productIndex = 0;
+    let remainingForProduct = quantities.get(productIds[productIndex]) ?? 0;
+    for (const batch of batches) {
+      while (
+        productIndex < productIds.length &&
+        batch.productId !== productIds[productIndex]
+      ) {
+        if (remainingForProduct > 0) {
+          throw new Error(
+            `INSUFFICIENT_STOCK: Product ${productIds[productIndex]} has insufficient unexpired batch stock.`,
+          );
+        }
+        productIndex++;
+        remainingForProduct = quantities.get(productIds[productIndex]) ?? 0;
+      }
+      if (productIndex >= productIds.length) break;
+      if (remainingForProduct <= 0) continue;
+
+      const quantity = Math.min(remainingForProduct, batch.remainingQuantity);
+      allocations.push({
+        orderId,
+        productId: batch.productId,
+        batchId: batch.id,
+        quantity,
+      });
+      remainingForProduct -= quantity;
+    }
+    while (productIndex < productIds.length && remainingForProduct === 0) {
+      productIndex++;
+      remainingForProduct = quantities.get(productIds[productIndex]) ?? 0;
+    }
+    if (productIndex < productIds.length && remainingForProduct > 0) {
+      throw new Error(
+        `INSUFFICIENT_STOCK: Product ${productIds[productIndex]} has insufficient unexpired batch stock.`,
+      );
+    }
+
+    const batchUpdates = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      UPDATE "InventoryBatch" AS batch
+      SET "remainingQuantity" =
+            batch."remainingQuantity" - allocation."quantity",
+          "updatedAt" = NOW()
+      FROM (VALUES ${Prisma.join(
+        allocations.map((allocation) => Prisma.sql`
+          (${allocation.batchId}, ${allocation.quantity})
+        `),
+      )}) AS allocation("batchId", "quantity")
+      WHERE batch."id" = allocation."batchId"
+        AND batch."remainingQuantity" >= allocation."quantity"
+      RETURNING batch."id"
+    `);
+    if (batchUpdates.length !== allocations.length) {
+      throw new Error(
+        'INSUFFICIENT_STOCK: A product batch changed while placing the order.',
+      );
+    }
+
+    const reservedStockUpdate = reservedStockAlreadyHeld
+      ? Prisma.sql`"reservedStock" = inventory."reservedStock" - requested."quantity",`
+      : Prisma.empty;
+    const reservedStockCheck = reservedStockAlreadyHeld
+      ? Prisma.sql`AND inventory."reservedStock" >= requested."quantity"`
+      : Prisma.empty;
+    const availableStockCheck = reservedStockAlreadyHeld
+      ? Prisma.sql`AND inventory."totalStock" >= requested."quantity"`
+      : Prisma.sql`AND inventory."totalStock" - inventory."reservedStock" >= requested."quantity"`;
+    const inventoryUpdates = await tx.$queryRaw<Array<{
+      id: string;
+      productId: string;
+      totalStock: number;
+      reservedStock: number;
+    }>>(Prisma.sql`
+      UPDATE "Inventory" AS inventory
+      SET "totalStock" = inventory."totalStock" - requested."quantity",
+          ${reservedStockUpdate}
+          "version" = inventory."version" + 1,
+          "updatedAt" = NOW()
+      FROM (VALUES ${Prisma.join(
+        productIds.map((productId) => Prisma.sql`
+          (${productId}, ${quantities.get(productId)})
+        `),
+      )}) AS requested("productId", "quantity")
+      WHERE inventory."productId" = requested."productId"
+        ${availableStockCheck}
+        ${reservedStockCheck}
+      RETURNING inventory."id", inventory."productId",
+                inventory."totalStock", inventory."reservedStock"
+    `);
+    if (inventoryUpdates.length !== quantities.size) {
+      throw new Error(
+        'INSUFFICIENT_STOCK: An item was just purchased by another customer.',
+      );
+    }
+
+    await tx.inventoryTransaction.createMany({
+      data: inventoryUpdates.map((inventory) => ({
+        inventoryId: inventory.id,
+        type: 'PURCHASED',
+        quantity: quantities.get(inventory.productId)!,
+        balanceAfter: inventory.totalStock - inventory.reservedStock,
+        referenceId: orderId,
+        notes: `Purchased and deducted for Order #${orderId}`,
+      })),
+    });
+    await tx.orderBatchAllocation.createMany({ data: allocations });
+  }
+
   async reserveStockForOrder(
     tx: Prisma.TransactionClient,
     items: { productId: string; quantity: number }[],
@@ -304,36 +450,9 @@ export class InventoryService {
   async commitReservedStock(
     tx: Prisma.TransactionClient,
     items: { productId: string; quantity: number }[],
-    orderId: string
+    orderId: string,
   ): Promise<void> {
-    for (const item of items) {
-      await this.consumeBatchStock(tx, item.productId, item.quantity, orderId);
-      const current = await tx.inventory.findUnique({
-        where: { productId: item.productId },
-        select: { totalStock: true, reservedStock: true },
-      });
-
-      await tx.$executeRaw`
-        UPDATE "Inventory"
-        SET 
-          "totalStock" = "totalStock" - ${item.quantity},
-          "reservedStock" = "reservedStock" - ${item.quantity},
-          "version" = "version" + 1,
-          "updatedAt" = NOW()
-        WHERE "productId" = ${item.productId};
-      `;
-
-      await tx.inventoryTransaction.create({
-        data: {
-          inventory: { connect: { productId: item.productId } },
-          type: 'PURCHASED',
-          quantity: item.quantity,
-          balanceAfter: current ? current.totalStock - item.quantity - current.reservedStock + item.quantity : 0,
-          referenceId: orderId,
-          notes: `Purchased and deducted for Order #${orderId}`,
-        },
-      });
-    }
+    await this.commitOrderStock(tx, items, orderId, true);
   }
 
   async consumeStockForPosSale(

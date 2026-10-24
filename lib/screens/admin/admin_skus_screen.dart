@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../../core/constants.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../theme/admin_widgets.dart';
+import '../../theme/app_colors.dart';
 import '../../widgets/store_animation.dart';
 
 class AdminSkusScreen extends StatefulWidget {
@@ -127,16 +128,16 @@ class _AdminSkusScreenState extends State<AdminSkusScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
         children: [
-          const Text(
+          Text(
             'Product SKU manager',
-            style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
+            style: Theme.of(context).textTheme.titleLarge,
           ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 8),
           Text(
             '${_products.length} products • store SKUs are unique internal stock codes.',
-            style: TextStyle(color: AppConstants.textMuted, fontSize: 12),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 12),
           TextField(
@@ -152,22 +153,12 @@ class _AdminSkusScreenState extends State<AdminSkusScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppConstants.primaryLight,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              'SKUs are set by each store, not assigned globally. Use a clear '
-              'category-product-variant code (for example, RPG-PUL-MASOOR-1KG). '
-              'A globally standardized product code is a GTIN/barcode, not an SKU.',
-              style: TextStyle(
-                color: AppConstants.primaryDark,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+          const AppBanner(
+            icon: Icons.info_outline_rounded,
+            message:
+                'SKUs are set by each store, not assigned globally. Use a clear '
+                'category-product-variant code (for example, RPG-PUL-MASOOR-1KG). '
+                'A globally standardized product code is a GTIN/barcode, not an SKU.',
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
@@ -214,61 +205,59 @@ class _SkuProductTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppConstants.surfaceLight,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppConstants.borderLight),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            product.name,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            '${product.categoryName} • ${product.isActive ? 'Active' : 'Inactive'}',
-            style: TextStyle(color: AppConstants.textMuted, fontSize: 11),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: controller,
-                  enabled: !isDisabled,
-                  maxLength: 80,
-                  textCapitalization: TextCapitalization.none,
-                  decoration: const InputDecoration(
-                    labelText: 'SKU',
-                    counterText: '',
-                    isDense: true,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: AppSurface(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AppRowCard(
+              title: product.name,
+              subtitle: product.categoryName,
+              leading: const Icon(Icons.inventory_2_outlined, size: 20),
+              tint: AppColors.thumbnailBlue,
+              trailing: AppStatusPill(
+                product.isActive ? 'Active' : 'Inactive',
+                variant: product.isActive
+                    ? AppStatusVariant.success
+                    : AppStatusVariant.neutral,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: controller,
+                    enabled: !isDisabled,
+                    maxLength: 80,
+                    textCapitalization: TextCapitalization.none,
+                    decoration: const InputDecoration(
+                      labelText: 'SKU',
+                      counterText: '',
+                      isDense: true,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              SizedBox(
-                height: 48,
-                child: FilledButton(
-                  onPressed: isDisabled ? null : onSave,
-                  child: isSaving
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Save'),
+                const SizedBox(width: 8),
+                SizedBox(
+                  height: 40,
+                  child: FilledButton(
+                    onPressed: isDisabled ? null : onSave,
+                    child: isSaving
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Save'),
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -283,11 +272,11 @@ class _SkuNotice extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF3E0),
-        borderRadius: BorderRadius.circular(12),
+      child: AppBanner(
+        message: message,
+        icon: Icons.error_outline_rounded,
+        variant: AppStatusVariant.error,
       ),
-      child: Text(message, style: const TextStyle(color: Color(0xFF7A4A00))),
     );
   }
 }
@@ -301,8 +290,7 @@ class _SkuEmpty extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 42),
       child: Column(
         children: [
-          Icon(Icons.qr_code_2_rounded,
-              size: 42, color: AppConstants.textMuted),
+          const Icon(Icons.qr_code_2_rounded, size: 42, color: AppColors.muted),
           const SizedBox(height: 12),
           const Text(
             'No products to update',
@@ -312,7 +300,7 @@ class _SkuEmpty extends StatelessWidget {
           Text(
             'Add products in the Products section to manage their SKUs.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppConstants.textMuted, fontSize: 12),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ),

@@ -70,11 +70,33 @@ class ApiService {
     } on ApiResponseException {
       rethrow;
     } on TimeoutException {
-      throw const ApiNetworkException();
+      throw const ApiTimeoutException();
     } on FormatException {
       throw const ApiResponseException(
           'The store returned an invalid response.');
-    } catch (_) {
+    } on http.ClientException {
+      throw const ApiNetworkException();
+    }
+  }
+
+  Future<Uint8List> getBytes(String endpoint) async {
+    try {
+      final response = await _client
+          .get(Uri.parse('$baseUrl$endpoint'), headers: _headers())
+          .timeout(_requestTimeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        _processResponse(response);
+      }
+      return response.bodyBytes;
+    } on ApiResponseException {
+      rethrow;
+    } on TimeoutException {
+      throw const ApiTimeoutException();
+    } on FormatException {
+      throw const ApiResponseException(
+        'The store returned an invalid response.',
+      );
+    } on http.ClientException {
       throw const ApiNetworkException();
     }
   }
@@ -89,11 +111,11 @@ class ApiService {
     } on ApiResponseException {
       rethrow;
     } on TimeoutException {
-      throw const ApiNetworkException();
+      throw const ApiTimeoutException();
     } on FormatException {
       throw const ApiResponseException(
           'The store returned an invalid response.');
-    } catch (_) {
+    } on http.ClientException {
       throw const ApiNetworkException();
     }
   }
@@ -134,11 +156,11 @@ class ApiService {
     } on ApiResponseException {
       rethrow;
     } on TimeoutException {
-      throw const ApiNetworkException();
+      throw const ApiTimeoutException();
     } on FormatException {
       throw const ApiResponseException(
           'The store returned an invalid response.');
-    } catch (_) {
+    } on http.ClientException {
       throw const ApiNetworkException();
     }
   }
@@ -153,11 +175,11 @@ class ApiService {
     } on ApiResponseException {
       rethrow;
     } on TimeoutException {
-      throw const ApiNetworkException();
+      throw const ApiTimeoutException();
     } on FormatException {
       throw const ApiResponseException(
           'The store returned an invalid response.');
-    } catch (_) {
+    } on http.ClientException {
       throw const ApiNetworkException();
     }
   }
@@ -172,11 +194,11 @@ class ApiService {
     } on ApiResponseException {
       rethrow;
     } on TimeoutException {
-      throw const ApiNetworkException();
+      throw const ApiTimeoutException();
     } on FormatException {
       throw const ApiResponseException(
           'The store returned an invalid response.');
-    } catch (_) {
+    } on http.ClientException {
       throw const ApiNetworkException();
     }
   }
@@ -198,11 +220,11 @@ class ApiService {
     } on ApiResponseException {
       rethrow;
     } on TimeoutException {
-      throw const ApiNetworkException();
+      throw const ApiTimeoutException();
     } on FormatException {
       throw const ApiResponseException(
           'The store returned an invalid response.');
-    } catch (_) {
+    } on http.ClientException {
       throw const ApiNetworkException();
     }
   }
@@ -275,6 +297,15 @@ class ApiService {
           '${missingRoute.group(2)}. Confirm the backend release and API '
           'base URL point to the expected service.';
     }
+    final missingSupplierBillRoute = RegExp(
+      r'^Cannot GET (/api/v1/admin/inventory/purchase-bills(?:/\S*)?)$',
+    ).firstMatch(plainText);
+    if (missingSupplierBillRoute != null) {
+      return 'Supplier-bill API is unavailable at '
+          '${missingSupplierBillRoute.group(1)}. Confirm the API base URL, '
+          'deploy the backend with supplier-bill routes, and apply its pending '
+          'database migrations.';
+    }
     return plainText;
   }
 }
@@ -292,7 +323,17 @@ class ApiNetworkException implements Exception {
   const ApiNetworkException();
 
   String get message =>
-      'No internet connection. Check your connection and try again.';
+      'Unable to reach the store server. Check your connection or try again later.';
+
+  @override
+  String toString() => message;
+}
+
+class ApiTimeoutException implements Exception {
+  const ApiTimeoutException();
+
+  String get message =>
+      'The store server took too long to respond. Please try again.';
 
   @override
   String toString() => message;

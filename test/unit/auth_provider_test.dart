@@ -115,6 +115,23 @@ void main() {
     expect(auth.authToken, 'session-token');
   });
 
+  test('malformed saved session is cleared without failing startup', () async {
+    SharedPreferences.setMockInitialValues({
+      AppConstants.keyToken: 'session-token',
+      AppConstants.keyUser: '{not json',
+    });
+
+    final auth = AuthProvider(apiService: _ProfileApi());
+    addTearDown(auth.dispose);
+    await auth.sessionReady;
+
+    final preferences = await SharedPreferences.getInstance();
+    expect(auth.isAuthenticated, isFalse);
+    expect(auth.currentUser, isNull);
+    expect(preferences.getString(AppConstants.keyToken), isNull);
+    expect(preferences.getString(AppConstants.keyUser), isNull);
+  });
+
   test('logout clears the active session and persisted account data', () async {
     SharedPreferences.setMockInitialValues({
       AppConstants.keyToken: 'session-token',

@@ -13,6 +13,7 @@ class PosProduct {
     required this.price,
     required this.unitLabel,
     required this.available,
+    this.imageUrl,
   });
 
   final String id;
@@ -22,6 +23,7 @@ class PosProduct {
   final double price;
   final String unitLabel;
   final int available;
+  final String? imageUrl;
 
   factory PosProduct.fromJson(Map<String, dynamic> json) => PosProduct(
         id: json['id'] as String,
@@ -31,6 +33,7 @@ class PosProduct {
         price: _posDouble(json['price']),
         unitLabel: json['unitLabel'] as String? ?? 'unit',
         available: _posInt(json['available']),
+        imageUrl: json['imageUrl'] as String?,
       );
 }
 
@@ -107,6 +110,38 @@ class PosSaleItem {
       );
 }
 
+class PosPaymentCollection {
+  const PosPaymentCollection({
+    required this.id,
+    required this.amount,
+    required this.method,
+    required this.note,
+    required this.createdAt,
+  });
+
+  final String id;
+  final double amount;
+  final String method;
+  final String? note;
+  final DateTime createdAt;
+
+  factory PosPaymentCollection.fromJson(Map<String, dynamic> json) {
+    final createdAt = DateTime.tryParse(json['createdAt'] as String? ?? '');
+    if (json['id'] is! String || createdAt == null) {
+      throw const FormatException(
+        'The server returned an invalid payment collection.',
+      );
+    }
+    return PosPaymentCollection(
+      id: json['id'] as String,
+      amount: _posDouble(json['amount']),
+      method: json['method'] as String? ?? 'CASH',
+      note: json['note'] as String?,
+      createdAt: createdAt,
+    );
+  }
+}
+
 class PosSale {
   const PosSale({
     required this.id,
@@ -122,6 +157,9 @@ class PosSale {
     required this.refundedAmount,
     required this.createdAt,
     required this.items,
+    this.paidAmount,
+    this.outstandingAmount,
+    this.paymentCollections = const [],
   });
 
   final String id;
@@ -137,6 +175,9 @@ class PosSale {
   final double refundedAmount;
   final DateTime createdAt;
   final List<PosSaleItem> items;
+  final double? paidAmount;
+  final double? outstandingAmount;
+  final List<PosPaymentCollection> paymentCollections;
 
   factory PosSale.fromJson(Map<String, dynamic> json) {
     final createdAt = DateTime.tryParse(json['createdAt'] as String? ?? '');
@@ -159,6 +200,16 @@ class PosSale {
       total: _posDouble(json['total']),
       refundedAmount: _posDouble(json['refundedAmount']),
       createdAt: createdAt,
+      paidAmount:
+          json['paidAmount'] == null ? null : _posDouble(json['paidAmount']),
+      outstandingAmount: json['outstandingAmount'] == null
+          ? null
+          : _posDouble(json['outstandingAmount']),
+      paymentCollections: (json['paymentCollections'] as List?)
+              ?.whereType<Map<String, dynamic>>()
+              .map(PosPaymentCollection.fromJson)
+              .toList(growable: false) ??
+          const [],
       items: (json['items'] as List)
           .whereType<Map<String, dynamic>>()
           .map(PosSaleItem.fromJson)
@@ -202,100 +253,6 @@ class PosSalesPage {
       sales: rawSales
           .whereType<Map<String, dynamic>>()
           .map(PosSale.fromJson)
-          .toList(growable: false),
-      page: page,
-      pageSize: pageSize,
-      total: total,
-    );
-  }
-}
-
-class PosShiftHistory {
-  const PosShiftHistory({
-    required this.id,
-    required this.status,
-    required this.cashierName,
-    required this.openingCash,
-    required this.expectedClosingCash,
-    required this.actualClosingCash,
-    required this.variance,
-    required this.openedAt,
-    required this.closedAt,
-  });
-
-  final String id;
-  final String status;
-  final String cashierName;
-  final double openingCash;
-  final double? expectedClosingCash;
-  final double? actualClosingCash;
-  final double? variance;
-  final DateTime openedAt;
-  final DateTime? closedAt;
-
-  factory PosShiftHistory.fromJson(Map<String, dynamic> json) {
-    final openedAt = DateTime.tryParse(json['openedAt'] as String? ?? '');
-    final closedAt = json['closedAt'] == null
-        ? null
-        : DateTime.tryParse(json['closedAt'] as String);
-    if (json['id'] is! String ||
-        json['status'] is! String ||
-        json['cashierName'] is! String ||
-        openedAt == null ||
-        (json['closedAt'] != null && closedAt == null)) {
-      throw const FormatException('The server returned invalid shift history.');
-    }
-    return PosShiftHistory(
-      id: json['id'] as String,
-      status: json['status'] as String,
-      cashierName: json['cashierName'] as String,
-      openingCash: _posDouble(json['openingCash']),
-      expectedClosingCash: json['expectedClosingCash'] == null
-          ? null
-          : _posDouble(json['expectedClosingCash']),
-      actualClosingCash: json['actualClosingCash'] == null
-          ? null
-          : _posDouble(json['actualClosingCash']),
-      variance: json['variance'] == null ? null : _posDouble(json['variance']),
-      openedAt: openedAt,
-      closedAt: closedAt,
-    );
-  }
-}
-
-class PosShiftHistoryPage {
-  const PosShiftHistoryPage({
-    required this.shifts,
-    required this.page,
-    required this.pageSize,
-    required this.total,
-  });
-
-  final List<PosShiftHistory> shifts;
-  final int page;
-  final int pageSize;
-  final int total;
-
-  factory PosShiftHistoryPage.fromJson(Map<String, dynamic> json) {
-    final rawShifts = json['shifts'];
-    final pagination = json['pagination'];
-    if (rawShifts is! List || pagination is! Map<String, dynamic>) {
-      throw const FormatException(
-        'The server returned invalid shift-history pagination.',
-      );
-    }
-    final page = _posInt(pagination['page']);
-    final pageSize = _posInt(pagination['pageSize']);
-    final total = _posInt(pagination['total']);
-    if (page < 1 || pageSize < 1 || total < 0) {
-      throw const FormatException(
-        'The server returned invalid shift-history pagination.',
-      );
-    }
-    return PosShiftHistoryPage(
-      shifts: rawShifts
-          .whereType<Map<String, dynamic>>()
-          .map(PosShiftHistory.fromJson)
           .toList(growable: false),
       page: page,
       pageSize: pageSize,
