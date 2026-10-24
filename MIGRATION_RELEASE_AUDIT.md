@@ -175,13 +175,29 @@ recovery decision.
   version. The disposable local server and its specific temporary store/logs
   were stopped and removed.
 
+## Local release candidate status (2026-10-24)
+
+- The reviewed local application and migration changes are committed on
+  `release/pos-billing-20261024` as implementation candidate
+  `9f41143dc76cb69b44e10e36401079e5a8dd5312`. This commit is local only; it
+  has not been pushed or deployed, and Render's deployed revision remains
+  unverified.
+- The candidate includes the three billing migrations, backend routes/schema
+  and tests, Flutter admin/POS screens and services, Windows runner sources,
+  and release documentation. It does not include environment files,
+  `android/app/google-services.json`, generated release binaries, or profiler
+  output.
+- Local-only generated/configuration files remain outside the commit. Do not
+  treat the worktree as clean or copy those files into the release without
+  separately reviewing their contents and handling secrets safely.
+
 ## Proposed controlled rollout (not executed)
 
 1. **Resolve release identity.** Review the complete local diff and tests,
-   decide which existing uncommitted changes belong in the release, then
-   create and review a single release commit. No release SHA currently exists;
-   `main`'s current SHA is not a substitute for the uncommitted billing work.
-   Verify the intended Render service and its actual deployed revision.
+   then verify the local candidate above is the intended release commit.
+   It has not been pushed; `main`'s current SHA is not a substitute for the
+   billing work. Verify the intended Render service and its actual deployed
+   revision before approving any deployment.
 2. **Resolve recovery readiness.** Verify restore job identifiers and
    completion evidence in CockroachDB Cloud; reconcile the transaction window
    around the backup/PITR cutoff as above. Confirm an accepted recovery point.
