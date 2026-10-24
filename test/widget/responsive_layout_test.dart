@@ -31,6 +31,36 @@ class _ResponsiveApiService extends ApiService {
     String endpoint, {
     Map<String, String>? queryParams,
   }) async {
+    if (endpoint == '/admin/billing/overview') {
+      return {
+        'day': '2026-11-10',
+        'currentShift': null,
+        'metrics': {
+          'totalSales': 0,
+          'completedBills': 0,
+          'averageBillValue': 0,
+          'cashSales': 0,
+          'digitalSales': 0,
+          'pendingSales': 0,
+          'refunds': 0,
+          'cancelledBills': 0,
+          'openRefundRequests': 0,
+        },
+        'topProducts': [],
+        'lowStock': [
+          {'name': 'Tea', 'available': 2, 'unitLabel': 'pcs'},
+        ],
+      };
+    }
+    if (endpoint == '/admin/billing/sales') {
+      return {
+        'sales': [],
+        'pagination': {'page': 1, 'pageSize': 50, 'total': 0},
+      };
+    }
+    if (endpoint == '/admin/billing/held-sales') return {'heldSales': []};
+    if (endpoint == '/admin/billing/refunds') return {'refunds': []};
+    if (endpoint == '/admin/billing/exchanges') return {'exchanges': []};
     if (endpoint == '/admin/coupons') return {'coupons': []};
     if (endpoint == '/admin/products' && queryParams?['stock'] == 'restock') {
       return {
@@ -552,16 +582,16 @@ void main() {
       'Customers',
       'Returns & Exchanges',
       'Sales Reports',
-      'Cashier / Shift Management',
       'Receipt & Printer Settings',
       'Notifications',
       'My Profile / Logout',
     ]) {
+      final navigationItem = find.descendant(
+        of: find.byKey(const ValueKey('admin-navigation-list')),
+        matching: find.text(label),
+      );
       await tester.scrollUntilVisible(
-        find.descendant(
-          of: find.byKey(const ValueKey('admin-navigation-list')),
-          matching: find.text(label),
-        ),
+        navigationItem,
         220,
         scrollable: find
             .descendant(
@@ -571,7 +601,24 @@ void main() {
             .first,
       );
       expect(find.text(label), findsWidgets, reason: 'Missing $label');
+      if (label == 'Billing') {
+        await tester.ensureVisible(navigationItem);
+        await tester.pumpAndSettle();
+        await tester.tap(navigationItem);
+        await tester.pumpAndSettle();
+      } else if (label == 'Notifications') {
+        await tester.ensureVisible(navigationItem);
+        await tester.pumpAndSettle();
+        await tester.tap(navigationItem);
+        await tester.pumpAndSettle();
+      }
     }
+    expect(find.text('Cashier / Shift Management'), findsNothing);
+    expect(find.text('Billing staff'), findsOneWidget);
+    expect(find.text('1 active product(s) are low on stock.'), findsOneWidget);
+    final newBillButton = find.widgetWithText(FilledButton, 'New bill');
+    expect(newBillButton, findsOneWidget);
+    expect(tester.widget<FilledButton>(newBillButton).onPressed, isNotNull);
     expect(
       Theme.of(tester.element(find.byType(ListTile).first))
           .scaffoldBackgroundColor,

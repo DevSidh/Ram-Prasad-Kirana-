@@ -9,7 +9,7 @@ datasource db {
 
 model User {
   id                     String                       @id @default(cuid())
-  userNumber             BigInt                       @unique @default(dbgenerated("nextval('user_display_id_seq')"))
+  userNumber             BigInt                       @unique @default(sequence())
   name                   String
   email                  String                       @unique
   phone                  String?                      @unique
@@ -197,7 +197,7 @@ model Product {
   normalizedMimeType       String?
   unitLabel                String                 @default("1 pc")
   isWholesale              Boolean                @default(false)
-  wholesalePrice           Decimal?
+  wholesalePrice           Decimal?               @db.Decimal
   wholesaleMinimumQuantity Int                    @default(1)
   lowStockThreshold        Int                    @default(10)
   isOrganic                Boolean                @default(false)
@@ -235,7 +235,7 @@ model WholesaleItem {
   slug                String      @unique
   categoryId          String
   brand               String?
-  price               Decimal
+  price               Decimal     @db.Decimal
   stock               Int         @default(0)
   minimumQuantity     Int         @default(1)
   description         String?
@@ -249,8 +249,8 @@ model WholesaleItem {
   rating              Decimal     @default(0)
   reviewCount         Int         @default(0)
   isActive            Boolean     @default(true)
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
+  createdAt           DateTime    @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime    @default(now()) @updatedAt @db.Timestamptz(6)
   category            Category    @relation(fields: [categoryId], references: [id])
   cartItems           CartItem[]
   orderItems          OrderItem[]
@@ -267,7 +267,7 @@ model StoredImage {
   mimeType            String
   normalizedImageData Bytes?
   normalizedMimeType  String?
-  createdAt           DateTime @default(now())
+  createdAt           DateTime @default(now()) @db.Timestamptz(6)
 }
 
 model Inventory {
@@ -373,7 +373,7 @@ model Order {
   total               Decimal
   couponCode          String?
   idempotencyKey      String?                @unique
-  scheduledDeliveryAt DateTime?
+  scheduledDeliveryAt DateTime?              @db.Timestamptz(6)
   shippingName        String
   shippingPhone       String
   shippingAddress     String
@@ -574,6 +574,7 @@ model PosExchange {
   @@index([saleId, requestedAt])
   @@index([status, requestedAt])
   @@index([cashierId, requestedAt])
+  @@index([shiftId])
 }
 
 model PosExchangeItem {
@@ -717,7 +718,7 @@ model Delivery {
   cashHandedOverAt          DateTime?
   latitude                  Float?
   longitude                 Float?
-  locationUpdatedAt         DateTime?
+  locationUpdatedAt         DateTime?               @db.Timestamptz(6)
   customerLatitude          Float?
   customerLongitude         Float?
   customerLocationUpdatedAt DateTime?
@@ -795,8 +796,8 @@ model StoreSetting {
   isOrderingEnabled    Boolean  @default(true)
   weeklyHours          Json
   customerMenuFeatures Json     @default("{}")
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  createdAt            DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 }
 
 enum UserRole {
@@ -905,8 +906,4 @@ enum NotificationType {
   DELIVERY_ASSIGNED
   DELIVERY_UPDATED
   PROMOTIONAL
-}
-
-enum crdb_internal_region {
-  aws_ap_south_1 @map("aws-ap-south-1")
 }

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "111529784009",
+    "project_id": "faststore-cab7c",
+    "storage_bucket": "faststore-cab7c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:111529784009:android:0c2741021ad26089f79318",
+        "android_client_info": {
+          "package_name": "com.freshharvest.grocery_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAmW7UoT_LF_WOzePoSgdtE4tUaxGGl2bI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -128,9 +128,36 @@ void main() {
         isA<ApiResponseException>().having(
           (error) => error.message,
           'message',
-          'Billing is unavailable on the connected server: '
-              '/api/v1/admin/billing/overview was not found. '
-              'The backend release may need updating.',
+          'Billing endpoint unavailable: GET '
+              '/api/v1/admin/billing/overview. Confirm the backend release '
+              'and API base URL point to the expected service.',
+        ),
+      ),
+    );
+    client.close();
+  });
+
+  test('non-GET billing route errors include the method and endpoint',
+      () async {
+    final client = MockClient((request) async => http.Response(
+          '<pre>Cannot POST /api/v1/admin/billing/sales</pre>',
+          404,
+          headers: {'content-type': 'text/html'},
+        ));
+    final api = ApiService(
+      baseUrl: 'https://store.example/api/v1',
+      client: client,
+    );
+
+    await expectLater(
+      api.post('/admin/billing/sales', const {}),
+      throwsA(
+        isA<ApiResponseException>().having(
+          (error) => error.message,
+          'message',
+          'Billing endpoint unavailable: POST '
+              '/api/v1/admin/billing/sales. Confirm the backend release '
+              'and API base URL point to the expected service.',
         ),
       ),
     );

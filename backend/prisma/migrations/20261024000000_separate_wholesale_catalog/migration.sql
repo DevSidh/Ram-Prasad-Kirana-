@@ -1,3 +1,5 @@
+ALTER TABLE "Product" SET (schema_locked = false);
+
 CREATE TABLE "WholesaleItem" (
     "id" STRING NOT NULL,
     "sku" STRING NOT NULL,
@@ -119,3 +121,4 @@ FOREIGN KEY ("wholesaleItemId") REFERENCES "WholesaleItem" ("id")
 ON DELETE SET NULL ON UPDATE CASCADE;
 
 ALTER TABLE "WholesaleItem" SET (schema_locked = true);
+ALTER TABLE "Product" SET (schema_locked = true);

@@ -261,7 +261,7 @@ const couponCreateInput = z.object({
   minOrderAmount: z.number().finite().nonnegative(),
   maxDiscount: z.number().finite().positive().nullable(),
   usageLimit: z.number().int().positive().nullable(),
-  perUserLimit: z.number().int().positive().nullable(),
+  perUserLimit: z.number().int().positive().max(2147483647).nullable(),
   expiresAt: z.string().datetime().nullable()
     .transform((value) => value === null ? null : new Date(value)),
 }).strict().superRefine((coupon, context) => {

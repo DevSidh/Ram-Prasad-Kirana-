@@ -267,11 +267,13 @@ class ApiService {
     if (plainText.isEmpty || plainText.length > 400) {
       return 'The server returned an error response ($statusCode).';
     }
-    final missingRoute = RegExp(r'^Cannot GET (/api/v1/admin/billing/\S+)$')
+    final missingRoute = RegExp(
+            r'^Cannot (GET|POST|PATCH|PUT|DELETE) (/api/v1/admin/billing/\S+)$')
         .firstMatch(plainText);
     if (missingRoute != null) {
-      return 'Billing is unavailable on the connected server: '
-          '${missingRoute.group(1)} was not found. The backend release may need updating.';
+      return 'Billing endpoint unavailable: ${missingRoute.group(1)} '
+          '${missingRoute.group(2)}. Confirm the backend release and API '
+          'base URL point to the expected service.';
     }
     return plainText;
   }

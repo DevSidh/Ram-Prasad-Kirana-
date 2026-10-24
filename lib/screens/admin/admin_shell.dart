@@ -9,7 +9,6 @@ import '../auth/login_screen.dart';
 import 'admin_categories_screen.dart';
 import 'admin_announcements_screen.dart';
 import 'admin_billing_screen.dart';
-import 'admin_billing_staff_screen.dart';
 import 'admin_coupons_screen.dart';
 import 'admin_customers_screen.dart';
 import 'admin_dashboard_screen.dart';
@@ -32,7 +31,7 @@ class AdminShell extends StatefulWidget {
   State<AdminShell> createState() => _AdminShellState();
 }
 
-enum _BillingAction { section, newBill, barcode, cashiers, profile }
+enum _BillingAction { section, newBill, barcode, profile }
 
 class _BillingModule {
   const _BillingModule(
@@ -138,16 +137,6 @@ class _AdminShellState extends State<AdminShell> {
           break;
         case _BillingAction.barcode:
           _billingKey.currentState?.openBarcodeScanner();
-          break;
-        case _BillingAction.cashiers:
-          if (!widget.isBillingStaff) {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) =>
-                    AdminBillingStaffScreen(api: context.read<ApiService>()),
-              ),
-            );
-          }
           break;
         case _BillingAction.profile:
           _showProfile();
@@ -646,12 +635,6 @@ class _AdminShellState extends State<AdminShell> {
       section: AdminBillingSection.reports,
     ),
     _BillingModule(
-      'Cashier / Shift Management',
-      Icons.manage_accounts_outlined,
-      Icons.manage_accounts_rounded,
-      action: _BillingAction.cashiers,
-    ),
-    _BillingModule(
       'Receipt & Printer Settings',
       Icons.print_outlined,
       Icons.print_rounded,
@@ -679,9 +662,7 @@ class _AdminShellState extends State<AdminShell> {
           ))
       .toList(growable: false);
 
-  static final _billingStaffModules = _billingModules
-      .where((module) => module.action != _BillingAction.cashiers)
-      .toList(growable: false);
+  static final _billingStaffModules = _billingModules.toList(growable: false);
 
   static final _billingStaffDestinations = _billingStaffModules
       .map((module) => NavigationRailDestination(

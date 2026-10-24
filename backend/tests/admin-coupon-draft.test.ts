@@ -51,7 +51,7 @@ async function main(): Promise<void> {
           minOrderAmount: 100,
           maxDiscount: 50,
           usageLimit: 20,
-          perUserLimit: 2,
+          perUserLimit: 2147483647,
           expiresAt: null,
         }),
       },
@@ -64,6 +64,27 @@ async function main(): Promise<void> {
     assert.equal(result.coupon.isAnnounced, false);
     assert.equal(createdCoupons.length, 1);
     assert.equal(notificationsCreated, false);
+
+    const overflowResponse = await fetch(
+      `http://127.0.0.1:${address.port}/admin/coupons`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          code: 'SAVE11',
+          discountType: 'PERCENTAGE',
+          discountPercent: 10,
+          discountAmount: null,
+          minOrderAmount: 100,
+          maxDiscount: 50,
+          usageLimit: 20,
+          perUserLimit: 2147483648,
+          expiresAt: null,
+        }),
+      },
+    );
+    assert.equal(overflowResponse.status, 400);
+    assert.equal(createdCoupons.length, 1);
     console.log('Admin coupon creation leaves codes as unsent drafts.');
   } finally {
     await new Promise<void>((resolve, reject) => {

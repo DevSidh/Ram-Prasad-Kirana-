@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS "DeliveryStatusHistory" (
     CONSTRAINT "DeliveryStatusHistory_pkey" PRIMARY KEY ("id")
 );
 
+ALTER TABLE "DeliveryStatusHistory" SET (schema_locked = false);
+
 CREATE INDEX IF NOT EXISTS "DeliveryStatusHistory_deliveryId_idx"
 ON "DeliveryStatusHistory"("deliveryId");
 CREATE INDEX IF NOT EXISTS "DeliveryStatusHistory_changedById_idx"
@@ -38,3 +40,5 @@ ALTER TABLE "DeliveryStatusHistory"
 ADD CONSTRAINT IF NOT EXISTS "DeliveryStatusHistory_changedById_fkey"
 FOREIGN KEY ("changedById") REFERENCES "User"("id")
 ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "DeliveryStatusHistory" SET (schema_locked = true);

@@ -83,6 +83,13 @@ CREATE TABLE "PosCashMovement" (
     CONSTRAINT "PosCashMovement_pkey" PRIMARY KEY ("id")
 );
 
+ALTER TABLE "PosShift" SET (schema_locked = false);
+ALTER TABLE "PosSale" SET (schema_locked = false);
+ALTER TABLE "PosSaleItem" SET (schema_locked = false);
+ALTER TABLE "PosHeldSale" SET (schema_locked = false);
+ALTER TABLE "PosRefund" SET (schema_locked = false);
+ALTER TABLE "PosCashMovement" SET (schema_locked = false);
+
 CREATE INDEX "PosShift_cashierId_status_idx" ON "PosShift"("cashierId", "status");
 CREATE INDEX "PosShift_openedAt_idx" ON "PosShift"("openedAt");
 CREATE UNIQUE INDEX "PosSale_receiptNumber_key" ON "PosSale"("receiptNumber");
@@ -95,6 +102,9 @@ CREATE INDEX "PosHeldSale_shiftId_createdAt_idx" ON "PosHeldSale"("shiftId", "cr
 CREATE INDEX "PosRefund_status_requestedAt_idx" ON "PosRefund"("status", "requestedAt");
 CREATE INDEX "PosRefund_saleId_idx" ON "PosRefund"("saleId");
 CREATE INDEX "PosCashMovement_shiftId_createdAt_idx" ON "PosCashMovement"("shiftId", "createdAt");
+
+ALTER TABLE "User" SET (schema_locked = false);
+ALTER TABLE "Product" SET (schema_locked = false);
 
 ALTER TABLE "PosShift" ADD CONSTRAINT "PosShift_cashierId_fkey"
   FOREIGN KEY ("cashierId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -116,3 +126,12 @@ ALTER TABLE "PosCashMovement" ADD CONSTRAINT "PosCashMovement_shiftId_fkey"
   FOREIGN KEY ("shiftId") REFERENCES "PosShift"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "PosCashMovement" ADD CONSTRAINT "PosCashMovement_actorId_fkey"
   FOREIGN KEY ("actorId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "PosShift" SET (schema_locked = true);
+ALTER TABLE "PosSale" SET (schema_locked = true);
+ALTER TABLE "PosSaleItem" SET (schema_locked = true);
+ALTER TABLE "PosHeldSale" SET (schema_locked = true);
+ALTER TABLE "PosRefund" SET (schema_locked = true);
+ALTER TABLE "PosCashMovement" SET (schema_locked = true);
+ALTER TABLE "User" SET (schema_locked = true);
+ALTER TABLE "Product" SET (schema_locked = true);

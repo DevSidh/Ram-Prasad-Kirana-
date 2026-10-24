@@ -14,5 +14,9 @@ CREATE TABLE "EmailVerificationOtp" (
     CONSTRAINT "EmailVerificationOtp_pkey" PRIMARY KEY ("email")
 );
 
+ALTER TABLE "EmailVerificationOtp" SET (schema_locked = false);
+
 CREATE INDEX "EmailVerificationOtp_expiresAt_idx"
 ON "EmailVerificationOtp"("expiresAt");
+
+ALTER TABLE "EmailVerificationOtp" SET (schema_locked = true);

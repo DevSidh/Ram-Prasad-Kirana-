@@ -136,6 +136,8 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         '${day.day.toString().padLeft(2, '0')}';
   }
 
+  bool get _requiresOpenShiftBeforePos => widget.isBillingStaff;
+
   Future<void> _load({int? salesPage}) async {
     final requestedSalesPage = salesPage ?? _salesPage;
     setState(() {
@@ -231,7 +233,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   }
 
   void startNewBill() {
-    if (_overview?.shiftId == null) {
+    if (_requiresOpenShiftBeforePos && _overview?.shiftId == null) {
       _showMessage('Open the cash register before starting a new bill.');
       activateSection(AdminBillingSection.cashRegister);
       return;
@@ -940,7 +942,9 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                 key: _sectionKeys[AdminBillingSection.essential],
                 actions: [
                   FilledButton.icon(
-                    onPressed: _working || overview.shiftId == null
+                    onPressed: _working ||
+                            (_requiresOpenShiftBeforePos &&
+                                overview.shiftId == null)
                         ? null
                         : () => _newBill(),
                     icon: const Icon(Icons.add_shopping_cart_rounded),
@@ -948,7 +952,8 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                   ),
                   OutlinedButton.icon(
                     onPressed: _working ||
-                            overview.shiftId == null ||
+                            (_requiresOpenShiftBeforePos &&
+                                overview.shiftId == null) ||
                             defaultTargetPlatform == TargetPlatform.windows
                         ? null
                         : () async {
@@ -1158,7 +1163,9 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                   opened
                       ? 'Opening ${_money(overview.openingCash)} · '
                           'Expected close ${_money(overview.expectedClosingCash ?? overview.openingCash)}'
-                      : 'Open a shift to create and complete bills.',
+                      : widget.isBillingStaff
+                          ? 'Open a shift to create and complete bills.'
+                          : 'Opening cash is optional; the register starts automatically when POS activity needs it.',
                   style: TextStyle(color: _muted, fontSize: 12),
                 ),
               ],
@@ -1302,7 +1309,11 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     final pendingExchangeRefunds = _exchanges
         .where((exchange) => exchange.status == 'REFUND_REQUESTED')
         .length;
+    final lowStockCount = _overview?.lowStock.length ?? 0;
     final messages = <String>[
+      if (_error != null) 'System alert: $_error',
+      if (lowStockCount > 0)
+        '$lowStockCount active product(s) are low on stock.',
       if (_heldSales.isNotEmpty) '${_heldSales.length} bill(s) are on hold.',
       if (pendingPayments > 0) '$pendingPayments bill(s) are awaiting payment.',
       if (pendingRefunds > 0)
@@ -1592,7 +1603,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
             ),
           ],
         ),
-        if (overview.shiftId == null)
+        if (widget.isBillingStaff && overview.shiftId == null)
           Text(
             'Open the register to print receipts for completed bills.',
             style: TextStyle(color: _muted, fontSize: 12),

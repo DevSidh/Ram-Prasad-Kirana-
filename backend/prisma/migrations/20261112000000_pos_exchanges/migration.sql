@@ -42,6 +42,9 @@ CREATE TABLE "PosExchangeItem" (
     CONSTRAINT "PosExchangeItem_pkey" PRIMARY KEY ("id")
 );
 
+ALTER TABLE "PosExchange" SET (schema_locked = false);
+ALTER TABLE "PosExchangeItem" SET (schema_locked = false);
+
 CREATE UNIQUE INDEX "PosExchange_idempotencyKey_key"
     ON "PosExchange"("idempotencyKey");
 CREATE INDEX "PosExchange_saleId_requestedAt_idx"
@@ -57,6 +60,12 @@ CREATE INDEX "PosExchangeItem_saleItemId_idx"
     ON "PosExchangeItem"("saleItemId");
 CREATE INDEX "PosExchangeItem_productId_idx"
     ON "PosExchangeItem"("productId");
+
+ALTER TABLE "User" SET (schema_locked = false);
+ALTER TABLE "Product" SET (schema_locked = false);
+ALTER TABLE "PosSale" SET (schema_locked = false);
+ALTER TABLE "PosShift" SET (schema_locked = false);
+ALTER TABLE "PosSaleItem" SET (schema_locked = false);
 
 ALTER TABLE "PosExchange"
     ADD CONSTRAINT "PosExchange_saleId_fkey"
@@ -86,3 +95,11 @@ ALTER TABLE "PosExchangeItem"
     ADD CONSTRAINT "PosExchangeItem_productId_fkey"
     FOREIGN KEY ("productId") REFERENCES "Product"("id")
     ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE "PosExchange" SET (schema_locked = true);
+ALTER TABLE "PosExchangeItem" SET (schema_locked = true);
+ALTER TABLE "User" SET (schema_locked = true);
+ALTER TABLE "Product" SET (schema_locked = true);
+ALTER TABLE "PosSale" SET (schema_locked = true);
+ALTER TABLE "PosShift" SET (schema_locked = true);
+ALTER TABLE "PosSaleItem" SET (schema_locked = true);

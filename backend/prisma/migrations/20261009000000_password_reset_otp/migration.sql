@@ -8,4 +8,8 @@ CREATE TABLE "PasswordResetOtp" (
     CONSTRAINT "PasswordResetOtp_pkey" PRIMARY KEY ("email")
 );
 
+ALTER TABLE "PasswordResetOtp" SET (schema_locked = false);
+
 CREATE INDEX "PasswordResetOtp_expiresAt_idx" ON "PasswordResetOtp"("expiresAt");
+
+ALTER TABLE "PasswordResetOtp" SET (schema_locked = true);

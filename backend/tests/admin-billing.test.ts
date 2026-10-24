@@ -10,6 +10,7 @@ async function main(): Promise<void> {
   let committedSale: Record<string, unknown> | null = null;
   let saleWrites = 0;
   let stockConsumptionCount = 0;
+  let stockConsumptionCashierId: string | null = null;
   const transaction = {
     posShift: {
       findFirst: async ({ where }: {
@@ -42,6 +43,14 @@ async function main(): Promise<void> {
         inventory: { totalStock: 10, reservedStock: 0 },
       }],
     },
+    posHeldSale: {
+      create: async ({ data }: {
+        data: { shiftId: string };
+      }) => {
+        assert.equal(data.shiftId, activeShift?.id);
+        return { id: 'held-1' };
+      },
+    },
     posSale: {
       findUnique: async ({ where }: { where: { receiptNumber: string } }) =>
         committedSale?.receiptNumber === where.receiptNumber
@@ -50,6 +59,7 @@ async function main(): Promise<void> {
       create: async ({ data }: {
         data: {
           receiptNumber: string;
+          shiftId: string;
           paymentMethod: string;
           paymentStatus: string;
           subtotal: number;
@@ -62,6 +72,7 @@ async function main(): Promise<void> {
         committedSale = {
           id: 'sale-1',
           receiptNumber: data.receiptNumber,
+          shiftId: data.shiftId,
           customerName: null,
           customerPhone: null,
           status: 'COMPLETED',
@@ -87,13 +98,20 @@ async function main(): Promise<void> {
     ) => callback(transaction),
   } as unknown as PrismaClient;
   const inventory = {
-    consumeStockForPosSale: async () => {
+    consumeStockForPosSale: async (
+      _tx: unknown,
+      _items: unknown,
+      _saleId: string,
+      cashierId: string,
+    ) => {
       stockWasConsumed = true;
       stockConsumptionCount += 1;
+      stockConsumptionCashierId = cashierId;
     },
   } as unknown as InventoryService;
   const authenticateAdmin: RequestHandler = (_req, res, next) => {
     res.locals.authenticatedUserId = 'admin-1';
+    res.locals.authenticatedUserRole = _req.header('x-test-role') ?? 'ADMIN';
     next();
   };
   const app = express();
@@ -159,6 +177,69 @@ async function main(): Promise<void> {
     assert.equal(replayBody.sale.total, 20);
     assert.equal(saleWrites, 1);
     assert.equal(stockConsumptionCount, 1);
+    assert.equal(stockConsumptionCashierId, 'admin-1');
+
+    activeShift = null;
+    const staffSaleResponse = await fetch(saleEndpoint, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-role': 'BILLING_STAFF',
+      },
+      body: JSON.stringify({
+        idempotencyKey: '550e8400-e29b-41d4-a716-446655440002',
+        items: [{ productId: 'product-1', quantity: 1 }],
+        discount: 0,
+        paymentMethod: 'CASH',
+      }),
+    });
+    assert.equal(staffSaleResponse.status, 409);
+    assert.equal(activeShift, null);
+
+    const heldSaleResponse = await fetch(
+      `${endpoint.replace('/shifts/open', '/held-sales')}`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-test-role': 'ADMIN',
+        },
+        body: JSON.stringify({
+          items: [{
+            productId: 'product-1',
+            quantity: 1,
+            productName: 'Tea',
+            sku: 'TEA-1',
+            price: 10,
+            unitLabel: '1 pc',
+          }],
+        }),
+      },
+    );
+    assert.equal(heldSaleResponse.status, 201);
+    assert.equal(activeShift?.cashierId, 'admin-1');
+    assert.equal(activeShift?.openingCash, 0);
+
+    activeShift = null;
+    const adminSaleResponse = await fetch(saleEndpoint, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-role': 'ADMIN',
+      },
+      body: JSON.stringify({
+        idempotencyKey: '550e8400-e29b-41d4-a716-446655440003',
+        items: [{ productId: 'product-1', quantity: 1 }],
+        discount: 0,
+        paymentMethod: 'CASH',
+      }),
+    });
+    assert.equal(adminSaleResponse.status, 201);
+    assert.equal(activeShift?.cashierId, 'admin-1');
+    assert.equal(activeShift?.openingCash, 0);
+    assert.equal(committedSale?.shiftId, activeShift?.id);
+    assert.equal(stockConsumptionCashierId, 'admin-1');
+
     assert.equal(
       (await fetch(`${endpoint.replace('/shifts/open', '/refunds')}`)).status,
       403,
@@ -167,7 +248,7 @@ async function main(): Promise<void> {
       (await fetch(`${endpoint.replace('/shifts/open', '/staff')}`)).status,
       403,
     );
-    console.log('POS register shift validation passed.');
+    console.log('POS staff shift enforcement and Admin automatic register passed.');
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => error ? reject(error) : resolve());

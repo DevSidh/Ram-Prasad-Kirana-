@@ -110,6 +110,22 @@ function authenticatedRole(res: Parameters<RequestHandler>[1]): string | null {
   return typeof role === 'string' ? role : null;
 }
 
+async function findOrCreateOpenShift(
+  tx: Prisma.TransactionClient,
+  cashierId: string,
+  allowAutomaticOpening: boolean,
+) {
+  const shift = await tx.posShift.findFirst({
+    where: { cashierId, status: 'OPEN' },
+    select: { id: true, openingCash: true },
+  });
+  if (shift || !allowAutomaticOpening) return shift;
+  return tx.posShift.create({
+    data: { cashierId, openingCash: 0 },
+    select: { id: true, openingCash: true },
+  });
+}
+
 function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
@@ -764,10 +780,11 @@ export function createAdminBillingRouter(
     }
     try {
       const movement = await runTransactionWithRetry(prisma, async (tx) => {
-        const shift = await tx.posShift.findFirst({
-          where: { cashierId: actorId, status: 'OPEN' },
-          select: { id: true, openingCash: true },
-        });
+        const shift = await findOrCreateOpenShift(
+          tx,
+          actorId,
+          authenticatedRole(res) === 'ADMIN',
+        );
         if (!shift) throw new Error('POS_SHIFT_NOT_OPEN');
         const [sales, movements] = await Promise.all([
           tx.posSale.findMany({
@@ -861,21 +878,27 @@ export function createAdminBillingRouter(
     const parsed = holdInput.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Check the held bill details.' });
     try {
-      const shift = await prisma.posShift.findFirst({
-        where: { cashierId, status: 'OPEN' },
-        select: { id: true },
-      });
-      if (!shift) return res.status(409).json({ error: 'Open a register shift first.' });
-      const heldSale = await prisma.posHeldSale.create({
-        data: {
-          shiftId: shift.id,
-          customerName: parsed.data.customerName ?? null,
-          customerPhone: parsed.data.customerPhone ?? null,
-          items: parsed.data.items as Prisma.InputJsonValue,
-        },
+      const heldSale = await runTransactionWithRetry(prisma, async (tx) => {
+        const shift = await findOrCreateOpenShift(
+          tx,
+          cashierId,
+          authenticatedRole(res) === 'ADMIN',
+        );
+        if (!shift) throw new Error('POS_SHIFT_NOT_OPEN');
+        return tx.posHeldSale.create({
+          data: {
+            shiftId: shift.id,
+            customerName: parsed.data.customerName ?? null,
+            customerPhone: parsed.data.customerPhone ?? null,
+            items: parsed.data.items as Prisma.InputJsonValue,
+          },
+        });
       });
       return res.status(201).json({ id: heldSale.id });
     } catch (error) {
+      if (error instanceof Error && error.message === 'POS_SHIFT_NOT_OPEN') {
+        return res.status(409).json({ error: 'Open a register shift first.' });
+      }
       sendAdminError(error, res);
     }
   });
@@ -992,10 +1015,11 @@ export function createAdminBillingRouter(
             return existing;
           }
         }
-        const shift = await tx.posShift.findFirst({
-          where: { cashierId, status: 'OPEN' },
-          select: { id: true },
-        });
+        const shift = await findOrCreateOpenShift(
+          tx,
+          cashierId,
+          authenticatedRole(res) === 'ADMIN',
+        );
         if (!shift) throw new Error('POS_SHIFT_NOT_OPEN');
         const products = await tx.product.findMany({
           where: {
@@ -1531,10 +1555,11 @@ export function createAdminBillingRouter(
           return existing;
         }
 
-        const shift = await tx.posShift.findFirst({
-          where: { cashierId, status: 'OPEN' },
-          select: { id: true },
-        });
+        const shift = await findOrCreateOpenShift(
+          tx,
+          cashierId,
+          authenticatedRole(res) === 'ADMIN',
+        );
         if (!shift) throw new Error('POS_SHIFT_NOT_OPEN');
 
         const sale = await tx.posSale.findUnique({
