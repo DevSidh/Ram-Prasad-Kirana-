@@ -161,4 +161,58 @@ assertOrder(
   'ALTER TABLE "Coupon" SET (schema_locked = true)',
 );
 
+const supplierBills = migration('20261114000000_supplier_purchase_bills');
+for (const table of [
+  'SupplierPurchaseBill',
+  'SupplierPurchaseBillItem',
+  'User',
+  'Product',
+]) {
+  assert.ok(
+    supplierBills.includes(`ALTER TABLE "${table}" SET (schema_locked = false)`),
+    `${table} must be unlocked before supplier bill DDL`,
+  );
+  assert.ok(
+    supplierBills.includes(`ALTER TABLE "${table}" SET (schema_locked = true)`),
+    `${table} must be re-locked after supplier bill DDL`,
+  );
+}
+assertOrder(
+  supplierBills,
+  'ALTER TABLE "SupplierPurchaseBill" SET (schema_locked = false)',
+  'CREATE INDEX "SupplierPurchaseBill_invoiceDate_idx"',
+  'ALTER TABLE "User" SET (schema_locked = false)',
+  'ADD CONSTRAINT "SupplierPurchaseBill_createdById_fkey"',
+  'ALTER TABLE "Product" SET (schema_locked = true)',
+);
+
+assertOrder(
+  migration('20261115000000_supplier_bill_photo_sync'),
+  'ALTER TABLE "SupplierPurchaseBill" SET (schema_locked = false)',
+  'ADD COLUMN "photoData" BYTES',
+  'ALTER TABLE "SupplierPurchaseBill" SET (schema_locked = true)',
+);
+
+const partialPayments = migration('20261116000000_pos_partial_payments');
+for (const table of ['PosSale', 'PosPaymentCollection', 'User']) {
+  assert.ok(
+    partialPayments.includes(`ALTER TABLE "${table}" SET (schema_locked = false)`),
+    `${table} must be unlocked before partial payment DDL`,
+  );
+  assert.ok(
+    partialPayments.includes(`ALTER TABLE "${table}" SET (schema_locked = true)`),
+    `${table} must be re-locked after partial payment DDL`,
+  );
+}
+assertOrder(
+  partialPayments,
+  'ALTER TABLE "PosSale" SET (schema_locked = false)',
+  'ADD COLUMN "paidAmount"',
+  'ALTER TABLE "PosPaymentCollection" SET (schema_locked = false)',
+  'CREATE INDEX "PosPaymentCollection_saleId_createdAt_idx"',
+  'ALTER TABLE "User" SET (schema_locked = false)',
+  'ADD CONSTRAINT "PosPaymentCollection_saleId_fkey"',
+  'ALTER TABLE "User" SET (schema_locked = true)',
+);
+
 console.log('Migration schema-lock and range-guard regression tests passed.');
