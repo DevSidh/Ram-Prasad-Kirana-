@@ -6,7 +6,12 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.pm.PackageManager
 import android.content.Intent
+import android.content.ContentValues
 import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import java.io.File
+import java.io.FileOutputStream
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -68,6 +73,74 @@ class MainActivity : FlutterFragmentActivity() {
 
                 else -> result.notImplemented()
             }
+        }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "faststore/invoices",
+        ).setMethodCallHandler { call, result ->
+            if (call.method != "savePdf") {
+                result.notImplemented()
+                return@setMethodCallHandler
+            }
+            val filename = call.argument<String>("filename")
+            val bytes = call.argument<ByteArray>("bytes")
+            if (filename.isNullOrBlank() || bytes == null || bytes.isEmpty()) {
+                result.error("invalid_invoice", "Invoice file data is missing.", null)
+                return@setMethodCallHandler
+            }
+            try {
+                result.success(saveInvoicePdf(filename, bytes))
+            } catch (error: Exception) {
+                result.error("invoice_save_failed", "Could not save the invoice PDF.", error.message)
+            }
+        }
+    }
+
+    private fun saveInvoicePdf(filename: String, bytes: ByteArray): String {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, filename)
+                put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+                put(
+                    MediaStore.Downloads.RELATIVE_PATH,
+                    "${Environment.DIRECTORY_DOWNLOADS}/Ram Prasad Kirana",
+                )
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val uri = contentResolver.insert(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                values,
+            ) ?: throw IllegalStateException("The Downloads folder is unavailable.")
+            try {
+                contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                    ?: throw IllegalStateException("The invoice file could not be opened.")
+                val published = contentResolver.update(
+                    uri,
+                    ContentValues().apply {
+                        put(MediaStore.Downloads.IS_PENDING, 0)
+                    },
+                    null,
+                    null,
+                )
+                if (published != 1) {
+                    throw IllegalStateException("The invoice could not be published in Downloads.")
+                }
+            } catch (error: Exception) {
+                contentResolver.delete(uri, null, null)
+                throw error
+            }
+            return "Downloads/Ram Prasad Kirana/$filename"
+        }
+
+        val directory = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            ?: throw IllegalStateException("The Downloads folder is unavailable.")
+        val file = File(directory, filename)
+        try {
+            FileOutputStream(file).use { it.write(bytes) }
+            return file.absolutePath
+        } catch (error: Exception) {
+            file.delete()
+            throw error
         }
     }
 

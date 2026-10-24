@@ -40,6 +40,13 @@ async function main(): Promise<void> {
       perUserLimit: 1,
       usedCount: 0,
     },
+    {
+      code: 'STREAK-CLAIMED',
+      assignedUserId: 'customer-1',
+      usageLimit: 1,
+      perUserLimit: 1,
+      usedCount: 0,
+    },
   ];
   const prisma = {
     notification: {
@@ -55,10 +62,15 @@ async function main(): Promise<void> {
       findMany: async () => coupons,
     },
     order: {
-      groupBy: async () => [
-        { couponCode: 'ANNOUNCED', _count: { couponCode: 1 } },
-        { couponCode: 'CUSTOMER-LIMIT', _count: { couponCode: 1 } },
-      ],
+      groupBy: async ({ where }: {
+        where: { couponCode: { in: string[] } };
+      }) => {
+        assert.ok(where.couponCode.in.includes('STREAK-CLAIMED'));
+        return [
+          { couponCode: 'ANNOUNCED', _count: { couponCode: 1 } },
+          { couponCode: 'CUSTOMER-LIMIT', _count: { couponCode: 1 } },
+        ];
+      },
     },
   } as unknown as PrismaClient;
   const authenticate: RequestHandler = (_req, res, next) => {
@@ -78,9 +90,9 @@ async function main(): Promise<void> {
     );
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
-      availableCouponCodes: ['ANNOUNCED', 'OWN-COUPON'],
+      availableCouponCodes: ['ANNOUNCED', 'OWN-COUPON', 'STREAK-CLAIMED'],
     });
-    console.log('Customer coupons hide exhausted and other-user coupons.');
+    console.log('Customer coupons include claimed gifts and enforce limits.');
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => error ? reject(error) : resolve());

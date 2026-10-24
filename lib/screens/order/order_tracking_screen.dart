@@ -633,9 +633,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                                       polylineId:
                                           const PolylineId('delivery-route'),
                                       points: _routePoints,
-                                      color: _routeOrigin == 'rider'
-                                          ? const Color(0xFFEA7B24)
-                                          : theme.colorScheme.primary,
+                                      color: const Color(0xFF4285F4),
                                       width: 4,
                                     ),
                                   },
@@ -1025,30 +1023,51 @@ class _DeliveryTimeCard extends StatelessWidget {
             : 'The store will confirm your delivery time.'
         : '${DateFormat('EEEE, d MMM · h:mm a').format(scheduledAt)} Nepal time';
 
-    return _TrackingCard(
-      theme: theme,
-      highlighted: !isDelivered,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            isDelivered ? Icons.task_alt_rounded : Icons.schedule_rounded,
-            color: theme.colorScheme.primary,
-            size: 22,
+    final headingStyle = isDelivered
+        ? theme.textTheme.labelLarge
+        : theme.textTheme.labelLarge?.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          );
+    final valueStyle = isDelivered
+        ? theme.textTheme.bodyMedium
+        : theme.textTheme.bodySmall?.copyWith(
+            color: const Color(0xFFB8F3D7),
+          );
+    final content = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          isDelivered ? Icons.task_alt_rounded : Icons.schedule_rounded,
+          color: isDelivered
+              ? theme.colorScheme.primary
+              : const Color(0xFF35D39A),
+          size: 22,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(heading, style: headingStyle),
+              const SizedBox(height: 5),
+              Text(value, style: valueStyle),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(heading, style: theme.textTheme.labelLarge),
-                const SizedBox(height: 5),
-                Text(value, style: theme.textTheme.bodyMedium),
-              ],
-            ),
-          ),
-        ],
+        ),
+      ],
+    );
+    if (isDelivered) {
+      return _TrackingCard(theme: theme, child: content);
+    }
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF073D29),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFF20B879)),
       ),
+      child: content,
     );
   }
 }
@@ -1280,26 +1299,16 @@ class _ItemsCard extends StatelessWidget {
 class _TrackingCard extends StatelessWidget {
   final ThemeData theme;
   final Widget child;
-  final bool highlighted;
 
-  const _TrackingCard({
-    required this.theme,
-    required this.child,
-    this.highlighted = false,
-  });
+  const _TrackingCard({required this.theme, required this.child});
 
   @override
   Widget build(BuildContext context) => DecoratedBox(
         decoration: BoxDecoration(
-          color: highlighted
-              ? theme.colorScheme.primaryContainer
-              : theme.colorScheme.surface,
+          color: theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: highlighted
-                ? theme.colorScheme.primary.withValues(alpha: 0.7)
-                : theme.dividerColor.withValues(alpha: 0.55),
-            width: highlighted ? 1.5 : 1,
+            color: theme.dividerColor.withValues(alpha: 0.55),
           ),
         ),
         child: Padding(

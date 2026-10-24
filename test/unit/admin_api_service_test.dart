@@ -11,6 +11,8 @@ class _AdminApi extends ApiService {
   final List<(String, Map<String, dynamic>?)> deletes = [];
   String? requestedOrdersStatus;
   Map<String, String>? requestedOrdersQuery;
+  Map<String, String>? posSalesQuery;
+  Map<String, String>? posShiftHistoryQuery;
   String? uploadedFileName;
   Uint8List? uploadedBytes;
   String? uploadedEndpoint;
@@ -31,6 +33,40 @@ class _AdminApi extends ApiService {
     String endpoint, {
     Map<String, String>? queryParams,
   }) async {
+    if (endpoint == '/admin/billing/shifts') {
+      posShiftHistoryQuery = queryParams;
+      return {
+        'shifts': [
+          {
+            'id': 'shift-1',
+            'status': 'CLOSED',
+            'cashierName': 'Cashier One',
+            'openingCash': 100,
+            'expectedClosingCash': 250,
+            'actualClosingCash': 240,
+            'variance': -10,
+            'openedAt': '2026-10-24T08:00:00.000Z',
+            'closedAt': '2026-10-24T16:00:00.000Z',
+          },
+        ],
+        'pagination': {
+          'page': int.parse(queryParams?['page'] ?? '1'),
+          'pageSize': int.parse(queryParams?['pageSize'] ?? '20'),
+          'total': 21,
+        },
+      };
+    }
+    if (endpoint == '/admin/billing/sales') {
+      posSalesQuery = queryParams;
+      return {
+        'sales': const [],
+        'pagination': {
+          'page': int.parse(queryParams?['page'] ?? '1'),
+          'pageSize': int.parse(queryParams?['pageSize'] ?? '50'),
+          'total': 63,
+        },
+      };
+    }
     if (endpoint == '/admin/products') productQuery = queryParams;
     if (endpoint == '/admin/wholesale-items') {
       wholesaleQuery = queryParams;
@@ -379,6 +415,45 @@ class _AdminApi extends ApiService {
 }
 
 void main() {
+  test('loads paginated cashier shift history', () async {
+    final api = _AdminApi();
+
+    final page = await AdminApiService(api).getPosShiftHistory(
+      page: 2,
+      pageSize: 10,
+    );
+
+    expect(api.posShiftHistoryQuery, {'page': '2', 'pageSize': '10'});
+    expect(page.page, 2);
+    expect(page.pageSize, 10);
+    expect(page.total, 21);
+    expect(page.shifts.single.cashierName, 'Cashier One');
+    expect(page.shifts.single.variance, -10);
+    expect(page.shifts.single.closedAt,
+        DateTime.parse('2026-10-24T16:00:00.000Z'));
+  });
+
+  test('loads POS bill history using the requested page and date', () async {
+    final api = _AdminApi();
+
+    final page = await AdminApiService(api).getPosSales(
+      page: 2,
+      pageSize: 20,
+      day: '2026-10-24',
+    );
+
+    expect(api.posSalesQuery, {
+      'page': '2',
+      'pageSize': '20',
+      'day': '2026-10-24',
+    });
+    expect(page.sales, isEmpty);
+    expect(page.page, 2);
+    expect(page.pageSize, 20);
+    expect(page.total, 63);
+    expect(page.pageCount, 4);
+  });
+
   test('loads the restock queue and records received stock', () async {
     final api = _AdminApi();
     final adminApi = AdminApiService(api);

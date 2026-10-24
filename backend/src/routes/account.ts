@@ -24,7 +24,10 @@ import { isWeightUnitLabel } from '../services/product-validation.js';
 const addressFields = {
   title: z.string().trim().min(1).max(40),
   fullName: z.string().trim().min(1).max(120),
-  phone: z.string().trim().min(7).max(30),
+  phone: z.string().trim().regex(
+    /^9[78]\d{8}$/,
+    'Enter a 10-digit Nepal mobile number starting with 98 or 97.',
+  ),
   province: z.string().trim().min(1).max(100),
   city: z.string().trim().min(1).max(100),
   street: z.string().trim().min(1).max(240),
@@ -332,47 +335,46 @@ export function createAccountRouter(
       }
 
       const codes = [...notifiedCodes];
-      const [coupons, usageCounts] = await Promise.all([
-        prisma.coupon.findMany({
-          where: {
-            isActive: true,
-            isDeleted: false,
-            AND: [
-              {
-                OR: [
-                  {
-                    isAnnounced: true,
-                    productId: null,
-                    assignedUserId: null,
-                  },
-                  { code: { in: codes } },
-                ],
-              },
-              {
-                OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-              },
-            ],
-          },
-          select: {
-            code: true,
-            assignedUserId: true,
-            usageLimit: true,
-            perUserLimit: true,
-            usedCount: true,
-          },
-        }),
-        codes.length === 0
-          ? Promise.resolve([])
-          : prisma.order.groupBy({
+      const coupons = await prisma.coupon.findMany({
+        where: {
+          isActive: true,
+          isDeleted: false,
+          AND: [
+            {
+              OR: [
+                {
+                  isAnnounced: true,
+                  productId: null,
+                  assignedUserId: null,
+                },
+                { code: { in: codes } },
+                { assignedUserId: userId },
+              ],
+            },
+            {
+              OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            },
+          ],
+        },
+        select: {
+          code: true,
+          assignedUserId: true,
+          usageLimit: true,
+          perUserLimit: true,
+          usedCount: true,
+        },
+      });
+      const usageCounts = coupons.length === 0
+        ? []
+        : await prisma.order.groupBy({
             by: ['couponCode'],
             where: {
               userId,
               status: { not: 'CANCELLED' },
-              couponCode: { in: codes },
+              couponCode: { in: coupons.map((coupon) => coupon.code) },
             },
             _count: { couponCode: true },
-          }),
-      ]);
+          });
       const userUsage = new Map(
         usageCounts.map((row) => [
           row.couponCode?.toUpperCase() ?? '',

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -28,7 +29,9 @@ class _SplashScreenState extends State<SplashScreen> {
       context,
       listen: false,
     );
-    unawaited(productProvider.loadCatalog());
+    if (defaultTargetPlatform != TargetPlatform.windows) {
+      unawaited(productProvider.loadCatalog());
+    }
     final results = await Future.wait<dynamic>([
       authProvider.sessionReady,
       SharedPreferences.getInstance(),
@@ -43,17 +46,37 @@ class _SplashScreenState extends State<SplashScreen> {
       setState(() => _startupError = error);
       return;
     }
-    _navigateNext();
+    unawaited(_navigateNext());
   }
 
-  void _navigateNext() {
+  Future<void> _navigateNext() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final isWindows = defaultTargetPlatform == TargetPlatform.windows;
 
     if (authProvider.isAuthenticated) {
+      final role = authProvider.currentUser?.role.toUpperCase();
+      if (isWindows && role != 'ADMIN' && role != 'BILLING_STAFF') {
+        await authProvider.logout();
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const LoginScreen(isWindowsStaffLogin: true),
+          ),
+        );
+        return;
+      }
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
             builder: (_) => appShellForUser(authProvider.currentUser)),
+      );
+    } else if (isWindows) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const LoginScreen(isWindowsStaffLogin: true),
+        ),
       );
     } else if (!_onboardingSeen) {
       Navigator.pushReplacement(

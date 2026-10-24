@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { sendAdminError } from '../middleware/auth.js';
 import { InventoryAdjustmentError, InventoryService } from '../services/inventory.js';
 import { runTransactionWithRetry } from '../services/transaction-retry.js';
+import { createAdminBillingRouter } from './admin-billing.js';
 import {
   getImageMimeType,
   receiveSingleImage,
@@ -660,10 +661,17 @@ export function createAdminRouter(
   prisma: PrismaClient,
   authenticateToken: RequestHandler,
   requireAdmin: RequestHandler,
+  requireBillingStaff: RequestHandler = requireAdmin,
 ): Router {
   const router = Router();
   const inventoryService = new InventoryService(prisma);
-  router.use(authenticateToken, requireAdmin);
+  router.use(authenticateToken);
+  router.use(
+    '/billing',
+    requireBillingStaff,
+    createAdminBillingRouter(prisma, inventoryService, requireAdmin),
+  );
+  router.use(requireAdmin);
 
   router.get('/customer-menu-features', async (_req, res) => {
     try {
@@ -1809,7 +1817,7 @@ export function createAdminRouter(
       if (typeof removedById !== 'string') {
         return res.status(401).json({ error: 'Authentication is required.' });
       }
-      await prisma.$transaction(async (tx) => {
+      await runTransactionWithRetry(prisma, async (tx) => {
         const updated = await tx.user.updateMany({
           where: { id: customer.id, role: 'CUSTOMER' },
           data: {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/constants.dart';
@@ -330,6 +331,11 @@ class _AddressFormDialogState extends State<_AddressFormDialog> {
   String? _required(String? value) =>
       value == null || value.trim().isEmpty ? 'Required' : null;
 
+  String? _validatePhone(String? value) =>
+      value == null || !RegExp(r'^9[78]\d{8}$').hasMatch(value.trim())
+          ? 'Enter a 10-digit number starting with 98 or 97'
+          : null;
+
   Future<void> _chooseMapLocation() async {
     final location = await Navigator.push<PickedAddressLocation>(
       context,
@@ -408,7 +414,13 @@ class _AddressFormDialogState extends State<_AddressFormDialog> {
                 const SizedBox(height: 10),
                 _field(_name, 'Recipient name', validator: _required),
                 _field(_phone, 'Phone number',
-                    keyboardType: TextInputType.phone, validator: _required),
+                    keyboardType: TextInputType.phone,
+                    validator: _validatePhone,
+                    prefixText: '+977 ',
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(10),
+                    ]),
                 _field(_street, 'Ward, street, and house details',
                     validator: _required),
                 _field(_landmark, 'Landmark (optional)'),
@@ -461,14 +473,28 @@ class _AddressFormDialogState extends State<_AddressFormDialog> {
     String label, {
     String? Function(String?)? validator,
     TextInputType? keyboardType,
+    String? prefixText,
+    List<TextInputFormatter>? inputFormatters,
   }) =>
       Padding(
         padding: const EdgeInsets.only(bottom: 10),
         child: TextFormField(
           controller: controller,
           keyboardType: keyboardType,
+          inputFormatters: inputFormatters,
+          maxLength: inputFormatters == null ? null : 10,
+          buildCounter: inputFormatters == null
+              ? null
+              : (context,
+                      {required currentLength,
+                      required isFocused,
+                      required maxLength}) =>
+                  const SizedBox.shrink(),
           textCapitalization: TextCapitalization.sentences,
-          decoration: InputDecoration(labelText: label),
+          decoration: InputDecoration(
+            labelText: label,
+            prefixText: prefixText,
+          ),
           validator: validator,
         ),
       );

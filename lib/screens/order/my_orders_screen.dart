@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:printing/printing.dart';
 
@@ -19,6 +20,7 @@ class MyOrdersScreen extends StatefulWidget {
 }
 
 class _MyOrdersScreenState extends State<MyOrdersScreen> {
+  static const _invoiceChannel = MethodChannel('faststore/invoices');
   bool _loading = true;
   String? _error;
   String? _invoiceOrderId;
@@ -46,16 +48,65 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
 
   Future<void> _downloadInvoice(Order order) async {
     if (_invoiceOrderId != null) return;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Invoice PDF',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(context, 'download'),
+                icon: const Icon(Icons.download_rounded),
+                label: const Text('Download PDF'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.pop(context, 'share'),
+                icon: const Icon(Icons.print_outlined),
+                label: const Text('Print or share'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (action == null || !mounted) return;
     setState(() => _invoiceOrderId = order.id);
     try {
       final bytes = await OrderInvoiceService.createPdf(order);
       if (!mounted) return;
       final safeOrderNumber =
           order.orderNumber.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
-      await Printing.layoutPdf(
-        name: 'Ram-Prasad-Invoice-$safeOrderNumber.pdf',
-        onLayout: (_) async => bytes,
-      );
+      final filename = 'Ram-Prasad-Invoice-$safeOrderNumber.pdf';
+      if (action == 'download' &&
+          Theme.of(context).platform == TargetPlatform.android) {
+        final savedPath = await _invoiceChannel.invokeMethod<String>(
+          'savePdf',
+          {'filename': filename, 'bytes': bytes},
+        );
+        if (savedPath == null || savedPath.trim().isEmpty) {
+          throw StateError('The invoice PDF was not saved.');
+        }
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Invoice downloaded to $savedPath')),
+        );
+      } else if (action == 'download') {
+        await Printing.sharePdf(bytes: bytes, filename: filename);
+      } else {
+        await Printing.layoutPdf(
+          name: filename,
+          onLayout: (_) async => bytes,
+        );
+      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

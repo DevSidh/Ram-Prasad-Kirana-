@@ -6,6 +6,7 @@ import '../../core/constants.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import 'admin_coupons_screen.dart';
 import '../../widgets/store_animation.dart';
 
 class AdminStreakScreen extends StatefulWidget {
@@ -80,6 +81,19 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
     });
   }
 
+  Future<void> _createCoupon() async {
+    final coupon = await showDialog<AdminCoupon>(
+      context: context,
+      builder: (_) => AdminCouponFormDialog(api: _adminApi),
+    );
+    if (coupon == null || !mounted) return;
+    setState(() => _coupons = [coupon, ..._coupons]);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+          content: Text('${coupon.code} is ready to use for a milestone.')),
+    );
+  }
+
   Future<void> _save() async {
     if (_rewards.any((reward) => reward.couponId == null)) {
       setState(() {
@@ -134,20 +148,26 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
           ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
-          child: Row(
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            alignment: WrapAlignment.spaceBetween,
             children: [
-              const Expanded(
-                child: Text(
-                  'Reward milestones',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-                ),
+              const Text(
+                'Reward milestones',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
               ),
               TextButton.icon(
                 onPressed: _saving ? null : () => _editReward(),
                 icon: const Icon(Icons.add),
                 label: const Text('Add day'),
               ),
-              const SizedBox(width: 6),
+              TextButton.icon(
+                onPressed: _saving ? null : _createCoupon,
+                icon: const Icon(Icons.local_offer_outlined),
+                label: const Text('Add coupon'),
+              ),
               FilledButton(
                 onPressed: _saving ? null : _save,
                 child: _saving

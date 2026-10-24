@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:typed_data';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
@@ -8,6 +8,7 @@ import '../core/constants.dart';
 
 class AuthProvider extends ChangeNotifier {
   final ApiService _apiService;
+  final FlutterSecureStorage _secureStorage;
   User? _currentUser;
   String? _token;
   bool _isLoading = false;
@@ -16,7 +17,11 @@ class AuthProvider extends ChangeNotifier {
 
   late final Future<void> sessionReady;
 
-  AuthProvider({required ApiService apiService}) : _apiService = apiService {
+  AuthProvider({
+    required ApiService apiService,
+    FlutterSecureStorage secureStorage = const FlutterSecureStorage(),
+  })  : _apiService = apiService,
+        _secureStorage = secureStorage {
     sessionReady = loadSavedSession();
   }
 
@@ -27,9 +32,41 @@ class AuthProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   String? get pendingVerificationEmail => _pendingVerificationEmail;
 
+  bool get _usesSecureSessionStorage =>
+      defaultTargetPlatform == TargetPlatform.windows;
+
+  Future<String?> _readSessionToken(SharedPreferences preferences) async {
+    if (!_usesSecureSessionStorage) {
+      return preferences.getString(AppConstants.keyToken);
+    }
+    final secureToken = await _secureStorage.read(key: AppConstants.keyToken);
+    if (secureToken != null) return secureToken;
+    final legacyToken = preferences.getString(AppConstants.keyToken);
+    if (legacyToken != null) {
+      await _secureStorage.write(
+        key: AppConstants.keyToken,
+        value: legacyToken,
+      );
+      await preferences.remove(AppConstants.keyToken);
+    }
+    return legacyToken;
+  }
+
+  Future<void> _saveSessionToken(
+    SharedPreferences preferences,
+    String token,
+  ) async {
+    if (_usesSecureSessionStorage) {
+      await _secureStorage.write(key: AppConstants.keyToken, value: token);
+      await preferences.remove(AppConstants.keyToken);
+      return;
+    }
+    await preferences.setString(AppConstants.keyToken, token);
+  }
+
   Future<void> loadSavedSession() async {
     final prefs = await SharedPreferences.getInstance();
-    final savedToken = prefs.getString(AppConstants.keyToken);
+    final savedToken = await _readSessionToken(prefs);
     final savedUserJson = prefs.getString(AppConstants.keyUser);
 
     if (savedToken != null && savedUserJson != null) {
@@ -101,7 +138,7 @@ class AuthProvider extends ChangeNotifier {
       );
 
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(AppConstants.keyToken, _token!);
+      await _saveSessionToken(prefs, _token!);
       await prefs.setString(
           AppConstants.keyUser, jsonEncode(_currentUser!.toJson()));
 
@@ -186,7 +223,7 @@ class AuthProvider extends ChangeNotifier {
         role: (userData['role'] as String? ?? 'CUSTOMER').toUpperCase(),
       );
       final preferences = await SharedPreferences.getInstance();
-      await preferences.setString(AppConstants.keyToken, token);
+      await _saveSessionToken(preferences, token);
       await preferences.setString(
         AppConstants.keyUser,
         jsonEncode(_currentUser!.toJson()),
@@ -207,10 +244,11 @@ class AuthProvider extends ChangeNotifier {
   Future<void> logout() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await Future.wait([
-        prefs.remove(AppConstants.keyToken),
-        prefs.remove(AppConstants.keyUser),
-      ]);
+      await prefs.remove(AppConstants.keyToken);
+      if (_usesSecureSessionStorage) {
+        await _secureStorage.delete(key: AppConstants.keyToken);
+      }
+      await prefs.remove(AppConstants.keyUser);
     } finally {
       _token = null;
       _currentUser = null;

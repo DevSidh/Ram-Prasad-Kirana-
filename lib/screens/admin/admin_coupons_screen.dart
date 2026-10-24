@@ -53,7 +53,7 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
   Future<void> _createCoupon() async {
     final coupon = await showDialog<AdminCoupon>(
       context: context,
-      builder: (_) => _CouponFormDialog(api: _adminApi),
+      builder: (_) => AdminCouponFormDialog(api: _adminApi),
     );
     if (coupon == null || !mounted) return;
     setState(() => _coupons = [coupon, ..._coupons]);
@@ -81,7 +81,7 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
   Future<void> _editCoupon(AdminCoupon current) async {
     final updated = await showDialog<AdminCoupon>(
       context: context,
-      builder: (_) => _CouponFormDialog(api: _adminApi, coupon: current),
+      builder: (_) => AdminCouponFormDialog(api: _adminApi, coupon: current),
     );
     if (updated == null || !mounted) return;
     setState(() {
@@ -390,14 +390,14 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
   }
 }
 
-class _CouponFormDialog extends StatefulWidget {
+class AdminCouponFormDialog extends StatefulWidget {
   final AdminApiService api;
   final AdminCoupon? coupon;
 
-  const _CouponFormDialog({required this.api, this.coupon});
+  const AdminCouponFormDialog({super.key, required this.api, this.coupon});
 
   @override
-  State<_CouponFormDialog> createState() => _CouponFormDialogState();
+  State<AdminCouponFormDialog> createState() => _AdminCouponFormDialogState();
 }
 
 class _ProductCouponDialog extends StatefulWidget {
@@ -717,7 +717,7 @@ class _ProductCouponDialogState extends State<_ProductCouponDialog> {
   }
 }
 
-class _CouponFormDialogState extends State<_CouponFormDialog> {
+class _AdminCouponFormDialogState extends State<AdminCouponFormDialog> {
   final _formKey = GlobalKey<FormState>();
   final _code = TextEditingController();
   final _discount = TextEditingController();

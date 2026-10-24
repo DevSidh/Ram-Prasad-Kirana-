@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import '../models/admin_models.dart';
+import '../models/pos_models.dart';
 import '../models/store_availability.dart';
 import 'api_service.dart';
 
@@ -84,6 +85,304 @@ class AdminApiService {
 
   Future<AdminDashboard> getDashboard() async {
     return AdminDashboard.fromJson(_asMap(await _api.get('/admin/dashboard')));
+  }
+
+  Future<PosOverview> getPosOverview({String? day}) async {
+    return PosOverview.fromJson(_asMap(await _api.get(
+      '/admin/billing/overview',
+      queryParams: {if (day != null) 'day': day},
+    )));
+  }
+
+  Future<List<BillingStaffAccount>> getBillingStaff({
+    String query = '',
+  }) async {
+    final response = _asMap(await _api.get(
+      '/admin/billing/staff',
+      queryParams: {'query': query},
+    ));
+    final staff = response['staff'];
+    if (staff is! List) {
+      throw const FormatException(
+          'The server returned an invalid billing staff list.');
+    }
+    return staff
+        .whereType<Map<String, dynamic>>()
+        .map(BillingStaffAccount.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<PosShiftHistoryPage> getPosShiftHistory({
+    int page = 1,
+    int pageSize = 20,
+  }) async {
+    if (page < 1 || pageSize < 1 || pageSize > 100) {
+      throw ArgumentError('Shift-history pagination is out of range.');
+    }
+    final response = _asMap(await _api.get(
+      '/admin/billing/shifts',
+      queryParams: {'page': '$page', 'pageSize': '$pageSize'},
+    ));
+    return PosShiftHistoryPage.fromJson(response);
+  }
+
+  Future<BillingStaffAccount> setBillingStaffRole({
+    required String userId,
+    required String role,
+  }) async {
+    final response = _asMap(await _api.patch(
+      '/admin/billing/staff/${Uri.encodeComponent(userId)}',
+      {'role': role},
+    ));
+    final staff = response['staff'];
+    if (staff is! Map<String, dynamic>) {
+      throw const FormatException(
+          'The server did not confirm the billing staff access change.');
+    }
+    return BillingStaffAccount.fromJson(staff);
+  }
+
+  Future<List<PosProduct>> searchPosProducts(String query) async {
+    final response = _asMap(await _api.get(
+      '/admin/billing/products',
+      queryParams: {'query': query},
+    ));
+    final products = response['products'];
+    if (products is! List) {
+      throw const FormatException(
+          'The server returned an invalid POS product list.');
+    }
+    return products
+        .whereType<Map<String, dynamic>>()
+        .map(PosProduct.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<({String id, DateTime openedAt})> openPosShift(
+    double openingCash,
+  ) async {
+    final response = _asMap(await _api.post(
+      '/admin/billing/shifts/open',
+      {'openingCash': openingCash},
+    ));
+    final shift = response['shift'];
+    if (shift is! Map<String, dynamic> ||
+        shift['id'] is! String ||
+        DateTime.tryParse(shift['openedAt'] as String? ?? '') == null) {
+      throw const FormatException(
+          'The server did not return the opened register.');
+    }
+    return (
+      id: shift['id'] as String,
+      openedAt: DateTime.parse(shift['openedAt'] as String),
+    );
+  }
+
+  Future<double> closePosShift(String shiftId, double actualCash) async {
+    final response = _asMap(await _api.post(
+      '/admin/billing/shifts/${Uri.encodeComponent(shiftId)}/close',
+      {'actualCash': actualCash},
+    ));
+    final expected = response['expected'];
+    if (expected is! num) {
+      throw const FormatException(
+          'The server did not return closing cash totals.');
+    }
+    return expected.toDouble();
+  }
+
+  Future<List<PosHeldSale>> getPosHeldSales() async {
+    final response = _asMap(await _api.get('/admin/billing/held-sales'));
+    final heldSales = response['heldSales'];
+    if (heldSales is! List) {
+      throw const FormatException('The server returned invalid held bills.');
+    }
+    return heldSales
+        .whereType<Map<String, dynamic>>()
+        .map(PosHeldSale.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<String> holdPosSale({
+    required List<Map<String, dynamic>> items,
+    String? customerName,
+    String? customerPhone,
+  }) async {
+    final response = _asMap(await _api.post('/admin/billing/held-sales', {
+      'items': items,
+      'customerName': customerName,
+      'customerPhone': customerPhone,
+    }));
+    if (response['id'] is! String) {
+      throw const FormatException('The server did not save this held bill.');
+    }
+    return response['id'] as String;
+  }
+
+  Future<void> deletePosHeldSale(String id) async {
+    await _api.delete('/admin/billing/held-sales/${Uri.encodeComponent(id)}');
+  }
+
+  Future<PosSale> createPosSale({
+    required String idempotencyKey,
+    required List<Map<String, dynamic>> items,
+    required double discount,
+    required String paymentMethod,
+    String? customerName,
+    String? customerPhone,
+    String? heldSaleId,
+  }) async {
+    final response = _asMap(await _api.post('/admin/billing/sales', {
+      'idempotencyKey': idempotencyKey,
+      'items': items,
+      'discount': discount,
+      'paymentMethod': paymentMethod,
+      'customerName': customerName,
+      'customerPhone': customerPhone,
+      if (heldSaleId != null) 'heldSaleId': heldSaleId,
+    }));
+    final sale = response['sale'];
+    if (sale is! Map<String, dynamic>) {
+      throw const FormatException(
+          'The server did not return the completed bill.');
+    }
+    return PosSale.fromJson(sale);
+  }
+
+  Future<PosSalesPage> getPosSales({
+    int page = 1,
+    int pageSize = 50,
+    String? day,
+  }) async {
+    if (page < 1 || pageSize < 1 || pageSize > 100) {
+      throw ArgumentError('Bill-history pagination is out of range.');
+    }
+    final response = _asMap(await _api.get(
+      '/admin/billing/sales',
+      queryParams: {
+        'page': '$page',
+        'pageSize': '$pageSize',
+        if (day != null) 'day': day,
+      },
+    ));
+    return PosSalesPage.fromJson(response);
+  }
+
+  Future<void> cancelPosSale(String id) async {
+    await _api.post(
+      '/admin/billing/sales/${Uri.encodeComponent(id)}/cancel',
+      const {},
+    );
+  }
+
+  Future<void> recordPosPayment(
+    String id, {
+    required String paymentMethod,
+  }) async {
+    await _api.patch(
+      '/admin/billing/sales/${Uri.encodeComponent(id)}/payment',
+      {'paymentMethod': paymentMethod},
+    );
+  }
+
+  Future<void> createPosRefund({
+    required String saleId,
+    required double amount,
+    required String reason,
+    required bool restockStock,
+  }) async {
+    await _api.post(
+      '/admin/billing/sales/${Uri.encodeComponent(saleId)}/refunds',
+      {'amount': amount, 'reason': reason, 'restockStock': restockStock},
+    );
+  }
+
+  Future<List<PosRefund>> getPosRefunds() async {
+    final response = _asMap(await _api.get('/admin/billing/refunds'));
+    final refunds = response['refunds'];
+    if (refunds is! List) {
+      throw const FormatException(
+          'The server returned invalid refund requests.');
+    }
+    return refunds
+        .whereType<Map<String, dynamic>>()
+        .map(PosRefund.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<void> resolvePosRefund(String id, {required bool approve}) async {
+    await _api.patch(
+      '/admin/billing/refunds/${Uri.encodeComponent(id)}',
+      {'decision': approve ? 'APPROVE' : 'REJECT'},
+    );
+  }
+
+  Future<List<PosExchange>> getPosExchanges() async {
+    final response = _asMap(await _api.get('/admin/billing/exchanges'));
+    final exchanges = response['exchanges'];
+    if (exchanges is! List) {
+      throw const FormatException(
+        'The server returned invalid exchange records.',
+      );
+    }
+    return exchanges
+        .whereType<Map<String, dynamic>>()
+        .map(PosExchange.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<PosExchange> createPosExchange({
+    required String saleId,
+    required String idempotencyKey,
+    required List<Map<String, dynamic>> returnedItems,
+    required List<Map<String, dynamic>> replacementItems,
+    required bool restockReturnedItems,
+    String? paymentMethod,
+  }) async {
+    final response = _asMap(await _api.post(
+      '/admin/billing/sales/${Uri.encodeComponent(saleId)}/exchanges',
+      {
+        'idempotencyKey': idempotencyKey,
+        'returnedItems': returnedItems,
+        'replacementItems': replacementItems,
+        'restockReturnedItems': restockReturnedItems,
+        if (paymentMethod != null) 'paymentMethod': paymentMethod,
+      },
+    ));
+    final exchange = response['exchange'];
+    if (exchange is! Map<String, dynamic>) {
+      throw const FormatException(
+        'The server did not confirm the exchange.',
+      );
+    }
+    return PosExchange.fromJson(exchange);
+  }
+
+  Future<void> resolvePosExchange(
+    String id, {
+    required bool approve,
+    String? refundPaymentMethod,
+  }) async {
+    await _api.patch(
+      '/admin/billing/exchanges/${Uri.encodeComponent(id)}',
+      {
+        'decision': approve ? 'APPROVE' : 'REJECT',
+        if (refundPaymentMethod != null)
+          'refundPaymentMethod': refundPaymentMethod,
+      },
+    );
+  }
+
+  Future<void> recordPosCashMovement({
+    required String type,
+    required double amount,
+    required String note,
+  }) async {
+    await _api.post('/admin/billing/cash-movements', {
+      'type': type,
+      'amount': amount,
+      'note': note,
+    });
   }
 
   Future<List<AdminCoupon>> getCoupons() async {

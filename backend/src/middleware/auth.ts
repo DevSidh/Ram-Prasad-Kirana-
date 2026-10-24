@@ -11,6 +11,7 @@ export function createAuthMiddleware(prisma: PrismaClient, secret: string): {
   authenticateToken: RequestHandler;
   requireAdmin: RequestHandler;
   requireDeliveryPerson: RequestHandler;
+  requireBillingStaff: RequestHandler;
 } {
   const authenticateToken: RequestHandler = async (req, res, next) => {
     const authorization = req.headers.authorization;
@@ -84,6 +85,33 @@ export function createAuthMiddleware(prisma: PrismaClient, secret: string): {
       }
 
       (req as AuthenticatedRequest).userRole = user.role;
+      res.locals.authenticatedUserRole = user.role;
+      return next();
+    } catch (error) {
+      return next(error);
+    }
+  };
+
+  const requireBillingStaff: RequestHandler = async (req, res, next: NextFunction) => {
+    const userId = (req as AuthenticatedRequest).userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication is required' });
+    }
+
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { role: true, isActive: true },
+      });
+      if (!user || !user.isActive) {
+        return res.status(401).json({ error: 'Authentication is required' });
+      }
+      if (user.role !== 'ADMIN' && user.role !== 'BILLING_STAFF') {
+        return res.status(403).json({ error: 'Billing staff access required' });
+      }
+
+      (req as AuthenticatedRequest).userRole = user.role;
+      res.locals.authenticatedUserRole = user.role;
       return next();
     } catch (error) {
       return next(error);
@@ -109,13 +137,19 @@ export function createAuthMiddleware(prisma: PrismaClient, secret: string): {
       }
 
       (req as AuthenticatedRequest).userRole = user.role;
+      res.locals.authenticatedUserRole = user.role;
       return next();
     } catch (error) {
       return next(error);
     }
   };
 
-  return { authenticateToken, requireAdmin, requireDeliveryPerson };
+  return {
+    authenticateToken,
+    requireAdmin,
+    requireDeliveryPerson,
+    requireBillingStaff,
+  };
 }
 
 export function sendAdminError(error: unknown, res: Response): void {

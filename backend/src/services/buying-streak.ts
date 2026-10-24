@@ -136,7 +136,7 @@ export async function getBuyingStreakSnapshot(
   userId: string,
   now: Date = new Date(),
 ) {
-  const [purchaseDays, configuredRewards, progress] = await Promise.all([
+  const [purchaseDays, configuredRewards] = await Promise.all([
     client.buyingStreakPurchaseDay.findMany({
       where: { userId },
       orderBy: { dayKey: 'desc' },
@@ -152,21 +152,8 @@ export async function getBuyingStreakSnapshot(
         coupon: { select: { code: true } },
       },
     }),
-    client.buyingStreakRewardProgress.findMany({
-      where: { userId },
-      orderBy: { day: 'asc' },
-      select: {
-        day: true,
-        title: true,
-        description: true,
-        unlockedAt: true,
-        claimedAt: true,
-        coupon: { select: { code: true } },
-      },
-    }),
   ]);
 
-  const progressByDay = new Map(progress.map((item) => [item.day, item]));
   const dayKeys = purchaseDays.map(({ dayKey }) => dayKey);
   const today = getStoreDayKey(now);
   const yesterday = previousDayKey(today);
@@ -174,6 +161,36 @@ export async function getBuyingStreakSnapshot(
   const currentStreak = calculateCurrentBuyingStreak(dayKeys, now);
   const latestConsecutiveStreak = countLatestConsecutiveDays(dayKeys);
   const bestStreak = calculateLongestBuyingStreak(dayKeys);
+  await Promise.all(
+    configuredRewards
+      .filter((reward) => reward.day <= bestStreak)
+      .map((reward) =>
+        client.buyingStreakRewardProgress.upsert({
+          where: { userId_day: { userId, day: reward.day } },
+          update: {},
+          create: {
+            userId,
+            day: reward.day,
+            title: reward.title,
+            description: reward.description,
+            couponTemplateId: reward.couponId,
+          },
+        }),
+      ),
+  );
+  const progress = await client.buyingStreakRewardProgress.findMany({
+    where: { userId },
+    orderBy: { day: 'asc' },
+    select: {
+      day: true,
+      title: true,
+      description: true,
+      unlockedAt: true,
+      claimedAt: true,
+      coupon: { select: { code: true } },
+    },
+  });
+  const progressByDay = new Map(progress.map((item) => [item.day, item]));
   const rewardByDay = new Map<number, {
     day: number;
     title: string;

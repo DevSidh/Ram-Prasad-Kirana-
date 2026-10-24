@@ -169,9 +169,17 @@ app.use(
   ),
 );
 
-const { authenticateToken, requireAdmin, requireDeliveryPerson } =
+const {
+  authenticateToken,
+  requireAdmin,
+  requireDeliveryPerson,
+  requireBillingStaff,
+} =
   createAuthMiddleware(prisma, AUTH_SECRET);
-app.use('/api/v1/admin', createAdminRouter(prisma, authenticateToken, requireAdmin));
+app.use(
+  '/api/v1/admin',
+  createAdminRouter(prisma, authenticateToken, requireAdmin, requireBillingStaff),
+);
 app.use(
   '/api/v1/delivery',
   createDeliveryRouter(prisma, authenticateToken, requireDeliveryPerson),

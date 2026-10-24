@@ -5,6 +5,7 @@ import { createAccountRouter } from '../src/routes/account.js';
 import {
   calculateCurrentBuyingStreak,
   calculateLongestBuyingStreak,
+  getBuyingStreakSnapshot,
 } from '../src/services/buying-streak.js';
 
 const now = new Date('2026-11-02T01:00:00.000Z');
@@ -31,6 +32,80 @@ assert.equal(
   3,
 );
 assert.equal(calculateLongestBuyingStreak([]), 0);
+
+async function verifyNewMilestonesReconcileWithHistory(): Promise<void> {
+  const dayKeys = [
+    '2026-11-02',
+    '2026-11-01',
+    '2026-10-31',
+    '2026-10-30',
+    '2026-10-29',
+    '2026-10-28',
+    '2026-10-27',
+    '2026-10-26',
+    '2026-10-25',
+    '2026-10-24',
+  ];
+  const progressByDay = new Map<number, Record<string, unknown>>([
+    [10, {
+      day: 10,
+      title: 'Ten day reward',
+      description: 'Reward for ten days.',
+      unlockedAt: new Date('2026-11-02T01:00:00.000Z'),
+      claimedAt: new Date('2026-11-02T01:00:00.000Z'),
+      coupon: { code: 'STREAK10' },
+    }],
+  ]);
+  const client = {
+    buyingStreakPurchaseDay: {
+      findMany: async () => dayKeys.map((dayKey) => ({ dayKey })),
+    },
+    buyingStreakRewardConfig: {
+      findMany: async () => [
+        {
+          day: 4,
+          title: 'Four day reward',
+          description: 'Reward for four days.',
+          couponId: 'coupon-4',
+          coupon: { code: 'DAY4' },
+        },
+        {
+          day: 10,
+          title: 'Ten day reward',
+          description: 'Reward for ten days.',
+          couponId: 'coupon-10',
+          coupon: { code: 'DAY10' },
+        },
+      ],
+    },
+    buyingStreakRewardProgress: {
+      upsert: async ({ where, create }: {
+        where: { userId_day: { day: number } };
+        create: Record<string, unknown>;
+      }) => {
+        if (!progressByDay.has(where.userId_day.day)) {
+          progressByDay.set(where.userId_day.day, {
+            ...create,
+            unlockedAt: now,
+            claimedAt: null,
+            coupon: null,
+          });
+        }
+      },
+      findMany: async () =>
+        [...progressByDay.values()].sort(
+          (left, right) => Number(left.day) - Number(right.day),
+        ),
+    },
+  };
+  const snapshot = await getBuyingStreakSnapshot(
+    client as never,
+    'customer-1',
+    now,
+  );
+  assert.equal(snapshot.rewards.find((reward) => reward.day === 4)?.isUnlocked, true);
+  assert.equal(snapshot.rewards.find((reward) => reward.day === 10)?.claimedAt, now.toISOString());
+}
 
 async function verifyOneTimeClaim(): Promise<void> {
   let claimedAt: Date | null = null;
@@ -115,7 +190,10 @@ async function verifyOneTimeClaim(): Promise<void> {
   }
 }
 
-void verifyOneTimeClaim()
+void Promise.all([
+  verifyNewMilestonesReconcileWithHistory(),
+  verifyOneTimeClaim(),
+])
   .then(() => console.log('Buying streak tests passed.'))
   .catch((error: unknown) => {
     console.error(error);

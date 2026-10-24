@@ -109,4 +109,55 @@ void main() {
     );
     client.close();
   });
+
+  test('HTML route errors are shown as concise actionable text', () async {
+    final client = MockClient((request) async => http.Response(
+          '<html><body><pre>Cannot GET '
+          '/api/v1/admin/billing/overview</pre></body></html>',
+          404,
+          headers: {'content-type': 'text/html'},
+        ));
+    final api = ApiService(
+      baseUrl: 'https://store.example/api/v1',
+      client: client,
+    );
+
+    await expectLater(
+      api.get('/admin/billing/overview'),
+      throwsA(
+        isA<ApiResponseException>().having(
+          (error) => error.message,
+          'message',
+          'Billing is unavailable on the connected server: '
+              '/api/v1/admin/billing/overview was not found. '
+              'The backend release may need updating.',
+        ),
+      ),
+    );
+    client.close();
+  });
+
+  test('other HTML errors do not leak markup into the error message', () async {
+    final client = MockClient((request) async => http.Response(
+          '<html><body><h1>Service unavailable</h1></body></html>',
+          503,
+          headers: {'content-type': 'text/html'},
+        ));
+    final api = ApiService(
+      baseUrl: 'https://store.example/api/v1',
+      client: client,
+    );
+
+    await expectLater(
+      api.get('/products'),
+      throwsA(
+        isA<ApiResponseException>().having(
+          (error) => error.message,
+          'message',
+          'Service unavailable',
+        ),
+      ),
+    );
+    client.close();
+  });
 }

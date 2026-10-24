@@ -480,6 +480,106 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('billing staff see POS modules but no admin-only tools',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final apiService = _ResponsiveApiService();
+    final authProvider = AuthProvider(apiService: apiService);
+    addTearDown(authProvider.dispose);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<ApiService>.value(value: apiService),
+          ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
+        ],
+        child: const MaterialApp(
+          home: AdminShell(isBillingStaff: true),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Dashboard'), findsWidgets);
+    expect(find.text('New Bill / POS'), findsOneWidget);
+    expect(find.text('Essential'), findsOneWidget);
+    expect(find.text('Returns & Exchanges'), findsOneWidget);
+    expect(find.text('STORE STAFF'), findsWidgets);
+    expect(find.text('Products'), findsNothing);
+    expect(find.text('Cashier / Shift Management'), findsNothing);
+    expect(find.byType(NavigationRail), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('admin billing menu exposes the requested POS modules and theme',
+      (tester) async {
+    tester.view.physicalSize = const Size(1440, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final apiService = _ResponsiveApiService();
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<ApiService>.value(value: apiService),
+          ChangeNotifierProvider(
+            create: (_) => AuthProvider(apiService: apiService),
+          ),
+          ChangeNotifierProvider(
+            create: (_) => ProductProvider(apiService: apiService),
+          ),
+        ],
+        child: const MaterialApp(home: AdminShell()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    for (final label in [
+      'Dashboard',
+      'Billing',
+      'New Bill / POS',
+      'Essential',
+      'Barcode Scanner',
+      'Held / Suspended Bills',
+      'Bill History / Invoices',
+      'Payments & Refunds',
+      'Cash Register',
+      'Customers',
+      'Returns & Exchanges',
+      'Sales Reports',
+      'Cashier / Shift Management',
+      'Receipt & Printer Settings',
+      'Notifications',
+      'My Profile / Logout',
+    ]) {
+      await tester.scrollUntilVisible(
+        find.descendant(
+          of: find.byKey(const ValueKey('admin-navigation-list')),
+          matching: find.text(label),
+        ),
+        220,
+        scrollable: find
+            .descendant(
+              of: find.byKey(const ValueKey('admin-navigation-list')),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      expect(find.text(label), findsWidgets, reason: 'Missing $label');
+    }
+    expect(
+      Theme.of(tester.element(find.byType(ListTile).first))
+          .scaffoldBackgroundColor,
+      const Color(0xFFEAF0E8),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('store hours controls fit a narrow admin viewport',
       (tester) async {
     tester.view.physicalSize = const Size(320, 800);

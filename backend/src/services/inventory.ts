@@ -336,11 +336,79 @@ export class InventoryService {
     }
   }
 
+  async consumeStockForPosSale(
+    tx: Prisma.TransactionClient,
+    items: { productId: string; quantity: number }[],
+    saleId: string,
+    performedById: string,
+  ): Promise<void> {
+    for (const item of items) {
+      if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) {
+        throw new InventoryAdjustmentError('Sale quantity must be a positive integer.');
+      }
+      const rowsAffected = await tx.$executeRaw`
+        UPDATE "Inventory"
+        SET "totalStock" = "totalStock" - ${item.quantity},
+            "version" = "version" + 1,
+            "updatedAt" = NOW()
+        WHERE "productId" = ${item.productId}
+          AND "totalStock" - "reservedStock" >= ${item.quantity}
+      `;
+      if (rowsAffected !== 1) {
+        throw new InventoryAdjustmentError(
+          'The requested quantity exceeds available stock. Refresh and try again.',
+        );
+      }
+      await this.consumeBatchStock(tx, item.productId, item.quantity, saleId, false);
+      const current = await tx.inventory.findUnique({
+        where: { productId: item.productId },
+        select: { totalStock: true, reservedStock: true },
+      });
+      if (!current) {
+        throw new InventoryAdjustmentError('Inventory changed while completing the POS sale.');
+      }
+      await tx.inventoryTransaction.create({
+        data: {
+          inventory: { connect: { productId: item.productId } },
+          type: 'PURCHASED',
+          quantity: item.quantity,
+          balanceAfter: current.totalStock - current.reservedStock,
+          referenceId: saleId,
+          notes: `Stock deducted for POS sale ${saleId}`,
+          performedBy: { connect: { id: performedById } },
+        },
+      });
+    }
+  }
+
+  async restockPosSale(
+    tx: Prisma.TransactionClient,
+    items: { productId: string; quantity: number }[],
+    saleId: string,
+    performedById: string,
+    note: string,
+  ): Promise<void> {
+    for (const item of items) {
+      if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) {
+        throw new InventoryAdjustmentError('Refund stock quantity is invalid.');
+      }
+      await this.restockItem(
+        tx,
+        item.productId,
+        item.quantity,
+        saleId,
+        note,
+        performedById,
+      );
+    }
+  }
+
   private async consumeBatchStock(
     tx: Prisma.TransactionClient,
     productId: string,
     quantity: number,
     orderId: string,
+    recordOrderAllocations = true,
   ): Promise<void> {
     const today = getLocalDayRange().start;
     const batches = await tx.$queryRaw<
@@ -371,12 +439,14 @@ export class InventoryService {
           `INSUFFICIENT_STOCK: A product batch changed while reserving ${productId}.`,
         );
       }
-      allocations.push({
-        orderId,
-        productId,
-        batchId: batch.id,
-        quantity: allocated,
-      });
+      if (recordOrderAllocations) {
+        allocations.push({
+          orderId,
+          productId,
+          batchId: batch.id,
+          quantity: allocated,
+        });
+      }
       remaining -= allocated;
     }
     if (remaining > 0) {

@@ -40,6 +40,12 @@ model User {
   assignedCoupons        Coupon[]                     @relation("CouponAssignedUser")
   customerRemovalRecords CustomerRemovalAudit[]       @relation("RemovedCustomer")
   customerRemovalActions CustomerRemovalAudit[]       @relation("CustomerRemovalActor")
+  posShifts              PosShift[]                   @relation("PosCashier")
+  posRefundRequests      PosRefund[]                  @relation("PosRefundRequester")
+  posRefundDecisions     PosRefund[]                  @relation("PosRefundResolver")
+  posCashMovements       PosCashMovement[]            @relation("PosCashActor")
+  posExchanges           PosExchange[]                @relation("PosExchangeCashier")
+  posExchangeDecisions   PosExchange[]                @relation("PosExchangeResolver")
 
   @@index([role])
   @@index([createdAt])
@@ -212,6 +218,8 @@ model Product {
   reviews                  Review[]
   wishlistItems            WishlistItem[]
   coupons                  Coupon[]
+  posSaleItems             PosSaleItem[]
+  posExchangeItems         PosExchangeItem[]
 
   @@index([categoryId])
   @@index([isActive])
@@ -432,6 +440,163 @@ model Payment {
   @@index([status])
 }
 
+model PosShift {
+  id                  String            @id @default(cuid())
+  cashierId           String
+  status              PosShiftStatus    @default(OPEN)
+  openingCash         Decimal           @db.Decimal(12, 2)
+  expectedClosingCash Decimal?          @db.Decimal(12, 2)
+  actualClosingCash   Decimal?          @db.Decimal(12, 2)
+  openedAt            DateTime          @default(now())
+  closedAt            DateTime?
+  cashier             User              @relation("PosCashier", fields: [cashierId], references: [id], onDelete: Restrict)
+  sales               PosSale[]
+  heldSales           PosHeldSale[]
+  cashMovements       PosCashMovement[]
+  exchanges           PosExchange[]
+
+  @@index([cashierId, status])
+  @@index([openedAt])
+}
+
+model PosSale {
+  id             String           @id @default(cuid())
+  receiptNumber  String           @unique
+  shiftId        String
+  customerName   String?
+  customerPhone  String?
+  status         PosSaleStatus    @default(COMPLETED)
+  paymentMethod  PosPaymentMethod
+  paymentStatus  PaymentStatus    @default(COMPLETED)
+  subtotal       Decimal          @db.Decimal(12, 2)
+  discount       Decimal          @default(0) @db.Decimal(12, 2)
+  total          Decimal          @db.Decimal(12, 2)
+  refundedAmount Decimal          @default(0) @db.Decimal(12, 2)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  shift          PosShift         @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+  items          PosSaleItem[]
+  refunds        PosRefund[]
+  exchanges      PosExchange[]
+
+  @@index([shiftId, createdAt])
+  @@index([createdAt, status])
+  @@index([paymentStatus])
+}
+
+model PosSaleItem {
+  id          String   @id @default(cuid())
+  saleId      String
+  productId   String?
+  productName String
+  sku         String
+  quantity    Int
+  weightGrams Int?
+  unitPrice   Decimal  @db.Decimal(12, 2)
+  lineTotal   Decimal  @db.Decimal(12, 2)
+  sale        PosSale  @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  exchanges   PosExchangeItem[]
+
+  @@index([saleId])
+  @@index([productId])
+}
+
+model PosHeldSale {
+  id            String   @id @default(cuid())
+  shiftId       String
+  customerName  String?
+  customerPhone String?
+  items         Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  shift         PosShift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@index([shiftId, createdAt])
+}
+
+model PosRefund {
+  id            String          @id @default(cuid())
+  saleId        String
+  requestedById String
+  resolvedById  String?
+  amount        Decimal         @db.Decimal(12, 2)
+  reason        String
+  status        PosRefundStatus @default(REQUESTED)
+  restockStock  Boolean         @default(false)
+  requestedAt   DateTime        @default(now())
+  resolvedAt    DateTime?
+  sale          PosSale         @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  requestedBy   User            @relation("PosRefundRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+  resolvedBy    User?           @relation("PosRefundResolver", fields: [resolvedById], references: [id], onDelete: Restrict)
+
+  @@index([status, requestedAt])
+  @@index([saleId])
+}
+
+model PosCashMovement {
+  id        String              @id @default(cuid())
+  shiftId   String
+  actorId   String
+  type      PosCashMovementType
+  amount    Decimal             @db.Decimal(12, 2)
+  note      String
+  createdAt DateTime            @default(now())
+  shift     PosShift            @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+  actor     User                @relation("PosCashActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([shiftId, createdAt])
+}
+
+model PosExchange {
+  id                   String            @id @default(cuid())
+  idempotencyKey       String            @unique
+  saleId               String
+  cashierId            String
+  shiftId              String
+  resolvedById         String?
+  returnedCredit       Decimal           @db.Decimal(12, 2)
+  replacementTotal     Decimal           @db.Decimal(12, 2)
+  difference           Decimal           @db.Decimal(12, 2)
+  paymentMethod        PosPaymentMethod?
+  refundPaymentMethod  PosPaymentMethod?
+  status               PosExchangeStatus @default(COMPLETED)
+  restockReturnedItems Boolean           @default(true)
+  reason               String?
+  requestedAt          DateTime          @default(now())
+  resolvedAt           DateTime?
+  sale                 PosSale           @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  cashier              User              @relation("PosExchangeCashier", fields: [cashierId], references: [id], onDelete: Restrict)
+  shift                PosShift          @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+  resolvedBy           User?             @relation("PosExchangeResolver", fields: [resolvedById], references: [id], onDelete: Restrict)
+  items                PosExchangeItem[]
+
+  @@index([saleId, requestedAt])
+  @@index([status, requestedAt])
+  @@index([cashierId, requestedAt])
+}
+
+model PosExchangeItem {
+  id             String                 @id @default(cuid())
+  exchangeId     String
+  saleItemId     String?
+  productId      String?
+  type           PosExchangeItemType
+  productName    String
+  sku            String
+  quantity       Int
+  weightGrams    Int?
+  unitPrice      Decimal                @db.Decimal(12, 2)
+  lineTotal      Decimal                @db.Decimal(12, 2)
+  exchange       PosExchange            @relation(fields: [exchangeId], references: [id], onDelete: Cascade)
+  saleItem       PosSaleItem?           @relation(fields: [saleItemId], references: [id], onDelete: SetNull)
+  product        Product?               @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([exchangeId])
+  @@index([saleItemId])
+  @@index([productId])
+}
+
 model Cart {
   id        String     @id @default(cuid())
   userId    String     @unique
@@ -638,6 +803,7 @@ enum UserRole {
   CUSTOMER
   ADMIN
   DELIVERY_PERSON
+  BILLING_STAFF
 }
 
 enum OrderStatus {
@@ -661,6 +827,47 @@ enum PaymentStatus {
   FAILED
   REFUNDED
   CANCELLED
+}
+
+enum PosShiftStatus {
+  OPEN
+  CLOSED
+}
+
+enum PosSaleStatus {
+  COMPLETED
+  PARTIALLY_REFUNDED
+  REFUNDED
+  CANCELLED
+}
+
+enum PosPaymentMethod {
+  CASH
+  DIGITAL
+  PENDING
+}
+
+enum PosRefundStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+}
+
+enum PosExchangeStatus {
+  COMPLETED
+  REFUND_REQUESTED
+  REFUND_APPROVED
+  REFUND_REJECTED
+}
+
+enum PosExchangeItemType {
+  RETURN
+  REPLACEMENT
+}
+
+enum PosCashMovementType {
+  CASH_IN
+  CASH_OUT
 }
 
 enum InventoryTransactionType {

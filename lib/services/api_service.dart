@@ -243,10 +243,37 @@ class ApiService {
       }
     } on FormatException {
       if (response.body.isNotEmpty) {
-        message = response.body;
+        message = _plainTextError(response.body, response.statusCode);
       }
     }
     throw ApiResponseException(message);
+  }
+
+  String _plainTextError(String body, int statusCode) {
+    final plainText = body
+        .replaceAll(
+          RegExp(r'<(script|style)\b[^>]*>.*?</\1>',
+              caseSensitive: false, dotAll: true),
+          ' ',
+        )
+        .replaceAll(RegExp(r'<[^>]+>'), ' ')
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (plainText.isEmpty || plainText.length > 400) {
+      return 'The server returned an error response ($statusCode).';
+    }
+    final missingRoute = RegExp(r'^Cannot GET (/api/v1/admin/billing/\S+)$')
+        .firstMatch(plainText);
+    if (missingRoute != null) {
+      return 'Billing is unavailable on the connected server: '
+          '${missingRoute.group(1)} was not found. The backend release may need updating.';
+    }
+    return plainText;
   }
 }
 

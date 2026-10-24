@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -5,6 +6,7 @@ import '../core/constants.dart';
 import '../core/theme.dart';
 import '../models/user.dart';
 import '../screens/admin/admin_shell.dart';
+import '../screens/billing/billing_shell.dart';
 import '../screens/delivery/delivery_shell.dart';
 import 'main_bottom_nav.dart';
 
@@ -14,6 +16,14 @@ Widget appShellForUser(User? user) {
   }
   if (user?.role.toUpperCase() == 'DELIVERY_PERSON') {
     return const StaffAppearanceBoundary(child: DeliveryShell());
+  }
+  if (user?.role.toUpperCase() == 'BILLING_STAFF') {
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      return const StaffAppearanceBoundary(
+        child: AdminShell(isBillingStaff: true),
+      );
+    }
+    return const StaffAppearanceBoundary(child: BillingShell());
   }
   AppConstants.setThemeOverride(null);
   return const MainBottomNav();

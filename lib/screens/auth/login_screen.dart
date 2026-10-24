@@ -16,11 +16,15 @@ import '../../navigation/app_shell_route.dart';
 
 class LoginScreen extends StatefulWidget {
   final bool isAdminLogin;
+  final bool isBillingLogin;
+  final bool isWindowsStaffLogin;
   final bool returnToCaller;
 
   const LoginScreen({
     super.key,
     this.isAdminLogin = false,
+    this.isBillingLogin = false,
+    this.isWindowsStaffLogin = false,
     this.returnToCaller = false,
   });
 
@@ -42,8 +46,13 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     _secureLogin = SecureLoginService(
-      storageKey:
-          widget.isAdminLogin ? 'saved_admin_login' : 'saved_customer_login',
+      storageKey: widget.isAdminLogin
+          ? 'saved_admin_login'
+          : widget.isBillingLogin
+              ? 'saved_billing_login'
+              : widget.isWindowsStaffLogin
+                  ? 'saved_windows_staff_login'
+                  : 'saved_customer_login',
     );
     _loadSavedLogin();
   }
@@ -78,16 +87,26 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final identifier = _emailController.text.trim();
     final success = await authProvider.login(
-      _emailController.text.trim(),
+      identifier,
       _passwordController.text,
-      isAdminLogin: widget.isAdminLogin,
+      isAdminLogin: widget.isAdminLogin ||
+          (widget.isWindowsStaffLogin && !identifier.contains('@')),
     );
 
     if (success && mounted) {
-      final requiredRole = widget.isAdminLogin ? 'ADMIN' : null;
-      if (requiredRole != null &&
-          authProvider.currentUser?.role.toUpperCase() != requiredRole) {
+      final requiredRole = widget.isAdminLogin
+          ? 'ADMIN'
+          : widget.isBillingLogin
+              ? 'BILLING_STAFF'
+              : null;
+      final role = authProvider.currentUser?.role.toUpperCase();
+      final roleMismatch = requiredRole != null && role != requiredRole;
+      final windowsRoleMismatch = widget.isWindowsStaffLogin &&
+          role != 'ADMIN' &&
+          role != 'BILLING_STAFF';
+      if (roleMismatch || windowsRoleMismatch) {
         await authProvider.logout();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -98,12 +117,16 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      if (!widget.isAdminLogin) {
+      if (!widget.isAdminLogin &&
+          !widget.isBillingLogin &&
+          !widget.isWindowsStaffLogin) {
         await ShownTodayStore.markLoginOfferPending();
       }
       if (!fromSavedLogin) await _offerToSavePassword();
       if (!mounted) return;
-      if (!widget.isAdminLogin) {
+      if (!widget.isAdminLogin &&
+          !widget.isBillingLogin &&
+          !widget.isWindowsStaffLogin) {
         final userId = authProvider.currentUser?.id;
         if (userId != null) {
           await CustomerLocationConsent.requestAfterSignIn(
@@ -113,7 +136,9 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
       if (!mounted) return;
-      if (widget.returnToCaller && !widget.isAdminLogin) {
+      if (widget.returnToCaller &&
+          !widget.isAdminLogin &&
+          !widget.isBillingLogin) {
         Navigator.pop(context, true);
       } else {
         Navigator.pushAndRemoveUntil(
@@ -251,7 +276,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.isAdminLogin) AppConstants.setThemeOverride(null);
+    if (!widget.isAdminLogin &&
+        !widget.isBillingLogin &&
+        !widget.isWindowsStaffLogin) {
+      AppConstants.setThemeOverride(null);
+    }
     final authProvider = Provider.of<AuthProvider>(context);
     final compactThemeControl = MediaQuery.sizeOf(context).width <= 400;
 
@@ -297,7 +326,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 24),
                 Text(
-                  widget.isAdminLogin ? 'Admin sign in' : 'Welcome Back',
+                  widget.isAdminLogin
+                      ? 'Admin sign in'
+                      : widget.isBillingLogin
+                          ? 'Billing staff sign in'
+                          : widget.isWindowsStaffLogin
+                              ? 'Store staff sign in'
+                              : 'Welcome Back',
                   style: TextStyle(
                     fontSize: 26,
                     fontWeight: FontWeight.bold,
@@ -308,7 +343,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 Text(
                   widget.isAdminLogin
                       ? 'Sign in with your store administrator account.'
-                      : 'Log in to order everyday essentials and groceries from Ram Prasad General Store.',
+                      : widget.isBillingLogin
+                          ? 'Sign in with your verified billing staff account.'
+                          : widget.isWindowsStaffLogin
+                              ? 'Sign in with your administrator username or billing staff email.'
+                              : 'Log in to order everyday essentials and groceries from Ram Prasad General Store.',
                   style: TextStyle(
                     color: AppConstants.textMuted,
                     fontSize: 13,
@@ -319,13 +358,18 @@ class _LoginScreenState extends State<LoginScreen> {
                 // Email
                 TextFormField(
                   controller: _emailController,
-                  keyboardType: widget.isAdminLogin
-                      ? TextInputType.text
-                      : TextInputType.emailAddress,
+                  keyboardType:
+                      widget.isAdminLogin || widget.isWindowsStaffLogin
+                          ? TextInputType.text
+                          : TextInputType.emailAddress,
                   decoration: InputDecoration(
                     labelText: widget.isAdminLogin
                         ? 'Admin username or email'
-                        : 'Email Address',
+                        : widget.isBillingLogin
+                            ? 'Billing staff email'
+                            : widget.isWindowsStaffLogin
+                                ? 'Admin username or staff email'
+                                : 'Email Address',
                     prefixIcon: const Icon(Icons.email_outlined),
                   ),
                   validator: (val) {
@@ -334,7 +378,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           ? 'Please enter admin username'
                           : 'Please enter email';
                     }
-                    if (!widget.isAdminLogin && !val.contains('@')) {
+                    if (!widget.isAdminLogin &&
+                        !widget.isWindowsStaffLogin &&
+                        !val.contains('@')) {
                       return 'Enter a valid email address';
                     }
                     return null;
@@ -390,7 +436,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
-                if (!widget.isAdminLogin)
+                if (!widget.isAdminLogin &&
+                    !widget.isBillingLogin &&
+                    !widget.isWindowsStaffLogin)
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
@@ -414,7 +462,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   isLoading: authProvider.isLoading,
                   onPressed: _handleLogin,
                 ),
-                if (!widget.isAdminLogin) ...[
+                if (!widget.isAdminLogin &&
+                    !widget.isBillingLogin &&
+                    !widget.isWindowsStaffLogin) ...[
                   const SizedBox(height: 8),
                   Center(
                     child: TextButton(
