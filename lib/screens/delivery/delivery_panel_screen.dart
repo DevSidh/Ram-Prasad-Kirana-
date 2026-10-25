@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants.dart';
+import '../../core/order_time.dart';
 import '../../models/delivery_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
@@ -1050,6 +1051,13 @@ class _AssignmentCard extends StatelessWidget {
                 ),
               ],
             ),
+            if (order.createdAt != null) ...[
+              const SizedBox(height: 5),
+              _InfoLine(
+                icon: Icons.schedule_outlined,
+                text: 'Ordered ${formatOrderPlacedAt(order.createdAt)}',
+              ),
+            ],
             const SizedBox(height: 12),
             Text(
               order.customerName,

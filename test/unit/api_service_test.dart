@@ -248,8 +248,39 @@ void main() {
         isA<ApiResponseException>().having(
           (error) => error.message,
           'message',
-          'Service unavailable',
+          'The ordering service is temporarily unavailable. Check My Orders '
+              'before retrying in case your order was accepted.',
         ),
+      ),
+    );
+    client.close();
+  });
+
+  test('Render gateway errors are concise and retain their HTTP status',
+      () async {
+    final client = MockClient((request) async => http.Response(
+          '<!doctype html><html><body><h1>502 Bad Gateway</h1>'
+          '<p>Request ID: example</p><p>This service is currently unavailable.'
+          '</p></body></html>',
+          502,
+          headers: {'content-type': 'text/html'},
+        ));
+    final api = ApiService(
+      baseUrl: 'https://store.example/api/v1',
+      client: client,
+    );
+
+    await expectLater(
+      api.post('/orders', const {}),
+      throwsA(
+        isA<ApiResponseException>()
+            .having(
+              (error) => error.message,
+              'message',
+              'The ordering service is temporarily unavailable. Check My '
+                  'Orders before retrying in case your order was accepted.',
+            )
+            .having((error) => error.statusCode, 'statusCode', 502),
       ),
     );
     client.close();

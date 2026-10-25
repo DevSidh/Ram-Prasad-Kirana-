@@ -255,10 +255,10 @@ class _RoadPainter extends CustomPainter {
     ];
     for (final cloud in clouds) {
       final span = size.width + 240;
-      final cx = ((cloud[0] * size.width - travel * cloud[3] * 10) % span +
-              span) %
-          span -
-          120;
+      final cx =
+          ((cloud[0] * size.width - travel * cloud[3] * 10) % span + span) %
+                  span -
+              120;
       final cy = size.height * cloud[1];
       final radius = cloud[2] / 2;
       canvas.drawCircle(Offset(cx, cy), radius * 0.7, cloudPaint);

@@ -237,6 +237,16 @@ class ApiService {
       return jsonDecode(response.body);
     }
 
+    if (response.statusCode == 502 ||
+        response.statusCode == 503 ||
+        response.statusCode == 504) {
+      throw ApiResponseException(
+        'The ordering service is temporarily unavailable. Check My Orders '
+        'before retrying in case your order was accepted.',
+        statusCode: response.statusCode,
+      );
+    }
+
     String message = 'Server error ${response.statusCode}';
     try {
       final errorJson = jsonDecode(response.body);
@@ -268,7 +278,7 @@ class ApiService {
         message = _plainTextError(response.body, response.statusCode);
       }
     }
-    throw ApiResponseException(message);
+    throw ApiResponseException(message, statusCode: response.statusCode);
   }
 
   String _plainTextError(String body, int statusCode) {
@@ -312,8 +322,9 @@ class ApiService {
 
 class ApiResponseException implements Exception {
   final String message;
+  final int? statusCode;
 
-  const ApiResponseException(this.message);
+  const ApiResponseException(this.message, {this.statusCode});
 
   @override
   String toString() => message;

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/order_time.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
@@ -536,8 +537,10 @@ class _DeliveryOrderAdminCard extends StatelessWidget {
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4),
           child: Text(
+            'ORDERED ${formatOrderPlacedAt(order.createdAt)}\n'
             '$deliveryStatus · ${order.status.replaceAll('_', ' ')} · '
             'Rs. ${order.total.toStringAsFixed(0)}',
+            maxLines: 2,
             style: Theme.of(context).textTheme.labelSmall,
           ),
         ),
@@ -864,11 +867,11 @@ class _DeliveryPersonCard extends StatelessWidget {
                     '${person.isAvailable ? 'On duty' : 'Off duty'} · '
                     '${person.activeDeliveries} active deliveries',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: person.isActive
-                          ? AppColors.successText
-                          : AppColors.muted,
-                      fontWeight: FontWeight.w700,
-                    ),
+                          color: person.isActive
+                              ? AppColors.successText
+                              : AppColors.muted,
+                          fontWeight: FontWeight.w700,
+                        ),
                   ),
                 ],
               ),

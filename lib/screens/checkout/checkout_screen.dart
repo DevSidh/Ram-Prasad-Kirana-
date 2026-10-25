@@ -567,8 +567,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
     } catch (error) {
       if (mounted) {
+        final gatewayUnavailable = error is ApiResponseException &&
+            (error.statusCode == 502 ||
+                error.statusCode == 503 ||
+                error.statusCode == 504);
         final message = orderRequestStarted &&
-                (error is ApiTimeoutException || error is ApiNetworkException)
+                (error is ApiTimeoutException ||
+                    error is ApiNetworkException ||
+                    gatewayUnavailable)
             ? 'We could not confirm whether your order was accepted. Check My Orders before retrying. Retrying from this checkout is protected against duplicates.'
             : error.toString().replaceFirst('Exception: ', '');
         ScaffoldMessenger.of(context).showSnackBar(

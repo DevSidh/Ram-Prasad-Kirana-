@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:printing/printing.dart';
 
 import '../../core/constants.dart';
+import '../../core/order_time.dart';
 import '../../models/order.dart';
 import '../../providers/order_provider.dart';
 import '../../providers/theme_provider.dart';
@@ -265,6 +266,24 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
                     color: AppConstants.textDark),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(
+                    Icons.schedule_outlined,
+                    size: 13,
+                    color: AppConstants.textMuted,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    'Ordered ${formatOrderPlacedAt(ord.createdAt)}',
+                    style: TextStyle(
+                      color: AppConstants.textMuted,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
               ),
               Text(
                 'To: ${ord.address.street}',

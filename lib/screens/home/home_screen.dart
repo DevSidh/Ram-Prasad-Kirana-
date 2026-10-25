@@ -29,10 +29,10 @@ import '../../widgets/product_quick_view.dart';
 import '../../widgets/cart_flight_overlay.dart';
 import '../../widgets/weight_quantity_dialog.dart';
 import '../../widgets/home_greeting_diya.dart';
-import '../../widgets/home_diwali_greeting.dart';
 import '../../widgets/offer_popup.dart';
 import '../../widgets/store_animation.dart';
 import '../../widgets/unread_notification_indicator.dart';
+import '../../widgets/home_diwali_greeting.dart';
 import '../product/product_list_screen.dart';
 import '../search/search_screen.dart' show showSearchOverlay;
 import '../profile/address_book_screen.dart';
@@ -52,7 +52,6 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
   final ValueNotifier<double> _scrollOffset = ValueNotifier(0);
-  final ValueNotifier<bool> _diwaliAnimationVisible = ValueNotifier(true);
   final Map<String, GlobalKey> _categoryChipKeys = {};
   bool _offersOnly = false;
   bool _offerPopupCheckStarted = false;
@@ -64,7 +63,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _backendRecoveryAttempt = 0;
   bool _backendRecoveryInProgress = false;
   bool _appIsForeground = true;
-  bool _showDiwaliAnimation = true;
+  bool _showDiwaliAnimation = false;
   String? _lastAuthenticatedUserId;
   late final AuthProvider _authProvider;
 
@@ -78,6 +77,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _authProvider = context.read<AuthProvider>();
     _lastAuthenticatedUserId =
         _authProvider.isAuthenticated ? _authProvider.currentUser?.id : null;
+    _showDiwaliAnimation = _isCustomer;
     _authProvider.addListener(_handleAuthSessionChanged);
     _recoveryProductProvider = context.read<ProductProvider>();
     _recoveryAvailabilityProvider = context.read<StoreAvailabilityProvider>();
@@ -92,31 +92,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
+  bool get _isCustomer =>
+      _authProvider.isAuthenticated &&
+      _authProvider.currentUser?.role.toUpperCase() == 'CUSTOMER';
+
   void _handleAuthSessionChanged() {
     if (!mounted) return;
     final userId =
         _authProvider.isAuthenticated ? _authProvider.currentUser?.id : null;
-    final isNewLogin = userId != null && userId != _lastAuthenticatedUserId;
+    if (userId == _lastAuthenticatedUserId) return;
     _lastAuthenticatedUserId = userId;
-    if (isNewLogin && !_showDiwaliAnimation) {
-      setState(() => _showDiwaliAnimation = true);
-    }
+    final isCustomer = _isCustomer;
+    setState(() => _showDiwaliAnimation = isCustomer);
+    if (!isCustomer) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_checkAndShowOffer());
+    });
   }
 
   void _dismissDiwaliAnimation() {
     if (!_showDiwaliAnimation) return;
     setState(() => _showDiwaliAnimation = false);
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _updateDiwaliAnimationVisibility();
+    unawaited(_checkAndShowOffer());
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _appIsForeground = state == AppLifecycleState.resumed;
+    if (mounted) setState(() {});
     if (!_appIsForeground) {
       _backendRecoveryTimer?.cancel();
       _backendRecoveryTimer = null;
@@ -200,6 +203,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         authProvider.currentUser?.role.toUpperCase() != 'CUSTOMER') {
       return;
     }
+    if (_showDiwaliAnimation) return;
     _offerPopupCheckStarted = true;
     try {
       final preferences = await SharedPreferences.getInstance();
@@ -241,15 +245,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _scrollController.hasClients ? _scrollController.offset : 0.0;
     if ((offset - _scrollOffset.value).abs() >= 1) {
       _scrollOffset.value = offset;
-    }
-
-    _updateDiwaliAnimationVisibility();
-  }
-
-  void _updateDiwaliAnimationVisibility() {
-    final animationVisible = _appIsForeground;
-    if (_diwaliAnimationVisible.value != animationVisible) {
-      _diwaliAnimationVisible.value = animationVisible;
     }
   }
 
@@ -303,7 +298,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ..removeListener(_handleScroll)
       ..dispose();
     _scrollOffset.dispose();
-    _diwaliAnimationVisible.dispose();
     super.dispose();
   }
 
@@ -1215,15 +1209,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
               if (_showDiwaliAnimation)
                 Positioned.fill(
-                  child: ValueListenableBuilder<bool>(
-                    valueListenable: _diwaliAnimationVisible,
-                    builder: (context, isVisible, _) => HomeDiwaliGreeting(
-                      key: ValueKey('diwali-greeting-${user?.id ?? 'guest'}'),
-                      isVisible: isVisible,
-                      greeting: greeting,
-                      userName: userName,
-                      onDismiss: _dismissDiwaliAnimation,
+                  child: HomeDiwaliGreeting(
+                    key: ValueKey(
+                      'diwali-greeting-${user?.id ?? 'guest'}',
                     ),
+                    isVisible: _appIsForeground,
+                    greeting: greeting,
+                    userName: userName,
+                    onDismiss: _dismissDiwaliAnimation,
                   ),
                 ),
             ],

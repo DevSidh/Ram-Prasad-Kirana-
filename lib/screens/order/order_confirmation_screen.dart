@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/animation_trials.dart';
 import '../../core/constants.dart';
 import '../../models/buying_streak.dart';
 import '../../models/cart_item.dart';
@@ -12,6 +13,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/api_service.dart';
+import '../../widgets/diwali_loop.dart';
 import '../../widgets/product_thumbnail.dart';
 import '../../widgets/store_animation.dart';
 import 'order_tracking_screen.dart';
@@ -32,12 +34,23 @@ class OrderConfirmationScreen extends StatelessWidget {
           child: Column(
             children: [
               const SizedBox(height: 18),
-              const StoreAnimation(
-                assetPath: 'animations/order_success.lottie',
-                size: 130,
-                semanticLabel: 'Order successfully placed',
-                loop: false,
-              ),
+              if (AnimationTrials.paymentSuccessWebpEnabled &&
+                  order.paymentMethod != 'COD' &&
+                  order.paymentStatus == 'COMPLETED')
+                const DiwaliLoop(
+                  asset: DiwaliLoop.paymentSuccess,
+                  width: 130,
+                  height: 130,
+                  semanticLabel: 'Payment successfully completed',
+                  isPlaying: true,
+                )
+              else
+                const StoreAnimation(
+                  assetPath: 'animations/order_success.lottie',
+                  size: 130,
+                  semanticLabel: 'Order successfully placed',
+                  loop: false,
+                ),
               const SizedBox(height: 24),
               Text(
                 context.tr('Congratulations!'),

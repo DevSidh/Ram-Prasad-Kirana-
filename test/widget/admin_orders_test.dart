@@ -38,8 +38,7 @@ class _OrdersApi extends ApiService {
       return {
         'orders': [
           {'id': 'order-1', 'orderNumber': 'FH-1001'},
-          if (newOrderAdded)
-            {'id': 'order-2', 'orderNumber': 'FH-1002'},
+          if (newOrderAdded) {'id': 'order-2', 'orderNumber': 'FH-1002'},
         ],
       };
     }
@@ -108,7 +107,6 @@ class _OrdersApi extends ApiService {
   Future<dynamic> patch(String endpoint, Map<String, dynamic> body) async {
     patches.add((endpoint, body));
   }
-
 }
 
 void main() {
@@ -124,6 +122,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('FH-1001'), findsOneWidget);
+    expect(find.textContaining('ORDERED '), findsOneWidget);
     await tester.tap(find.text('FH-1001'));
     await tester.pumpAndSettle();
     expect(find.text('Rice × 2'), findsOneWidget);
@@ -151,7 +150,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('clear-all-order-item-details')), findsNothing);
+    expect(find.byKey(const ValueKey('clear-all-order-item-details')),
+        findsNothing);
     expect(find.textContaining('Cancelling preserves order'), findsOneWidget);
     await tester.tap(find.text('FH-1001'));
     await tester.pumpAndSettle();

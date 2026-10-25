@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/admin_models.dart';
+import '../../core/order_time.dart';
 import '../../services/admin_order_notification_service.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
@@ -602,9 +603,10 @@ class _AdminOrderCard extends StatelessWidget {
           padding: const EdgeInsets.only(top: 5),
           child: Text(
             '${order.customerName} · ${order.customerPhone}\n'
+            'ORDERED ${formatOrderPlacedAt(order.createdAt)}\n'
             '${statusLabel.toUpperCase()} · ${order.paymentMethod} '
             '${order.paymentStatus} · Rs. ${order.total.toStringAsFixed(0)}',
-            maxLines: 2,
+            maxLines: 3,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -911,8 +913,7 @@ class _EmptyOrders extends StatelessWidget {
       padding: EdgeInsets.symmetric(vertical: 44),
       child: Column(
         children: [
-          Icon(Icons.receipt_long_outlined,
-              size: 42, color: AppColors.primary),
+          Icon(Icons.receipt_long_outlined, size: 42, color: AppColors.primary),
           SizedBox(height: 12),
           Text('No orders found',
               style: TextStyle(fontWeight: FontWeight.w800)),

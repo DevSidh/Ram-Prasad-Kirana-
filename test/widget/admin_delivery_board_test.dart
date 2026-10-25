@@ -106,6 +106,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('FH-501'), findsOneWidget);
+    expect(find.textContaining('ORDERED '), findsOneWidget);
     await tester.tap(find.textContaining('FH-501'));
     await tester.pumpAndSettle();
     expect(find.text('Call at the gate.'), findsOneWidget);

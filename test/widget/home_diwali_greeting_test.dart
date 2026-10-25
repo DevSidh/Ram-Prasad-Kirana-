@@ -4,67 +4,39 @@ import 'package:freshharvest_grocery/widgets/home_diwali_greeting.dart';
 import 'package:freshharvest_grocery/widgets/store_animation.dart';
 
 void main() {
-  for (final size in const [Size(360, 640), Size(440, 956)]) {
-    testWidgets('opens the full Diwali animation at $size', (tester) async {
-      tester.view.physicalSize = size;
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets('closing the login greeting removes it from Home',
+      (tester) async {
+    var visible = true;
 
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(body: HomeDiwaliGreeting()),
-        ),
-      );
-
-      final animation = tester.widget<StoreAnimation>(
-        find.byType(StoreAnimation),
-      );
-      expect(animation.assetPath, 'animations/diwali_greeting.lottie');
-      expect(animation.aspectRatio, 600 / 1253);
-      expect(animation.loop, isTrue);
-      expect(animation.isVisible, isTrue);
-      expect(
-        find.byKey(
-          const ValueKey('store-animation-animations/diwali_greeting.lottie'),
-        ),
-        findsOneWidget,
-      );
-      expect(find.text('Hello, there'), findsOneWidget);
-      expect(find.textContaining('FESTIVAL OF LIGHTS'), findsNothing);
-      expect(tester.takeException(), isNull);
-    });
-  }
-
-  testWidgets('pauses when the home tab is not visible', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(
+      MaterialApp(
         home: Scaffold(
-          body: HomeDiwaliGreeting(isVisible: false),
+          body: StatefulBuilder(
+            builder: (context, setState) => visible
+                ? HomeDiwaliGreeting(
+                    isVisible: true,
+                    greeting: 'Good evening',
+                    userName: 'Asha',
+                    onDismiss: () => setState(() => visible = false),
+                  )
+                : const SizedBox.shrink(),
+          ),
         ),
       ),
     );
 
     expect(
-      tester.widget<StoreAnimation>(find.byType(StoreAnimation)).isVisible,
-      isFalse,
+      tester.widget<StoreAnimation>(find.byType(StoreAnimation)).assetPath,
+      'animations/festival_splash.lottie',
     );
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('closes the entire animation when X is tapped', (tester) async {
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(body: HomeDiwaliGreeting()),
-      ),
-    );
+    expect(find.text('Good evening, Asha'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Close Diwali animation'));
     await tester.pump();
-
-    expect(find.byType(StoreAnimation), findsNothing);
+    expect(find.byType(HomeDiwaliGreeting), findsNothing);
     expect(find.byTooltip('Close Diwali animation'), findsNothing);
-    expect(find.textContaining('FESTIVAL OF LIGHTS'), findsNothing);
+    expect(find.byKey(const ValueKey('home-diwali-replay-tile')), findsNothing);
+    expect(find.text('Festival of Lights'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

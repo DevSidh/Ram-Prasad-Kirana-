@@ -190,12 +190,11 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    await tester.tap(find.byTooltip('Close Diwali animation'));
-    await tester.pump();
     expect(
         find.byKey(const ValueKey(
             'store-animation-animations/diwali_greeting.lottie')),
         findsNothing);
+    expect(find.byTooltip('Close Diwali animation'), findsNothing);
     await tester.tap(find.byKey(const ValueKey('home-coupon-gift-button')));
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pump();
@@ -353,18 +352,30 @@ void main() {
     await auth.login('customer@example.com', 'password');
     await tester.pump();
     expect(find.byTooltip('Close Diwali animation'), findsOneWidget);
+    expect(find.byType(PageView), findsOneWidget);
+    expect(find.byKey(const ValueKey('home-diwali-ribbon-slot')), findsNothing);
     await tester.tap(find.byTooltip('Close Diwali animation'));
     await tester.pump();
-    expect(find.byType(PageView), findsOneWidget);
-    expect(find.byTooltip('Close Diwali animation'), findsNothing);
-    expect(find.byKey(const ValueKey('home-diwali-ribbon-slot')), findsNothing);
+    expect(find.byKey(const ValueKey('home-diwali-replay-tile')), findsNothing);
+    expect(find.text('Festival of Lights'), findsNothing);
+    if (find.byTooltip('Close offer').evaluate().isNotEmpty) {
+      await tester.tap(find.byTooltip('Close offer'));
+      await tester.pump(const Duration(milliseconds: 500));
+    }
     await auth.logout();
     await tester.pump();
     await auth.login('customer@example.com', 'password');
     await tester.pump();
     expect(find.byTooltip('Close Diwali animation'), findsOneWidget);
     await tester.tap(find.byTooltip('Close Diwali animation'));
-    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+    expect(find.byTooltip('Close Diwali animation'), findsNothing);
+    expect(find.byKey(const ValueKey('home-diwali-replay-tile')), findsNothing);
+    expect(find.text('Festival of Lights'), findsNothing);
+    if (find.byTooltip('Close offer').evaluate().isNotEmpty) {
+      await tester.tap(find.byTooltip('Close offer'));
+      await tester.pump(const Duration(milliseconds: 500));
+    }
 
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -700));
     await tester.pump(const Duration(milliseconds: 500));

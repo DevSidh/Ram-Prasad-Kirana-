@@ -12,13 +12,17 @@ import 'package:freshharvest_grocery/providers/store_availability_provider.dart'
 import 'package:freshharvest_grocery/screens/onboarding_screen.dart';
 import 'package:freshharvest_grocery/screens/splash_screen.dart';
 import 'package:freshharvest_grocery/services/api_service.dart';
+import 'package:freshharvest_grocery/widgets/store_animation.dart';
 
 class _StartupApi extends ApiService {
+  final requestedEndpoints = <String>[];
+
   @override
   Future<dynamic> get(
     String endpoint, {
     Map<String, String>? queryParams,
   }) async {
+    requestedEndpoints.add(endpoint);
     if (endpoint == '/store/availability') {
       return {
         'isOrderingEnabled': true,
@@ -58,10 +62,10 @@ void main() {
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     final auth = AuthProvider(apiService: ApiService());
-    final products = ProductProvider(apiService: _StartupApi());
+    final api = _StartupApi();
+    final products = ProductProvider(apiService: api);
     final cart = CartProvider();
-    final availability =
-        StoreAvailabilityProvider(apiService: _StartupApi());
+    final availability = StoreAvailabilityProvider(apiService: api);
     addTearDown(auth.dispose);
     addTearDown(products.dispose);
     addTearDown(cart.dispose);
@@ -90,13 +94,18 @@ void main() {
       find.byKey(const ValueKey('scooter-loading-screen')),
       findsOneWidget,
     );
+    expect(find.byType(CustomPaint), findsWidgets);
+    expect(find.byType(StoreAnimation), findsNothing);
     await tester.pump(const Duration(milliseconds: 1));
     await tester.pumpAndSettle();
 
+    expect(api.requestedEndpoints, contains('/store/availability'));
+    expect(api.requestedEndpoints, contains('/categories'));
+    expect(api.requestedEndpoints, contains('/products'));
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('startup continues while the product catalog is unavailable',
+  testWidgets('startup does not wait for unavailable remote warm-ups',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     final auth = AuthProvider(apiService: ApiService());
@@ -122,7 +131,13 @@ void main() {
         child: const MaterialApp(home: SplashScreen()),
       ),
     );
-    await tester.pump(const Duration(seconds: 8));
+    await tester.pump(const Duration(milliseconds: 1500));
+    expect(
+      find.byKey(const ValueKey('scooter-loading-screen')),
+      findsOneWidget,
+    );
+    expect(find.byType(CustomPaint), findsWidgets);
+    await tester.pump(const Duration(milliseconds: 6500));
     await tester.pumpAndSettle();
 
     expect(find.byType(OnboardingScreen), findsOneWidget);

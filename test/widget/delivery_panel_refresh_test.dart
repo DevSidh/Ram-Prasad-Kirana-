@@ -20,9 +20,36 @@ class _DeliveryApi extends ApiService {
   };
 
   static const _assignments = {
-    'assignments': <dynamic>[],
+    'assignments': <dynamic>[
+      {
+        'id': 'delivery-1',
+        'status': 'ASSIGNED',
+        'assignedAt': '2026-10-10T08:10:00.000Z',
+        'pickedUpAt': null,
+        'deliveredAt': null,
+        'cashCollected': 0,
+        'cashHandedOver': 0,
+        'order': {
+          'id': 'order-1',
+          'orderNumber': 'FH-1001',
+          'status': 'PROCESSING',
+          'paymentMethod': 'COD',
+          'paymentStatus': 'PENDING',
+          'total': 450,
+          'cashDue': 450,
+          'customerName': 'Asha',
+          'customerPhone': '9800000000',
+          'address': 'Main Road, Janakpur',
+          'latitude': null,
+          'longitude': null,
+          'instructions': '',
+          'createdAt': '2026-10-10T08:00:00.000Z',
+          'items': <dynamic>[],
+        },
+      },
+    ],
     'summary': {
-      'assigned': 0,
+      'assigned': 1,
       'inProgress': 0,
       'deliveredToday': 0,
       'cashCollectedToday': 0,
@@ -76,6 +103,21 @@ void main() {
 
     api.completeRefresh();
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('delivery assignment shows the order placement time',
+      (tester) async {
+    final api = _DeliveryApi();
+
+    await tester.pumpWidget(
+      MaterialApp(home: DeliveryPanelScreen(api: api)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Deliveries'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Ordered '), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
