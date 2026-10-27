@@ -66,6 +66,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _appIsForeground = true;
   bool _showDiwaliAnimation = false;
   bool _homeScrollInProgress = false;
+  bool? _pendingHomeScrollActivity;
   Timer? _homeScrollEndTimer;
   String? _lastAuthenticatedUserId;
   late final AuthProvider _authProvider;
@@ -308,9 +309,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _setHomeScrollActivity(bool isScrolling) {
-    if (_homeScrollInProgress == isScrolling) return;
-    _homeScrollInProgress = isScrolling;
-    if (mounted) setState(() {});
+    if (_homeScrollInProgress == isScrolling ||
+        _pendingHomeScrollActivity == isScrolling) {
+      return;
+    }
+    _pendingHomeScrollActivity = isScrolling;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pendingHomeScrollActivity = null;
+      if (!mounted || _homeScrollInProgress == isScrolling) return;
+      setState(() => _homeScrollInProgress = isScrolling);
+    });
   }
 
   @override

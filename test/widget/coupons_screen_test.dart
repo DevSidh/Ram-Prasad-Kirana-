@@ -137,7 +137,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('DIWALI50'), findsOneWidget);
 
-    await tester.tap(find.text('Use at checkout'));
+    await tester.tap(find.text('Add coupon to cart'));
     await tester.pumpAndSettle();
 
     expect(cart.suggestedCouponCode, 'DIWALI50');

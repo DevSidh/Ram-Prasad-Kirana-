@@ -306,12 +306,14 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
       await api.submitBarcodeScannerResult(code: code, barcode: value);
       _lastRemoteSentValue = value;
       unawaited(SystemSound.play(SystemSoundType.alert));
-      if (mounted)
+      if (mounted) {
         setState(() => _remoteStatus = 'Barcode sent to the computer.');
+      }
     } catch (error) {
-      if (mounted)
+      if (mounted) {
         setState(() => _remoteStatus =
             'Could not send barcode. Check the connection or pairing code.');
+      }
     } finally {
       await Future<void>.delayed(const Duration(milliseconds: 1200));
       _remoteSending = false;

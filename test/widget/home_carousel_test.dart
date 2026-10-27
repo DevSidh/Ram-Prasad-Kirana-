@@ -200,7 +200,7 @@ void main() {
     await tester.pump();
     expect(find.text('Coupons'), findsOneWidget);
     expect(find.text('DIWALI50'), findsOneWidget);
-    await tester.tap(find.text('Use at checkout'));
+    await tester.tap(find.text('Add coupon to cart'));
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pump();
     expect(cart.suggestedCouponCode, 'DIWALI50');

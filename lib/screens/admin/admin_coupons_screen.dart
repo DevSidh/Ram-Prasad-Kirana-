@@ -399,9 +399,9 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
                         isDense: true,
                       ),
                       items: [
-                        DropdownMenuItem<String?>(
+                        const DropdownMenuItem<String?>(
                           value: null,
-                          child: const Text('No coupon'),
+                          child: Text('No coupon'),
                         ),
                         for (final coupon in _coupons.where(
                           (coupon) =>

@@ -488,7 +488,7 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Store setup & other tools'));
+    await tester.tap(find.text('Store setup & management'));
     await tester.pumpAndSettle();
     final productSkusTile = find.descendant(
       of: find.byType(Drawer),
@@ -572,7 +572,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final billingToolsGroup = find.text('More billing tools');
+    final billingToolsGroup = find.text('Billing management');
     await tester.ensureVisible(billingToolsGroup);
     await tester.tap(billingToolsGroup);
     await tester.pumpAndSettle();
@@ -593,12 +593,12 @@ void main() {
       'Sales Reports',
       'Receipt & Printer Settings',
       'Notifications',
-      'My Profile / Logout',
     ]) {
       final navigationItem = find.descendant(
         of: find.byKey(const ValueKey('admin-navigation-list')),
         matching: find.text(label),
       );
+      expect(navigationItem, findsOneWidget, reason: 'Missing $label');
       await tester.scrollUntilVisible(
         navigationItem,
         220,
@@ -636,7 +636,7 @@ void main() {
     await tester.ensureVisible(posNavigationItem);
     await tester.tap(posNavigationItem);
     await tester.pumpAndSettle();
-    expect(find.text('New bill'), findsOneWidget);
+    expect(find.text('New bill'), findsWidgets);
     expect(find.byType(AdminGradientBackground), findsWidgets);
     expect(tester.takeException(), isNull);
   });

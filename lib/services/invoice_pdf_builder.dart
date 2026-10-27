@@ -52,7 +52,7 @@ class InvoicePdfBuilder {
               pw.Text(
                 'RAM PRASAD GENERAL STORE',
                 textAlign: pw.TextAlign.center,
-                style: pw.TextStyle(
+                style: const pw.TextStyle(
                   color: ink,
                   fontSize: 17,
                   fontWeight: pw.FontWeight.bold,

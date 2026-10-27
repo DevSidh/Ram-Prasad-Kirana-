@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:freshharvest_grocery/core/constants.dart';
 import 'package:freshharvest_grocery/providers/auth_provider.dart';
+import 'package:freshharvest_grocery/providers/cart_provider.dart';
 import 'package:freshharvest_grocery/providers/theme_provider.dart';
 import 'package:freshharvest_grocery/screens/notifications/notifications_screen.dart';
 import 'package:freshharvest_grocery/services/api_service.dart';
@@ -122,6 +123,7 @@ void main() {
           Provider<ApiService>.value(value: api),
           ChangeNotifierProvider<AuthProvider>.value(value: auth),
           ChangeNotifierProvider<ThemeProvider>.value(value: theme),
+          ChangeNotifierProvider(create: (_) => CartProvider()),
         ],
         child: const MaterialApp(home: NotificationsScreen()),
       ),
@@ -130,8 +132,12 @@ void main() {
     await tester.tap(find.text('FASTSTORE'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Coupon SAVE10 is ready to use at checkout.'),
-        findsOneWidget);
+    expect(
+      find.text(
+        'Coupon SAVE10 was added to your cart and will be checked at checkout.',
+      ),
+      findsOneWidget,
+    );
     await tester.tap(find.text('Copy code'));
     await tester.pumpAndSettle();
     expect(find.text('Coupon SAVE10 copied.'), findsOneWidget);

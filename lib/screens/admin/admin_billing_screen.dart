@@ -388,7 +388,9 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           try {
             final decoded = jsonDecode(await entity.readAsString());
             if (decoded is! Map<String, dynamic> ||
-                decoded['paymentStatus'] != 'PENDING') continue;
+                decoded['paymentStatus'] != 'PENDING') {
+              continue;
+            }
             final total = (decoded['total'] as num?)?.toDouble() ?? 0;
             final paid = (decoded['paidAmount'] as num?)?.toDouble() ?? 0;
             if (total <= paid) continue;
@@ -2969,7 +2971,7 @@ class _PosBillDialogState extends State<_PosBillDialog> {
                 children: [
                   TextField(
                     controller: searchController,
-                    decoration: InputDecoration(
+                    decoration: const InputDecoration(
                       prefixIcon: Icon(Icons.search_rounded),
                       hintText: 'Search name or phone',
                     ),
@@ -3095,7 +3097,7 @@ class _PosBillDialogState extends State<_PosBillDialog> {
       items: [
         for (final line in _cart)
           PosSaleItem(
-            id: '${invoiceNumber}-${line.product.id}',
+            id: '$invoiceNumber-${line.product.id}',
             productId: line.product.id,
             productName: line.product.name,
             sku: line.product.sku,
@@ -3666,7 +3668,7 @@ class _PosBillDialogState extends State<_PosBillDialog> {
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   initialValue: _paymentMethod,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     labelText: 'Payment method',
                     isDense: true,
                   ),
