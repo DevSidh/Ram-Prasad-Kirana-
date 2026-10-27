@@ -51,6 +51,14 @@ async function main(): Promise<void> {
         return { id: 'held-1' };
       },
     },
+    invoiceSequence: {
+      upsert: async ({ create }: {
+        create: { year: number; nextNumber: number };
+      }) => ({
+        year: create.year,
+        nextNumber: create.nextNumber,
+      }),
+    },
     posSale: {
       findUnique: async ({ where }: { where: { receiptNumber: string } }) =>
         committedSale?.receiptNumber === where.receiptNumber
@@ -59,6 +67,7 @@ async function main(): Promise<void> {
       create: async ({ data }: {
         data: {
           receiptNumber: string;
+          invoiceNumber: string;
           shiftId: string;
           paymentMethod: string;
           paymentStatus: string;
@@ -72,6 +81,7 @@ async function main(): Promise<void> {
         committedSale = {
           id: 'sale-1',
           receiptNumber: data.receiptNumber,
+          invoiceNumber: data.invoiceNumber,
           shiftId: data.shiftId,
           customerName: null,
           customerPhone: null,
