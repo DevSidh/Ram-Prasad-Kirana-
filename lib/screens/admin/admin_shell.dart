@@ -857,23 +857,26 @@ class _AdminShellState extends State<AdminShell> {
                 minVerticalPadding: 0,
               ),
             ),
-            child: ExpansionTile(
-              key: ValueKey('$title-$expanded'),
-              initiallyExpanded: expanded,
-              tilePadding: const EdgeInsets.symmetric(horizontal: 5),
-              childrenPadding: EdgeInsets.zero,
-              visualDensity: VisualDensity.compact,
-              onExpansionChanged: onChanged,
-              title: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: AppColors.muted,
-                      letterSpacing: 0,
-                    ),
+            child: Material(
+              color: AppColors.sidebar,
+              child: ExpansionTile(
+                key: ValueKey('$title-$expanded'),
+                initiallyExpanded: expanded,
+                tilePadding: const EdgeInsets.symmetric(horizontal: 5),
+                childrenPadding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+                onExpansionChanged: onChanged,
+                title: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: AppColors.muted,
+                        letterSpacing: 0,
+                      ),
+                ),
+                children: children,
               ),
-              children: children,
             ),
           ),
         ],
