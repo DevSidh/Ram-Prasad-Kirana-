@@ -25,10 +25,15 @@ CREATE TABLE "PosOfflineStreakPurchase" (
   CONSTRAINT "PosOfflineStreakPurchase_userId_fkey"
     FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
+
+ALTER TABLE "PosOfflineStreakPurchase" SET (schema_locked = false);
+
 CREATE UNIQUE INDEX "PosOfflineStreakPurchase_invoiceNumber_key"
   ON "PosOfflineStreakPurchase"("invoiceNumber");
 CREATE INDEX "PosOfflineStreakPurchase_userId_purchaseDate_idx"
   ON "PosOfflineStreakPurchase"("userId", "purchaseDate");
+
+ALTER TABLE "PosOfflineStreakPurchase" SET (schema_locked = true);
 
 ALTER TABLE "Order" SET (schema_locked = true);
 ALTER TABLE "PosSale" SET (schema_locked = true);
