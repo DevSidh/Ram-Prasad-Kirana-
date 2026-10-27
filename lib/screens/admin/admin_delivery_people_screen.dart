@@ -335,7 +335,7 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
       children: [
         const AppSectionLabel('Delivery board'),
         const SizedBox(height: 4),
-        const Text(
+        Text(
           'Review orders, customer details and rider progress. Assign ready orders to an on-duty rider.',
           style: TextStyle(color: AppColors.muted, height: 1.4),
         ),
@@ -416,8 +416,8 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
             child: Center(child: CircularProgressIndicator()),
           )
         else if (orders.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 18),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 18),
             child: Text(
               'No orders match this delivery view.',
               style: TextStyle(color: AppColors.muted),
@@ -761,8 +761,8 @@ class _CashHandoverSection extends StatelessWidget {
                 ),
               )
             else if (deliveries.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(top: 12),
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
                 child: Text(
                   'No customer cash is waiting for store handover.',
                   style: TextStyle(color: AppColors.muted),
@@ -1049,18 +1049,18 @@ class _EmptyRiders extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.all(36),
+    return Padding(
+      padding: const EdgeInsets.all(36),
       child: Column(
         children: [
           Icon(Icons.people_outline_rounded,
               size: 42, color: AppColors.primary),
-          SizedBox(height: 10),
-          Text(
+          const SizedBox(height: 10),
+          const Text(
             'No delivery staff yet',
             style: TextStyle(fontWeight: FontWeight.w800),
           ),
-          SizedBox(height: 4),
+          const SizedBox(height: 4),
           Text(
             'Add a staff account to start assigning prepared orders.',
             textAlign: TextAlign.center,
@@ -1087,7 +1087,7 @@ class _DeliveryAdminNotice extends StatelessWidget {
       ),
       child: Text(
         message,
-        style: const TextStyle(color: AppColors.errorText),
+        style: TextStyle(color: AppColors.errorText),
       ),
     );
   }

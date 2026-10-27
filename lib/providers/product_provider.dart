@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/category.dart';
 import '../models/product.dart';
+import '../models/wholesale_item.dart';
 import '../services/api_service.dart';
 
 class ProductProvider extends ChangeNotifier {
@@ -410,6 +411,31 @@ class ProductProvider extends ChangeNotifier {
       }
     }
     return suggestions;
+  }
+
+  Future<List<Product>> searchWholesaleProducts(String query) async {
+    final normalizedQuery = query.trim();
+    if (normalizedQuery.isEmpty) return const [];
+
+    final response = await _apiService.get(
+      '/wholesale',
+      queryParams: {
+        'search': normalizedQuery,
+        'page': '1',
+        'limit': '100',
+      },
+    );
+    if (response is! Map<String, dynamic> || response['data'] is! List) {
+      throw const FormatException(
+        'The server returned an invalid wholesale search result.',
+      );
+    }
+
+    return (response['data'] as List)
+        .whereType<Map<String, dynamic>>()
+        .map(WholesaleItem.fromJson)
+        .map((item) => item.toProduct())
+        .toList(growable: false);
   }
 
   void _replaceWishlistIds(Iterable<String> productIds) {

@@ -47,6 +47,7 @@ model User {
   posExchanges           PosExchange[]                @relation("PosExchangeCashier")
   posExchangeDecisions   PosExchange[]                @relation("PosExchangeResolver")
   posPaymentCollections  PosPaymentCollection[]       @relation("PosPaymentCollector")
+  posOfflineStreakPurchases PosOfflineStreakPurchase[]
   supplierPurchaseBills  SupplierPurchaseBill[]
 
   @@index([role])
@@ -61,6 +62,12 @@ model BuyingStreakPurchaseDay {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, dayKey])
+}
+
+model InvoiceSequence {
+  year      Int      @id
+  nextNumber Int     @default(0)
+  updatedAt DateTime @updatedAt
 }
 
 model BuyingStreakRewardConfig {
@@ -405,6 +412,7 @@ model InventoryTransaction {
 model Order {
   id                  String                 @id @default(cuid())
   orderNumber         String                 @unique
+  invoiceNumber       String?                @unique
   userId              String
   addressId           String?
   status              OrderStatus            @default(PLACED)
@@ -506,6 +514,7 @@ model PosShift {
 model PosSale {
   id             String           @id @default(cuid())
   receiptNumber  String           @unique
+  invoiceNumber  String?          @unique
   shiftId        String
   customerName   String?
   customerPhone  String?
@@ -515,6 +524,8 @@ model PosSale {
   paidAmount     Decimal          @default(0) @db.Decimal(12, 2)
   subtotal       Decimal          @db.Decimal(12, 2)
   discount       Decimal          @default(0) @db.Decimal(12, 2)
+  vatRate        Decimal          @default(0) @db.Decimal(6, 2)
+  vatAmount      Decimal          @default(0) @db.Decimal(12, 2)
   total          Decimal          @db.Decimal(12, 2)
   refundedAmount Decimal          @default(0) @db.Decimal(12, 2)
   createdAt      DateTime         @default(now())
@@ -544,6 +555,17 @@ model PosPaymentCollection {
   @@index([createdAt])
   @@index([saleId, createdAt])
   @@index([recordedById, createdAt])
+}
+
+model PosOfflineStreakPurchase {
+  id            String   @id @default(cuid())
+  invoiceNumber String   @unique
+  userId        String
+  purchaseDate  DateTime @default(now())
+  createdAt     DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purchaseDate])
 }
 
 model PosSaleItem {
@@ -838,6 +860,7 @@ model Coupon {
   isActive                Boolean                      @default(true)
   isDeleted               Boolean                      @default(false)
   isAnnounced             Boolean                      @default(false)
+  isBannerFeatured        Boolean                      @default(false)
   expiresAt               DateTime?
   createdAt               DateTime                     @default(now())
   updatedAt               DateTime                     @updatedAt

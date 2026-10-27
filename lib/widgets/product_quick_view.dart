@@ -12,7 +12,8 @@ import '../providers/language_provider.dart';
 import '../providers/product_provider.dart';
 import '../screens/product/product_details_screen.dart';
 import 'cart_flight_overlay.dart';
-import 'product_thumbnail.dart';
+import 'product_discount_price.dart';
+import 'product_image_gallery.dart';
 import 'weight_quantity_dialog.dart';
 
 Future<void> showProductQuickView(
@@ -108,23 +109,24 @@ Future<void> showProductQuickView(
                                 child: ColoredBox(
                                   color: Colors.white,
                                   child: SizedBox(
-                                    height: 210,
+                                    height: 270,
                                     width: double.infinity,
-                                    child: LayoutBuilder(
-                                      builder: (context, constraints) =>
-                                          ProductThumbnail(
-                                        key: previewImageKey,
-                                        imageUrl: product.imageUrl,
-                                        size: constraints.maxWidth,
-                                        width: constraints.maxWidth,
-                                        height: constraints.maxHeight,
-                                        fit: BoxFit.contain,
-                                        borderRadius: BorderRadius.zero,
-                                        fallbackIcon:
-                                            Icons.local_grocery_store_rounded,
-                                        backgroundColor: Colors.white,
-                                        imageWidthFactor: 1,
-                                      ),
+                                    child: Stack(
+                                      children: [
+                                        ProductImageGallery(
+                                          product: product,
+                                          height: 270,
+                                          mainImageKey: previewImageKey,
+                                        ),
+                                        if (productHasSalePrice(product))
+                                          Positioned(
+                                            top: 12,
+                                            left: 12,
+                                            child: ProductDiscountBadge(
+                                              product: product,
+                                            ),
+                                          ),
+                                      ],
                                     ),
                                   ),
                                 ),
@@ -204,12 +206,27 @@ Future<void> showProductQuickView(
                                   Row(
                                     children: [
                                       Expanded(
-                                        child: Text(
-                                          '${AppConstants.currencySymbol}${unitPrice.toStringAsFixed(0)}',
-                                          style: theme.textTheme.headlineSmall
+                                        child: ProductDiscountPrice(
+                                          product: product,
+                                          currentPrice: unitPrice,
+                                          showBadge: false,
+                                          currentPriceStyle: theme
+                                                  .textTheme.headlineSmall
+                                                  ?.copyWith(
+                                                color:
+                                                    theme.colorScheme.primary,
+                                                fontWeight: FontWeight.w800,
+                                              ) ??
+                                              const TextStyle(
+                                                fontSize: 24,
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                          previousPriceStyle: theme
+                                              .textTheme.labelMedium
                                               ?.copyWith(
-                                            color: theme.colorScheme.primary,
-                                            fontWeight: FontWeight.w800,
+                                            color: tokens.textSecondary,
+                                            decoration:
+                                                TextDecoration.lineThrough,
                                           ),
                                         ),
                                       ),

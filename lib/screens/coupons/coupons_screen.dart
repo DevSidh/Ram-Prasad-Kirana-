@@ -329,7 +329,7 @@ class _CouponCard extends StatelessWidget {
               width: double.infinity,
               child: FilledButton(
                 onPressed: onUse,
-                child: const Text('Use at checkout'),
+                child: const Text('Add coupon to cart'),
               ),
             ),
           ],

@@ -457,7 +457,7 @@ class _CustomerCard extends StatelessWidget {
           backgroundColor: AppColors.thumbnailGreen,
           child: Text(
             customer.name.isEmpty ? '?' : customer.name[0].toUpperCase(),
-            style: const TextStyle(
+            style: TextStyle(
               color: AppColors.primary,
               fontWeight: FontWeight.w800,
             ),
@@ -605,7 +605,7 @@ class _CustomerField extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppColors.muted,
               ),
             ),
@@ -632,7 +632,7 @@ class _CustomerNotice extends StatelessWidget {
       ),
       child: Text(
         message,
-        style: const TextStyle(color: AppColors.errorText),
+        style: TextStyle(color: AppColors.errorText),
       ),
     );
   }
@@ -647,7 +647,7 @@ class _EmptyCustomers extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 44),
       child: Column(
         children: [
-          const Icon(Icons.people_outline_rounded,
+          Icon(Icons.people_outline_rounded,
               size: 42, color: AppColors.primary),
           const SizedBox(height: 12),
           const Text('No customers found',

@@ -68,6 +68,7 @@ flutter:
     - assets/animations/
     - assets/onboarding/
     - assets/videos/dia.mp4
+    - assets/videos/faststore_order_placed_preview.mp4
 
 flutter_launcher_icons:
   android: true

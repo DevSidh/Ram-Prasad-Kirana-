@@ -289,6 +289,9 @@ const couponCreateInput = z.object({
     });
   }
 });
+const couponBannerInput = z.object({
+  isBannerFeatured: z.boolean(),
+}).strict();
 const couponActiveInput = z.object({ isActive: z.boolean() }).strict();
 const productCouponInput = z.object({
   customerId: z.string().trim().min(1).max(100),
@@ -513,6 +516,7 @@ function couponResponse(coupon: {
   usedCount: number;
   isActive: boolean;
   isAnnounced: boolean;
+  isBannerFeatured: boolean;
   expiresAt: Date | null;
   createdAt: Date;
 }) {
@@ -1040,6 +1044,25 @@ export function createAdminRouter(
       const coupons = await prisma.coupon.findMany({
         where: { isDeleted: false },
         orderBy: [{ createdAt: 'desc' }, { code: 'asc' }],
+        select: {
+          id: true,
+          code: true,
+          productId: true,
+          assignedUserId: true,
+          discountType: true,
+          discountPercent: true,
+          discountAmount: true,
+          minOrderAmount: true,
+          maxDiscount: true,
+          usageLimit: true,
+          perUserLimit: true,
+          usedCount: true,
+          isActive: true,
+          isAnnounced: true,
+          isBannerFeatured: true,
+          expiresAt: true,
+          createdAt: true,
+        },
       });
       return res.json({ coupons: coupons.map(couponResponse) });
     } catch (error) {
@@ -1215,6 +1238,50 @@ export function createAdminRouter(
     }
   });
 
+  router.patch('/coupons/:id/banner', async (req, res) => {
+    const id = recordIdInput.safeParse(req.params.id);
+    const input = couponBannerInput.safeParse(req.body);
+    if (!id.success) return res.status(400).json({ error: 'Invalid coupon ID.' });
+    if (!input.success) return invalidInput(res, input.error);
+    try {
+      const coupon = await prisma.coupon.findUnique({
+        where: { id: id.data, isDeleted: false },
+        select: { id: true, productId: true, assignedUserId: true, isActive: true },
+      });
+      if (!coupon) return res.status(404).json({ error: 'Coupon not found.' });
+      if (input.data.isBannerFeatured &&
+          (coupon.productId !== null || coupon.assignedUserId !== null || !coupon.isActive)) {
+        return res.status(400).json({
+          error: 'Only active store-wide coupons can appear on the promotion banner.',
+        });
+      }
+      await prisma.$transaction(async (tx) => {
+        if (input.data.isBannerFeatured) {
+          await tx.coupon.updateMany({
+            where: {
+              isDeleted: false,
+              productId: null,
+              assignedUserId: null,
+              id: { not: coupon.id },
+            },
+            data: { isBannerFeatured: false },
+          });
+        }
+        await tx.coupon.update({
+          where: { id: coupon.id },
+          data: { isBannerFeatured: input.data.isBannerFeatured },
+        });
+      });
+      const updated = await prisma.coupon.findUnique({
+        where: { id: coupon.id, isDeleted: false },
+      });
+      if (!updated) return res.status(404).json({ error: 'Coupon not found.' });
+      return res.json({ coupon: couponResponse(updated) });
+    } catch (error) {
+      sendAdminError(error, res);
+    }
+  });
+
   router.delete('/coupons/:id', async (req, res) => {
     const id = recordIdInput.safeParse(req.params.id);
     if (!id.success) return res.status(400).json({ error: 'Invalid coupon ID.' });
@@ -1226,6 +1293,7 @@ export function createAdminRouter(
           isActive: false,
           isDeleted: true,
           isAnnounced: false,
+          isBannerFeatured: false,
         },
       });
       if (removed.count !== 1) {

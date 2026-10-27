@@ -390,10 +390,10 @@ class _CategoryCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadii.card),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
             color: AppColors.cardShadow,
-            offset: Offset(0, 6),
+            offset: const Offset(0, 6),
             blurRadius: 24,
           ),
         ],
@@ -495,18 +495,17 @@ class _EmptyCategories extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(AppRadii.card),
-          boxShadow: const [
+          boxShadow: [
             BoxShadow(
               color: AppColors.cardShadow,
-              offset: Offset(0, 6),
+              offset: const Offset(0, 6),
               blurRadius: 24,
             ),
           ],
         ),
         child: Column(
           children: [
-            const Icon(Icons.category_outlined,
-                size: 34, color: AppColors.muted),
+            Icon(Icons.category_outlined, size: 34, color: AppColors.muted),
             const SizedBox(height: 10),
             const Text('No categories yet',
                 style: TextStyle(fontWeight: FontWeight.w700)),

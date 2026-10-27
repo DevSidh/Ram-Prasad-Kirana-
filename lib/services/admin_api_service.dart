@@ -11,6 +11,40 @@ class AdminApiService {
 
   AdminApiService(this._api);
 
+  Future<String> createBarcodeScannerSession() async {
+    final response =
+        _asMap(await _api.post('/admin/billing/scanner-sessions', {}));
+    final code = response['code'];
+    if (code is! String || code.length != 8) {
+      throw Exception('The server returned an invalid camera pairing code.');
+    }
+    return code;
+  }
+
+  Future<String?> takeBarcodeScannerResult(String code) async {
+    final response = _asMap(await _api.get(
+      '/admin/billing/scanner-sessions/${Uri.encodeComponent(code)}/next',
+    ));
+    return response['barcode'] as String?;
+  }
+
+  Future<void> joinBarcodeScannerSession(String code) async {
+    await _api.post(
+      '/admin/billing/scanner-sessions/${Uri.encodeComponent(code)}/join',
+      {},
+    );
+  }
+
+  Future<void> submitBarcodeScannerResult({
+    required String code,
+    required String barcode,
+  }) async {
+    await _api.post(
+      '/admin/billing/scanner-sessions/${Uri.encodeComponent(code)}/scan',
+      {'barcode': barcode.trim()},
+    );
+  }
+
   Future<AdminBroadcastResult> broadcastNotification({
     required String title,
     required String body,
@@ -160,11 +194,13 @@ class AdminApiService {
     required List<Map<String, dynamic>> items,
     String? customerName,
     String? customerPhone,
+    String? customerId,
   }) async {
     final response = _asMap(await _api.post('/admin/billing/held-sales', {
       'items': items,
       'customerName': customerName,
       'customerPhone': customerPhone,
+      'customerId': customerId,
     }));
     if (response['id'] is! String) {
       throw const FormatException('The server did not save this held bill.');
@@ -180,18 +216,22 @@ class AdminApiService {
     required String idempotencyKey,
     required List<Map<String, dynamic>> items,
     required double discount,
+    double vatRate = 0,
     required String paymentMethod,
     String? customerName,
     String? customerPhone,
+    String? customerId,
     String? heldSaleId,
   }) async {
     final response = _asMap(await _api.post('/admin/billing/sales', {
       'idempotencyKey': idempotencyKey,
       'items': items,
       'discount': discount,
+      'vatRate': vatRate,
       'paymentMethod': paymentMethod,
       'customerName': customerName,
       'customerPhone': customerPhone,
+      'customerId': customerId,
       if (heldSaleId != null) 'heldSaleId': heldSaleId,
     }));
     final sale = response['sale'];
@@ -200,6 +240,16 @@ class AdminApiService {
           'The server did not return the completed bill.');
     }
     return PosSale.fromJson(sale);
+  }
+
+  Future<void> recordOfflineStreakPurchase({
+    required String customerId,
+    required String invoiceNumber,
+  }) async {
+    await _api.post('/admin/billing/offline-streak-purchases', {
+      'customerId': customerId,
+      'invoiceNumber': invoiceNumber,
+    });
   }
 
   Future<PosSalesPage> getPosSales({
@@ -415,6 +465,18 @@ class AdminApiService {
     final coupon = response['coupon'];
     if (coupon is! Map<String, dynamic>) {
       throw Exception('The server did not return the updated coupon.');
+    }
+    return AdminCoupon.fromJson(coupon);
+  }
+
+  Future<AdminCoupon> setCouponBanner(String id, bool isBannerFeatured) async {
+    final response = _asMap(await _api.patch(
+      '/admin/coupons/${Uri.encodeComponent(id)}/banner',
+      {'isBannerFeatured': isBannerFeatured},
+    ));
+    final coupon = response['coupon'];
+    if (coupon is! Map<String, dynamic>) {
+      throw Exception('The server did not return the updated banner coupon.');
     }
     return AdminCoupon.fromJson(coupon);
   }

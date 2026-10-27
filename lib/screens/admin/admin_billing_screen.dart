@@ -1,14 +1,18 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/constants.dart';
 import '../../models/pos_models.dart';
+import '../../models/admin_models.dart';
 import '../../models/scanned_product_barcode.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
@@ -19,9 +23,12 @@ import '../../widgets/product_thumbnail.dart';
 import 'barcode_scanner_screen.dart';
 import 'admin_billing_staff_screen.dart';
 
+const _pendingLocalStreaksPreferenceKey = 'pending_local_streak_receipts_v1';
+
 enum AdminBillingSection {
   dashboard,
   essential,
+  barcodeScanner,
   heldBills,
   billHistory,
   payments,
@@ -72,13 +79,17 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   List<PosExchange> _exchanges = const [];
   String? _exchangeError;
   DateTime? _billHistoryDay;
+  String _billHistorySearch = '';
   DateTime? _reportDay;
   bool _loading = true;
   String? _error;
   bool _working = false;
   int _paperWidthMm = 80;
+  AdminBillingSection _activeSection = AdminBillingSection.dashboard;
   final _scrollController = ScrollController();
   final _customerSearch = TextEditingController();
+  final _barcodeSearch = TextEditingController();
+  List<PosProduct> _barcodeMatches = const [];
   final _sectionKeys = <AdminBillingSection, GlobalKey>{
     for (final section in AdminBillingSection.values) section: GlobalKey(),
   };
@@ -91,6 +102,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   void dispose() {
     _scrollController.dispose();
     _customerSearch.dispose();
+    _barcodeSearch.dispose();
     super.dispose();
   }
 
@@ -98,7 +110,39 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   void initState() {
     super.initState();
     unawaited(_loadPaperWidth());
+    unawaited(_syncPendingLocalStreaks());
     unawaited(_load());
+  }
+
+  Future<void> _syncPendingLocalStreaks() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final pending =
+          preferences.getStringList(_pendingLocalStreaksPreferenceKey) ?? [];
+      final remaining = <String>[];
+      for (final entry in pending) {
+        final value = jsonDecode(entry);
+        if (value is! Map<String, dynamic> ||
+            value['customerId'] is! String ||
+            value['invoiceNumber'] is! String) {
+          continue;
+        }
+        try {
+          await _adminApi.recordOfflineStreakPurchase(
+            customerId: value['customerId'] as String,
+            invoiceNumber: value['invoiceNumber'] as String,
+          );
+        } catch (_) {
+          remaining.add(entry);
+        }
+      }
+      await preferences.setStringList(
+        _pendingLocalStreaksPreferenceKey,
+        remaining,
+      );
+    } catch (_) {
+      // Local bills are independent from streak synchronization.
+    }
   }
 
   Future<void> _loadPaperWidth() async {
@@ -147,6 +191,19 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   }
 
   String? get _billHistoryDayKey => _formatDayKey(_billHistoryDay);
+
+  List<PosSale> get _visibleSales {
+    final query = _billHistorySearch.trim().toLowerCase();
+    if (query.isEmpty) return _sales;
+    return _sales.where((sale) {
+      return (sale.invoiceNumber ?? sale.receiptNumber)
+              .toLowerCase()
+              .contains(query) ||
+          (sale.customerName ?? '').toLowerCase().contains(query) ||
+          (sale.customerPhone ?? '').toLowerCase().contains(query);
+    }).toList(growable: false);
+  }
+
   String? get _reportDayKey => _formatDayKey(_reportDay);
 
   Future<void> _load({int? salesPage, int? pendingPage}) async {
@@ -221,10 +278,12 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       ),
     );
     if (!mounted) return;
-    await _load();
+    if (completedSale?.localPath == null) await _load();
     if (completedSale != null && mounted) {
       var printMessage = '';
-      if (defaultTargetPlatform == TargetPlatform.windows) {
+      if (completedSale.localPath != null) {
+        printMessage = ' Saved on this computer: ${completedSale.localPath}';
+      } else if (defaultTargetPlatform == TargetPlatform.windows) {
         try {
           final printed = await Printing.layoutPdf(
             name: completedSale.receiptNumber,
@@ -272,6 +331,10 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   }
 
   void activateSection(AdminBillingSection section) {
+    if (_isWindowsOperatorMode) {
+      setState(() => _activeSection = section);
+      return;
+    }
     final key = _sectionKeys[section];
     if (key == null || !mounted) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -288,7 +351,9 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
 
   Future<PosProduct?> _scanProduct() async {
     final scanned = await Navigator.of(context).push<ScannedProductBarcode>(
-      MaterialPageRoute(builder: (_) => const BarcodeScannerScreen()),
+      MaterialPageRoute(
+        builder: (_) => BarcodeScannerScreen(api: _adminApi),
+      ),
     );
     if (scanned == null || !mounted) return null;
     try {
@@ -860,6 +925,10 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     if (overview == null) return const SizedBox.shrink();
     final reportOverview = _reportOverview ?? overview;
 
+    if (_isWindowsOperatorMode) {
+      return _buildWindowsOperatorPage(overview, reportOverview);
+    }
+
     return Stack(
       children: [
         RefreshIndicator(
@@ -957,9 +1026,14 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               ),
               const SizedBox(height: 20),
               _sectionHeading(
-                'Recent transactions',
+                'Invoice Management',
                 key: _sectionKeys[AdminBillingSection.billHistory],
                 actions: [
+                  OutlinedButton.icon(
+                    onPressed: _working ? null : _exportSalesCsv,
+                    icon: const Icon(Icons.download_outlined),
+                    label: const Text('Export CSV'),
+                  ),
                   OutlinedButton.icon(
                     onPressed: _selectHistoryDay,
                     icon: const Icon(Icons.calendar_today_outlined),
@@ -979,6 +1053,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                     ),
                 ],
               ),
+              _buildInvoiceManagementToolbar(),
               if (_salesTotal > _salesPageSize)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
@@ -1010,13 +1085,13 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                     ],
                   ),
                 ),
-              if (_sales.isEmpty)
+              if (_visibleSales.isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Text('No bills in this period.'),
+                  child: Text('No invoices found.'),
                 )
               else
-                ..._sales.map(_saleTile),
+                ..._visibleSales.map(_saleTile),
               const SizedBox(height: 20),
               _sectionHeading(
                 'Customers on this page',
@@ -1083,13 +1158,310 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         if (_working)
           Positioned.fill(
             child: ColoredBox(
-              color: AppColors.primary.withValues(alpha: 0.13),
+              color: (AppColors.isWindowsAdminDarkTheme
+                      ? Colors.black
+                      : AppColors.primary)
+                  .withValues(alpha: 0.13),
               child: const Center(child: CircularProgressIndicator()),
             ),
           ),
       ],
     );
   }
+
+  Widget _buildWindowsOperatorPage(
+    PosOverview overview,
+    PosOverview reportOverview,
+  ) {
+    final sections = <Widget>[
+      if (_error != null)
+        MaterialBanner(
+          content: Text(_error!),
+          actions: [TextButton(onPressed: _load, child: const Text('Retry'))],
+        ),
+      ..._windowsOperatorSectionContent(overview, reportOverview),
+      const SizedBox(height: 28),
+    ];
+    return Stack(
+      children: [
+        RefreshIndicator(
+          onRefresh: _load,
+          child: ListView(
+            key: ValueKey('billing-page-${_activeSection.name}'),
+            padding: const EdgeInsets.fromLTRB(8, 8, 30, 36),
+            children: sections,
+          ),
+        ),
+        if (_working)
+          Positioned.fill(
+            child: ColoredBox(
+              color: Colors.black.withValues(alpha: 0.13),
+              child: const Center(child: CircularProgressIndicator()),
+            ),
+          ),
+      ],
+    );
+  }
+
+  List<Widget> _windowsOperatorSectionContent(
+    PosOverview overview,
+    PosOverview reportOverview,
+  ) {
+    switch (_activeSection) {
+      case AdminBillingSection.dashboard:
+        return [
+          _buildHeader(overview),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _metric('Today’s sales', _money(overview.totalSales),
+                  Icons.payments_outlined),
+              _metric('Bills completed', '${overview.completedBills}',
+                  Icons.receipt_long_outlined),
+              _metric('Average bill', _money(overview.averageBillValue),
+                  Icons.show_chart_rounded),
+              _metric('Cash received', _money(overview.cashSales),
+                  Icons.point_of_sale_outlined),
+              _metric('Digital', _money(overview.digitalSales),
+                  Icons.account_balance_wallet_outlined),
+              _metric('Pending', _money(overview.pendingSales),
+                  Icons.pending_actions_outlined),
+              _metric('Refunds', _money(overview.refunds),
+                  Icons.currency_exchange_rounded),
+              _metric('Cancelled', '${overview.cancelledBills}',
+                  Icons.cancel_outlined),
+            ],
+          ),
+          const SizedBox(height: 20),
+          _sectionHeading('Recent invoices'),
+          if (_visibleSales.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Text('No invoices found.'),
+            )
+          else
+            ..._visibleSales.take(5).map(_saleTile),
+        ];
+      case AdminBillingSection.essential:
+        return [_buildWindowsEssentialPage()];
+      case AdminBillingSection.barcodeScanner:
+        return [_buildWindowsBarcodePage()];
+      case AdminBillingSection.heldBills:
+        return [_buildHeldBills()];
+      case AdminBillingSection.billHistory:
+        return [
+          _sectionHeading('Invoice Management'),
+          _buildInvoiceManagementToolbar(),
+          if (_salesTotal > _salesPageSize) _buildSalesPagination(),
+          if (_visibleSales.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Text('No invoices found.'),
+            )
+          else
+            ..._visibleSales.map(_saleTile),
+        ];
+      case AdminBillingSection.payments:
+        return [_buildPayments()];
+      case AdminBillingSection.pendingPayments:
+        return [_buildPendingPayments()];
+      case AdminBillingSection.cashRegister:
+        return [
+          _buildCashRegisterCard(),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _metric('Cash received', _money(overview.cashSales),
+                  Icons.payments_outlined),
+              _metric('Digital payments', _money(overview.digitalSales),
+                  Icons.phone_android_rounded),
+              _metric('Today’s sales', _money(overview.totalSales),
+                  Icons.show_chart_rounded),
+            ],
+          ),
+        ];
+      case AdminBillingSection.customers:
+        return [
+          _sectionHeading('Customers on this page'),
+          _buildCustomers(),
+        ];
+      case AdminBillingSection.returns:
+        return [_buildReturnsAndRefunds()];
+      case AdminBillingSection.reports:
+        return [
+          _sectionHeading(
+            'Sales report · ${reportOverview.day}',
+            actions: [
+              OutlinedButton.icon(
+                onPressed: _selectReportDay,
+                icon: const Icon(Icons.calendar_today_outlined),
+                label: Text(_reportDayKey ?? 'Today'),
+              ),
+              if (_reportDay != null)
+                IconButton(
+                  tooltip: 'Show today’s report',
+                  onPressed: () {
+                    setState(() => _reportDay = null);
+                    unawaited(_load());
+                  },
+                  icon: const Icon(Icons.clear),
+                ),
+            ],
+          ),
+          _buildInsights(reportOverview),
+        ];
+      case AdminBillingSection.printer:
+        return [_printerSettings(overview)];
+      case AdminBillingSection.notifications:
+        return [_buildNotifications()];
+    }
+  }
+
+  Widget _buildWindowsEssentialPage() => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionHeading(
+            'Essential billing actions',
+            actions: [
+              FilledButton.icon(
+                onPressed: _working ? null : () => _newBill(),
+                icon: const Icon(Icons.add_shopping_cart_rounded),
+                label: const Text('New bill'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _working
+                    ? null
+                    : () => activateSection(AdminBillingSection.barcodeScanner),
+                icon: const Icon(Icons.qr_code_scanner_rounded),
+                label: const Text('Barcode scanner'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _showDailyReport,
+                icon: const Icon(Icons.analytics_outlined),
+                label: const Text('Daily report'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _buildCashRegisterCard(),
+        ],
+      );
+
+  Widget _buildWindowsBarcodePage() => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionHeading('Barcode scanner'),
+          const SizedBox(height: 8),
+          Text(
+            'Scan a product with a USB or Bluetooth barcode scanner, or type its barcode or SKU.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _barcodeSearch,
+                  autofocus: true,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: (_) => _searchWindowsBarcode(),
+                  decoration: const InputDecoration(
+                    labelText: 'Scan or enter barcode / SKU',
+                    prefixIcon: Icon(Icons.qr_code_scanner_rounded),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              FilledButton.icon(
+                onPressed: _working ? null : _searchWindowsBarcode,
+                icon: const Icon(Icons.search_rounded),
+                label: const Text('Find product'),
+              ),
+            ],
+          ),
+          if (_barcodeMatches.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 18),
+              child: Text('Scanned products will appear here.'),
+            )
+          else ...[
+            const SizedBox(height: 16),
+            for (final product in _barcodeMatches)
+              AppRowCard(
+                title: product.name,
+                subtitle: '${product.sku} · ${_money(product.price)}',
+                leading: const Icon(Icons.inventory_2_outlined),
+                trailing: FilledButton(
+                  onPressed:
+                      _working ? null : () => _newBill(scannedProduct: product),
+                  child: const Text('Add to bill'),
+                ),
+              ),
+          ],
+        ],
+      );
+
+  Future<void> _searchWindowsBarcode() async {
+    final barcode = _barcodeSearch.text.trim();
+    if (barcode.isEmpty || _working) return;
+    setState(() {
+      _working = true;
+      _barcodeMatches = const [];
+    });
+    try {
+      final matches = await _adminApi.searchPosProducts(barcode);
+      if (!mounted) return;
+      final exact = matches.where((product) =>
+          product.barcode?.toLowerCase() == barcode.toLowerCase() ||
+          product.sku.toLowerCase() == barcode.toLowerCase() ||
+          product.id == barcode);
+      setState(() => _barcodeMatches =
+          exact.isNotEmpty ? exact.toList(growable: false) : matches);
+      if (_barcodeMatches.isEmpty) {
+        _showMessage('No product matched that barcode or SKU.');
+      }
+    } catch (error) {
+      if (mounted) {
+        _showMessage(error.toString().replaceFirst('Exception: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  Widget _buildSalesPagination() => Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Text(
+              '${((_salesPage - 1) * _salesPageSize) + 1}–'
+              '${(_salesPage * _salesPageSize).clamp(0, _salesTotal)}'
+              ' of $_salesTotal bills',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            IconButton(
+              tooltip: 'Previous bills page',
+              onPressed: _loading || _salesPage <= 1
+                  ? null
+                  : () => _load(salesPage: _salesPage - 1),
+              icon: const Icon(Icons.chevron_left_rounded),
+            ),
+            IconButton(
+              tooltip: 'Next bills page',
+              onPressed: _loading ||
+                      _salesPage >= (_salesTotal / _salesPageSize).ceil()
+                  ? null
+                  : () => _load(salesPage: _salesPage + 1),
+              icon: const Icon(Icons.chevron_right_rounded),
+            ),
+          ],
+        ),
+      );
 
   Widget _buildHeader(PosOverview overview) {
     final now = DateTime.now();
@@ -1734,10 +2106,196 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               ),
               subtitle: Text(_dateTime(payment.createdAt)),
             ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: _working ? null : () => _printOrShareInvoice(sale),
+                icon: const Icon(Icons.picture_as_pdf_outlined),
+                label: const Text('Print or share invoice PDF'),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
+
+  Widget _buildInvoiceManagementToolbar() => Padding(
+        padding: const EdgeInsets.only(top: 10, bottom: 6),
+        child: Wrap(
+          spacing: 10,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            SizedBox(
+              width: 340,
+              child: TextField(
+                onChanged: (value) =>
+                    setState(() => _billHistorySearch = value),
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.search_rounded),
+                  hintText: 'Search invoice number, customer or phone',
+                  isDense: true,
+                ),
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: _selectHistoryDay,
+              icon: const Icon(Icons.calendar_month_outlined),
+              label: Text(_billHistoryDayKey ?? 'All dates'),
+            ),
+            OutlinedButton.icon(
+              onPressed: _loading ? null : _load,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Refresh'),
+            ),
+            Text('Total: $_salesTotal',
+                style: Theme.of(context).textTheme.bodySmall),
+          ],
+        ),
+      );
+
+  Future<void> _printOrShareInvoice(PosSale sale) async {
+    try {
+      final bytes = await PosReceiptService.createInvoicePdf(sale);
+      if (!mounted) return;
+      final filename = 'Invoice-${sale.receiptNumber}.pdf';
+      if (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.linux ||
+          defaultTargetPlatform == TargetPlatform.macOS) {
+        await Printing.layoutPdf(
+          name: filename,
+          onLayout: (_) async => bytes,
+        );
+      } else {
+        await Printing.sharePdf(bytes: bytes, filename: filename);
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not prepare this invoice: '
+            '${error.toString().replaceFirst('Exception: ', '')}',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _exportSalesCsv() async {
+    if (_working) return;
+    setState(() => _working = true);
+    try {
+      final sales = <PosSale>[];
+      var page = 1;
+      var pageCount = 1;
+      do {
+        final result = await _adminApi.getPosSales(
+          page: page,
+          pageSize: 100,
+          day: _billHistoryDayKey,
+        );
+        sales.addAll(result.sales);
+        pageCount = result.pageCount;
+        page++;
+      } while (page <= pageCount && sales.isNotEmpty);
+
+      final rows = <List<String>>[
+        [
+          'Receipt',
+          'Date',
+          'Customer',
+          'Phone',
+          'Sale status',
+          'Payment status',
+          'Payment method',
+          'Subtotal',
+          'Discount',
+          'Total',
+          'Paid',
+          'Balance due',
+          'Refunded',
+          'Items',
+        ],
+        for (final sale in sales)
+          [
+            _csvCell(sale.receiptNumber, protectFormula: true),
+            _csvCell(sale.createdAt.toLocal().toIso8601String()),
+            _csvCell(sale.customerName ?? '', protectFormula: true),
+            _csvCell(sale.customerPhone ?? '', protectFormula: true),
+            _csvCell(sale.status),
+            _csvCell(sale.paymentStatus),
+            _csvCell(sale.paymentMethod),
+            _csvCell(sale.subtotal.toStringAsFixed(2)),
+            _csvCell(sale.discount.toStringAsFixed(2)),
+            _csvCell(sale.total.toStringAsFixed(2)),
+            _csvCell(_salePaidAmount(sale).toStringAsFixed(2)),
+            _csvCell(_saleOutstandingAmount(sale).toStringAsFixed(2)),
+            _csvCell(sale.refundedAmount.toStringAsFixed(2)),
+            _csvCell(
+              sale.items
+                  .map((item) =>
+                      '${item.productName} x ${item.weightGrams == null ? item.quantity : '${(item.weightGrams! / 1000).toStringAsFixed(3)} kg'}')
+                  .join('; '),
+              protectFormula: true,
+            ),
+          ],
+      ];
+      final csv = rows.map((row) => row.join(',')).join('\r\n');
+      final dateSuffix = _billHistoryDayKey ?? 'all-days';
+      final fileName = 'Ram-Prasad-Bills-$dateSuffix.csv';
+      final savedUri = await FilePicker.saveFile(
+        fileName: fileName,
+        bytes: Uint8List.fromList(utf8.encode(csv)),
+        mimeType: 'text/csv',
+        dialogTitle: 'Export bill history',
+        allowedExtensions: const ['csv'],
+      );
+      if (!mounted || savedUri == null) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Exported ${sales.length} bills to $fileName')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not export bill history: '
+            '${error.toString().replaceFirst('Exception: ', '')}',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  String _csvCell(String value, {bool protectFormula = false}) {
+    var safeValue = value;
+    if (protectFormula && RegExp(r'^[=+\-@\t\r]').hasMatch(safeValue)) {
+      safeValue = "'$safeValue";
+    }
+    return '"${safeValue.replaceAll('"', '""')}"';
+  }
+
+  double _salePaidAmount(PosSale sale) {
+    final recordedPayments = sale.paymentCollections.fold<double>(
+      0,
+      (total, payment) => total + payment.amount,
+    );
+    return (sale.paidAmount ??
+            (sale.paymentStatus == 'COMPLETED' ? sale.total : recordedPayments))
+        .clamp(0, sale.total)
+        .toDouble();
+  }
+
+  double _saleOutstandingAmount(PosSale sale) =>
+      (sale.outstandingAmount ?? sale.total - _salePaidAmount(sale))
+          .clamp(0, sale.total)
+          .toDouble();
 
   Widget _buildInsights(PosOverview overview) {
     return Row(
@@ -2073,17 +2631,24 @@ class _PosBillDialog extends StatefulWidget {
 }
 
 class _PosBillDialogState extends State<_PosBillDialog> {
+  static const _offlineInvoiceCounterPrefix = 'offline_invoice_counter_';
   late final String _idempotencyKey = const Uuid().v4();
   final _search = TextEditingController();
   final _customerName = TextEditingController();
   final _customerPhone = TextEditingController();
   final _discount = TextEditingController(text: '0');
+  final _vatRate = TextEditingController(text: '0');
   final _searchFocus = FocusNode();
   Timer? _searchTimer;
   List<PosProduct> _matches = const [];
   final List<_PosCartLine> _cart = [];
   bool _searching = false;
   bool _saving = false;
+  bool _discountIsPercent = false;
+  bool _saveOnThisComputer = false;
+  AdminCustomer? _selectedCustomer;
+  Timer? _customerSearchTimer;
+  int _customerSearchRequest = 0;
   String _paymentMethod = 'CASH';
   String? _error;
 
@@ -2123,12 +2688,154 @@ class _PosBillDialogState extends State<_PosBillDialog> {
   @override
   void dispose() {
     _searchTimer?.cancel();
+    _customerSearchTimer?.cancel();
     _search.dispose();
     _customerName.dispose();
     _customerPhone.dispose();
     _discount.dispose();
+    _vatRate.dispose();
     _searchFocus.dispose();
     super.dispose();
+  }
+
+  Future<void> _lookupRegisteredCustomer(String name, String phone) async {
+    final query = phone.trim().isNotEmpty ? phone.trim() : name.trim();
+    if (query.length < 3) return;
+    final requestId = ++_customerSearchRequest;
+    try {
+      final page = await widget.api.getCustomers(
+        page: 1,
+        pageSize: 10,
+        search: query,
+      );
+      if (!mounted || requestId != _customerSearchRequest) return;
+      final normalizedPhone = phone.replaceAll(RegExp(r'\D'), '');
+      final exact = page.customers.where((customer) {
+        final samePhone = normalizedPhone.isNotEmpty &&
+            customer.phone.replaceAll(RegExp(r'\D'), '') == normalizedPhone;
+        final sameName = name.trim().isNotEmpty &&
+            customer.name.trim().toLowerCase() == name.trim().toLowerCase();
+        return customer.isActive && (samePhone || sameName);
+      });
+      if (exact.isEmpty) return;
+      final customer = exact.first;
+      setState(() {
+        _selectedCustomer = customer;
+        _customerName.text = customer.name;
+        _customerPhone.text = customer.phone;
+      });
+    } catch (_) {
+      // Free-form walk-in details remain valid when customer search is offline.
+    }
+  }
+
+  Future<void> _selectRegisteredCustomer() async {
+    final searchController = TextEditingController();
+    var customers = <AdminCustomer>[];
+    var loading = true;
+    var initialSearchStarted = false;
+    String? loadError;
+    final selected = await showDialog<AdminCustomer>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          Future<void> runSearch(String query) async {
+            if (!dialogContext.mounted) return;
+            setDialogState(() {
+              loading = true;
+              loadError = null;
+            });
+            try {
+              final page = await widget.api.getCustomers(
+                page: 1,
+                pageSize: 30,
+                search: query.trim().isEmpty ? null : query.trim(),
+              );
+              if (!dialogContext.mounted) return;
+              setDialogState(() {
+                customers = page.customers
+                    .where((customer) => customer.isActive)
+                    .toList(growable: false);
+                loading = false;
+              });
+            } catch (error) {
+              if (!dialogContext.mounted) return;
+              setDialogState(() {
+                loading = false;
+                loadError = error.toString().replaceFirst('Exception: ', '');
+              });
+            }
+          }
+
+          if (!initialSearchStarted) {
+            initialSearchStarted = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (dialogContext.mounted) unawaited(runSearch(''));
+            });
+          }
+          return AlertDialog(
+            title: const Text('Select customer'),
+            content: SizedBox(
+              width: 540,
+              height: 440,
+              child: Column(
+                children: [
+                  TextField(
+                    controller: searchController,
+                    decoration: InputDecoration(
+                      prefixIcon: Icon(Icons.search_rounded),
+                      hintText: 'Search name or phone',
+                    ),
+                    onChanged: (value) => unawaited(runSearch(value)),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: loading
+                        ? const Center(child: CircularProgressIndicator())
+                        : loadError != null
+                            ? Center(child: Text(loadError!))
+                            : customers.isEmpty
+                                ? const Center(
+                                    child:
+                                        Text('No registered customers found.'),
+                                  )
+                                : ListView.builder(
+                                    itemCount: customers.length,
+                                    itemBuilder: (context, index) {
+                                      final customer = customers[index];
+                                      return ListTile(
+                                        leading:
+                                            const Icon(Icons.person_outline),
+                                        title: Text(customer.name),
+                                        subtitle: Text(customer.phone),
+                                        onTap: () => Navigator.pop(
+                                          dialogContext,
+                                          customer,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    searchController.dispose();
+    if (selected == null || !mounted) return;
+    setState(() {
+      _selectedCustomer = selected;
+      _customerName.text = selected.name;
+      _customerPhone.text = selected.phone;
+    });
   }
 
   bool _isWeightProduct(PosProduct product) =>
@@ -2146,8 +2853,149 @@ class _PosBillDialogState extends State<_PosBillDialog> {
       );
 
   double get _total {
+    final discount = _discountAmount;
+    final vatRate = double.tryParse(_vatRate.text.trim()) ?? 0;
+    final taxableAmount = (_subtotal - discount).clamp(0, double.infinity);
+    return taxableAmount + (taxableAmount * vatRate / 100);
+  }
+
+  double get _discountAmount {
+    final value = double.tryParse(_discount.text.trim()) ?? 0;
+    return _discountIsPercent ? _subtotal * value / 100 : value;
+  }
+
+  double get _vatAmount {
     final discount = double.tryParse(_discount.text.trim()) ?? 0;
-    return (_subtotal - discount).clamp(0, double.infinity).toDouble();
+    final rate = double.tryParse(_vatRate.text.trim()) ?? 0;
+    final taxable = (_subtotal - discount).clamp(0, double.infinity);
+    return taxable * rate / 100;
+  }
+
+  Future<PosSale> _createLocalSale({
+    required double discount,
+    required double vatRate,
+  }) async {
+    final preferences = await SharedPreferences.getInstance();
+    final now = DateTime.now();
+    final yearKey = '$_offlineInvoiceCounterPrefix${now.year}';
+    final nextLocalNumber = (preferences.getInt(yearKey) ?? 900000) + 1;
+    await preferences.setInt(yearKey, nextLocalNumber);
+    final invoiceNumber =
+        'RPGS-INV-${now.year}-${nextLocalNumber.toString().padLeft(6, '0')}';
+    final vatAmount = (_subtotal - discount) * vatRate / 100;
+    final total = _subtotal - discount + vatAmount;
+    final sale = PosSale(
+      id: 'local-$invoiceNumber',
+      receiptNumber: invoiceNumber,
+      invoiceNumber: invoiceNumber,
+      customerName:
+          _customerName.text.trim().isEmpty ? null : _customerName.text.trim(),
+      customerPhone: _customerPhone.text.trim().isEmpty
+          ? null
+          : _customerPhone.text.trim(),
+      status: 'COMPLETED',
+      paymentMethod: _paymentMethod,
+      paymentStatus: _paymentMethod == 'PENDING' ? 'PENDING' : 'COMPLETED',
+      subtotal: _subtotal,
+      discount: discount,
+      vatRate: vatRate,
+      vatAmount: vatAmount,
+      total: total,
+      refundedAmount: 0,
+      createdAt: now,
+      paidAmount: _paymentMethod == 'PENDING' ? 0 : total,
+      outstandingAmount: _paymentMethod == 'PENDING' ? total : 0,
+      items: [
+        for (final line in _cart)
+          PosSaleItem(
+            id: '${invoiceNumber}-${line.product.id}',
+            productId: line.product.id,
+            productName: line.product.name,
+            sku: line.product.sku,
+            quantity: line.quantity,
+            weightGrams: line.weightGrams,
+            unitPrice: line.product.price,
+            lineTotal: line.product.price *
+                (line.weightGrams == null
+                    ? line.quantity
+                    : line.weightGrams! / 1000),
+          ),
+      ],
+    );
+    const directoryPath = 'C:/Ramprasad store/bills';
+    final directory = Directory(directoryPath);
+    await directory.create(recursive: true);
+    final pdfFile = File('${directory.path}/$invoiceNumber.pdf');
+    final pdfBytes = await PosReceiptService.createInvoicePdf(sale);
+    await pdfFile.writeAsBytes(pdfBytes, flush: true);
+    final dataFile = File('${directory.path}/$invoiceNumber.json');
+    await dataFile.writeAsString(
+      jsonEncode({
+        'invoiceNumber': invoiceNumber,
+        'date': now.toIso8601String(),
+        'customerName': sale.customerName,
+        'customerPhone': sale.customerPhone,
+        'paymentMethod': _paymentMethod,
+        'paymentStatus': sale.paymentStatus,
+        'subtotal': _subtotal,
+        'discount': discount,
+        'vatRate': vatRate,
+        'vatAmount': vatAmount,
+        'total': total,
+        'items': sale.items
+            .map((item) => {
+                  'productId': item.productId,
+                  'name': item.productName,
+                  'sku': item.sku,
+                  'quantity': item.quantity,
+                  'weightGrams': item.weightGrams,
+                  'unitPrice': item.unitPrice,
+                  'amount': item.lineTotal,
+                })
+            .toList(growable: false),
+      }),
+      flush: true,
+    );
+    if (_selectedCustomer != null) {
+      try {
+        await widget.api.recordOfflineStreakPurchase(
+          customerId: _selectedCustomer!.id,
+          invoiceNumber: invoiceNumber,
+        );
+      } catch (_) {
+        final pending =
+            preferences.getStringList(_pendingLocalStreaksPreferenceKey) ?? [];
+        pending.add(jsonEncode({
+          'customerId': _selectedCustomer!.id,
+          'invoiceNumber': invoiceNumber,
+        }));
+        await preferences.setStringList(
+          _pendingLocalStreaksPreferenceKey,
+          pending,
+        );
+      }
+    }
+    return PosSale(
+      id: sale.id,
+      receiptNumber: sale.receiptNumber,
+      invoiceNumber: sale.invoiceNumber,
+      customerName: sale.customerName,
+      customerPhone: sale.customerPhone,
+      status: sale.status,
+      paymentMethod: sale.paymentMethod,
+      paymentStatus: sale.paymentStatus,
+      subtotal: sale.subtotal,
+      discount: sale.discount,
+      vatRate: sale.vatRate,
+      vatAmount: sale.vatAmount,
+      total: sale.total,
+      refundedAmount: sale.refundedAmount,
+      createdAt: sale.createdAt,
+      items: sale.items,
+      paidAmount: sale.paidAmount,
+      outstandingAmount: sale.outstandingAmount,
+      localPath: pdfFile.path,
+    );
   }
 
   Future<void> _searchProducts(String query) async {
@@ -2223,45 +3071,58 @@ class _PosBillDialogState extends State<_PosBillDialog> {
   }
 
   Future<void> _addProduct(PosProduct product) async {
+    final quantityController = TextEditingController(text: '1');
+    final quantity = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Add ${product.name}'),
+        content: TextField(
+          controller: quantityController,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+          ],
+          decoration: InputDecoration(
+            labelText:
+                _isWeightProduct(product) ? 'Weight in grams' : 'Quantity',
+            suffixText: _isWeightProduct(product) ? 'g' : null,
+          ),
+          onSubmitted: (value) {
+            final parsed = int.tryParse(value.trim());
+            if (parsed != null && parsed > 0) {
+              Navigator.pop(dialogContext, parsed);
+            }
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final parsed = int.tryParse(quantityController.text.trim());
+              if (parsed != null && parsed > 0) {
+                Navigator.pop(dialogContext, parsed);
+              }
+            },
+            child: const Text('Add to bill'),
+          ),
+        ],
+      ),
+    );
+    quantityController.dispose();
+    if (quantity == null || !mounted) return;
     if (_isWeightProduct(product)) {
-      final grams = await showDialog<int>(
-        context: context,
-        builder: (dialogContext) {
-          final controller = TextEditingController();
-          return AlertDialog(
-            title: Text('Weight for ${product.name}'),
-            content: TextField(
-              controller: controller,
-              autofocus: true,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Weight in grams'),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  final value = int.tryParse(controller.text.trim());
-                  if (value == null || value <= 0) return;
-                  Navigator.pop(dialogContext, value);
-                },
-                child: const Text('Add'),
-              ),
-            ],
-          );
-        },
-      );
-      if (grams == null || !mounted) return;
-      setState(() => _cart.add(_PosCartLine(product, weightGrams: grams)));
+      setState(() => _cart.add(_PosCartLine(product, weightGrams: quantity)));
       return;
     }
     final existing = _cart.where((item) => item.product.id == product.id);
     if (existing.isNotEmpty) {
-      setState(() => existing.first.quantity++);
+      setState(() => existing.first.quantity += quantity);
     } else {
-      setState(() => _cart.add(_PosCartLine(product)));
+      setState(() => _cart.add(_PosCartLine(product, quantity: quantity)));
     }
   }
 
@@ -2303,6 +3164,7 @@ class _PosBillDialogState extends State<_PosBillDialog> {
         customerPhone: _customerPhone.text.trim().isEmpty
             ? null
             : _customerPhone.text.trim(),
+        customerId: _selectedCustomer?.id,
       );
       if (mounted) Navigator.pop(context);
     } catch (error) {
@@ -2320,10 +3182,22 @@ class _PosBillDialogState extends State<_PosBillDialog> {
       setState(() => _error = 'Add products before completing the bill.');
       return;
     }
-    final discount = double.tryParse(_discount.text.trim());
-    if (discount == null || discount < 0 || discount > _subtotal) {
-      setState(() =>
-          _error = 'Enter a valid discount not greater than the subtotal.');
+    final enteredDiscount = double.tryParse(_discount.text.trim());
+    if (enteredDiscount == null ||
+        !enteredDiscount.isFinite ||
+        enteredDiscount < 0 ||
+        (_discountIsPercent
+            ? enteredDiscount > 100
+            : enteredDiscount > _subtotal)) {
+      setState(() => _error = _discountIsPercent
+          ? 'Enter a percentage from 0% to 100%.'
+          : 'Enter a valid discount not greater than the subtotal.');
+      return;
+    }
+    final discount = _discountAmount;
+    final vatRate = double.tryParse(_vatRate.text.trim());
+    if (vatRate == null || !vatRate.isFinite || vatRate < 0 || vatRate > 100) {
+      setState(() => _error = 'Enter a VAT rate from 0% to 100%.');
       return;
     }
     if (_paymentMethod == 'PENDING' &&
@@ -2338,19 +3212,23 @@ class _PosBillDialogState extends State<_PosBillDialog> {
       _error = null;
     });
     try {
-      final sale = await widget.api.createPosSale(
-        idempotencyKey: _idempotencyKey,
-        items: _requestItems(),
-        discount: discount,
-        paymentMethod: _paymentMethod,
-        customerName: _customerName.text.trim().isEmpty
-            ? null
-            : _customerName.text.trim(),
-        customerPhone: _customerPhone.text.trim().isEmpty
-            ? null
-            : _customerPhone.text.trim(),
-        heldSaleId: widget.heldSale?.id,
-      );
+      final sale = _saveOnThisComputer
+          ? await _createLocalSale(discount: discount, vatRate: vatRate)
+          : await widget.api.createPosSale(
+              idempotencyKey: _idempotencyKey,
+              items: _requestItems(),
+              discount: discount,
+              vatRate: vatRate,
+              paymentMethod: _paymentMethod,
+              customerName: _customerName.text.trim().isEmpty
+                  ? null
+                  : _customerName.text.trim(),
+              customerPhone: _customerPhone.text.trim().isEmpty
+                  ? null
+                  : _customerPhone.text.trim(),
+              customerId: _selectedCustomer?.id,
+              heldSaleId: widget.heldSale?.id,
+            );
       if (mounted) Navigator.pop(context, sale);
     } catch (error) {
       if (mounted) {
@@ -2379,8 +3257,8 @@ class _PosBillDialogState extends State<_PosBillDialog> {
         insetPadding: const EdgeInsets.all(14),
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxWidth: isDesktop ? 1240 : 760,
-            maxHeight: isDesktop ? 900 : 820,
+            maxWidth: isDesktop ? 1440 : 760,
+            maxHeight: isDesktop ? 1040 : 820,
           ),
           child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
         ),
@@ -2394,36 +3272,441 @@ class _PosBillDialogState extends State<_PosBillDialog> {
         _buildDialogHeader(),
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
             child: Row(
               children: [
-                Expanded(
-                  flex: 5,
-                  child: Column(
-                    children: [
-                      _buildSearchField(isDesktop: true),
-                      if (_error != null) _buildErrorMessage(),
-                      const SizedBox(height: 8),
-                      Expanded(child: _buildMatches()),
-                    ],
-                  ),
-                ),
-                const VerticalDivider(width: 28),
-                Expanded(
-                  flex: 6,
-                  child: Column(
-                    children: [
-                      Expanded(child: _buildCart()),
-                      _buildCheckoutControls(),
-                    ],
-                  ),
-                ),
+                Expanded(flex: 7, child: _buildWindowsItemsColumn()),
+                const SizedBox(width: 8),
+                Expanded(flex: 3, child: _buildWindowsBillDetailsColumn()),
               ],
             ),
           ),
         ),
       ],
     );
+  }
+
+  Widget _buildWindowsItemsColumn() => Column(
+        children: [
+          _buildWindowsCustomerCard(),
+          const SizedBox(height: 8),
+          Expanded(child: _buildWindowsItemsCard()),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            _buildErrorMessage(),
+          ],
+        ],
+      );
+
+  Widget _buildWindowsCustomerCard() => AppSurface(
+        padding: const EdgeInsets.fromLTRB(14, 11, 14, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.person_outline_rounded,
+                    size: 17, color: AppColors.muted),
+                const SizedBox(width: 8),
+                Text(
+                  'CUSTOMER DETAILS',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _selectedCustomer == null
+                        ? 'Use a saved customer or enter a temporary name and phone.'
+                        : 'Registered customer · ${_selectedCustomer!.profileId}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: _saving ? null : _selectRegisteredCustomer,
+                  icon: const Icon(Icons.people_alt_outlined, size: 16),
+                  label: const Text('Select existing'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _customerName,
+                    enabled: !_saving,
+                    onChanged: (_) {
+                      setState(() => _selectedCustomer = null);
+                      _customerSearchTimer?.cancel();
+                      _customerSearchTimer = Timer(
+                        const Duration(milliseconds: 400),
+                        () => unawaited(_lookupRegisteredCustomer(
+                          _customerName.text,
+                          _customerPhone.text,
+                        )),
+                      );
+                    },
+                    decoration: const InputDecoration(
+                      hintText: 'Temporary customer name',
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _customerPhone,
+                    enabled: !_saving,
+                    keyboardType: TextInputType.phone,
+                    onChanged: (_) {
+                      setState(() => _selectedCustomer = null);
+                      _customerSearchTimer?.cancel();
+                      _customerSearchTimer = Timer(
+                        const Duration(milliseconds: 400),
+                        () => unawaited(_lookupRegisteredCustomer(
+                          _customerName.text,
+                          _customerPhone.text,
+                        )),
+                      );
+                    },
+                    decoration: const InputDecoration(
+                      hintText: 'Temporary customer phone',
+                      isDense: true,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+
+  Widget _buildWindowsItemsCard() => AppSurface(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Text(
+                  'ITEMS',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.navigationSelected,
+                    borderRadius: BorderRadius.circular(AppRadii.pill),
+                  ),
+                  child: Text(
+                    '${_cart.length} items',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: AppColors.muted,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  'F2 to search',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Expanded(
+              child: Scrollbar(
+                child: _searching || _search.text.trim().isNotEmpty
+                    ? _buildMatches()
+                    : _cart.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.shopping_cart_outlined,
+                                    size: 38, color: AppColors.outline),
+                                const SizedBox(height: 8),
+                                Text('No items added yet',
+                                    style:
+                                        Theme.of(context).textTheme.bodyMedium),
+                                const SizedBox(height: 3),
+                                Text('Search below or press F2',
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall),
+                              ],
+                            ),
+                          )
+                        : _buildCart(),
+              ),
+            ),
+            const Divider(height: 14),
+            Row(
+              children: [
+                Expanded(child: _buildSearchField(isDesktop: true)),
+                const SizedBox(width: 8),
+                IconButton.outlined(
+                  tooltip: 'Scan barcode',
+                  onPressed: _saving ? null : _scan,
+                  icon: const Icon(Icons.qr_code_scanner_rounded),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+
+  Widget _buildWindowsBillDetailsColumn() => Column(
+        children: [
+          AppSurface(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'BILL DETAILS',
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                    ),
+                    Icon(Icons.receipt_long_outlined,
+                        size: 18, color: AppColors.muted),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _billDetailRow('Bill type', 'Retail sale'),
+                const SizedBox(height: 8),
+                _billDetailRow('Date', _todayDateLabel()),
+                const SizedBox(height: 8),
+                _billDetailRow('Bill number', 'Assigned on completion'),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: _paymentMethod,
+                  decoration: InputDecoration(
+                    labelText: 'Payment method',
+                    isDense: true,
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'CASH', child: Text('Cash')),
+                    DropdownMenuItem(
+                        value: 'DIGITAL', child: Text('PhonePe / UPI')),
+                    DropdownMenuItem(
+                        value: 'PENDING', child: Text('Pending balance')),
+                  ],
+                  onChanged: (value) => setState(() {
+                    _paymentMethod = value ?? 'CASH';
+                    _error = null;
+                  }),
+                ),
+                if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows)
+                  SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    value: _saveOnThisComputer,
+                    title: const Text('Save on this computer only'),
+                    subtitle: const Text(
+                      'Stores the bill under C:/Ramprasad store/bills/ without uploading bill details.',
+                    ),
+                    onChanged: _saving
+                        ? null
+                        : (value) =>
+                            setState(() => _saveOnThisComputer = value),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: AppSurface(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.navigationSelected,
+                      border: Border.all(color: AppColors.outline),
+                      borderRadius: BorderRadius.circular(AppRadii.input),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.tune_rounded,
+                            size: 17, color: AppColors.action),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Discount & adjustments',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelLarge
+                                ?.copyWith(color: AppColors.action),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(value: false, label: Text('Amount')),
+                      ButtonSegment(value: true, label: Text('Percentage')),
+                    ],
+                    selected: {_discountIsPercent},
+                    onSelectionChanged: (value) => setState(() {
+                      _discountIsPercent = value.first;
+                    }),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _discount,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      labelText: _discountIsPercent
+                          ? 'Discount percentage (%)'
+                          : 'Discount amount',
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _vatRate,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: (_) => setState(() {}),
+                    decoration: const InputDecoration(
+                      labelText: 'VAT (%)',
+                      hintText: '0',
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  _billAmountRow('Subtotal', _subtotal),
+                  if (_discountAmount > 0) ...[
+                    const SizedBox(height: 8),
+                    _billAmountRow(
+                      'Discount',
+                      -_discountAmount,
+                    ),
+                  ],
+                  if ((double.tryParse(_vatRate.text.trim()) ?? 0) > 0) ...[
+                    const SizedBox(height: 8),
+                    _billAmountRow(
+                      'VAT (${(double.tryParse(_vatRate.text.trim()) ?? 0).toStringAsFixed(2)}%)',
+                      _vatAmount,
+                    ),
+                  ],
+                  const Spacer(),
+                  Divider(color: AppColors.outline),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'TOTAL',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                      Text(
+                        _money(_total),
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              color: AppColors.successText,
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _saving ? null : _hold,
+                        icon: const Icon(Icons.pause_circle_outline),
+                        label: const Text('Hold'),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: _saving ? null : _completeSale,
+                          icon: _saving
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.save_outlined),
+                          label: Text(_saveOnThisComputer
+                              ? 'Save local bill (F8)'
+                              : 'Create bill (F8)'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+
+  Widget _billDetailRow(String label, String value) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(label, style: Theme.of(context).textTheme.bodySmall),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+          ),
+        ],
+      );
+
+  Widget _billAmountRow(String label, double amount) => Row(
+        children: [
+          Expanded(
+              child:
+                  Text(label, style: Theme.of(context).textTheme.bodyMedium)),
+          Text(
+            _money(amount),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+        ],
+      );
+
+  String _todayDateLabel() {
+    final now = DateTime.now();
+    return '${now.day.toString().padLeft(2, '0')}/'
+        '${now.month.toString().padLeft(2, '0')}/${now.year}';
   }
 
   Widget _buildMobileLayout() {
@@ -2447,6 +3730,53 @@ class _PosBillDialogState extends State<_PosBillDialog> {
   }
 
   Widget _buildDialogHeader() {
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      return Container(
+        height: 60,
+        color: AppColors.header,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                widget.heldSale == null
+                    ? 'Create New Invoice'
+                    : 'Resume Held Bill',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w500,
+                    ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              _todayDateLabel(),
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: Colors.white,
+                  ),
+            ),
+            const Spacer(),
+            Text(
+              'Bill number: assigned on save',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.white,
+                  ),
+            ),
+            IconButton(
+              tooltip: 'Close',
+              onPressed: _saving ? null : () => Navigator.pop(context),
+              style: IconButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: Colors.transparent,
+              ),
+              icon: const Icon(Icons.close),
+            ),
+          ],
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 16, 8, 8),
       child: Row(
@@ -2507,13 +3837,13 @@ class _PosBillDialogState extends State<_PosBillDialog> {
         ),
         child: Row(
           children: [
-            const Icon(Icons.error_outline_rounded,
+            Icon(Icons.error_outline_rounded,
                 color: AppColors.errorText, size: 18),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 _error!,
-                style: const TextStyle(color: AppColors.errorText),
+                style: TextStyle(color: AppColors.errorText),
               ),
             ),
           ],
@@ -2571,50 +3901,129 @@ class _PosBillDialogState extends State<_PosBillDialog> {
 
   Widget _buildCart() {
     if (_cart.isEmpty) return const Center(child: Text('Bill is empty.'));
-    return ListView.separated(
+    return ListView.builder(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       itemCount: _cart.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
       itemBuilder: (context, index) {
         final line = _cart[index];
         final total = line.product.price *
             (line.weightGrams == null
                 ? line.quantity
                 : line.weightGrams! / 1000);
-        return ListTile(
-          title: Text(line.product.name),
-          subtitle: Text(line.weightGrams == null
-              ? 'Qty ${line.quantity}'
-              : '${line.weightGrams} g'),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (line.weightGrams == null) ...[
-                IconButton(
-                  tooltip: 'Decrease quantity',
-                  onPressed: () => setState(() {
-                    if (line.quantity > 1) {
-                      line.quantity--;
-                    } else {
-                      _cart.removeAt(index);
-                    }
-                  }),
-                  icon: const Icon(Icons.remove_circle_outline),
-                ),
-                Text('${line.quantity}'),
-                IconButton(
-                  tooltip: 'Increase quantity',
-                  onPressed: () => setState(() => line.quantity++),
-                  icon: const Icon(Icons.add_circle_outline),
-                ),
-              ],
-              const SizedBox(width: 8),
-              Text(_money(total)),
-              IconButton(
-                tooltip: 'Remove item',
-                onPressed: () => setState(() => _cart.removeAt(index)),
-                icon: const Icon(Icons.delete_outline),
-              ),
-            ],
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 600;
+              final quantityControls = line.weightGrams == null
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: 'Decrease quantity',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: _saving
+                              ? null
+                              : () => setState(() {
+                                    if (line.quantity > 1) {
+                                      line.quantity--;
+                                    } else {
+                                      _cart.removeAt(index);
+                                    }
+                                  }),
+                          icon: const Icon(Icons.remove_circle_outline),
+                        ),
+                        SizedBox(
+                          width: 76,
+                          child: TextFormField(
+                            key: ValueKey('pos-quantity-${line.product.id}'),
+                            initialValue: '${line.quantity}',
+                            enabled: !_saving,
+                            textAlign: TextAlign.center,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                            ],
+                            decoration: const InputDecoration(
+                              labelText: 'Qty',
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 10),
+                            ),
+                            onChanged: (value) {
+                              final quantity = int.tryParse(value);
+                              if (quantity != null && quantity > 0) {
+                                setState(() => line.quantity = quantity);
+                              }
+                            },
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Increase quantity',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: _saving
+                              ? null
+                              : () => setState(() => line.quantity++),
+                          icon: const Icon(Icons.add_circle_outline),
+                        ),
+                      ],
+                    )
+                  : Text('${line.weightGrams} g');
+
+              final amountAndRemove = Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(_money(total)),
+                  IconButton(
+                    tooltip: 'Remove item',
+                    onPressed: _saving
+                        ? null
+                        : () => setState(() => _cart.removeAt(index)),
+                    icon: const Icon(Icons.delete_outline),
+                  ),
+                ],
+              );
+
+              if (compact) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(line.product.name),
+                      subtitle: Text(line.product.sku),
+                      trailing: amountAndRemove,
+                    ),
+                    Row(
+                      children: [
+                        const Text('Quantity'),
+                        const Spacer(),
+                        quantityControls,
+                      ],
+                    ),
+                    const Divider(height: 1),
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(
+                    flex: 5,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(line.product.name,
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                        Text(line.product.sku,
+                            style: Theme.of(context).textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
+                  Expanded(flex: 4, child: quantityControls),
+                  Expanded(flex: 2, child: amountAndRemove),
+                ],
+              );
+            },
           ),
         );
       },
@@ -2656,6 +4065,17 @@ class _PosBillDialogState extends State<_PosBillDialog> {
             ],
           ),
           const SizedBox(height: 8),
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(value: false, label: Text('Amount')),
+              ButtonSegment(value: true, label: Text('Percentage')),
+            ],
+            selected: {_discountIsPercent},
+            onSelectionChanged: (value) => setState(() {
+              _discountIsPercent = value.first;
+            }),
+          ),
+          const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
@@ -2664,8 +4084,10 @@ class _PosBillDialogState extends State<_PosBillDialog> {
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
                   onChanged: (_) => setState(() {}),
-                  decoration: const InputDecoration(
-                    labelText: 'Discount amount',
+                  decoration: InputDecoration(
+                    labelText: _discountIsPercent
+                        ? 'Discount percentage (%)'
+                        : 'Discount amount',
                     isDense: true,
                   ),
                 ),

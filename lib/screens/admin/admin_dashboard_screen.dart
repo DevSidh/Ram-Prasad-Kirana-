@@ -343,8 +343,7 @@ class _InlineError extends StatelessWidget {
             borderRadius: BorderRadius.circular(AppRadii.input)),
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Text(message,
-              style: const TextStyle(color: AppColors.warningText)),
+          child: Text(message, style: TextStyle(color: AppColors.warningText)),
         ),
       );
 }
@@ -379,10 +378,10 @@ class _EmptyPanel extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(AppRadii.card),
-          boxShadow: const [
+          boxShadow: [
             BoxShadow(
               color: AppColors.cardShadow,
-              offset: Offset(0, 6),
+              offset: const Offset(0, 6),
               blurRadius: 24,
             ),
           ],

@@ -59,8 +59,9 @@ class _ScooterLoadingScreenState extends State<ScooterLoadingScreen>
       await _move.forward(from: 0);
       if (!mounted) return;
       _laps++;
+      _move.reset();
     } while (!_initDone);
-
+    if (!mounted) return;
     await _exit.forward();
     if (mounted) widget.onFinished(_error);
   }

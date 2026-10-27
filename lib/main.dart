@@ -116,7 +116,7 @@ class _StoreScrollBehavior extends MaterialScrollBehavior {
   @override
   ScrollPhysics getScrollPhysics(BuildContext context) {
     if (getPlatform(context) == TargetPlatform.android) {
-      return const BouncingScrollPhysics(
+      return const ClampingScrollPhysics(
         parent: AlwaysScrollableScrollPhysics(),
       );
     }

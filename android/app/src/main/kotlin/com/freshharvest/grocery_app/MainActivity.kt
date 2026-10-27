@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.ContentValues
 import android.os.Build
 import android.os.Environment
+import android.view.WindowManager
 import android.provider.MediaStore
 import java.io.File
 import java.io.FileOutputStream
@@ -18,6 +19,49 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterFragmentActivity() {
     private val orderNotificationChannelId = "faststore_admin_orders"
+    private var previousPreferredDisplayModeId = 0
+
+    override fun onResume() {
+        super.onResume()
+        requestHighRefreshRate()
+    }
+
+    override fun onPause() {
+        restorePreferredRefreshRate()
+        super.onPause()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun requestHighRefreshRate() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        val windowManager = getSystemService(WindowManager::class.java) ?: return
+        val display = windowManager.defaultDisplay ?: return
+        val currentModeId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            display.mode.modeId
+        } else {
+            0
+        }
+        if (previousPreferredDisplayModeId == 0) {
+            previousPreferredDisplayModeId = window.attributes.preferredDisplayModeId
+        }
+        val mode = display.supportedModes
+            .filter { it.refreshRate <= 120.5f }
+            .maxByOrNull { it.refreshRate }
+            ?: return
+        if (mode.modeId != currentModeId) {
+            window.attributes = window.attributes.apply {
+                preferredDisplayModeId = mode.modeId
+            }
+        }
+    }
+
+    private fun restorePreferredRefreshRate() {
+        if (previousPreferredDisplayModeId == 0) return
+        window.attributes = window.attributes.apply {
+            preferredDisplayModeId = previousPreferredDisplayModeId
+        }
+        previousPreferredDisplayModeId = 0
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -167,23 +211,4 @@ class MainActivity : FlutterFragmentActivity() {
         )
     }
 
-    override fun onResume() {
-        super.onResume()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val display = windowManager.defaultDisplay
-            val currentMode = display.mode
-            val preferredMode = display.supportedModes
-                .filter {
-                    it.physicalWidth == currentMode.physicalWidth &&
-                        it.physicalHeight == currentMode.physicalHeight
-                }
-                .maxByOrNull { it.refreshRate }
-            window.attributes = window.attributes.apply {
-                preferredMode?.let {
-                    preferredDisplayModeId = it.modeId
-                    preferredRefreshRate = it.refreshRate
-                }
-            }
-        }
-    }
 }

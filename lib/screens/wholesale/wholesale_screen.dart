@@ -20,20 +20,27 @@ class WholesaleScreen extends StatefulWidget {
 }
 
 class _WholesaleScreenState extends State<WholesaleScreen> {
+  static const _pageSize = 20;
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _listScrollController = ScrollController();
   List<Product> _products = const [];
   bool _loading = true;
+  bool _loadingMore = false;
+  bool _hasMore = true;
   String? _error;
   String _query = '';
-  bool _requestInFlight = false;
+  int _requestGeneration = 0;
+  int _nextPage = 1;
   bool _observedTabVisibility = false;
   bool _wasTabVisible = true;
   DateTime? _lastLoadedAt;
   Timer? _periodicRefreshTimer;
+  Timer? _searchDebounce;
 
   @override
   void initState() {
     super.initState();
+    _listScrollController.addListener(_loadNextPageWhenNearEnd);
     _loadWholesaleItems();
     _periodicRefreshTimer = Timer.periodic(
       const Duration(minutes: 5),
@@ -66,21 +73,54 @@ class _WholesaleScreenState extends State<WholesaleScreen> {
             const Duration(minutes: 5)) {
       return;
     }
-    await _loadWholesaleItems(showLoading: false);
+    await _loadWholesaleItems(showLoading: false, force: true);
+  }
+
+  void _loadNextPageWhenNearEnd() {
+    if (!_listScrollController.hasClients ||
+        !_hasMore ||
+        _loadingMore ||
+        _loading) {
+      return;
+    }
+    if (_listScrollController.position.extentAfter < 600) {
+      unawaited(_loadWholesaleItems(page: _nextPage, append: true));
+    }
+  }
+
+  void _handleSearchChanged(String value) {
+    final query = value.trim();
+    setState(() => _query = query);
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      setState(() {
+        _products = const [];
+        _loading = true;
+        _error = null;
+        _hasMore = true;
+        _nextPage = 1;
+      });
+      unawaited(_loadWholesaleItems(force: true, showLoading: false));
+    });
   }
 
   Future<void> _loadWholesaleItems({
     bool showLoading = true,
     bool force = false,
+    int page = 1,
+    bool append = false,
   }) async {
-    if (_requestInFlight) return;
+    if (append && (_loadingMore || !_hasMore)) return;
     if (!force &&
+        page == 1 &&
         _lastLoadedAt != null &&
         DateTime.now().difference(_lastLoadedAt!) <
             const Duration(minutes: 5)) {
       return;
     }
-    _requestInFlight = true;
+    final generation = ++_requestGeneration;
+    if (append) setState(() => _loadingMore = true);
     if (showLoading) {
       setState(() {
         _loading = true;
@@ -90,9 +130,13 @@ class _WholesaleScreenState extends State<WholesaleScreen> {
     try {
       final response = await context.read<ApiService>().get(
         '/wholesale',
-        queryParams: const {'page': '1', 'limit': '100'},
+        queryParams: {
+          'page': '$page',
+          'limit': '$_pageSize',
+          if (_query.isNotEmpty) 'search': _query,
+        },
       );
-      if (!mounted) return;
+      if (!mounted || generation != _requestGeneration) return;
       if (response is! Map<String, dynamic> || response['data'] is! List) {
         throw const FormatException(
           'The server returned an invalid wholesale catalog.',
@@ -103,27 +147,39 @@ class _WholesaleScreenState extends State<WholesaleScreen> {
           .map(WholesaleItem.fromJson)
           .map((item) => item.toProduct())
           .toList(growable: false);
+      final pagination = response['pagination'];
+      final total = pagination is Map<String, dynamic>
+          ? pagination['total'] as int?
+          : null;
       setState(() {
-        _products = items;
+        _products = append ? [..._products, ...items] : items;
         _loading = false;
+        _loadingMore = false;
         _error = null;
+        _nextPage = page + 1;
+        _hasMore = total != null
+            ? _products.length < total
+            : items.length >= _pageSize;
       });
       _lastLoadedAt = DateTime.now();
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || generation != _requestGeneration) return;
       setState(() {
         _error = error.toString().replaceFirst('Exception: ', '');
         _loading = false;
+        _loadingMore = false;
       });
-    } finally {
-      _requestInFlight = false;
     }
   }
 
   @override
   void dispose() {
     _periodicRefreshTimer?.cancel();
+    _searchDebounce?.cancel();
     _searchController.dispose();
+    _listScrollController
+      ..removeListener(_loadNextPageWhenNearEnd)
+      ..dispose();
     super.dispose();
   }
 
@@ -184,7 +240,7 @@ class _WholesaleScreenState extends State<WholesaleScreen> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: _searchController,
-                  onChanged: (value) => setState(() => _query = value.trim()),
+                  onChanged: _handleSearchChanged,
                   decoration: InputDecoration(
                     hintText: 'Search wholesale products',
                     prefixIcon: const Icon(Icons.search_rounded),
@@ -194,7 +250,7 @@ class _WholesaleScreenState extends State<WholesaleScreen> {
                             tooltip: 'Clear search',
                             onPressed: () {
                               _searchController.clear();
-                              setState(() => _query = '');
+                              _handleSearchChanged('');
                             },
                             icon: const Icon(Icons.close_rounded),
                           ),
@@ -253,36 +309,52 @@ class _WholesaleScreenState extends State<WholesaleScreen> {
                             ),
                           )
                         : ListView.separated(
-                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                            itemCount: products.length,
+                            controller: _listScrollController,
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 130),
+                            itemCount: products.length + (_loadingMore ? 1 : 0),
                             separatorBuilder: (_, __) =>
                                 const SizedBox(height: 10),
-                            itemBuilder: (context, index) =>
-                                _WholesaleProductCard(
-                              product: products[index],
-                              onOpen: () => showProductQuickView(
-                                context,
-                                products[index],
-                              ),
-                              cartQuantity: cart
-                                      .items['${products[index].id}:wholesale']
-                                      ?.quantity ??
-                                  0,
-                              onAdd: () {
-                                final product = products[index];
-                                final minimum =
-                                    product.wholesaleMinimumQuantity;
-                                try {
-                                  cart.addItem(product, minimum, true);
-                                } on StateError catch (error) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(error.message.toString()),
+                            itemBuilder: (context, index) {
+                              if (index >= products.length) {
+                                return const Padding(
+                                  padding: EdgeInsets.all(18),
+                                  child: Center(
+                                    child: SizedBox.square(
+                                      dimension: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
                                     ),
-                                  );
-                                }
-                              },
-                            ),
+                                  ),
+                                );
+                              }
+                              return _WholesaleProductCard(
+                                product: products[index],
+                                onOpen: () => showProductQuickView(
+                                  context,
+                                  products[index],
+                                ),
+                                cartQuantity: cart
+                                        .items[
+                                            '${products[index].id}:wholesale']
+                                        ?.quantity ??
+                                    0,
+                                onAdd: () {
+                                  final product = products[index];
+                                  final minimum =
+                                      product.wholesaleMinimumQuantity;
+                                  try {
+                                    cart.addItem(product, minimum, true);
+                                  } on StateError catch (error) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(error.message.toString()),
+                                      ),
+                                    );
+                                  }
+                                },
+                              );
+                            },
                           ),
           ),
         ],

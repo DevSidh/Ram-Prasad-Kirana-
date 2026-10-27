@@ -33,8 +33,10 @@ class AppConstants {
 
   static String get apiBaseUrl {
     if (_configuredApiBaseUrl.isNotEmpty) return _configuredApiBaseUrl;
-    const isReleaseBuild = bool.fromEnvironment('dart.vm.product');
-    return isReleaseBuild ? productionApiBaseUrl : localDevelopmentApiBaseUrl;
+    // Physical Android devices cannot reach the emulator-only 10.0.2.2 host.
+    // Use the deployed API by default in debug builds too; developers can opt
+    // into a local backend explicitly with --dart-define=API_BASE_URL=... .
+    return productionApiBaseUrl;
   }
 
   static void validateApiConfiguration() {

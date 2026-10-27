@@ -7,7 +7,8 @@ import '../../providers/auth_provider.dart';
 import '../../providers/cart_provider.dart';
 import '../../providers/product_provider.dart';
 import '../../providers/theme_provider.dart';
-import '../../widgets/product_thumbnail.dart';
+import '../../widgets/product_image_gallery.dart';
+import '../../widgets/product_discount_price.dart';
 import '../checkout/checkout_screen.dart';
 import '../../services/product_share_link.dart';
 import '../../widgets/weight_quantity_dialog.dart';
@@ -24,19 +25,10 @@ class ProductDetailsScreen extends StatefulWidget {
 class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   static const _shareChannel = MethodChannel('faststore/share');
   int _quantity = 1;
-  int _imageIndex = 0;
   bool _sharing = false;
   bool _submittingRating = false;
   double? _updatedRating;
   int? _updatedReviewCount;
-
-  List<String> get _productImages => <String>{
-        if (widget.product.imageUrl.trim().isNotEmpty)
-          widget.product.imageUrl.trim(),
-        ...widget.product.imageUrls
-            .map((url) => url.trim())
-            .where((url) => url.isNotEmpty),
-      }.toList(growable: false);
 
   @override
   void initState() {
@@ -264,62 +256,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Hero Image
-            SizedBox(
-              height: 280,
-              width: double.infinity,
-              child: Stack(
-                alignment: Alignment.bottomCenter,
-                children: [
-                  PageView.builder(
-                    itemCount:
-                        _productImages.isEmpty ? 1 : _productImages.length,
-                    onPageChanged: (index) =>
-                        setState(() => _imageIndex = index),
-                    itemBuilder: (context, index) => ColoredBox(
-                      color: AppConstants.surfaceLight,
-                      child: ProductThumbnail(
-                        imageUrl: _productImages.isEmpty
-                            ? widget.product.imageUrl
-                            : _productImages[index],
-                        size: 280,
-                        width: double.infinity,
-                        height: 280,
-                        fit: BoxFit.contain,
-                        borderRadius: BorderRadius.zero,
-                        fallbackIcon: Icons.shopping_basket_outlined,
-                        backgroundColor: Colors.white,
-                        imageWidthFactor: 1,
-                      ),
-                    ),
-                  ),
-                  if (_productImages.length > 1)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: List<Widget>.generate(
-                          _productImages.length,
-                          (index) => AnimatedContainer(
-                            duration: const Duration(milliseconds: 180),
-                            width: _imageIndex == index ? 18 : 7,
-                            height: 7,
-                            margin: const EdgeInsets.symmetric(horizontal: 3),
-                            decoration: BoxDecoration(
-                              color: _imageIndex == index
-                                  ? AppConstants.primary
-                                  : AppConstants.textMuted
-                                      .withValues(alpha: .45),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-
+            ProductImageGallery(product: widget.product, height: 280),
             Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
@@ -420,25 +357,41 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${AppConstants.currencySymbol}${widget.product.price.toInt()}',
-                              style: TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                                color: AppConstants.textDark,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ProductDiscountPrice(
+                                product: widget.product,
+                                currentPrice: widget.product.price,
+                                currentPriceStyle: TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppConstants.textDark,
+                                ),
+                                previousPriceStyle: TextStyle(
+                                  fontSize: 13,
+                                  color: AppConstants.textMuted,
+                                  decoration: TextDecoration.lineThrough,
+                                ),
+                                savingsStyle: TextStyle(
+                                  fontSize: 11,
+                                  color: Theme.of(context).colorScheme.primary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                                showSavings: true,
                               ),
-                            ),
-                            Text(
-                              widget.product.isWholesaleItem
-                                  ? 'Wholesale unit · minimum $minimumQuantity'
-                                  : 'Standard packaging: ${widget.product.weight}',
-                              style: TextStyle(
-                                  color: AppConstants.textMuted, fontSize: 12),
-                            ),
-                          ],
+                              const SizedBox(height: 3),
+                              Text(
+                                widget.product.isWholesaleItem
+                                    ? 'Wholesale unit · minimum $minimumQuantity'
+                                    : 'Standard packaging: ${widget.product.weight}',
+                                style: TextStyle(
+                                    color: AppConstants.textMuted,
+                                    fontSize: 12),
+                              ),
+                            ],
+                          ),
                         ),
                         // Quantity selector
                         Container(

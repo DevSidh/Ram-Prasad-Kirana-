@@ -173,7 +173,7 @@ class _AdminRestockScreenState extends State<AdminRestockScreen> {
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
-            Text(_error!, style: const TextStyle(color: AppColors.errorText)),
+            Text(_error!, style: TextStyle(color: AppColors.errorText)),
           ],
           if (_loading) ...[
             const SizedBox(height: 12),
@@ -288,7 +288,7 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
           children: [
-            const Text(
+            Text(
               'Stock receipts recorded by admin staff.',
               style: TextStyle(color: AppColors.muted),
             ),
@@ -321,7 +321,7 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
             ),
             if (_error != null) ...[
               const SizedBox(height: 10),
-              Text(_error!, style: const TextStyle(color: AppColors.errorText)),
+              Text(_error!, style: TextStyle(color: AppColors.errorText)),
             ],
             if (_loading) ...[
               const SizedBox(height: 12),
@@ -376,10 +376,10 @@ class _RestockReceiptCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadii.card),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
             color: AppColors.cardShadow,
-            offset: Offset(0, 6),
+            offset: const Offset(0, 6),
             blurRadius: 24,
           ),
         ],
@@ -405,7 +405,7 @@ class _RestockReceiptCard extends StatelessWidget {
             children: [
               Text(
                 _receiptQuantityLabel(receipt),
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.primary,
                   fontWeight: FontWeight.w800,
                 ),
@@ -460,7 +460,7 @@ class _RestockHistoryEmptyState extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 48),
       child: Column(
         children: [
-          const Icon(Icons.history_rounded, size: 40, color: AppColors.muted),
+          Icon(Icons.history_rounded, size: 40, color: AppColors.muted),
           const SizedBox(height: 10),
           Text(
             'No stock receipts yet',
@@ -541,13 +541,13 @@ class _RestockEmptyState extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 52),
       child: Column(
         children: [
-          const Icon(
+          Icon(
             Icons.task_alt_rounded,
             size: 42,
             color: AppColors.primary,
           ),
           const SizedBox(height: 12),
-          const Text(
+          Text(
             'Nothing to replenish',
             style: TextStyle(
               color: AppColors.primary,
@@ -693,7 +693,7 @@ class _RestockDialogState extends State<_RestockDialog> {
                 const SizedBox(height: 4),
                 Text(
                   'Current available stock: ${widget.product.availableStockLabel}',
-                  style: const TextStyle(color: AppColors.muted),
+                  style: TextStyle(color: AppColors.muted),
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
@@ -823,7 +823,7 @@ class _RestockDialogState extends State<_RestockDialog> {
                   const SizedBox(height: 8),
                   Text(
                     _error!,
-                    style: const TextStyle(color: AppColors.errorText),
+                    style: TextStyle(color: AppColors.errorText),
                   ),
                 ],
               ],

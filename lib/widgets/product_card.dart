@@ -10,6 +10,7 @@ import '../core/theme/app_theme_extension.dart';
 import '../providers/language_provider.dart';
 import 'product_quick_view.dart';
 import 'product_thumbnail.dart';
+import 'product_discount_price.dart';
 import 'cart_flight_overlay.dart';
 import 'weight_quantity_dialog.dart';
 
@@ -34,11 +35,30 @@ class _ProductCardState extends State<ProductCard> {
 
   Future<void> _addToCart() async {
     final product = widget.product;
+    if (product.isWholesaleItem) {
+      if (!mounted) return;
+      context.read<CartProvider>().addItem(
+            product,
+            product.wholesaleMinimumQuantity,
+            true,
+          );
+      _animateToCart(product);
+      return;
+    }
     final weightGrams = product.isSoldByWeight
         ? await showWeightQuantityDialog(context, product)
         : null;
     if (product.isSoldByWeight && weightGrams == null) return;
     if (!mounted) return;
+    if (weightGrams != null) {
+      context.read<CartProvider>().addWeightedItem(product, weightGrams);
+    } else {
+      context.read<CartProvider>().addItem(product);
+    }
+    _animateToCart(product);
+  }
+
+  void _animateToCart(Product product) {
     final imageContext = _imageKey.currentContext;
     final imageBox = imageContext?.findRenderObject();
     final sourceRect = imageBox is RenderBox && imageBox.hasSize
@@ -46,11 +66,6 @@ class _ProductCardState extends State<ProductCard> {
         : null;
     final targetKey = CartFlightTarget.maybeOf(context);
 
-    if (weightGrams != null) {
-      context.read<CartProvider>().addWeightedItem(product, weightGrams);
-    } else {
-      context.read<CartProvider>().addItem(product);
-    }
     animateProductToCart(
       context: context,
       product: product,
@@ -76,10 +91,15 @@ class _ProductCardState extends State<ProductCard> {
   @override
   Widget build(BuildContext context) {
     final product = widget.product;
+    final isWholesale = product.isWholesaleItem;
+    final hasPurchasableStock = isWholesale
+        ? product.stock >= product.wholesaleMinimumQuantity
+        : product.hasStock;
     final cartProvider = context.read<CartProvider>();
     final productProvider = context.read<ProductProvider>();
     final cartItem = context.select<CartProvider, CartItem?>(
-      (provider) => provider.itemForProduct(product.id),
+      (provider) =>
+          provider.itemForProduct(product.id, isWholesale: isWholesale),
     );
     final isWishlisted = context.select<ProductProvider, bool>(
       (provider) => provider.isWishlisted(product.id),
@@ -135,30 +155,37 @@ class _ProductCardState extends State<ProductCard> {
                     ),
                   ),
                 ),
+                if (productHasSalePrice(product))
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: ProductDiscountBadge(product: product),
+                  ),
                 // Wishlist Button
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: Material(
-                    color: Colors.white.withValues(alpha: 0.86),
-                    shape: const CircleBorder(),
-                    child: IconButton(
-                      tooltip: isWishlisted
-                          ? 'Remove from saved items'
-                          : 'Save item',
-                      constraints:
-                          const BoxConstraints.tightFor(width: 44, height: 44),
-                      onPressed: () => _toggleWishlist(productProvider),
-                      icon: Icon(
-                        isWishlisted ? Icons.favorite : Icons.favorite_border,
-                        color: isWishlisted
-                            ? AppConstants.primary
-                            : AppConstants.textMuted,
-                        size: 18,
+                if (!isWholesale)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Material(
+                      color: Colors.white.withValues(alpha: 0.86),
+                      shape: const CircleBorder(),
+                      child: IconButton(
+                        tooltip: isWishlisted
+                            ? 'Remove from saved items'
+                            : 'Save item',
+                        constraints: const BoxConstraints.tightFor(
+                            width: 44, height: 44),
+                        onPressed: () => _toggleWishlist(productProvider),
+                        icon: Icon(
+                          isWishlisted ? Icons.favorite : Icons.favorite_border,
+                          color: isWishlisted
+                              ? AppConstants.primary
+                              : AppConstants.textMuted,
+                          size: 18,
+                        ),
                       ),
                     ),
                   ),
-                ),
               ],
             ),
 
@@ -208,14 +235,21 @@ class _ProductCardState extends State<ProductCard> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              '${AppConstants.currencySymbol}${product.price.toInt()}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
+                            ProductDiscountPrice(
+                              product: product,
+                              currentPrice: isWholesale
+                                  ? product.wholesalePrice ?? product.price
+                                  : product.price,
+                              showBadge: false,
+                              currentPriceStyle: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 14,
                                 color: AppConstants.textDark,
+                              ),
+                              previousPriceStyle: TextStyle(
+                                fontSize: 10,
+                                color: AppConstants.textMuted,
+                                decoration: TextDecoration.lineThrough,
                               ),
                             ),
                           ],
@@ -235,7 +269,7 @@ class _ProductCardState extends State<ProductCard> {
                             child: child,
                           ),
                         ),
-                        child: cartItem == null && product.hasStock
+                        child: cartItem == null && hasPurchasableStock
                             ? InkWell(
                                 key: const ValueKey('add-to-basket'),
                                 onTap: _addToCart,
@@ -250,17 +284,19 @@ class _ProductCardState extends State<ProductCard> {
                                         color: AppConstants.primary,
                                         borderRadius: BorderRadius.circular(8),
                                       ),
-                                      child: const Row(
+                                      child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          Icon(Icons.add,
+                                          const Icon(Icons.add,
                                               color: AppConstants
                                                   .primaryForeground,
                                               size: 14),
-                                          SizedBox(width: 2),
+                                          const SizedBox(width: 2),
                                           Text(
-                                            'Add',
-                                            style: TextStyle(
+                                            isWholesale
+                                                ? 'Add ${product.wholesaleMinimumQuantity}'
+                                                : 'Add',
+                                            style: const TextStyle(
                                               color: AppConstants
                                                   .primaryForeground,
                                               fontSize: 12,
@@ -297,8 +333,9 @@ class _ProductCardState extends State<ProductCard> {
                                               final grams =
                                                   cartItem.weightGrams! - 100;
                                               if (grams <= 0) {
-                                                cartProvider
-                                                    .removeItem(product.id);
+                                                cartProvider.removeItem(
+                                                    product.id,
+                                                    isWholesale: isWholesale);
                                               } else {
                                                 cartProvider.setWeightedItem(
                                                     product, grams);
@@ -306,7 +343,8 @@ class _ProductCardState extends State<ProductCard> {
                                             } else {
                                               cartProvider.updateQuantity(
                                                   product.id,
-                                                  cartItem.quantity - 1);
+                                                  cartItem.quantity - 1,
+                                                  isWholesale: isWholesale);
                                             }
                                           },
                                           child: Padding(
@@ -341,7 +379,8 @@ class _ProductCardState extends State<ProductCard> {
                                             } else {
                                               cartProvider.updateQuantity(
                                                   product.id,
-                                                  cartItem.quantity + 1);
+                                                  cartItem.quantity + 1,
+                                                  isWholesale: isWholesale);
                                             }
                                           },
                                           child: Padding(
@@ -377,6 +416,10 @@ class _ProductCardState extends State<ProductCard> {
     final tokens = AppThemeExtension.of(context);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final isWholesale = product.isWholesaleItem;
+    final hasPurchasableStock = isWholesale
+        ? product.stock >= product.wholesaleMinimumQuantity
+        : product.hasStock;
     return Material(
       color: tokens.surfaceGlass,
       shape: RoundedRectangleBorder(
@@ -421,33 +464,42 @@ class _ProductCardState extends State<ProductCard> {
                       ),
                     ),
                   ),
-                  Positioned(
-                    top: 0,
-                    right: 0,
-                    child: Material(
-                      color: tokens.surfaceGlass,
-                      shape: const CircleBorder(),
-                      child: IconButton(
-                        tooltip: context.tr(
-                          isWishlisted
-                              ? 'Remove from saved items'
-                              : 'Save item',
-                        ),
-                        constraints: const BoxConstraints.tightFor(
-                          width: 48,
-                          height: 48,
-                        ),
-                        onPressed: () => _toggleWishlist(productProvider),
-                        icon: Icon(
-                          isWishlisted ? Icons.favorite : Icons.favorite_border,
-                          color: isWishlisted
-                              ? theme.colorScheme.primary
-                              : tokens.textSecondary,
-                          size: 18,
+                  if (productHasSalePrice(product))
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: ProductDiscountBadge(product: product),
+                    ),
+                  if (!isWholesale)
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      child: Material(
+                        color: tokens.surfaceGlass,
+                        shape: const CircleBorder(),
+                        child: IconButton(
+                          tooltip: context.tr(
+                            isWishlisted
+                                ? 'Remove from saved items'
+                                : 'Save item',
+                          ),
+                          constraints: const BoxConstraints.tightFor(
+                            width: 48,
+                            height: 48,
+                          ),
+                          onPressed: () => _toggleWishlist(productProvider),
+                          icon: Icon(
+                            isWishlisted
+                                ? Icons.favorite
+                                : Icons.favorite_border,
+                            color: isWishlisted
+                                ? theme.colorScheme.primary
+                                : tokens.textSecondary,
+                            size: 18,
+                          ),
                         ),
                       ),
                     ),
-                  ),
                 ],
               ),
               Expanded(
@@ -479,13 +531,29 @@ class _ProductCardState extends State<ProductCard> {
                       Row(
                         children: [
                           Expanded(
-                            child: Text(
-                              '${AppConstants.currencySymbol}${product.price.toStringAsFixed(0)}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w800,
-                              ),
+                            child: ProductDiscountPrice(
+                              product: product,
+                              currentPrice: isWholesale
+                                  ? product.wholesalePrice ?? product.price
+                                  : product.price,
+                              showBadge: false,
+                              currentPriceStyle:
+                                  theme.textTheme.titleSmall?.copyWith(
+                                        fontWeight: FontWeight.w800,
+                                      ) ??
+                                      const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                              previousPriceStyle:
+                                  theme.textTheme.labelSmall?.copyWith(
+                                        color: tokens.textSecondary,
+                                        decoration: TextDecoration.lineThrough,
+                                      ) ??
+                                      const TextStyle(
+                                        fontSize: 10,
+                                        decoration: TextDecoration.lineThrough,
+                                      ),
                             ),
                           ),
                           SizedBox(
@@ -493,25 +561,26 @@ class _ProductCardState extends State<ProductCard> {
                             height: 48,
                             child: Tooltip(
                               message: context.tr(
-                                product.hasStock
+                                hasPurchasableStock
                                     ? 'Add to basket'
                                     : 'Unavailable',
                               ),
                               child: Material(
-                                color: product.hasStock
+                                color: hasPurchasableStock
                                     ? theme.colorScheme.primary
                                     : tokens.surfaceBorder,
                                 shape: const CircleBorder(),
                                 child: InkWell(
                                   customBorder: const CircleBorder(),
-                                  onTap: product.hasStock ? _addToCart : null,
+                                  onTap:
+                                      hasPurchasableStock ? _addToCart : null,
                                   child: Center(
                                     child: cartItem == null
                                         ? Icon(
-                                            product.hasStock
+                                            hasPurchasableStock
                                                 ? Icons.add_rounded
                                                 : Icons.remove_shopping_cart,
-                                            color: product.hasStock
+                                            color: hasPurchasableStock
                                                 ? theme.colorScheme.onPrimary
                                                 : tokens.textSecondary,
                                             size: 22,

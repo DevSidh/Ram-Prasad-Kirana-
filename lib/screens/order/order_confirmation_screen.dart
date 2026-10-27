@@ -8,13 +8,13 @@ import '../../core/constants.dart';
 import '../../models/buying_streak.dart';
 import '../../models/cart_item.dart';
 import '../../models/order.dart';
-import '../../navigation/main_bottom_nav.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/api_service.dart';
 import '../../widgets/diwali_loop.dart';
 import '../../widgets/product_thumbnail.dart';
+import '../../widgets/order_product_rating_section.dart';
 import '../../widgets/store_animation.dart';
 import 'order_tracking_screen.dart';
 
@@ -39,15 +39,15 @@ class OrderConfirmationScreen extends StatelessWidget {
                   order.paymentStatus == 'COMPLETED')
                 const DiwaliLoop(
                   asset: DiwaliLoop.paymentSuccess,
-                  width: 130,
-                  height: 130,
+                  width: 180,
+                  height: 180,
                   semanticLabel: 'Payment successfully completed',
                   isPlaying: true,
                 )
               else
                 const StoreAnimation(
                   assetPath: 'animations/order_success.lottie',
-                  size: 130,
+                  size: 180,
                   semanticLabel: 'Order successfully placed',
                   loop: false,
                 ),
@@ -155,6 +155,11 @@ class OrderConfirmationScreen extends StatelessWidget {
                   ),
                 ),
               ],
+              if (order.paymentStatus == 'COMPLETED' &&
+                  order.items.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                OrderProductRatingSection(items: order.items),
+              ],
               const SizedBox(height: 32),
               SizedBox(
                 width: double.infinity,
@@ -193,13 +198,7 @@ class OrderConfirmationScreen extends StatelessWidget {
                 height: 50,
                 child: OutlinedButton(
                   onPressed: () {
-                    Navigator.pushAndRemoveUntil(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const MainBottomNav(),
-                      ),
-                      (route) => false,
-                    );
+                    Navigator.of(context).popUntil((route) => route.isFirst);
                   },
                   style: OutlinedButton.styleFrom(
                     shape: RoundedRectangleBorder(

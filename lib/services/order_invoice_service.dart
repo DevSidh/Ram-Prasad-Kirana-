@@ -5,11 +5,41 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../models/cart_item.dart';
 import '../models/order.dart';
+import 'invoice_pdf_builder.dart';
 
 class OrderInvoiceService {
   static const _nepalOffset = Duration(hours: 5, minutes: 45);
 
   static Future<Uint8List> createPdf(Order order) async {
+    final createdAt = DateTime.parse(order.createdAt).toUtc().add(_nepalOffset);
+    final items = order.items
+        .map((item) => InvoicePdfLine(
+              quantity: item.weightGrams == null
+                  ? '${item.quantity}'
+                  : '${item.weightGrams} g',
+              item: item.product.name,
+              amount: item.totalPrice,
+            ))
+        .toList(growable: false);
+    final extras = order.deliveryFee + order.tip;
+    return InvoicePdfBuilder.create(
+      invoiceNumber: order.invoiceNumber ?? order.orderNumber,
+      date: createdAt,
+      customerName: order.address.fullName,
+      customerPhone: order.address.phone,
+      items: items,
+      subtotal: order.subtotal,
+      discount: order.discount,
+      vatAmount: 0,
+      deliveryOrOther: extras,
+      total: order.total,
+      paymentMethod: order.paymentMethod,
+      paymentStatus: order.paymentStatus,
+    );
+  }
+
+  // ignore: unused_element
+  static Future<Uint8List> _createPdfLegacy(Order order) async {
     final document = pw.Document();
     final createdAt = DateTime.parse(order.createdAt).toUtc().add(_nepalOffset);
     final address = order.address;

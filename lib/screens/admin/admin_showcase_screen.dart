@@ -353,10 +353,10 @@ class _ShowcaseProductTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadii.row),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
             color: AppColors.cardShadow,
-            offset: Offset(0, 6),
+            offset: const Offset(0, 6),
             blurRadius: 24,
           ),
         ],
@@ -369,7 +369,7 @@ class _ShowcaseProductTile extends StatelessWidget {
               width: 42,
               height: 42,
               child: product.imageUrl == null || product.imageUrl!.isEmpty
-                  ? const ColoredBox(
+                  ? ColoredBox(
                       color: AppColors.thumbnailBlue,
                       child: Icon(Icons.shopping_basket_outlined,
                           color: AppColors.primary),
@@ -377,7 +377,7 @@ class _ShowcaseProductTile extends StatelessWidget {
                   : Image.network(
                       optimizedProductImageUrl(product.imageUrl!),
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const ColoredBox(
+                      errorBuilder: (_, __, ___) => ColoredBox(
                         color: AppColors.thumbnailBlue,
                         child: Icon(Icons.broken_image_outlined,
                             color: AppColors.primary),
@@ -474,7 +474,7 @@ class _ShowcaseNotice extends StatelessWidget {
       ),
       child: Text(
         message,
-        style: const TextStyle(color: AppColors.warningText),
+        style: TextStyle(color: AppColors.warningText),
       ),
     );
   }
@@ -485,17 +485,17 @@ class _ShowcaseEmpty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 42),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 42),
       child: Column(
         children: [
           Icon(Icons.inventory_2_outlined, size: 42, color: AppColors.muted),
-          SizedBox(height: 12),
-          Text(
+          const SizedBox(height: 12),
+          const Text(
             'No products to feature yet',
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
-          SizedBox(height: 5),
+          const SizedBox(height: 5),
           Text(
             'Add products in the Products section first.',
             style: TextStyle(color: AppColors.muted),

@@ -25,7 +25,7 @@ import { createPublicLegalRouter } from './routes/public-legal.js';
 import { createReviewRouter } from './routes/reviews.js';
 import { sendPushToUser } from './services/push-notifications.js';
 import { getUploadsDirectory } from './services/image-upload.js';
-import { getLocalDayRange } from './services/local-day.js';
+import { getLocalDayRange, getStoreDayKey } from './services/local-day.js';
 import { calculateOrderPricing } from './services/order-pricing.js';
 import {
   getNormalizedProductImage,
@@ -272,7 +272,8 @@ function orderResponse(order: OrderRecord) {
     Date.now() - order.delivery.locationUpdatedAt.getTime() <= 120_000;
   return {
     id: order.id,
-    orderNumber: order.orderNumber,
+    orderNumber: order.invoiceNumber ?? order.orderNumber,
+    invoiceNumber: order.invoiceNumber ?? order.orderNumber,
     items: order.items.map((item) => {
       const wholesaleItem = item.wholesaleItem;
       const product = item.product;
@@ -1287,11 +1288,19 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
         discount,
         tip: input.tip ?? 0,
       });
-      const orderNumber = `FH-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const invoiceYear = Number(getStoreDayKey(new Date()).slice(0, 4));
+      const invoiceSequence = await transaction.invoiceSequence.upsert({
+        where: { year: invoiceYear },
+        create: { year: invoiceYear, nextNumber: 1 },
+        update: { nextNumber: { increment: 1 } },
+      });
+      const invoiceNumber = `RPGS-INV-${invoiceYear}-${String(invoiceSequence.nextNumber).padStart(6, '0')}`;
+      const orderNumber = invoiceNumber;
 
       const created = await transaction.order.create({
         data: {
           orderNumber,
+          invoiceNumber,
           userId,
           addressId: address.id,
           status: 'PLACED',
@@ -1603,7 +1612,7 @@ app.get('/api/v1/coupons/offer', async (_req: Request, res: Response) => {
     const coupons = await prisma.coupon.findMany({
       where: {
         isActive: true,
-        isAnnounced: true,
+        OR: [{ isBannerFeatured: true }, { isAnnounced: true }],
         productId: null,
         assignedUserId: null,
         OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
@@ -1621,7 +1630,11 @@ app.get('/api/v1/coupons/offer', async (_req: Request, res: Response) => {
         usedCount: true,
         expiresAt: true,
       },
-      orderBy: [{ createdAt: 'desc' }, { code: 'asc' }],
+      orderBy: [
+        { isBannerFeatured: 'desc' },
+        { createdAt: 'desc' },
+        { code: 'asc' },
+      ],
     });
     const offer = coupons
       .map((coupon) => toPublicCouponOffer(coupon, now))

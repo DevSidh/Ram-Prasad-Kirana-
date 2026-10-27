@@ -720,7 +720,7 @@ class _AdminOrderCard extends StatelessWidget {
                     ListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
-                      leading: const Icon(
+                      leading: Icon(
                         Icons.circle,
                         size: 8,
                         color: AppColors.primary,
@@ -898,7 +898,7 @@ class _OrderNotice extends StatelessWidget {
       ),
       child: Text(
         message,
-        style: const TextStyle(color: AppColors.warningText),
+        style: TextStyle(color: AppColors.warningText),
       ),
     );
   }
@@ -909,15 +909,15 @@ class _EmptyOrders extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 44),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 44),
       child: Column(
         children: [
           Icon(Icons.receipt_long_outlined, size: 42, color: AppColors.primary),
-          SizedBox(height: 12),
-          Text('No orders found',
+          const SizedBox(height: 12),
+          const Text('No orders found',
               style: TextStyle(fontWeight: FontWeight.w800)),
-          SizedBox(height: 4),
+          const SizedBox(height: 4),
           Text(
             'New customer orders will appear here.',
             style: TextStyle(color: AppColors.muted),

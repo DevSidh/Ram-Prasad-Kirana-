@@ -1004,6 +1004,12 @@ class _OrderPlacementOverlay extends StatelessWidget {
                             fontWeight: FontWeight.w700,
                           ),
                     ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Confirming availability and securing your items…',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                     const SizedBox(height: 4),
                     Text(
                       'Please wait while we confirm it with the store.',

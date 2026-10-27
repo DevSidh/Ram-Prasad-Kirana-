@@ -146,6 +146,7 @@ class PosSale {
   const PosSale({
     required this.id,
     required this.receiptNumber,
+    this.invoiceNumber,
     required this.customerName,
     required this.customerPhone,
     required this.status,
@@ -153,6 +154,8 @@ class PosSale {
     required this.paymentStatus,
     required this.subtotal,
     required this.discount,
+    this.vatRate = 0,
+    this.vatAmount = 0,
     required this.total,
     required this.refundedAmount,
     required this.createdAt,
@@ -160,10 +163,12 @@ class PosSale {
     this.paidAmount,
     this.outstandingAmount,
     this.paymentCollections = const [],
+    this.localPath,
   });
 
   final String id;
   final String receiptNumber;
+  final String? invoiceNumber;
   final String? customerName;
   final String? customerPhone;
   final String status;
@@ -171,6 +176,8 @@ class PosSale {
   final String paymentStatus;
   final double subtotal;
   final double discount;
+  final double vatRate;
+  final double vatAmount;
   final double total;
   final double refundedAmount;
   final DateTime createdAt;
@@ -178,6 +185,7 @@ class PosSale {
   final double? paidAmount;
   final double? outstandingAmount;
   final List<PosPaymentCollection> paymentCollections;
+  final String? localPath;
 
   factory PosSale.fromJson(Map<String, dynamic> json) {
     final createdAt = DateTime.tryParse(json['createdAt'] as String? ?? '');
@@ -190,6 +198,7 @@ class PosSale {
     return PosSale(
       id: json['id'] as String,
       receiptNumber: json['receiptNumber'] as String,
+      invoiceNumber: json['invoiceNumber'] as String?,
       customerName: json['customerName'] as String?,
       customerPhone: json['customerPhone'] as String?,
       status: json['status'] as String? ?? 'COMPLETED',
@@ -197,6 +206,8 @@ class PosSale {
       paymentStatus: json['paymentStatus'] as String? ?? 'COMPLETED',
       subtotal: _posDouble(json['subtotal']),
       discount: _posDouble(json['discount']),
+      vatRate: _posDouble(json['vatRate']),
+      vatAmount: _posDouble(json['vatAmount']),
       total: _posDouble(json['total']),
       refundedAmount: _posDouble(json['refundedAmount']),
       createdAt: createdAt,

@@ -85,7 +85,7 @@ android {
 
     buildTypes {
         debug {
-            applicationIdSuffix ".debug"
+            // Firebase is configured for the base application id only.
         }
 
         release {

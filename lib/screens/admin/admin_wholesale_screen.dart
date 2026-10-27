@@ -303,10 +303,10 @@ class _WholesaleItemCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadii.card),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
             color: AppColors.cardShadow,
-            offset: Offset(0, 6),
+            offset: const Offset(0, 6),
             blurRadius: 24,
           ),
         ],
@@ -685,7 +685,7 @@ class _WholesaleItemFormState extends State<_WholesaleItemForm> {
                   const SizedBox(height: 12),
                   Text(
                     _error!,
-                    style: const TextStyle(color: AppColors.errorText),
+                    style: TextStyle(color: AppColors.errorText),
                   ),
                 ],
               ],
@@ -786,7 +786,7 @@ class _InlineWholesaleError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListTile(
-        leading: const Icon(
+        leading: Icon(
           Icons.cloud_off_outlined,
           color: AppColors.errorText,
         ),
@@ -803,8 +803,8 @@ class _WholesaleEmptyState extends StatelessWidget {
   const _WholesaleEmptyState();
 
   @override
-  Widget build(BuildContext context) => const Padding(
-        padding: EdgeInsets.symmetric(vertical: 44, horizontal: 24),
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 44, horizontal: 24),
         child: Column(
           children: [
             Icon(
@@ -812,12 +812,12 @@ class _WholesaleEmptyState extends StatelessWidget {
               size: 42,
               color: AppColors.muted,
             ),
-            SizedBox(height: 10),
-            Text(
+            const SizedBox(height: 10),
+            const Text(
               'No wholesale items yet',
               style: TextStyle(fontWeight: FontWeight.w800),
             ),
-            SizedBox(height: 4),
+            const SizedBox(height: 4),
             Text(
               'Add a separate wholesale item to make it available to bulk customers.',
               textAlign: TextAlign.center,

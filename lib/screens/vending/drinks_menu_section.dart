@@ -496,11 +496,11 @@ class _DrinkProductArt extends StatelessWidget {
     }
     if (drink.imageUrl.isEmpty) return fallback;
     return CachedNetworkImage(
-      imageUrl: optimizedProductImageUrl(drink.imageUrl, targetWidth: 480),
+      imageUrl: optimizedProductImageUrl(drink.imageUrl, targetWidth: 320),
       fit: BoxFit.contain,
       alignment: Alignment.center,
-      memCacheWidth: 320,
-      memCacheHeight: 420,
+      memCacheWidth: 240,
+      memCacheHeight: 320,
       fadeInDuration: Duration.zero,
       placeholder: (_, __) => fallback,
       errorWidget: (_, __, ___) => fallback,

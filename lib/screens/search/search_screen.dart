@@ -8,6 +8,7 @@ import '../../core/constants.dart';
 import '../../core/responsive_layout.dart';
 import '../../core/theme/app_theme_extension.dart';
 import '../../core/widgets/app_widgets.dart';
+import '../../models/product.dart';
 import '../../providers/language_provider.dart';
 import '../../providers/product_provider.dart';
 import '../../providers/theme_provider.dart';
@@ -56,8 +57,11 @@ class SearchScreen extends StatefulWidget {
 class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _searchController = TextEditingController();
   List<String> _searchHistory = [];
+  List<Product> _wholesaleResults = const [];
   Timer? _searchDebounce;
   bool _isDebouncing = false;
+  bool _isWholesaleLoading = false;
+  int _wholesaleSearchGeneration = 0;
 
   @override
   void initState() {
@@ -129,6 +133,7 @@ class _SearchScreenState extends State<SearchScreen> {
       ..selection = TextSelection.collapsed(offset: query.length);
     productProvider.setSearchQuery(query);
     setState(() => _isDebouncing = false);
+    unawaited(_searchWholesaleProducts(query, productProvider));
     _recordSearch(query);
   }
 
@@ -136,7 +141,50 @@ class _SearchScreenState extends State<SearchScreen> {
     _searchDebounce?.cancel();
     _searchController.clear();
     productProvider.setSearchQuery('');
-    setState(() => _isDebouncing = false);
+    _wholesaleSearchGeneration++;
+    setState(() {
+      _isDebouncing = false;
+      _isWholesaleLoading = false;
+      _wholesaleResults = const [];
+    });
+  }
+
+  Future<void> _searchWholesaleProducts(
+    String query,
+    ProductProvider productProvider,
+  ) async {
+    final normalizedQuery = query.trim();
+    final generation = ++_wholesaleSearchGeneration;
+    if (normalizedQuery.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _isWholesaleLoading = false;
+          _wholesaleResults = const [];
+        });
+      }
+      return;
+    }
+
+    setState(() {
+      _isWholesaleLoading = true;
+      _wholesaleResults = const [];
+    });
+    try {
+      final wholesaleResults =
+          await productProvider.searchWholesaleProducts(normalizedQuery);
+      if (!mounted || generation != _wholesaleSearchGeneration) return;
+      setState(() {
+        _wholesaleResults = wholesaleResults;
+        _isWholesaleLoading = false;
+      });
+    } catch (error) {
+      if (!mounted || generation != _wholesaleSearchGeneration) return;
+      debugPrint('Unable to search wholesale products: $error');
+      setState(() {
+        _wholesaleResults = const [];
+        _isWholesaleLoading = false;
+      });
+    }
   }
 
   @override
@@ -145,7 +193,10 @@ class _SearchScreenState extends State<SearchScreen> {
     final productProvider = context.watch<ProductProvider>();
     final theme = Theme.of(context);
     final tokens = AppThemeExtension.of(context);
-    final results = productProvider.products;
+    final results = [
+      ...productProvider.products,
+      ..._wholesaleResults,
+    ];
     final searchText = _searchController.text.trim();
     final isSearching = searchText.isNotEmpty;
     final suggestions = productProvider.searchSuggestions(searchText);
@@ -195,6 +246,7 @@ class _SearchScreenState extends State<SearchScreen> {
               _searchDebounce?.cancel();
               productProvider.setSearchQuery(value);
               setState(() => _isDebouncing = false);
+              unawaited(_searchWholesaleProducts(value, productProvider));
               _recordSearch(value);
             },
             onChanged: (value) {
@@ -204,6 +256,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 if (!mounted) return;
                 productProvider.setSearchQuery(value);
                 setState(() => _isDebouncing = false);
+                unawaited(_searchWholesaleProducts(value, productProvider));
               });
             },
           ),
@@ -278,7 +331,7 @@ class _SearchScreenState extends State<SearchScreen> {
               )
             : Column(
                 children: [
-                  if (_isDebouncing)
+                  if (_isDebouncing || _isWholesaleLoading)
                     const LinearProgressIndicator(minHeight: 2),
                   if (suggestions.isNotEmpty)
                     Padding(
@@ -316,7 +369,8 @@ class _SearchScreenState extends State<SearchScreen> {
                       ),
                     ),
                   Expanded(
-                    child: _isDebouncing
+                    child: _isDebouncing ||
+                            (_isWholesaleLoading && results.isEmpty)
                         ? const Center(child: CircularProgressIndicator())
                         : results.isEmpty
                             ? suggestions.isEmpty

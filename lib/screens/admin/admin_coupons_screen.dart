@@ -121,6 +121,42 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
     }
   }
 
+  Future<void> _setBannerCoupon(AdminCoupon? selected) async {
+    final current =
+        _coupons.where((coupon) => coupon.isBannerFeatured).toList();
+    final target = selected;
+    try {
+      for (final coupon in current) {
+        if (target == null || coupon.id != target.id) {
+          await _adminApi.setCouponBanner(coupon.id, false);
+        }
+      }
+      if (target != null && !target.isBannerFeatured) {
+        await _adminApi.setCouponBanner(target.id, true);
+      }
+      if (!mounted) return;
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(target == null
+              ? 'Promotion banner coupon cleared.'
+              : '${target.code} selected for the promotion banner.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not update banner coupon: '
+            '${error.toString().replaceFirst('Exception: ', '')}',
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _removeCoupon(AdminCoupon coupon) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -248,7 +284,7 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
         IconButton(
           tooltip: 'Remove ${coupon.code}',
           onPressed: () => _removeCoupon(coupon),
-          icon: const Icon(Icons.delete_outline, color: AppColors.errorText),
+          icon: Icon(Icons.delete_outline, color: AppColors.errorText),
         ),
       ],
     );
@@ -265,7 +301,7 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
                 color: AppColors.thumbnailAmber,
                 borderRadius: BorderRadius.circular(AppRadii.thumbnail),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.local_offer_outlined,
                 color: AppColors.primary,
               ),
@@ -284,10 +320,10 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
           decoration: BoxDecoration(
             color: AppColors.surface,
             borderRadius: BorderRadius.circular(AppRadii.card),
-            boxShadow: const [
+            boxShadow: [
               BoxShadow(
                 color: AppColors.cardShadow,
-                offset: Offset(0, 6),
+                offset: const Offset(0, 6),
                 blurRadius: 24,
               ),
             ],
@@ -328,6 +364,96 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
         children: [
+          if (!_loading && _error == null && _coupons.isNotEmpty)
+            AppSurface(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  Icon(Icons.campaign_outlined, color: AppColors.primary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Promotion banner coupon',
+                            style: Theme.of(context).textTheme.titleSmall),
+                        Text(
+                          'Choose which promotion code is featured on the store banner.',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    width: 230,
+                    child: DropdownButtonFormField<String?>(
+                      initialValue: _coupons
+                              .any((coupon) => coupon.isBannerFeatured)
+                          ? _coupons
+                              .firstWhere((coupon) => coupon.isBannerFeatured)
+                              .id
+                          : null,
+                      decoration: const InputDecoration(
+                        labelText: 'Banner coupon',
+                        isDense: true,
+                      ),
+                      items: [
+                        DropdownMenuItem<String?>(
+                          value: null,
+                          child: const Text('No coupon'),
+                        ),
+                        for (final coupon in _coupons.where(
+                          (coupon) =>
+                              coupon.productId == null && coupon.isActive,
+                        ))
+                          DropdownMenuItem<String?>(
+                            value: coupon.id,
+                            child: Text(coupon.code),
+                          ),
+                      ],
+                      onChanged: (id) => _setBannerCoupon(id == null
+                          ? null
+                          : _coupons.firstWhere((coupon) => coupon.id == id)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: _loading
+                        ? null
+                        : () {
+                            final coupon = _coupons.where((item) =>
+                                item.code.toUpperCase() == 'DIWALI50');
+                            if (coupon.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'DIWALI50 is not in Promotions yet. Add or activate it first.',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+                            if (!coupon.first.isActive) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Activate DIWALI50 before featuring it on the banner.',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+                            unawaited(_setBannerCoupon(coupon.first));
+                          },
+                    icon: const Icon(Icons.auto_awesome_outlined, size: 17),
+                    label: const Text('Feature DIWALI50'),
+                  ),
+                ],
+              ),
+            ),
+          if (!_loading && _error == null && _coupons.isNotEmpty)
+            const SizedBox(height: 12),
           LayoutBuilder(
             builder: (context, constraints) {
               final heading = Text(
@@ -373,7 +499,7 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
-            Text(_error!, style: const TextStyle(color: AppColors.errorText)),
+            Text(_error!, style: TextStyle(color: AppColors.errorText)),
           ],
           const SizedBox(height: 16),
           if (_coupons.isEmpty)
@@ -381,7 +507,7 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
               padding: const EdgeInsets.symmetric(vertical: 44),
               child: Column(
                 children: [
-                  const Icon(Icons.local_offer_outlined,
+                  Icon(Icons.local_offer_outlined,
                       color: AppColors.muted, size: 36),
                   const SizedBox(height: 10),
                   Text(
@@ -614,7 +740,7 @@ class _ProductCouponDialogState extends State<_ProductCouponDialog> {
                     padding: const EdgeInsets.only(top: 6),
                     child: Text(
                       'Selected: ${_selectedCustomer!.profileId}',
-                      style: const TextStyle(color: AppColors.primary),
+                      style: TextStyle(color: AppColors.primary),
                     ),
                   ),
                 const SizedBox(height: 12),
@@ -1031,7 +1157,7 @@ class _AdminCouponFormDialogState extends State<AdminCouponFormDialog> {
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(
                         _error!,
-                        style: const TextStyle(color: AppColors.errorText),
+                        style: TextStyle(color: AppColors.errorText),
                       ),
                     ),
                   ),

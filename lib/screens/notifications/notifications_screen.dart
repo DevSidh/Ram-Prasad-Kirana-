@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/constants.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/cart_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../services/api_service.dart';
@@ -80,15 +81,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     });
     try {
       final api = context.read<ApiService>();
-      String? readAllWarning;
       if (!_markAllReadStarted) {
-        try {
-          await api.patch('/account/notifications/read-all', const {});
-          _markAllReadStarted = true;
-        } catch (_) {
-          readAllWarning =
-              'Could not mark notifications as read. Showing updates anyway.';
-        }
+        // This mutation is independent of the list fetch. Do not make the
+        // customer wait for it before showing their notifications.
+        _markAllReadStarted = true;
+        _markAllNotificationsRead(api, userId, revision);
       }
       final response = await api.get('/account/notifications');
       if (response is! Map<String, dynamic> || response['data'] is! List) {
@@ -123,7 +120,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             .toList();
         _notificationPreferences = notificationPreferences;
         _preferencesWarning = preferencesWarning;
-        _readAllWarning = readAllWarning;
         _pushAvailable = response['pushAvailable'] == true;
         _loading = false;
       });
@@ -136,6 +132,38 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       setState(() {
         _error = error.toString().replaceFirst('Exception: ', '');
         _loading = false;
+      });
+    }
+  }
+
+  Future<void> _markAllNotificationsRead(
+    ApiService api,
+    String userId,
+    int revision,
+  ) async {
+    try {
+      await api.patch('/account/notifications/read-all', const {});
+      if (!mounted ||
+          revision != _loadRevision ||
+          context.read<AuthProvider>().currentUser?.id != userId) {
+        return;
+      }
+      setState(() {
+        for (final notification in _notifications) {
+          notification['isRead'] = true;
+        }
+        _readAllWarning = null;
+      });
+    } catch (_) {
+      if (!mounted ||
+          revision != _loadRevision ||
+          context.read<AuthProvider>().currentUser?.id != userId) {
+        return;
+      }
+      setState(() {
+        _markAllReadStarted = false;
+        _readAllWarning =
+            'Could not mark notifications as read. Showing updates anyway.';
       });
     }
   }
@@ -177,11 +205,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     final couponCode = rawCouponCode.trim().toUpperCase();
     if (!RegExp(r'^[A-Z0-9][A-Z0-9_-]{2,39}$').hasMatch(couponCode)) return;
+    context.read<CartProvider>().suggestCouponCode(couponCode);
     final messenger = ScaffoldMessenger.of(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Coupon $couponCode is ready to use at checkout.',
+          'Coupon $couponCode was added to your cart and will be checked at checkout.',
         ),
         action: SnackBarAction(
           label: 'Copy code',
@@ -434,12 +463,26 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               onRefresh: _loadNotifications,
               child: _loading
                   ? ListView(
-                      children: const [
+                      children: [
                         SizedBox(
                           height: 260,
                           child: Center(
-                            child: CircularProgressIndicator(
-                              color: AppConstants.primary,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const CircularProgressIndicator(
+                                  color: AppConstants.primary,
+                                ),
+                                const SizedBox(height: 16),
+                                Semantics(
+                                  liveRegion: true,
+                                  child: Text(
+                                    'Loading notifications…',
+                                    style:
+                                        Theme.of(context).textTheme.bodyMedium,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),

@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/product_provider.dart';
@@ -52,6 +54,8 @@ class _BillingModule {
 }
 
 class _AdminShellState extends State<AdminShell> {
+  static const _windowsThemePreferenceKey = 'windows_admin_dark_theme';
+
   int _selectedIndex = 0;
   late final List<Widget> _screens;
   final _billingKey = GlobalKey<AdminBillingScreenState>();
@@ -76,17 +80,19 @@ class _AdminShellState extends State<AdminShell> {
   ];
   static const _primaryNavigationIndices = [
     0,
-    1,
-    2,
-    22,
-    16,
-    19,
-    20,
     3,
+    16,
+    20,
+    22,
+    26,
   ];
 
-  bool _storeToolsExpanded = false;
   bool _billingToolsExpanded = false;
+  bool _managementExpanded = false;
+  bool _useDarkWindowsTheme = false;
+
+  bool get _isWindows =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
 
   List<int> get _adminScreenOrder => _windowsOperatorOrder;
 
@@ -117,6 +123,11 @@ class _AdminShellState extends State<AdminShell> {
   @override
   void initState() {
     super.initState();
+    if (_isWindows) {
+      _useDarkWindowsTheme = true;
+      AppColors.windowsAdminDarkTheme = true;
+      _restoreWindowsThemePreference();
+    }
     final api = context.read<ApiService>();
     if (widget.isBillingStaff) {
       _screens = [
@@ -162,6 +173,37 @@ class _AdminShellState extends State<AdminShell> {
     ];
   }
 
+  Future<void> _restoreWindowsThemePreference() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final savedValue = preferences.getBool(_windowsThemePreferenceKey);
+      if (savedValue == null || !mounted) return;
+      setState(() => _useDarkWindowsTheme = savedValue);
+      AppColors.windowsAdminDarkTheme = savedValue;
+    } catch (error) {
+      debugPrint('Could not restore Windows admin theme: $error');
+    }
+  }
+
+  Future<void> _toggleWindowsTheme() async {
+    if (!_isWindows) return;
+    final nextValue = !_useDarkWindowsTheme;
+    setState(() => _useDarkWindowsTheme = nextValue);
+    AppColors.windowsAdminDarkTheme = nextValue;
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setBool(_windowsThemePreferenceKey, nextValue);
+    } catch (error) {
+      debugPrint('Could not save Windows admin theme: $error');
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_isWindows) AppColors.clearWindowsAdminTheme();
+    super.dispose();
+  }
+
   void _selectIndex(int index) {
     setState(() {
       _selectedIndex = index;
@@ -169,7 +211,7 @@ class _AdminShellState extends State<AdminShell> {
         if (index >= _titles.length) {
           _billingToolsExpanded = true;
         } else if (index >= 4 && index < _titles.length) {
-          _storeToolsExpanded = true;
+          _managementExpanded = true;
         }
       }
     });
@@ -189,7 +231,12 @@ class _AdminShellState extends State<AdminShell> {
           _billingKey.currentState?.startNewBill();
           break;
         case _BillingAction.barcode:
-          _billingKey.currentState?.openBarcodeScanner();
+          if (_isWindows && !widget.isBillingStaff) {
+            _billingKey.currentState
+                ?.activateSection(AdminBillingSection.barcodeScanner);
+          } else {
+            _billingKey.currentState?.openBarcodeScanner();
+          }
           break;
         case _BillingAction.profile:
           _showProfile();
@@ -314,6 +361,7 @@ class _AdminShellState extends State<AdminShell> {
               : AppBar(
                   title: Text(title),
                   actions: [
+                    if (_isWindows) _windowsThemeButton(),
                     IconButton(
                       tooltip: 'Sign out',
                       onPressed: _signOut,
@@ -329,7 +377,7 @@ class _AdminShellState extends State<AdminShell> {
               children: [
                 if (showSidebar)
                   SizedBox(
-                    width: 250,
+                    width: 224,
                     child: _buildSidebar(destinations),
                   ),
                 Expanded(
@@ -395,11 +443,11 @@ class _AdminShellState extends State<AdminShell> {
             : 'Store management and operations',
       };
 
-  Widget _buildPageHeader({required String title, required String subtitle}) =>
-      Padding(
+  Widget _buildPageHeader({required String title, required String subtitle}) {
+    if (!_isWindows) {
+      return Padding(
         padding: const EdgeInsets.fromLTRB(8, 24, 30, 16),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
               child: Column(
@@ -407,10 +455,7 @@ class _AdminShellState extends State<AdminShell> {
                 children: [
                   Text(title, style: Theme.of(context).textTheme.headlineLarge),
                   const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                  Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
                 ],
               ),
             ),
@@ -422,6 +467,77 @@ class _AdminShellState extends State<AdminShell> {
           ],
         ),
       );
+    }
+
+    final headerStyle = Theme.of(context).textTheme.titleLarge?.copyWith(
+          color: Colors.white,
+          fontWeight: FontWeight.w500,
+        );
+    return Container(
+      height: 58,
+      color: AppColors.header,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Center(
+            child: Text(
+              _invoisoPageTitle(title),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: headerStyle,
+            ),
+          ),
+          Positioned(
+            right: 12,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _windowsThemeButton(),
+                IconButton(
+                  tooltip: 'Sign out',
+                  style: IconButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    backgroundColor: Colors.transparent,
+                  ),
+                  onPressed: _signOut,
+                  icon: const Icon(Icons.logout_rounded),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _invoisoPageTitle(String title) => switch (title) {
+        'Dashboard' => 'Dashboard Overview',
+        'Products' => 'Product Management',
+        'Customers' => 'Customer Management',
+        'Sales Reports' => 'Reports',
+        'New Bill / POS' => 'Create New Invoice',
+        'Bill History / Invoices' => 'Invoice Management',
+        'Payments & Refunds' => 'Receipt Management',
+        _ => title,
+      };
+
+  Widget _windowsThemeButton() => IconButton(
+        tooltip: _useDarkWindowsTheme
+            ? 'Switch to white theme'
+            : 'Switch to dark theme',
+        style: _isWindows
+            ? IconButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: Colors.transparent,
+              )
+            : null,
+        onPressed: _toggleWindowsTheme,
+        icon: Icon(
+          _useDarkWindowsTheme
+              ? Icons.light_mode_rounded
+              : Icons.dark_mode_rounded,
+        ),
+      );
 
   Widget _buildAdminDrawer(List<NavigationRailDestination> destinations) =>
       Drawer(
@@ -430,92 +546,144 @@ class _AdminShellState extends State<AdminShell> {
 
   Widget _buildSidebar(List<NavigationRailDestination> destinations) {
     final user = context.read<AuthProvider>().currentUser;
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 20, 12, 20),
-          child: Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(AppRadii.brand),
-                ),
-                child: const Icon(
-                  Icons.storefront_rounded,
-                  color: AppColors.accent,
-                  size: 21,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.isBillingStaff ? 'STORE STAFF' : 'STORE ADMIN',
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            color: AppColors.primary,
-                          ),
-                    ),
-                    Text(
-                      'Ram Prasad General Store',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: ListView(
-            key: const ValueKey('admin-navigation-list'),
-            padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
-            children: _buildNavigationItems(destinations),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 16),
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: 17,
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.accent,
+    return Container(
+      color: AppColors.sidebar,
+      child: Column(
+        children: [
+          if (_isWindows) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 18, 14, 16),
+              child: Center(
                 child: Text(
-                  (user?.fullName.isNotEmpty == true
-                          ? user!.fullName.substring(0, 1)
-                          : 'S')
-                      .toUpperCase(),
-                  style: Theme.of(context).textTheme.labelLarge,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  user?.fullName ?? 'Store staff',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w700,
+                  'Ram Prasad\nGeneral Store',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: AppColors.action,
+                        fontWeight: FontWeight.w800,
+                        height: 1.05,
                       ),
                 ),
               ),
-              IconButton(
-                tooltip: 'My profile / logout',
-                onPressed: _showProfile,
-                icon: const Icon(Icons.more_horiz_rounded),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
+              child: Container(
+                height: 40,
+                padding: const EdgeInsets.symmetric(horizontal: 9),
+                decoration: BoxDecoration(
+                  color: AppColors.navigationSelected,
+                  borderRadius: BorderRadius.circular(AppRadii.navigation),
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 11,
+                      backgroundColor: AppColors.action,
+                      foregroundColor: AppColors.onAction,
+                      child: const Text('M', style: TextStyle(fontSize: 11)),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'My Company',
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              color: AppColors.action,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ),
+                    Icon(Icons.expand_more, size: 18, color: AppColors.action),
+                  ],
+                ),
               ),
-            ],
+            ),
+          ] else
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 12, 20),
+              child: Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(AppRadii.brand),
+                    ),
+                    child: Icon(Icons.storefront_rounded,
+                        color: AppColors.accent, size: 21),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                            widget.isBillingStaff
+                                ? 'STORE STAFF'
+                                : 'STORE ADMIN',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelLarge
+                                ?.copyWith(color: AppColors.primary)),
+                        Text('Ram Prasad General Store',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          Expanded(
+            child: ListView(
+              key: const ValueKey('admin-navigation-list'),
+              padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
+              children: _buildNavigationItems(destinations),
+            ),
           ),
-        ),
-      ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 16),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 17,
+                  backgroundColor: AppColors.isWindowsAdminDarkTheme
+                      ? AppColors.successBanner
+                      : AppColors.primary,
+                  foregroundColor: AppColors.isWindowsAdminDarkTheme
+                      ? AppColors.successText
+                      : AppColors.accent,
+                  child: Text(
+                    (user?.fullName.isNotEmpty == true
+                            ? user!.fullName.substring(0, 1)
+                            : 'S')
+                        .toUpperCase(),
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    user?.fullName ?? 'Store staff',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'My profile / logout',
+                  onPressed: _showProfile,
+                  icon: const Icon(Icons.more_horiz_rounded),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -543,7 +711,13 @@ class _AdminShellState extends State<AdminShell> {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 2),
         child: Material(
-          color: selected ? AppColors.primary : Colors.transparent,
+          color: selected
+              ? (_isWindows
+                  ? AppColors.navigationSelected
+                  : (AppColors.isWindowsAdminDarkTheme
+                      ? AppColors.successBanner
+                      : AppColors.primary))
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(AppRadii.navigation),
           child: InkWell(
             borderRadius: BorderRadius.circular(AppRadii.navigation),
@@ -554,38 +728,70 @@ class _AdminShellState extends State<AdminShell> {
               }
             },
             child: SizedBox(
-              height: 32,
+              height: _isWindows ? 40 : 32,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 5),
+                padding: EdgeInsets.symmetric(horizontal: _isWindows ? 10 : 5),
                 child: Row(
                   children: [
-                    Container(
-                      width: 25,
-                      height: 25,
-                      decoration: BoxDecoration(
-                        color: selected ? AppColors.accent : AppColors.surface,
-                        shape: BoxShape.circle,
+                    if (!_isWindows) ...[
+                      Container(
+                        width: 25,
+                        height: 25,
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? (AppColors.isWindowsAdminDarkTheme
+                                  ? AppColors.success
+                                  : AppColors.accent)
+                              : AppColors.surface,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          icon,
+                          size: 15,
+                          color: selected && AppColors.isWindowsAdminDarkTheme
+                              ? AppColors.darkGreen
+                              : AppColors.primary,
+                        ),
                       ),
-                      child: Icon(
+                      const SizedBox(width: 8),
+                    ] else ...[
+                      Icon(
                         icon,
-                        size: 15,
-                        color: AppColors.primary,
+                        size: 17,
+                        color: selected ? AppColors.action : AppColors.muted,
                       ),
-                    ),
-                    const SizedBox(width: 8),
+                      const SizedBox(width: 12),
+                    ],
                     Expanded(
                       child: Text(
-                        titleForIndex(index),
+                        _isWindows
+                            ? _invoisoNavigationTitle(titleForIndex(index))
+                            : titleForIndex(index),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               color: selected
-                                  ? AppColors.accent
+                                  ? (_isWindows
+                                      ? AppColors.action
+                                      : (AppColors.isWindowsAdminDarkTheme
+                                          ? AppColors.successText
+                                          : AppColors.accent))
                                   : AppColors.primary,
                               fontWeight: FontWeight.w600,
                             ),
                       ),
                     ),
+                    if (_isWindows && selected) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        width: 3,
+                        height: 21,
+                        decoration: BoxDecoration(
+                          color: AppColors.action,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -603,16 +809,16 @@ class _AdminShellState extends State<AdminShell> {
     final children = <Widget>[
       for (final index in _primaryNavigationIndices) navigationTile(index),
       _buildNavigationGroup(
-        title: 'Store setup & other tools',
-        expanded: _storeToolsExpanded,
-        onChanged: (expanded) => _storeToolsExpanded = expanded,
+        title: 'Store setup & management',
+        expanded: _managementExpanded,
+        onChanged: (expanded) => _managementExpanded = expanded,
         children: [
           for (var index = 4; index < _titles.length; index++)
-            navigationTile(index),
+            if (!primaryIndices.contains(index)) navigationTile(index),
         ],
       ),
       _buildNavigationGroup(
-        title: 'More billing tools',
+        title: 'Billing management',
         expanded: _billingToolsExpanded,
         onChanged: (expanded) => _billingToolsExpanded = expanded,
         children: [
@@ -623,6 +829,14 @@ class _AdminShellState extends State<AdminShell> {
     ];
     return children;
   }
+
+  String _invoisoNavigationTitle(String title) => switch (title) {
+        'New Bill / POS' => 'New Invoice',
+        'Bill History / Invoices' => 'Invoices',
+        'Payments & Refunds' => 'Receipts',
+        'Sales Reports' => 'Reports',
+        _ => title,
+      };
 
   Widget _buildNavigationGroup({
     required String title,

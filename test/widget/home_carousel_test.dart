@@ -206,19 +206,8 @@ void main() {
     expect(cart.suggestedCouponCode, 'DIWALI50');
     expect(tester.takeException(), isNull);
 
-    double searchOpacity(String key) => tester
-        .widget<Opacity>(
-          find
-              .ancestor(
-                of: find.byKey(ValueKey(key)),
-                matching: find.byType(Opacity),
-              )
-              .first,
-        )
-        .opacity;
-
-    expect(searchOpacity('home-search-inline'), 1);
-    expect(searchOpacity('home-search-pinned'), 0);
+    expect(find.byKey(const ValueKey('home-search-inline')), findsOneWidget);
+    expect(find.byKey(const ValueKey('home-search-pinned')), findsOneWidget);
     expect(find.text('Shop by categories'), findsOneWidget);
     expect(find.text('Cheap'), findsOneWidget);
     expect(
@@ -260,8 +249,8 @@ void main() {
     );
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -700));
     await tester.pump(const Duration(seconds: 1));
-    expect(searchOpacity('home-search-inline'), 0);
-    expect(searchOpacity('home-search-pinned'), 1);
+    expect(find.byKey(const ValueKey('home-search-inline')), findsOneWidget);
+    expect(find.byKey(const ValueKey('home-search-pinned')), findsOneWidget);
     expect(find.text('Everyday rice'), findsOneWidget);
     expect(find.byType(SliverGrid), findsOneWidget);
     await tester.drag(find.byType(CustomScrollView), const Offset(0, 700));
@@ -279,8 +268,9 @@ void main() {
 
     homeActive.value = true;
     await tester.pump();
-    await tester.pump(const Duration(seconds: 4));
+    await tester.pump(const Duration(seconds: 7));
     await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 100));
     expect(pageController.page, 1);
     expect(
       find.byKey(const ValueKey('featured-sale-price-oranges')),

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants.dart';
@@ -51,7 +52,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
-  final ValueNotifier<double> _scrollOffset = ValueNotifier(0);
+  final ValueNotifier<bool> _pinnedSearchVisible = ValueNotifier(false);
   final Map<String, GlobalKey> _categoryChipKeys = {};
   bool _offersOnly = false;
   bool _offerPopupCheckStarted = false;
@@ -64,6 +65,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _backendRecoveryInProgress = false;
   bool _appIsForeground = true;
   bool _showDiwaliAnimation = false;
+  bool _homeScrollInProgress = false;
+  Timer? _homeScrollEndTimer;
   String? _lastAuthenticatedUserId;
   late final AuthProvider _authProvider;
 
@@ -243,8 +246,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void _handleScroll() {
     final double offset =
         _scrollController.hasClients ? _scrollController.offset : 0.0;
-    if ((offset - _scrollOffset.value).abs() >= 1) {
-      _scrollOffset.value = offset;
+    final pinned = offset >= 178;
+    if (_pinnedSearchVisible.value != pinned) {
+      _pinnedSearchVisible.value = pinned;
     }
   }
 
@@ -287,9 +291,32 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return false;
   }
 
+  bool _handleHomeScrollNotification(ScrollNotification notification) {
+    if (notification.metrics.axis == Axis.vertical &&
+        notification is ScrollStartNotification) {
+      _homeScrollEndTimer?.cancel();
+      _setHomeScrollActivity(true);
+    } else if (notification.metrics.axis == Axis.vertical &&
+        notification is ScrollEndNotification) {
+      _homeScrollEndTimer?.cancel();
+      _homeScrollEndTimer = Timer(
+        const Duration(milliseconds: 280),
+        () => _setHomeScrollActivity(false),
+      );
+    }
+    return false;
+  }
+
+  void _setHomeScrollActivity(bool isScrolling) {
+    if (_homeScrollInProgress == isScrolling) return;
+    _homeScrollInProgress = isScrolling;
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _homeScrollEndTimer?.cancel();
     _authProvider.removeListener(_handleAuthSessionChanged);
     _backendRecoveryTimer?.cancel();
     _recoveryProductProvider.removeListener(_handleBackendStatusChanged);
@@ -297,7 +324,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _scrollController
       ..removeListener(_handleScroll)
       ..dispose();
-    _scrollOffset.dispose();
+    _pinnedSearchVisible.dispose();
     super.dispose();
   }
 
@@ -523,198 +550,183 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   ) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: ValueListenableBuilder<double>(
-        valueListenable: _scrollOffset,
-        builder: (context, offset, _) {
-          final collapse = (offset / 80).clamp(0.0, 1.0);
-          return Column(
+      child: Column(
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: AppConstants.primaryLight,
-                      shape: BoxShape.circle,
-                    ),
-                    child: ClipOval(
-                      child: avatarUrl == null
-                          ? Center(
-                              child: Text(
-                                userName.isEmpty
-                                    ? '?'
-                                    : userName.substring(0, 1).toUpperCase(),
-                                style: TextStyle(
-                                  color: AppConstants.primaryDark,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            )
-                          : CachedNetworkImage(
-                              key: ValueKey(avatarUrl),
-                              imageUrl: avatarUrl,
-                              httpHeaders: {
-                                if (authToken != null)
-                                  'Authorization': 'Bearer $authToken',
-                              },
-                              width: 44,
-                              height: 44,
-                              fit: BoxFit.cover,
-                              memCacheWidth: 132,
-                              memCacheHeight: 132,
-                              placeholder: (_, __) => const Icon(
-                                Icons.person_rounded,
-                                color: AppConstants.primary,
-                                size: 24,
-                              ),
-                              errorWidget: (_, __, ___) => const Icon(
-                                Icons.person_rounded,
-                                color: AppConstants.primary,
-                                size: 24,
-                              ),
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppConstants.primaryLight,
+                  shape: BoxShape.circle,
+                ),
+                child: ClipOval(
+                  child: avatarUrl == null
+                      ? Center(
+                          child: Text(
+                            userName.isEmpty
+                                ? '?'
+                                : userName.substring(0, 1).toUpperCase(),
+                            style: TextStyle(
+                              color: AppConstants.primaryDark,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
                             ),
+                          ),
+                        )
+                      : CachedNetworkImage(
+                          key: ValueKey(avatarUrl),
+                          imageUrl: avatarUrl,
+                          httpHeaders: {
+                            if (authToken != null)
+                              'Authorization': 'Bearer $authToken',
+                          },
+                          width: 44,
+                          height: 44,
+                          fit: BoxFit.cover,
+                          memCacheWidth: 132,
+                          memCacheHeight: 132,
+                          placeholder: (_, __) => const Icon(
+                            Icons.person_rounded,
+                            color: AppConstants.primary,
+                            size: 24,
+                          ),
+                          errorWidget: (_, __, ___) => const Icon(
+                            Icons.person_rounded,
+                            color: AppConstants.primary,
+                            size: 24,
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$greeting,',
+                      style: TextStyle(
+                        color: AppConstants.textMuted,
+                        fontSize: 12,
+                      ),
                     ),
+                    Text(
+                      userName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppConstants.textDark,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        height: 1.15,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              const SizedBox(
+                width: 58,
+                height: 54,
+                child: HomeGreetingDiya(),
+              ),
+              IconButton(
+                key: const ValueKey('home-coupon-gift-button'),
+                tooltip: 'Claim an available coupon',
+                onPressed: _openCoupons,
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints.tightFor(
+                  width: 50,
+                  height: 50,
+                ),
+                icon: IgnorePointer(
+                  child: StoreAnimation(
+                    assetPath: 'animations/gift.lottie',
+                    size: 46,
+                    semanticLabel: 'Gift coupon animation',
+                    loop: true,
+                    isVisible: TickerMode.valuesOf(context).enabled &&
+                        !MediaQuery.disableAnimationsOf(context),
                   ),
-                  const SizedBox(width: 11),
-                  Expanded(
-                    child: Opacity(
-                      opacity: 1 - collapse,
-                      child: Transform.translate(
-                        offset: Offset(0, -12 * collapse),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                ),
+              ),
+              const SizedBox(width: 2),
+              UnreadNotificationIndicator(
+                api: context.read<ApiService>(),
+                userId: context.read<AuthProvider>().currentUser?.id,
+                refreshToken: _notificationRefreshToken,
+                child: CircleIconButton(
+                  icon: Icons.notifications_none_rounded,
+                  tooltip: context.tr('Notifications'),
+                  size: 42,
+                  onPressed: () async {
+                    await Navigator.push<void>(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const NotificationsScreen(),
+                      ),
+                    );
+                    if (mounted) {
+                      setState(() => _notificationRefreshToken++);
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: _showLocationOptions,
+              borderRadius: BorderRadius.circular(14),
+              child: SizedBox(
+                height: 42,
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.location_on_outlined,
+                      color: AppConstants.primary,
+                      size: 19,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(
                           children: [
-                            Text(
-                              '$greeting,',
-                              style: TextStyle(
-                                color: AppConstants.textMuted,
-                                fontSize: 12,
+                            TextSpan(
+                              text: context.tr(_locationTitle),
+                              style: const TextStyle(
+                                color: AppConstants.primary,
+                                fontWeight: FontWeight.w800,
                               ),
                             ),
-                            Text(
-                              userName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                            TextSpan(
+                              text: ' · ${context.tr(_locationSubtitle)}',
                               style: TextStyle(
                                 color: AppConstants.textDark,
-                                fontSize: 19,
-                                fontWeight: FontWeight.w800,
-                                height: 1.15,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
                           ],
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  const SizedBox(
-                    width: 58,
-                    height: 54,
-                    child: HomeGreetingDiya(),
-                  ),
-                  IconButton(
-                    key: const ValueKey('home-coupon-gift-button'),
-                    tooltip: 'Claim an available coupon',
-                    onPressed: _openCoupons,
-                    visualDensity: VisualDensity.compact,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 50,
-                      height: 50,
+                    Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: AppConstants.textMuted,
+                      size: 20,
                     ),
-                    icon: IgnorePointer(
-                      child: StoreAnimation(
-                        assetPath: 'animations/gift.lottie',
-                        size: 46,
-                        semanticLabel: 'Gift coupon animation',
-                        loop: true,
-                        isVisible: TickerMode.valuesOf(context).enabled &&
-                            !MediaQuery.disableAnimationsOf(context),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 2),
-                  UnreadNotificationIndicator(
-                    api: context.read<ApiService>(),
-                    userId: context.read<AuthProvider>().currentUser?.id,
-                    refreshToken: _notificationRefreshToken,
-                    child: CircleIconButton(
-                      icon: Icons.notifications_none_rounded,
-                      tooltip: context.tr('Notifications'),
-                      size: 42,
-                      onPressed: () async {
-                        await Navigator.push<void>(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const NotificationsScreen(),
-                          ),
-                        );
-                        if (mounted) {
-                          setState(() => _notificationRefreshToken++);
-                        }
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Opacity(
-                opacity: 1 - collapse * 0.2,
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: _showLocationOptions,
-                    borderRadius: BorderRadius.circular(14),
-                    child: SizedBox(
-                      height: 42,
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.location_on_outlined,
-                            color: AppConstants.primary,
-                            size: 19,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text.rich(
-                              TextSpan(
-                                children: [
-                                  TextSpan(
-                                    text: context.tr(_locationTitle),
-                                    style: const TextStyle(
-                                      color: AppConstants.primary,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                  TextSpan(
-                                    text: ' · ${context.tr(_locationSubtitle)}',
-                                    style: TextStyle(
-                                      color: AppConstants.textDark,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          Icon(
-                            Icons.keyboard_arrow_down_rounded,
-                            color: AppConstants.textMuted,
-                            size: 20,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                  ],
                 ),
               ),
-            ],
-          );
-        },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -749,11 +761,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 enabled: !_showDiwaliAnimation,
                 child: RefreshIndicator(
                   onRefresh: () => _refreshHome(productProvider),
-                  child: RepaintBoundary(
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: _handleHomeScrollNotification,
                     child: CustomScrollView(
                       controller: _scrollController,
-                      physics: const BouncingScrollPhysics(
-                        parent: AlwaysScrollableScrollPhysics(),
+                      scrollBehavior: const _StableHomeScrollBehavior(),
+                      physics: AlwaysScrollableScrollPhysics(
+                        parent: Theme.of(context).platform == TargetPlatform.iOS
+                            ? const BouncingScrollPhysics()
+                            : const ClampingScrollPhysics(),
                       ),
                       slivers: [
                         SliverToBoxAdapter(
@@ -770,52 +786,39 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               Padding(
                                 padding:
                                     const EdgeInsets.symmetric(horizontal: 16),
-                                child: ValueListenableBuilder<double>(
-                                  valueListenable: _scrollOffset,
-                                  child: InkWell(
-                                    key: const ValueKey('home-search-inline'),
-                                    onTap: () {
-                                      showSearchOverlay(context);
-                                    },
-                                    borderRadius: BorderRadius.circular(24),
-                                    child: GlassCard(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 14,
-                                        vertical: 14,
-                                      ),
-                                      radius: 24,
-                                      child: Row(
-                                        children: [
-                                          const Icon(Icons.search,
-                                              color: AppConstants.primary,
-                                              size: 20),
-                                          const SizedBox(width: 10),
-                                          Expanded(
-                                            child: Text(
-                                              context.tr(
-                                                  'Find something fresh...'),
-                                              style: TextStyle(
-                                                  color: AppConstants.textMuted,
-                                                  fontSize: 13),
-                                            ),
+                                child: InkWell(
+                                  key: const ValueKey('home-search-inline'),
+                                  onTap: () {
+                                    showSearchOverlay(context);
+                                  },
+                                  borderRadius: BorderRadius.circular(24),
+                                  child: GlassCard(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 14,
+                                    ),
+                                    radius: 24,
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.search,
+                                            color: AppConstants.primary,
+                                            size: 20),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            context
+                                                .tr('Find something fresh...'),
+                                            style: TextStyle(
+                                                color: AppConstants.textMuted,
+                                                fontSize: 13),
                                           ),
-                                          const Icon(Icons.tune_rounded,
-                                              color: AppConstants.primary,
-                                              size: 18),
-                                        ],
-                                      ),
+                                        ),
+                                        const Icon(Icons.tune_rounded,
+                                            color: AppConstants.primary,
+                                            size: 18),
+                                      ],
                                     ),
                                   ),
-                                  builder: (context, offset, child) {
-                                    final visible = offset < 160;
-                                    return IgnorePointer(
-                                      ignoring: !visible,
-                                      child: Opacity(
-                                        opacity: visible ? 1 : 0,
-                                        child: child,
-                                      ),
-                                    );
-                                  },
                                 ),
                               ),
                               const SizedBox(height: 16),
@@ -1161,8 +1164,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 top: 4,
                 left: 16,
                 right: 16,
-                child: ValueListenableBuilder<double>(
-                  valueListenable: _scrollOffset,
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: _pinnedSearchVisible,
                   child: InkWell(
                     key: const ValueKey('home-search-pinned'),
                     onTap: () => showSearchOverlay(context),
@@ -1192,17 +1195,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ),
                     ),
                   ),
-                  builder: (context, offset, child) {
-                    final progress = ((offset - 160) / 20).clamp(0.0, 1.0);
+                  builder: (context, visible, child) {
                     return IgnorePointer(
-                      ignoring: progress < 0.9,
-                      child: Opacity(
-                        opacity: progress,
-                        child: Transform.translate(
-                          offset: Offset(0, -10 * (1 - progress)),
-                          child: child,
-                        ),
-                      ),
+                      ignoring: !visible,
+                      child: Opacity(opacity: visible ? 1 : 0, child: child),
                     );
                   },
                 ),
@@ -1228,6 +1224,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 }
 
 enum _LocationAction { saved, addAddress }
+
+class _StableHomeScrollBehavior extends MaterialScrollBehavior {
+  const _StableHomeScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+        PointerDeviceKind.stylus,
+        PointerDeviceKind.invertedStylus,
+      };
+}
 
 class _FeaturedProductCarousel extends StatefulWidget {
   final List<Product> products;
@@ -1262,7 +1271,8 @@ class _FeaturedProductCarouselState extends State<_FeaturedProductCarousel> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    final tickerModeEnabled = TickerMode.valuesOf(context).enabled;
+    final tickerModeEnabled = TickerMode.valuesOf(context).enabled &&
+        ModalRoute.of(context)?.isCurrent == true;
     if (_reduceMotion == reduceMotion &&
         _tickerModeEnabled == tickerModeEnabled) {
       return;
@@ -1294,8 +1304,25 @@ class _FeaturedProductCarouselState extends State<_FeaturedProductCarousel> {
       return;
     }
     _autoAdvanceTimer = Timer.periodic(_autoAdvanceInterval, (_) {
+      if (ModalRoute.of(context)?.isCurrent != true || !_isInViewport) {
+        _startAutoAdvance();
+        return;
+      }
       _advanceToNextPage();
     });
+  }
+
+  bool get _isInViewport {
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox ||
+        !renderObject.attached ||
+        !renderObject.hasSize) {
+      return false;
+    }
+    final top = renderObject.localToGlobal(Offset.zero).dy;
+    final bottom = top + renderObject.size.height;
+    final viewportHeight = MediaQuery.sizeOf(context).height;
+    return bottom > 0 && top < viewportHeight;
   }
 
   void _advanceToNextPage() {
@@ -1310,7 +1337,11 @@ class _FeaturedProductCarouselState extends State<_FeaturedProductCarousel> {
   }
 
   void _showPage(int page) {
-    _moveToPage(page, const Duration(milliseconds: 320), Curves.easeOutCubic);
+    _moveToPage(
+      page,
+      const Duration(milliseconds: 420),
+      Curves.easeInOutCubic,
+    );
     _startAutoAdvance();
   }
 
@@ -1382,6 +1413,7 @@ class _FeaturedProductCarouselState extends State<_FeaturedProductCarousel> {
                   child: PageView.builder(
                     controller: _pageController,
                     itemCount: widget.products.length,
+                    allowImplicitScrolling: true,
                     findChildIndexCallback: (key) {
                       if (key is! ValueKey<String>) return null;
                       final index = widget.products.indexWhere(
@@ -1393,22 +1425,15 @@ class _FeaturedProductCarouselState extends State<_FeaturedProductCarousel> {
                       setState(() => _currentPage = page);
                       _startAutoAdvance();
                     },
-                    itemBuilder: (context, index) => AnimatedScale(
-                      scale: index == _currentPage ? 1 : .95,
-                      duration: const Duration(milliseconds: 260),
-                      curve: Curves.easeOutCubic,
-                      child: AnimatedOpacity(
-                        opacity: index == _currentPage ? 1 : .8,
-                        duration: const Duration(milliseconds: 260),
-                        child: _FeaturedProductSlide(
-                          key: ValueKey(widget.products[index].id),
-                          product: widget.products[index],
-                          isActive: index == _currentPage,
-                          onTap: () => showProductQuickView(
-                            context,
-                            widget.products[index],
-                            cartTargetKey: CartFlightTarget.maybeOf(context),
-                          ),
+                    itemBuilder: (context, index) => RepaintBoundary(
+                      child: _FeaturedProductSlide(
+                        key: ValueKey(widget.products[index].id),
+                        product: widget.products[index],
+                        isActive: index == _currentPage,
+                        onTap: () => showProductQuickView(
+                          context,
+                          widget.products[index],
+                          cartTargetKey: CartFlightTarget.maybeOf(context),
                         ),
                       ),
                     ),
@@ -1489,7 +1514,8 @@ class _FeaturedProductSlideState extends State<_FeaturedProductSlide>
   void didChangeDependencies() {
     super.didChangeDependencies();
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    final tickerModeEnabled = TickerMode.valuesOf(context).enabled;
+    final tickerModeEnabled = TickerMode.valuesOf(context).enabled &&
+        ModalRoute.of(context)?.isCurrent == true;
     if (_reduceMotion == reduceMotion &&
         _tickerModeEnabled == tickerModeEnabled) {
       return;
@@ -1791,26 +1817,28 @@ class _FeaturedProductSlideState extends State<_FeaturedProductSlide>
                                   child: child,
                                 );
                               },
-                              child: Transform.rotate(
-                                angle: -.12,
-                                child: SizedBox(
-                                  width: constraints.maxWidth * .4,
-                                  height: constraints.maxHeight * .64,
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(18),
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(5),
-                                      child: ProductThumbnail(
-                                        key: _imageKey,
-                                        imageUrl:
-                                            originalCarouselProductImageUrl(
-                                          product.imageUrl,
+                              child: RepaintBoundary(
+                                child: Transform.rotate(
+                                  angle: -.12,
+                                  child: SizedBox(
+                                    width: constraints.maxWidth * .4,
+                                    height: constraints.maxHeight * .64,
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(18),
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(5),
+                                        child: ProductThumbnail(
+                                          key: _imageKey,
+                                          imageUrl:
+                                              originalCarouselProductImageUrl(
+                                            product.imageUrl,
+                                          ),
+                                          size: constraints.maxWidth * .34,
+                                          width: constraints.maxWidth * .4,
+                                          height: constraints.maxHeight * .62,
+                                          fit: BoxFit.contain,
+                                          borderRadius: BorderRadius.zero,
                                         ),
-                                        size: constraints.maxWidth * .34,
-                                        width: constraints.maxWidth * .4,
-                                        height: constraints.maxHeight * .62,
-                                        fit: BoxFit.contain,
-                                        borderRadius: BorderRadius.zero,
                                       ),
                                     ),
                                   ),

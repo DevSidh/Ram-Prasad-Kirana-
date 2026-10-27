@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -449,8 +450,7 @@ class _SupplierBillsEmptyState extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 56),
         child: Column(
           children: [
-            const Icon(Icons.receipt_long_outlined,
-                size: 42, color: AppColors.muted),
+            Icon(Icons.receipt_long_outlined, size: 42, color: AppColors.muted),
             const SizedBox(height: 12),
             Text(
               'No supplier bills recorded yet.',
@@ -477,6 +477,7 @@ class _SupplierBillFormDialog extends StatefulWidget {
 }
 
 class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
+  static const _savedSuppliersKey = 'windows_admin_saved_suppliers_v1';
   final _formKey = GlobalKey<FormState>();
   final _supplierName = TextEditingController();
   final _supplierPhone = TextEditingController();
@@ -492,7 +493,77 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
   Timer? _searchTimer;
   bool _searching = false;
   bool _saving = false;
+  bool _loadingSuppliers = true;
+  List<Map<String, String>> _savedSuppliers = const [];
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadSavedSuppliers());
+  }
+
+  Future<void> _loadSavedSuppliers() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final raw = preferences.getStringList(_savedSuppliersKey) ?? const [];
+      final suppliers = raw
+          .map((entry) {
+            final decoded = jsonDecode(entry);
+            if (decoded is! Map<String, dynamic>) return null;
+            return <String, String>{
+              'name': decoded['name']?.toString() ?? '',
+              'phone': decoded['phone']?.toString() ?? '',
+              'deliveryPerson': decoded['deliveryPerson']?.toString() ?? '',
+            };
+          })
+          .whereType<Map<String, String>>()
+          .toList(growable: false);
+      if (!mounted) return;
+      setState(() {
+        _savedSuppliers = suppliers;
+        _loadingSuppliers = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingSuppliers = false);
+    }
+  }
+
+  Future<void> _rememberSupplier() async {
+    final name = _supplierName.text.trim();
+    if (name.isEmpty) return;
+    final entry = <String, String>{
+      'name': name,
+      'phone': _supplierPhone.text.trim(),
+      'deliveryPerson': _deliveryPerson.text.trim(),
+    };
+    final next = [
+      entry,
+      ..._savedSuppliers.where(
+        (supplier) =>
+            supplier['name']?.toLowerCase() != name.toLowerCase() ||
+            (supplier['phone'] ?? '') != entry['phone'],
+      ),
+    ].take(50).toList(growable: false);
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setStringList(
+        _savedSuppliersKey,
+        next.map((supplier) => jsonEncode(supplier)).toList(growable: false),
+      );
+      if (mounted) setState(() => _savedSuppliers = next);
+    } catch (_) {
+      // The purchase bill remains saved even if local convenience storage fails.
+    }
+  }
+
+  void _selectSavedSupplier(Map<String, String> supplier) {
+    setState(() {
+      _supplierName.text = supplier['name'] ?? '';
+      _supplierPhone.text = supplier['phone'] ?? '';
+      _deliveryPerson.text = supplier['deliveryPerson'] ?? '';
+    });
+  }
 
   @override
   void dispose() {
@@ -688,6 +759,7 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
         'notes': _nullable(_notes.text),
         'items': items,
       }, photoBytes: _photoBytes!, photoFileName: _photoName!);
+      await _rememberSupplier();
       if (mounted) {
         Navigator.of(context).pop(bill);
       }
@@ -712,8 +784,8 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
     return AlertDialog(
       title: const Text('Record supplier bill'),
       content: SizedBox(
-        width: width >= 860 ? 760 : width * 0.86,
-        height: MediaQuery.sizeOf(context).height * 0.76,
+        width: width >= 1050 ? 940 : width * 0.9,
+        height: MediaQuery.sizeOf(context).height * 0.88,
         child: Form(
           key: _formKey,
           child: Column(
@@ -791,6 +863,34 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
                   ),
                 ],
               ),
+              if (_savedSuppliers.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 42,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _savedSuppliers.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (context, index) {
+                      final supplier = _savedSuppliers[index];
+                      return ActionChip(
+                        avatar: const Icon(Icons.history_rounded, size: 16),
+                        label: Text(
+                          (supplier['phone'] ?? '').isEmpty
+                              ? supplier['name'] ?? ''
+                              : '${supplier['name']} · ${supplier['phone']}',
+                        ),
+                        onPressed: _saving
+                            ? null
+                            : () => _selectSavedSupplier(supplier),
+                      );
+                    },
+                  ),
+                ),
+              ] else if (_loadingSuppliers) ...[
+                const SizedBox(height: 4),
+                const LinearProgressIndicator(minHeight: 2),
+              ],
               const SizedBox(height: 12),
               Wrap(
                 spacing: 8,
@@ -877,17 +977,21 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       )
-                    : ListView(
-                        children: _lines.values
-                            .map((line) => _SupplierBillLineEditor(
-                                  line: line,
-                                  enabled: !_saving,
-                                  onChanged: () => setState(() {}),
-                                  onRemove: () => _removeProduct(
-                                    line.product.id,
-                                  ),
-                                ))
-                            .toList(growable: false),
+                    : Scrollbar(
+                        child: ListView.builder(
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          itemCount: _lines.length,
+                          itemBuilder: (context, index) {
+                            final line = _lines.values.elementAt(index);
+                            return _SupplierBillLineEditor(
+                              line: line,
+                              enabled: !_saving,
+                              onChanged: () => setState(() {}),
+                              onRemove: () => _removeProduct(line.product.id),
+                            );
+                          },
+                        ),
                       ),
               ),
               const SizedBox(height: 6),

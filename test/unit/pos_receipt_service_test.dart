@@ -44,6 +44,40 @@ void main() {
     expect(utf8.decode(bytes.sublist(0, 4)), '%PDF');
   });
 
+  test('creates a shareable invoice with partial-payment details', () async {
+    final partialSale = PosSale(
+      id: 'sale-2',
+      receiptNumber: 'POS-TEST-2',
+      customerName: 'Customer',
+      customerPhone: '9800000000',
+      status: 'COMPLETED',
+      paymentMethod: 'CASH',
+      paymentStatus: 'PARTIAL',
+      subtotal: 100,
+      discount: 10,
+      total: 90,
+      refundedAmount: 0,
+      createdAt: DateTime(2026, 10, 24, 12, 30),
+      paidAmount: 30,
+      outstandingAmount: 60,
+      paymentCollections: [
+        PosPaymentCollection(
+          id: 'payment-1',
+          amount: 30,
+          method: 'CASH',
+          note: null,
+          createdAt: DateTime(2026, 10, 24, 12, 35),
+        ),
+      ],
+      items: sale.items,
+    );
+
+    final bytes = await PosReceiptService.createInvoicePdf(partialSale);
+
+    expect(utf8.decode(bytes.sublist(0, 4)), '%PDF');
+    expect(bytes.length, greaterThan(1000));
+  });
+
   test('rejects unsupported thermal paper widths', () {
     expect(
       () => PosReceiptService.pageFormat(sale, paperWidthMm: 72),

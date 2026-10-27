@@ -238,7 +238,7 @@ class _AdminStoreHoursScreenState extends State<AdminStoreHoursScreen> {
               Text(
                 _error ?? 'Store hours could not be loaded.',
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.errorText),
+                style: TextStyle(color: AppColors.errorText),
               ),
               const SizedBox(height: 12),
               OutlinedButton.icon(

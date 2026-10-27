@@ -262,6 +262,14 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
           const SizedBox(height: 16),
           if (products.isEmpty && !_loading)
             _EmptyProducts(vendingOnly: widget.vendingOnly)
+          else if (AppColors.isWindowsAdminTheme)
+            _WindowsProductTable(
+              products: products,
+              rowOffset: ((_productPage?.pagination.page ?? 1) - 1) *
+                  (_productPage?.pagination.pageSize ?? products.length),
+              onEdit: _editProduct,
+              onSetActive: (product) => _setActive(product, !product.isActive),
+            )
           else
             ...products.map(
               (product) => _ProductCard(
@@ -632,7 +640,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
     final scannedBarcode =
         await Navigator.of(context).push<ScannedProductBarcode>(
       MaterialPageRoute<ScannedProductBarcode>(
-        builder: (_) => const BarcodeScannerScreen(),
+        builder: (_) => BarcodeScannerScreen(api: widget.api),
       ),
     );
     if (!mounted || scannedBarcode == null) return;
@@ -1326,7 +1334,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                   decoration: const InputDecoration(
                     labelText: 'Before price / MRP (optional)',
                     helperText:
-                        'Shown crossed out beside the sale price on featured cards.',
+                        'Shown crossed out beside the sale price with the discount on product cards and details.',
                   ),
                   validator: (value) {
                     final text = value?.trim() ?? '';
@@ -1435,6 +1443,132 @@ class _GalleryImagePreview extends StatelessWidget {
   }
 }
 
+class _WindowsProductTable extends StatelessWidget {
+  const _WindowsProductTable({
+    required this.products,
+    required this.rowOffset,
+    required this.onEdit,
+    required this.onSetActive,
+  });
+
+  final List<AdminProduct> products;
+  final int rowOffset;
+  final ValueChanged<AdminProduct> onEdit;
+  final ValueChanged<AdminProduct> onSetActive;
+
+  @override
+  Widget build(BuildContext context) => AppSurface(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppRadii.card),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              headingRowHeight: 42,
+              dataRowMinHeight: 62,
+              dataRowMaxHeight: 70,
+              horizontalMargin: 14,
+              columnSpacing: 22,
+              headingTextStyle:
+                  Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: AppColors.muted,
+                        fontWeight: FontWeight.w700,
+                      ),
+              columns: const [
+                DataColumn(label: Text('SL. NO.')),
+                DataColumn(label: Text('NAME / SKU')),
+                DataColumn(label: Text('CATEGORY')),
+                DataColumn(label: Text('PRICE')),
+                DataColumn(label: Text('STOCK')),
+                DataColumn(label: Text('STATUS')),
+                DataColumn(label: Text('ACTIONS')),
+              ],
+              rows: [
+                for (var index = 0; index < products.length; index++)
+                  _productRow(context, products[index], rowOffset + index + 1),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  DataRow _productRow(BuildContext context, AdminProduct product, int number) =>
+      DataRow(
+        cells: [
+          DataCell(Text('$number')),
+          DataCell(
+            SizedBox(
+              width: 230,
+              child: Row(
+                children: [
+                  _ProductImage(url: product.imageUrl),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          product.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                        ),
+                        Text(
+                          product.sku,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          DataCell(SizedBox(
+            width: 130,
+            child: Text(
+              product.categoryName.isEmpty ? '—' : product.categoryName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          )),
+          DataCell(Text(
+            '${AppConstants.currencySymbol}${product.price.toStringAsFixed(2)}',
+          )),
+          DataCell(Text('${product.availableStockLabel} ${product.unitLabel}')),
+          DataCell(_ProductStatus(active: product.isActive)),
+          DataCell(Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: 'Edit product',
+                onPressed: () => onEdit(product),
+                icon: const Icon(Icons.edit_outlined, size: 18),
+              ),
+              IconButton(
+                tooltip: product.isActive
+                    ? 'Deactivate product'
+                    : 'Activate product',
+                onPressed: () => onSetActive(product),
+                icon: Icon(
+                  product.isActive ? Icons.delete_outline : Icons.restore,
+                  size: 18,
+                  color:
+                      product.isActive ? AppColors.errorText : AppColors.action,
+                ),
+              ),
+            ],
+          )),
+        ],
+      );
+}
+
 class _ProductCard extends StatelessWidget {
   final AdminProduct product;
   final VoidCallback onEdit;
@@ -1454,10 +1588,10 @@ class _ProductCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadii.card),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
             color: AppColors.cardShadow,
-            offset: Offset(0, 6),
+            offset: const Offset(0, 6),
             blurRadius: 24,
           ),
         ],
@@ -1489,7 +1623,7 @@ class _ProductCard extends StatelessWidget {
                       : '${product.categoryName} · ${product.sku}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.muted),
+                  style: TextStyle(color: AppColors.muted),
                 ),
                 if (product.brand?.isNotEmpty == true) ...[
                   const SizedBox(height: 3),
@@ -1577,13 +1711,12 @@ class _ProductImage extends StatelessWidget {
         height: 42,
         color: AppColors.thumbnailBlue,
         child: imageUrl.isEmpty
-            ? const Icon(Icons.inventory_2_outlined, color: AppColors.primary)
+            ? Icon(Icons.inventory_2_outlined, color: AppColors.primary)
             : Image.network(
                 optimizedProductImageUrl(imageUrl),
                 fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const Icon(
-                    Icons.broken_image_outlined,
-                    color: AppColors.primary),
+                errorBuilder: (_, __, ___) =>
+                    Icon(Icons.broken_image_outlined, color: AppColors.primary),
               ),
       ),
     );
@@ -1623,7 +1756,7 @@ class _PaginationBar extends StatelessWidget {
             icon: const Icon(Icons.chevron_left),
           ),
           Text('${pagination.page} of $pages',
-              style: const TextStyle(color: AppColors.muted)),
+              style: TextStyle(color: AppColors.muted)),
           IconButton(
             tooltip: 'Next page',
             onPressed: pagination.page < pages
@@ -1663,10 +1796,10 @@ class _EmptyProducts extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(AppRadii.card),
-          boxShadow: const [
+          boxShadow: [
             BoxShadow(
               color: AppColors.cardShadow,
-              offset: Offset(0, 6),
+              offset: const Offset(0, 6),
               blurRadius: 24,
             ),
           ],
@@ -1715,7 +1848,7 @@ class _Notice extends StatelessWidget {
             Expanded(
                 child: Text(
               message,
-              style: const TextStyle(color: AppColors.warningText),
+              style: TextStyle(color: AppColors.warningText),
             )),
           ],
         ),

@@ -9,7 +9,7 @@ class AdminGradientBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -164,10 +164,10 @@ class AppStatCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(AppRadii.card),
-          boxShadow: const [
+          boxShadow: [
             BoxShadow(
               color: AppColors.cardShadow,
-              offset: Offset(0, 6),
+              offset: const Offset(0, 6),
               blurRadius: 24,
             ),
           ],
@@ -296,10 +296,10 @@ class AppSurface extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(AppRadii.card),
-          boxShadow: const [
+          boxShadow: [
             BoxShadow(
               color: AppColors.cardShadow,
-              offset: Offset(0, 6),
+              offset: const Offset(0, 6),
               blurRadius: 24,
             ),
           ],

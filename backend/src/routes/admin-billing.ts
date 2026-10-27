@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import { Router, type RequestHandler } from 'express';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { z } from 'zod';
@@ -11,6 +11,7 @@ import {
 } from '../services/local-day.js';
 import { isWeightUnitLabel } from '../services/product-validation.js';
 import { runTransactionWithRetry } from '../services/transaction-retry.js';
+import { recordBuyingStreakPurchase } from '../services/buying-streak.js';
 
 const saleItemsInput = z.array(z.object({
   productId: z.string().trim().min(1).max(100),
@@ -24,9 +25,11 @@ const saleInput = z.object({
   discount: z.number().finite().min(0).max(999999999)
     .refine((value) => Number.isSafeInteger(Math.round(value * 100)))
     .default(0),
+  vatRate: z.number().finite().min(0).max(100).default(0),
   paymentMethod: z.enum(['CASH', 'DIGITAL', 'PENDING']),
   customerName: z.string().trim().max(120).nullable().optional(),
   customerPhone: z.string().trim().max(32).nullable().optional(),
+  customerId: z.string().trim().min(1).max(100).nullable().optional(),
   heldSaleId: z.string().trim().min(1).max(100).nullable().optional(),
 }).strict().superRefine((sale, context) => {
   if (sale.paymentMethod === 'PENDING' &&
@@ -51,6 +54,7 @@ const holdInput = z.object({
   }).strict()).min(1).max(100),
   customerName: z.string().trim().max(120).nullable().optional(),
   customerPhone: z.string().trim().max(32).nullable().optional(),
+  customerId: z.string().trim().min(1).max(100).nullable().optional(),
 }).strict();
 
 const cashMovementInput = z.object({
@@ -130,6 +134,23 @@ async function findOrCreateOpenShift(
     where: { cashierId, status: 'OPEN' },
     select: { id: true, openingCash: true },
   });
+
+const barcodePairingSessions = new Map<string, {
+  ownerId: string;
+  expiresAt: number;
+  scans: string[];
+}>();
+
+function pruneBarcodePairingSessions(now = Date.now()): void {
+  for (const [code, session] of barcodePairingSessions) {
+    if (session.expiresAt <= now) barcodePairingSessions.delete(code);
+  }
+}
+
+const offlineStreakPurchaseInput = z.object({
+  customerId: z.string().trim().min(1).max(100),
+  invoiceNumber: z.string().trim().regex(/^RPGS-INV-\d{4}-\d{6,}$/),
+}).strict();
   if (shift) return shift;
   return tx.posShift.create({
     data: { cashierId, openingCash: 0 },
@@ -144,6 +165,7 @@ function roundMoney(value: number): number {
 function serializeSale(sale: {
   id: string;
   receiptNumber: string;
+  invoiceNumber: string | null;
   customerName: string | null;
   customerPhone: string | null;
   status: string;
@@ -151,6 +173,8 @@ function serializeSale(sale: {
   paymentStatus: string;
   subtotal: Prisma.Decimal;
   discount: Prisma.Decimal;
+  vatRate: Prisma.Decimal;
+  vatAmount: Prisma.Decimal;
   total: Prisma.Decimal;
   paidAmount?: Prisma.Decimal;
   refundedAmount: Prisma.Decimal;
@@ -176,6 +200,7 @@ function serializeSale(sale: {
   return {
     id: sale.id,
     receiptNumber: sale.receiptNumber,
+    invoiceNumber: sale.invoiceNumber ?? sale.receiptNumber,
     customerName: sale.customerName,
     customerPhone: sale.customerPhone,
     status: sale.status,
@@ -183,6 +208,8 @@ function serializeSale(sale: {
     paymentStatus: sale.paymentStatus,
     subtotal: Number(sale.subtotal),
     discount: Number(sale.discount),
+    vatRate: Number(sale.vatRate),
+    vatAmount: Number(sale.vatAmount),
     total: Number(sale.total),
     paidAmount: sale.paidAmount === undefined
       ? sale.paymentStatus === 'COMPLETED' ? Number(sale.total) : 0
@@ -226,6 +253,61 @@ export function createAdminBillingRouter(
   const router = Router();
   const adminOnly: RequestHandler = requireAdmin ?? ((_req, res) => {
     res.status(403).json({ error: 'Administrator access required.' });
+  });
+
+  router.post('/scanner-sessions', adminOnly, (req, res) => {
+    const ownerId = authenticatedAdminId(res);
+    if (!ownerId) return res.status(401).json({ error: 'Sign in again to pair a camera.' });
+    pruneBarcodePairingSessions();
+    let code = '';
+    do {
+      code = String(randomInt(0, 100_000_000)).padStart(8, '0');
+    } while (barcodePairingSessions.has(code));
+    barcodePairingSessions.set(code, {
+      ownerId,
+      expiresAt: Date.now() + 3 * 60 * 1000,
+      scans: [],
+    });
+    return res.status(201).json({ code, expiresInSeconds: 180 });
+  });
+
+  router.get('/scanner-sessions/:code/next', adminOnly, (req, res) => {
+    const ownerId = authenticatedAdminId(res);
+    const code = String(req.params.code ?? '');
+    pruneBarcodePairingSessions();
+    const session = barcodePairingSessions.get(code);
+    if (!ownerId || !session || session.ownerId !== ownerId) {
+      return res.status(404).json({ error: 'Camera pairing expired or unavailable.' });
+    }
+    return res.json({ barcode: session.scans.shift() ?? null });
+  });
+
+  router.post('/scanner-sessions/:code/join', adminOnly, (req, res) => {
+    const ownerId = authenticatedAdminId(res);
+    const code = String(req.params.code ?? '');
+    pruneBarcodePairingSessions();
+    const session = barcodePairingSessions.get(code);
+    if (!ownerId || !session || session.ownerId !== ownerId) {
+      return res.status(404).json({ error: 'Pairing code is invalid or expired.' });
+    }
+    return res.json({ connected: true });
+  });
+
+  router.post('/scanner-sessions/:code/scan', adminOnly, (req, res) => {
+    const parsed = z.object({
+      barcode: z.string().trim().min(1).max(128),
+    }).strict().safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Enter a valid barcode.' });
+    const ownerId = authenticatedAdminId(res);
+    const code = String(req.params.code ?? '');
+    pruneBarcodePairingSessions();
+    const session = barcodePairingSessions.get(code);
+    if (!ownerId || !session || session.ownerId !== ownerId) {
+      return res.status(404).json({ error: 'Camera pairing expired or unavailable.' });
+    }
+    if (session.scans.length >= 5) session.scans.shift();
+    session.scans.push(parsed.data.barcode);
+    return res.status(202).json({ accepted: true });
   });
 
   router.get('/staff', adminOnly, async (req, res) => {
@@ -712,6 +794,55 @@ export function createAdminBillingRouter(
     }
   });
 
+  router.post('/offline-streak-purchases', async (req, res) => {
+    const cashierId = authenticatedAdminId(res);
+    if (!cashierId) return res.status(401).json({ error: 'Authentication is required.' });
+    const parsed = offlineStreakPurchaseInput.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Enter the registered customer and local invoice number.' });
+    }
+    try {
+      const result = await runTransactionWithRetry(prisma, async (tx) => {
+        const existing = await tx.posOfflineStreakPurchase.findUnique({
+          where: { invoiceNumber: parsed.data.invoiceNumber },
+          select: { userId: true },
+        });
+        if (existing) {
+          if (existing.userId !== parsed.data.customerId) {
+            throw new Error('POS_OFFLINE_INVOICE_REUSED');
+          }
+          return { recorded: false };
+        }
+        const user = await tx.user.findFirst({
+          where: {
+            id: parsed.data.customerId,
+            isActive: true,
+            role: 'CUSTOMER',
+          },
+          select: { id: true },
+        });
+        if (!user) throw new Error('POS_CUSTOMER_UNAVAILABLE');
+        await tx.posOfflineStreakPurchase.create({
+          data: {
+            invoiceNumber: parsed.data.invoiceNumber,
+            userId: user.id,
+          },
+        });
+        await recordBuyingStreakPurchase(tx, user.id, new Date());
+        return { recorded: true };
+      });
+      return res.status(200).json(result);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'POS_CUSTOMER_UNAVAILABLE') {
+        return res.status(404).json({ error: 'The selected customer is no longer active.' });
+      }
+      if (error instanceof Error && error.message === 'POS_OFFLINE_INVOICE_REUSED') {
+        return res.status(409).json({ error: 'That local invoice number belongs to a different customer.' });
+      }
+      sendAdminError(error, res);
+    }
+  });
+
   router.get('/held-sales', async (_req, res) => {
     const cashierId = authenticatedAdminId(res);
     if (!cashierId) return res.status(401).json({ error: 'Authentication is required.' });
@@ -747,17 +878,29 @@ export function createAdminBillingRouter(
     try {
       const heldSale = await runTransactionWithRetry(prisma, async (tx) => {
         const shift = await findOrCreateOpenShift(tx, cashierId);
+        const customer = parsed.data.customerId
+          ? await tx.user.findFirst({
+            where: { id: parsed.data.customerId, isDeleted: false, isActive: true },
+            select: { name: true, phone: true },
+          })
+          : null;
+        if (parsed.data.customerId && !customer) {
+          throw new Error('POS_CUSTOMER_UNAVAILABLE');
+        }
         return tx.posHeldSale.create({
           data: {
             shiftId: shift.id,
-            customerName: parsed.data.customerName ?? null,
-            customerPhone: parsed.data.customerPhone ?? null,
+            customerName: customer?.name ?? parsed.data.customerName ?? null,
+            customerPhone: customer?.phone ?? parsed.data.customerPhone ?? null,
             items: parsed.data.items as Prisma.InputJsonValue,
           },
         });
       });
       return res.status(201).json({ id: heldSale.id });
     } catch (error) {
+      if (error instanceof Error && error.message === 'POS_CUSTOMER_UNAVAILABLE') {
+        return res.status(409).json({ error: 'The selected customer is no longer available.' });
+      }
       sendAdminError(error, res);
     }
   });
@@ -946,16 +1089,35 @@ export function createAdminBillingRouter(
             throw new Error('POS_INSUFFICIENT_STOCK');
           }
         }
+        const customer = parsed.data.customerId
+          ? await tx.user.findFirst({
+            where: { id: parsed.data.customerId, isDeleted: false },
+            select: { name: true, phone: true, isActive: true },
+          })
+          : null;
+        if (parsed.data.customerId && (!customer || !customer.isActive)) {
+          throw new Error('POS_CUSTOMER_UNAVAILABLE');
+        }
         const subtotal = roundMoney(lines.reduce((sum, line) => sum + line.lineTotal, 0));
         const discount = roundMoney(parsed.data.discount);
         if (discount > subtotal) throw new Error('POS_DISCOUNT_EXCEEDS_TOTAL');
-        const total = roundMoney(subtotal - discount);
+        const vatRate = roundMoney(parsed.data.vatRate);
+        const vatAmount = roundMoney((subtotal - discount) * vatRate / 100);
+        const total = roundMoney(subtotal - discount + vatAmount);
+        const invoiceYear = Number(getStoreDayKey(new Date()).slice(0, 4));
+        const invoiceSequence = await tx.invoiceSequence.upsert({
+          where: { year: invoiceYear },
+          create: { year: invoiceYear, nextNumber: 1 },
+          update: { nextNumber: { increment: 1 } },
+        });
+        const invoiceNumber = `RPGS-INV-${invoiceYear}-${String(invoiceSequence.nextNumber).padStart(6, '0')}`;
         const sale = await tx.posSale.create({
           data: {
             receiptNumber,
+            invoiceNumber,
             shiftId: shift.id,
-            customerName: parsed.data.customerName ?? null,
-            customerPhone: parsed.data.customerPhone ?? null,
+            customerName: customer?.name ?? parsed.data.customerName ?? null,
+            customerPhone: customer?.phone ?? parsed.data.customerPhone ?? null,
             paymentMethod: parsed.data.paymentMethod,
             paymentStatus: parsed.data.paymentMethod === 'PENDING'
               ? 'PENDING'
@@ -963,6 +1125,8 @@ export function createAdminBillingRouter(
             paidAmount: parsed.data.paymentMethod === 'PENDING' ? 0 : total,
             subtotal,
             discount,
+            vatRate,
+            vatAmount,
             total,
             ...(parsed.data.paymentMethod === 'PENDING' || total === 0
               ? {}
@@ -1039,6 +1203,7 @@ export function createAdminBillingRouter(
           POS_WEIGHT_REQUIRED: 'Enter a weight for each product sold by weight.',
           POS_INSUFFICIENT_STOCK: 'The requested quantity exceeds available stock.',
           POS_DISCOUNT_EXCEEDS_TOTAL: 'The discount cannot exceed the bill subtotal.',
+          POS_CUSTOMER_UNAVAILABLE: 'The selected customer is no longer available.',
         };
         if (clientErrors[error.message]) {
           return res.status(409).json({ error: clientErrors[error.message] });

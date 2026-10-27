@@ -110,48 +110,55 @@ class _ProductThumbnailState extends State<ProductThumbnail> {
             size: widget.size >= 80 ? 46 : 26,
           ),
         );
-        return ClipRRect(
-          borderRadius: widget.borderRadius,
-          child: ColoredBox(
-            color: widget.backgroundColor,
-            child: Center(
-              child: SizedBox(
-                width: photoWidth,
-                height: imageHeight,
-                child: url.isEmpty
-                    ? fallback
-                    : CachedNetworkImage(
-                        key: ValueKey('$url-$_retryCount'),
-                        imageUrl: url,
-                        imageRenderMethodForWeb: kIsWeb
-                            ? ImageRenderMethodForWeb.HttpGet
-                            : ImageRenderMethodForWeb.HtmlImage,
-                        width: photoWidth,
-                        height: imageHeight,
-                        memCacheWidth: cacheWidth,
-                        memCacheHeight: cacheHeight,
-                        fit: widget.fit,
-                        fadeInDuration: Duration.zero,
-                        fadeOutDuration: Duration.zero,
-                        placeholder: (_, __) => fallback,
-                        errorWidget: (_, failedUrl, error) {
-                          FlutterError.reportError(
-                            FlutterErrorDetails(
-                              exception: error,
-                              library: 'product image',
-                              context: ErrorDescription(
-                                'while loading a remote product thumbnail',
-                              ),
+        final thumbnail = ColoredBox(
+          color: widget.backgroundColor,
+          child: Center(
+            child: SizedBox(
+              width: photoWidth,
+              height: imageHeight,
+              child: url.isEmpty
+                  ? fallback
+                  : CachedNetworkImage(
+                      key: ValueKey('$url-$_retryCount'),
+                      imageUrl: url,
+                      imageRenderMethodForWeb: kIsWeb
+                          ? ImageRenderMethodForWeb.HttpGet
+                          : ImageRenderMethodForWeb.HtmlImage,
+                      width: photoWidth,
+                      height: imageHeight,
+                      memCacheWidth: cacheWidth,
+                      memCacheHeight: cacheHeight,
+                      fit: widget.fit,
+                      fadeInDuration: Duration.zero,
+                      fadeOutDuration: Duration.zero,
+                      placeholder: (_, __) => fallback,
+                      errorWidget: (_, failedUrl, error) {
+                        FlutterError.reportError(
+                          FlutterErrorDetails(
+                            exception: error,
+                            library: 'product image',
+                            context: ErrorDescription(
+                              'while loading a remote product thumbnail',
                             ),
-                          );
-                          _retryAfterFailure(failedUrl);
-                          return fallback;
-                        },
-                      ),
-              ),
+                          ),
+                        );
+                        _retryAfterFailure(failedUrl);
+                        return fallback;
+                      },
+                    ),
             ),
           ),
         );
+
+        // A zero-radius ClipRRect still emits a clipping layer. Many product
+        // cards already provide their own rounded image clipping, so avoid
+        // stacking a redundant rectangular clip around each thumbnail.
+        return widget.borderRadius == BorderRadius.zero
+            ? thumbnail
+            : ClipRRect(
+                borderRadius: widget.borderRadius,
+                child: thumbnail,
+              );
       },
     );
   }

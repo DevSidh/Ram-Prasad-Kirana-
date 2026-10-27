@@ -290,7 +290,7 @@ class _SkuEmpty extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 42),
       child: Column(
         children: [
-          const Icon(Icons.qr_code_2_rounded, size: 42, color: AppColors.muted),
+          Icon(Icons.qr_code_2_rounded, size: 42, color: AppColors.muted),
           const SizedBox(height: 12),
           const Text(
             'No products to update',

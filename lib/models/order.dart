@@ -4,6 +4,7 @@ import 'address.dart';
 class Order {
   final String id;
   final String orderNumber;
+  final String? invoiceNumber;
   final List<CartItem> items;
   final Address address;
   final String
@@ -26,6 +27,7 @@ class Order {
   Order({
     required this.id,
     required this.orderNumber,
+    this.invoiceNumber,
     required this.items,
     required this.address,
     required this.status,
@@ -49,6 +51,7 @@ class Order {
     return Order(
       id: json['id'] ?? '',
       orderNumber: json['orderNumber'] ?? '',
+      invoiceNumber: json['invoiceNumber'] as String?,
       items: (json['items'] as List<dynamic>?)
               ?.map((e) => CartItem.fromJson(e))
               .toList() ??
@@ -82,6 +85,7 @@ class Order {
     return {
       'id': id,
       'orderNumber': orderNumber,
+      'invoiceNumber': invoiceNumber ?? orderNumber,
       'items': items.map((e) => e.toJson()).toList(),
       'address': address.toJson(),
       'status': status,

@@ -11,6 +11,7 @@ import '../../providers/theme_provider.dart';
 import '../../services/order_invoice_service.dart';
 import 'order_tracking_screen.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/order_product_rating_section.dart';
 import '../../widgets/store_animation.dart';
 
 class MyOrdersScreen extends StatefulWidget {
@@ -81,14 +82,34 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
     );
     if (action == null || !mounted) return;
     setState(() => _invoiceOrderId = order.id);
+    final messenger = ScaffoldMessenger.of(context);
+    final isAndroidDownload = action == 'download' &&
+        Theme.of(context).platform == TargetPlatform.android;
+    final progressSnackBar = isAndroidDownload
+        ? messenger.showSnackBar(
+            const SnackBar(
+              duration: Duration(minutes: 2),
+              content: Row(
+                children: [
+                  SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  SizedBox(width: 12),
+                  Text('Downloading invoice…'),
+                ],
+              ),
+            ),
+          )
+        : null;
     try {
       final bytes = await OrderInvoiceService.createPdf(order);
       if (!mounted) return;
       final safeOrderNumber =
           order.orderNumber.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
       final filename = 'Ram-Prasad-Invoice-$safeOrderNumber.pdf';
-      if (action == 'download' &&
-          Theme.of(context).platform == TargetPlatform.android) {
+      if (isAndroidDownload) {
         final savedPath = await _invoiceChannel.invokeMethod<String>(
           'savePdf',
           {'filename': filename, 'bytes': bytes},
@@ -97,8 +118,34 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
           throw StateError('The invoice PDF was not saved.');
         }
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Invoice downloaded to $savedPath')),
+        progressSnackBar?.close();
+        messenger.showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 8),
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            content: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.check_circle_rounded, color: Colors.white),
+                    SizedBox(width: 10),
+                    Text(
+                      'Your bill has been downloaded',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                SelectableText(
+                  savedPath,
+                  style: const TextStyle(fontSize: 12, color: Colors.white),
+                ),
+              ],
+            ),
+          ),
         );
       } else if (action == 'download') {
         await Printing.sharePdf(bytes: bytes, filename: filename);
@@ -110,7 +157,8 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
       }
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      progressSnackBar?.close();
+      messenger.showSnackBar(
         SnackBar(
           content: Text(
             'Could not create the invoice PDF: '
@@ -291,6 +339,16 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
+              if (ord.items.isNotEmpty &&
+                  ord.status != 'CANCELLED' &&
+                  (ord.paymentStatus == 'COMPLETED' ||
+                      ord.status == 'DELIVERED')) ...[
+                const SizedBox(height: 12),
+                OrderProductRatingSection(
+                  items: ord.items,
+                  title: 'Rate products from this order',
+                ),
+              ],
               const Divider(height: 20),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,

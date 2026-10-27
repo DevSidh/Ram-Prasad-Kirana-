@@ -5,10 +5,10 @@ import '../../models/product.dart';
 import '../../providers/cart_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/language_provider.dart';
-import '../../widgets/empty_state.dart';
 import '../../widgets/store_animation.dart';
 import '../../widgets/product_thumbnail.dart';
 import '../../widgets/weight_quantity_dialog.dart';
+import '../../widgets/empty_state.dart';
 import '../checkout/checkout_screen.dart';
 
 class CartScreen extends StatefulWidget {

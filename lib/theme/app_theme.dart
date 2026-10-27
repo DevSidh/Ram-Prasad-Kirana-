@@ -5,19 +5,34 @@ import 'app_text.dart';
 
 abstract final class AppTheme {
   static ThemeData get data {
-    const scheme = ColorScheme.light(
-      primary: AppColors.primary,
-      onPrimary: AppColors.accent,
-      secondary: AppColors.accent,
-      onSecondary: AppColors.primary,
-      surface: AppColors.surface,
-      onSurface: AppColors.primary,
-      onSurfaceVariant: AppColors.muted,
-      outline: AppColors.outline,
-      outlineVariant: AppColors.outline,
-      error: AppColors.error,
-      onError: AppColors.surface,
-    );
+    final isDark = AppColors.isWindowsAdminDarkTheme;
+    final scheme = isDark
+        ? ColorScheme.dark(
+            primary: AppColors.action,
+            onPrimary: AppColors.onAction,
+            secondary: AppColors.action,
+            onSecondary: AppColors.onAction,
+            surface: AppColors.surface,
+            onSurface: AppColors.primary,
+            onSurfaceVariant: AppColors.muted,
+            outline: AppColors.outline,
+            outlineVariant: AppColors.outline,
+            error: AppColors.error,
+            onError: AppColors.surface,
+          )
+        : ColorScheme.light(
+            primary: AppColors.action,
+            onPrimary: AppColors.onAction,
+            secondary: AppColors.action,
+            onSecondary: AppColors.onAction,
+            surface: AppColors.surface,
+            onSurface: AppColors.primary,
+            onSurfaceVariant: AppColors.muted,
+            outline: AppColors.outline,
+            outlineVariant: AppColors.outline,
+            error: AppColors.error,
+            onError: AppColors.surface,
+          );
     final textTheme = AppText.theme.apply(
       bodyColor: AppColors.primary,
       displayColor: AppColors.primary,
@@ -29,7 +44,7 @@ abstract final class AppTheme {
 
     return ThemeData(
       useMaterial3: true,
-      brightness: Brightness.light,
+      brightness: isDark ? Brightness.dark : Brightness.light,
       colorScheme: scheme,
       scaffoldBackgroundColor: Colors.transparent,
       canvasColor: AppColors.surface,
@@ -41,7 +56,7 @@ abstract final class AppTheme {
           letterSpacing: 0.72,
         ),
       ),
-      appBarTheme: const AppBarTheme(
+      appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
         foregroundColor: AppColors.primary,
         surfaceTintColor: Colors.transparent,
@@ -64,7 +79,7 @@ abstract final class AppTheme {
           borderRadius: BorderRadius.circular(AppRadii.dialog),
         ),
       ),
-      dividerTheme: const DividerThemeData(
+      dividerTheme: DividerThemeData(
         color: AppColors.outline,
         thickness: 1,
         space: 1,
@@ -73,10 +88,10 @@ abstract final class AppTheme {
         style: FilledButton.styleFrom(
           minimumSize: const Size(0, 40),
           padding: const EdgeInsets.symmetric(horizontal: 18),
-          backgroundColor: AppColors.primary,
-          foregroundColor: AppColors.accent,
-          disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.35),
-          disabledForegroundColor: AppColors.surface,
+          backgroundColor: AppColors.action,
+          foregroundColor: AppColors.onAction,
+          disabledBackgroundColor: AppColors.action.withValues(alpha: 0.35),
+          disabledForegroundColor: isDark ? AppColors.muted : AppColors.surface,
           elevation: 0,
           shape: pillShape,
           textStyle: textTheme.labelLarge,
@@ -88,7 +103,7 @@ abstract final class AppTheme {
           padding: const EdgeInsets.symmetric(horizontal: 18),
           backgroundColor: AppColors.surface,
           foregroundColor: AppColors.primary,
-          side: const BorderSide(color: AppColors.outlinedButton),
+          side: BorderSide(color: AppColors.outlinedButton),
           shape: pillShape,
           textStyle: textTheme.labelLarge,
         ),
@@ -125,11 +140,11 @@ abstract final class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: inputRadius,
-          borderSide: const BorderSide(color: AppColors.success, width: 1.5),
+          borderSide: BorderSide(color: AppColors.success, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: inputRadius,
-          borderSide: const BorderSide(color: AppColors.error),
+          borderSide: BorderSide(color: AppColors.error),
         ),
       ),
       switchTheme: SwitchThemeData(
@@ -139,7 +154,7 @@ abstract final class AppTheme {
                 : AppColors.surface),
         trackColor: WidgetStateProperty.resolveWith((states) =>
             states.contains(WidgetState.selected)
-                ? AppColors.primary
+                ? AppColors.success
                 : AppColors.outline),
         trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
         trackOutlineWidth: WidgetStateProperty.all(0),
@@ -149,7 +164,7 @@ abstract final class AppTheme {
         backgroundColor: AppColors.surface,
         selectedColor: AppColors.accent,
         disabledColor: AppColors.pageEnd,
-        side: const BorderSide(color: AppColors.outline),
+        side: BorderSide(color: AppColors.outline),
         shape: pillShape,
         labelStyle: textTheme.labelMedium,
         secondaryLabelStyle:
@@ -157,15 +172,17 @@ abstract final class AppTheme {
         padding: const EdgeInsets.symmetric(horizontal: 10),
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: AppColors.primary,
-        contentTextStyle: textTheme.bodyMedium?.copyWith(color: Colors.white),
+        backgroundColor: isDark ? AppColors.outline : AppColors.primary,
+        contentTextStyle: textTheme.bodyMedium?.copyWith(
+          color: isDark ? AppColors.primary : Colors.white,
+        ),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadii.input),
         ),
       ),
-      progressIndicatorTheme: const ProgressIndicatorThemeData(
-        color: AppColors.primary,
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        color: scheme.primary,
         linearTrackColor: AppColors.pageEnd,
       ),
     );

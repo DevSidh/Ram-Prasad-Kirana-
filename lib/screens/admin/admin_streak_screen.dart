@@ -391,7 +391,7 @@ class _StreakRewardDialogState extends State<_StreakRewardDialog> {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   _error!,
-                  style: const TextStyle(color: AppColors.errorText),
+                  style: TextStyle(color: AppColors.errorText),
                 ),
               ),
           ],

@@ -519,7 +519,7 @@ class _ExpiryEmptyState extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 42),
       child: Column(
         children: [
-          const Icon(
+          Icon(
             Icons.event_available_outlined,
             size: 42,
             color: AppColors.muted,

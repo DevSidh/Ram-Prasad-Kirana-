@@ -42,6 +42,7 @@ class AdminCoupon {
   final int usedCount;
   final bool isActive;
   final bool isAnnounced;
+  final bool isBannerFeatured;
   final DateTime? expiresAt;
 
   const AdminCoupon({
@@ -59,6 +60,7 @@ class AdminCoupon {
     required this.usedCount,
     required this.isActive,
     this.isAnnounced = false,
+    this.isBannerFeatured = false,
     required this.expiresAt,
   });
 
@@ -102,6 +104,7 @@ class AdminCoupon {
       usedCount: _asInt(json['usedCount']),
       isActive: isActive,
       isAnnounced: json['isAnnounced'] as bool? ?? false,
+      isBannerFeatured: json['isBannerFeatured'] as bool? ?? false,
       expiresAt: expiresAt,
     );
   }
