@@ -3702,133 +3702,136 @@ class _PosBillDialogState extends State<_PosBillDialog> {
           Expanded(
             child: AppSurface(
               padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppColors.navigationSelected,
-                      border: Border.all(color: AppColors.outline),
-                      borderRadius: BorderRadius.circular(AppRadii.input),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppColors.navigationSelected,
+                        border: Border.all(color: AppColors.outline),
+                        borderRadius: BorderRadius.circular(AppRadii.input),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.tune_rounded,
+                              size: 17, color: AppColors.action),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Discount & adjustments',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelLarge
+                                  ?.copyWith(color: AppColors.action),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    child: Row(
+                    const SizedBox(height: 10),
+                    SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment(value: false, label: Text('Amount')),
+                        ButtonSegment(value: true, label: Text('Percentage')),
+                      ],
+                      selected: {_discountIsPercent},
+                      onSelectionChanged: (value) => setState(() {
+                        _discountIsPercent = value.first;
+                      }),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _discount,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      onChanged: (_) => setState(() {}),
+                      decoration: InputDecoration(
+                        labelText: _discountIsPercent
+                            ? 'Discount percentage (%)'
+                            : 'Discount amount',
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _vatRate,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      onChanged: (_) => setState(() {}),
+                      decoration: const InputDecoration(
+                        labelText: 'VAT (%)',
+                        hintText: '0',
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    _billAmountRow('Subtotal', _subtotal),
+                    if (_discountAmount > 0) ...[
+                      const SizedBox(height: 8),
+                      _billAmountRow(
+                        'Discount',
+                        -_discountAmount,
+                      ),
+                    ],
+                    if ((double.tryParse(_vatRate.text.trim()) ?? 0) > 0) ...[
+                      const SizedBox(height: 8),
+                      _billAmountRow(
+                        'VAT (${(double.tryParse(_vatRate.text.trim()) ?? 0).toStringAsFixed(2)}%)',
+                        _vatAmount,
+                      ),
+                    ],
+                    Divider(color: AppColors.outline),
+                    Row(
                       children: [
-                        Icon(Icons.tune_rounded,
-                            size: 17, color: AppColors.action),
-                        const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Discount & adjustments',
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelLarge
-                                ?.copyWith(color: AppColors.action),
+                            'TOTAL',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                        Text(
+                          _money(_total),
+                          style:
+                              Theme.of(context).textTheme.titleLarge?.copyWith(
+                                    color: AppColors.successText,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _saving ? null : _hold,
+                          icon: const Icon(Icons.pause_circle_outline),
+                          label: const Text('Hold'),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: _saving ? null : _completeSale,
+                            icon: _saving
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.save_outlined),
+                            label: Text(_saveOnThisComputer
+                                ? 'Save local bill (F8)'
+                                : 'Create bill (F8)'),
                           ),
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  SegmentedButton<bool>(
-                    segments: const [
-                      ButtonSegment(value: false, label: Text('Amount')),
-                      ButtonSegment(value: true, label: Text('Percentage')),
-                    ],
-                    selected: {_discountIsPercent},
-                    onSelectionChanged: (value) => setState(() {
-                      _discountIsPercent = value.first;
-                    }),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _discount,
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    onChanged: (_) => setState(() {}),
-                    decoration: InputDecoration(
-                      labelText: _discountIsPercent
-                          ? 'Discount percentage (%)'
-                          : 'Discount amount',
-                      isDense: true,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _vatRate,
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    onChanged: (_) => setState(() {}),
-                    decoration: const InputDecoration(
-                      labelText: 'VAT (%)',
-                      hintText: '0',
-                      isDense: true,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  _billAmountRow('Subtotal', _subtotal),
-                  if (_discountAmount > 0) ...[
-                    const SizedBox(height: 8),
-                    _billAmountRow(
-                      'Discount',
-                      -_discountAmount,
-                    ),
                   ],
-                  if ((double.tryParse(_vatRate.text.trim()) ?? 0) > 0) ...[
-                    const SizedBox(height: 8),
-                    _billAmountRow(
-                      'VAT (${(double.tryParse(_vatRate.text.trim()) ?? 0).toStringAsFixed(2)}%)',
-                      _vatAmount,
-                    ),
-                  ],
-                  const Spacer(),
-                  Divider(color: AppColors.outline),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'TOTAL',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                      ),
-                      Text(
-                        _money(_total),
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              color: AppColors.successText,
-                              fontWeight: FontWeight.w800,
-                            ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: _saving ? null : _hold,
-                        icon: const Icon(Icons.pause_circle_outline),
-                        label: const Text('Hold'),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: _saving ? null : _completeSale,
-                          icon: _saving
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.save_outlined),
-                          label: Text(_saveOnThisComputer
-                              ? 'Save local bill (F8)'
-                              : 'Create bill (F8)'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
               ),
             ),
           ),

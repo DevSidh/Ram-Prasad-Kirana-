@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.14)
 project(ram_prasad_billing LANGUAGES CXX)
 
-# The CMake target name. The user-facing executable name is set in runner/CMakeLists.txt.
+# Keep the executable target aligned with Flutter's expected app target.
 set(BINARY_NAME "RamPrasadBilling")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent

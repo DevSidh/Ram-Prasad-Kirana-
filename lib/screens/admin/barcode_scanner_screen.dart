@@ -50,6 +50,9 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
   bool _remoteDesktopMode = false;
   bool _remotePhoneMode = false;
   bool _remoteSending = false;
+  bool _creatingPairingCode = false;
+  bool _remotePolling = false;
+  int _remotePollFailures = 0;
   String? _lastRemoteSentValue;
   final List<String> _pendingRemoteValues = [];
   Timer? _remotePoll;
@@ -141,11 +144,26 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
 
   Future<void> _startDesktopPairing({bool createNew = false}) async {
     final api = widget.api;
-    if (api == null) return;
-    setState(() => _remoteStatus = 'Creating a secure pairing code…');
+    if (api == null || _creatingPairingCode) return;
+    _creatingPairingCode = true;
+    final previousCode = _pairingCode ?? widget.existingPairingCode;
+    if (createNew) {
+      _remotePoll?.cancel();
+      widget.onPairingCodeChanged?.call(null);
+      if (mounted) setState(() => _pairingCode = null);
+    }
+    if (mounted) {
+      setState(() => _remoteStatus = 'Creating a secure pairing code…');
+    }
     try {
-      if (createNew && widget.existingPairingCode != null) {
-        await api.disconnectBarcodeScannerSession(widget.existingPairingCode!);
+      if (createNew && previousCode != null) {
+        // Revocation is best-effort. Older backend deployments may not have
+        // the DELETE route yet; that must not prevent issuing a fresh code.
+        try {
+          await api.disconnectBarcodeScannerSession(previousCode);
+        } catch (_) {
+          // The new code below replaces the stale desktop pairing locally.
+        }
       }
       final code = !createNew && widget.existingPairingCode != null
           ? widget.existingPairingCode!
@@ -153,42 +171,74 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
       if (!mounted) return;
       setState(() {
         _pairingCode = code;
-        _remoteStatus = widget.existingPairingCode == null
+        _remotePollFailures = 0;
+        _remoteStatus = createNew || widget.existingPairingCode == null
             ? 'Enter this code on the phone once. It stays paired until disconnected.'
             : 'Reusing the active pairing. The phone does not need to enter the code again.';
       });
       widget.onPairingCodeChanged?.call(code);
-      _remotePoll?.cancel();
-      _remotePoll = Timer.periodic(const Duration(milliseconds: 800), (_) {
-        unawaited(_pollRemoteBarcode());
-      });
+      _scheduleRemotePoll();
     } catch (error) {
       if (mounted) {
-        setState(() => _remoteStatus = _pairingErrorMessage(error));
+        setState(() => _remoteStatus =
+            'Could not create a pairing code: ${_pairingErrorMessage(error)}');
       }
+    } finally {
+      _creatingPairingCode = false;
+      if (mounted) setState(() {});
     }
+  }
+
+  void _scheduleRemotePoll(
+      {Duration delay = const Duration(milliseconds: 800)}) {
+    _remotePoll?.cancel();
+    _remotePoll = Timer(delay, () => unawaited(_pollRemoteBarcode()));
   }
 
   Future<void> _pollRemoteBarcode() async {
     final api = widget.api;
     final code = _pairingCode;
-    if (api == null || code == null || !mounted) return;
+    if (api == null || code == null || !mounted || _remotePolling) return;
+    _remotePolling = true;
+    _remotePoll = null;
     try {
       final value = await api.takeBarcodeScannerResult(code);
-      if (value == null || value.trim().isEmpty || !mounted) return;
+      _remotePollFailures = 0;
+      if (!mounted) return;
+      if (value == null || value.trim().isEmpty) {
+        _scheduleRemotePoll();
+        return;
+      }
       final parsed = ScannedProductBarcode.parse(value.trim());
       if (parsed == null) {
         setState(() => _remoteStatus =
             'The phone scanned an unsupported code. Try again.');
+        _scheduleRemotePoll();
         return;
       }
-      _remotePoll?.cancel();
       Navigator.of(context).pop(parsed);
     } catch (error) {
       if (!mounted) return;
-      _remotePoll?.cancel();
-      widget.onPairingCodeChanged?.call(null);
-      setState(() => _remoteStatus = _pairingErrorMessage(error));
+      final message = error.toString().toLowerCase();
+      final isExpired = message.contains('expired') || message.contains('410');
+      if (isExpired) {
+        _remotePoll?.cancel();
+        widget.onPairingCodeChanged?.call(null);
+        setState(() {
+          _pairingCode = null;
+          _remoteStatus = _pairingErrorMessage(error);
+        });
+      } else {
+        // A temporary network error, Render cold start, or token refresh
+        // interruption should not kill the session. Back off repeated errors.
+        _remotePollFailures = (_remotePollFailures + 1).clamp(1, 8);
+        final retryDelay = Duration(seconds: _remotePollFailures < 4 ? 2 : 5);
+        setState(() => _remoteStatus =
+            'Connection interrupted. Retrying automatically… ${_pairingErrorMessage(error)}');
+        _scheduleRemotePoll(delay: retryDelay);
+      }
+    } finally {
+      _remotePolling = false;
     }
   }
 
@@ -276,7 +326,8 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
 
   String _pairingErrorMessage(Object error) {
     final message = error.toString();
-    if (message.toLowerCase().contains('expired')) {
+    final lowerMessage = message.toLowerCase();
+    if (lowerMessage.contains('expired') || lowerMessage.contains('410')) {
       return 'The pairing code expired. Create a new code on the computer and reconnect the phone.';
     }
     if (message.contains('Cannot POST') ||
@@ -284,7 +335,18 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
         message.contains('404')) {
       return 'The server needs the barcode-pairing update. Update the backend on Render, then try again.';
     }
-    return 'Pairing expired or the connection failed. Check that both devices are online and signed in to the same billing account, then try again.';
+    if (lowerMessage.contains('401') || lowerMessage.contains('403')) {
+      return 'Your billing sign-in is no longer valid. Sign out and sign in again on both devices.';
+    }
+    if (lowerMessage.contains('503') ||
+        lowerMessage.contains('502') ||
+        lowerMessage.contains('504')) {
+      return 'The store server is temporarily unavailable. Wait a moment and try again.';
+    }
+    if (message.trim().isNotEmpty) {
+      return message.replaceFirst('Exception: ', '');
+    }
+    return 'Check the internet connection and make sure both devices use the same billing account.';
   }
 
   Future<void> _toggleTorch() async {
@@ -531,9 +593,19 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
               ),
               const SizedBox(height: 18),
               OutlinedButton.icon(
-                onPressed: () => _startDesktopPairing(createNew: true),
-                icon: const Icon(Icons.refresh_rounded),
-                label: const Text('Create new code'),
+                onPressed: _creatingPairingCode
+                    ? null
+                    : () => _startDesktopPairing(createNew: true),
+                icon: _creatingPairingCode
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh_rounded),
+                label: Text(_creatingPairingCode
+                    ? 'Creating code…'
+                    : 'Create new code'),
               ),
             ],
           ),
