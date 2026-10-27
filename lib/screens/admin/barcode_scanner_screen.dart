@@ -229,6 +229,9 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
 
   String _pairingErrorMessage(Object error) {
     final message = error.toString();
+    if (message.toLowerCase().contains('expired')) {
+      return 'The pairing code expired. Create a new code on the computer and reconnect the phone.';
+    }
     if (message.contains('Cannot POST') ||
         message.contains('Cannot GET') ||
         message.contains('404')) {

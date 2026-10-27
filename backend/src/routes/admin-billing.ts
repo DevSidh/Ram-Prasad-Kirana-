@@ -126,18 +126,6 @@ function authenticatedRole(res: Parameters<RequestHandler>[1]): string | null {
   return typeof role === 'string' ? role : null;
 }
 
-const barcodePairingSessions = new Map<string, {
-  ownerId: string;
-  expiresAt: number;
-  scans: string[];
-}>();
-
-function pruneBarcodePairingSessions(now = Date.now()): void {
-  for (const [code, session] of barcodePairingSessions) {
-    if (session.expiresAt <= now) barcodePairingSessions.delete(code);
-  }
-}
-
 const offlineStreakPurchaseInput = z.object({
   customerId: z.string().trim().min(1).max(100),
   invoiceNumber: z.string().trim().regex(/^RPGS-INV-\d{4}-\d{6,}$/),
@@ -256,59 +244,104 @@ export function createAdminBillingRouter(
     res.status(403).json({ error: 'Administrator access required.' });
   });
 
-  router.post('/scanner-sessions', adminOnly, (req, res) => {
+  router.post('/scanner-sessions', adminOnly, async (req, res) => {
     const ownerId = authenticatedAdminId(res);
     if (!ownerId) return res.status(401).json({ error: 'Sign in again to pair a camera.' });
-    pruneBarcodePairingSessions();
-    let code = '';
-    do {
-      code = String(randomInt(0, 100_000_000)).padStart(8, '0');
-    } while (barcodePairingSessions.has(code));
-    barcodePairingSessions.set(code, {
-      ownerId,
-      expiresAt: Date.now() + 3 * 60 * 1000,
-      scans: [],
-    });
-    return res.status(201).json({ code, expiresInSeconds: 180 });
+    try {
+      await prisma.barcodeScannerSession.deleteMany({
+        where: { expiresAt: { lte: new Date() } },
+      });
+      let code = '';
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        code = String(randomInt(0, 100_000_000)).padStart(8, '0');
+        try {
+          await prisma.barcodeScannerSession.create({
+            data: {
+              code,
+              ownerId,
+              expiresAt: new Date(Date.now() + 3 * 60 * 1000),
+            },
+          });
+          return res.status(201).json({ code, expiresInSeconds: 180 });
+        } catch (error) {
+          if (!(error instanceof Prisma.PrismaClientKnownRequestError) ||
+              error.code !== 'P2002') throw error;
+        }
+      }
+      return res.status(503).json({ error: 'Could not create a unique pairing code. Try again.' });
+    } catch (error) {
+      sendAdminError(error, res);
+      return undefined;
+    }
   });
 
-  router.get('/scanner-sessions/:code/next', adminOnly, (req, res) => {
+  router.get('/scanner-sessions/:code/next', adminOnly, async (req, res) => {
     const ownerId = authenticatedAdminId(res);
     const code = String(req.params.code ?? '');
-    pruneBarcodePairingSessions();
-    const session = barcodePairingSessions.get(code);
-    if (!ownerId || !session || session.ownerId !== ownerId) {
-      return res.status(404).json({ error: 'Camera pairing expired or unavailable.' });
+    if (!ownerId) return res.status(401).json({ error: 'Authentication is required.' });
+    try {
+      const session = await prisma.barcodeScannerSession.findFirst({
+        where: { code, ownerId, expiresAt: { gt: new Date() } },
+      });
+      if (!session) return res.status(410).json({ error: 'Camera pairing expired. Create a new code.' });
+      if (!session.barcode) return res.json({ barcode: null });
+      const barcode = session.barcode;
+      const consumed = await prisma.barcodeScannerSession.updateMany({
+        where: { code, ownerId, barcode },
+        data: { barcode: null },
+      });
+      return res.json({ barcode: consumed.count ? barcode : null });
+    } catch (error) {
+      sendAdminError(error, res);
+      return undefined;
     }
-    return res.json({ barcode: session.scans.shift() ?? null });
   });
 
-  router.post('/scanner-sessions/:code/join', adminOnly, (req, res) => {
+  router.post('/scanner-sessions/:code/join', adminOnly, async (req, res) => {
     const ownerId = authenticatedAdminId(res);
     const code = String(req.params.code ?? '');
-    pruneBarcodePairingSessions();
-    const session = barcodePairingSessions.get(code);
-    if (!ownerId || !session || session.ownerId !== ownerId) {
-      return res.status(404).json({ error: 'Pairing code is invalid or expired.' });
+    if (!ownerId) return res.status(401).json({ error: 'Authentication is required.' });
+    try {
+      const result = await prisma.barcodeScannerSession.updateMany({
+        where: {
+          code,
+          ownerId,
+          expiresAt: { gt: new Date() },
+        },
+        data: { connectedAt: new Date() },
+      });
+      if (!result.count) return res.status(410).json({ error: 'Pairing code is invalid or expired.' });
+      return res.json({ connected: true });
+    } catch (error) {
+      sendAdminError(error, res);
+      return undefined;
     }
-    return res.json({ connected: true });
   });
 
-  router.post('/scanner-sessions/:code/scan', adminOnly, (req, res) => {
+  router.post('/scanner-sessions/:code/scan', adminOnly, async (req, res) => {
     const parsed = z.object({
       barcode: z.string().trim().min(1).max(128),
     }).strict().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Enter a valid barcode.' });
     const ownerId = authenticatedAdminId(res);
     const code = String(req.params.code ?? '');
-    pruneBarcodePairingSessions();
-    const session = barcodePairingSessions.get(code);
-    if (!ownerId || !session || session.ownerId !== ownerId) {
-      return res.status(404).json({ error: 'Camera pairing expired or unavailable.' });
+    if (!ownerId) return res.status(401).json({ error: 'Authentication is required.' });
+    try {
+      const result = await prisma.barcodeScannerSession.updateMany({
+        where: {
+          code,
+          ownerId,
+          connectedAt: { not: null },
+          expiresAt: { gt: new Date() },
+        },
+        data: { barcode: parsed.data.barcode },
+      });
+      if (!result.count) return res.status(410).json({ error: 'Pairing code is invalid or expired.' });
+      return res.status(202).json({ accepted: true });
+    } catch (error) {
+      sendAdminError(error, res);
+      return undefined;
     }
-    if (session.scans.length >= 5) session.scans.shift();
-    session.scans.push(parsed.data.barcode);
-    return res.status(202).json({ accepted: true });
   });
 
   router.get('/staff', adminOnly, async (req, res) => {

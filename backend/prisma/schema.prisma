@@ -70,6 +70,18 @@ model InvoiceSequence {
   updatedAt DateTime @updatedAt
 }
 
+model BarcodeScannerSession {
+  code        String   @id
+  ownerId     String
+  barcode     String?
+  expiresAt   DateTime @db.Timestamptz(6)
+  connectedAt DateTime? @db.Timestamptz(6)
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([expiresAt])
+  @@index([ownerId, expiresAt])
+}
+
 model BuyingStreakRewardConfig {
   id          String   @id @default(cuid())
   day         Int      @unique
