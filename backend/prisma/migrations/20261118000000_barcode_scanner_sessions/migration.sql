@@ -8,7 +8,11 @@ CREATE TABLE "BarcodeScannerSession" (
   CONSTRAINT "BarcodeScannerSession_pkey" PRIMARY KEY ("code")
 );
 
+ALTER TABLE "BarcodeScannerSession" SET (schema_locked = false);
+
 CREATE INDEX "BarcodeScannerSession_expiresAt_idx"
   ON "BarcodeScannerSession"("expiresAt");
 CREATE INDEX "BarcodeScannerSession_ownerId_expiresAt_idx"
   ON "BarcodeScannerSession"("ownerId", "expiresAt");
+
+ALTER TABLE "BarcodeScannerSession" SET (schema_locked = true);
