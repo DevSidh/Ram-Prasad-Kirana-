@@ -259,16 +259,31 @@ export function createAdminBillingRouter(
             data: {
               code,
               ownerId,
-              expiresAt: new Date(Date.now() + 3 * 60 * 1000),
+              // Pairing remains active until explicitly disconnected. Keep a
+              // far-future expiry so existing expiry filters and cleanup work.
+              expiresAt: new Date('9999-12-31T23:59:59.999Z'),
             },
           });
-          return res.status(201).json({ code, expiresInSeconds: 180 });
+          return res.status(201).json({ code, expiresInSeconds: null });
         } catch (error) {
           if (!(error instanceof Prisma.PrismaClientKnownRequestError) ||
               error.code !== 'P2002') throw error;
         }
       }
       return res.status(503).json({ error: 'Could not create a unique pairing code. Try again.' });
+    } catch (error) {
+      sendAdminError(error, res);
+      return undefined;
+    }
+  });
+
+  router.delete('/scanner-sessions/:code', adminOnly, async (req, res) => {
+    const ownerId = authenticatedAdminId(res);
+    const code = String(req.params.code ?? '');
+    if (!ownerId) return res.status(401).json({ error: 'Authentication is required.' });
+    try {
+      await prisma.barcodeScannerSession.deleteMany({ where: { code, ownerId } });
+      return res.json({ disconnected: true });
     } catch (error) {
       sendAdminError(error, res);
       return undefined;

@@ -16,6 +16,7 @@ import '../../models/admin_models.dart';
 import '../../models/scanned_product_barcode.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../services/billing_excel_export_service.dart';
 import '../../services/pos_receipt_service.dart';
 import '../../theme/admin_widgets.dart';
 import '../../theme/app_colors.dart';
@@ -60,6 +61,8 @@ class AdminBillingScreen extends StatefulWidget {
 }
 
 class AdminBillingScreenState extends State<AdminBillingScreen> {
+  static const _barcodePairingCodePreferenceKey =
+      'admin_billing_barcode_pairing_code';
   bool get _isWindowsOperatorMode =>
       !widget.isBillingStaff &&
       !kIsWeb &&
@@ -84,6 +87,8 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   bool _loading = true;
   String? _error;
   bool _working = false;
+  String? _barcodePairingCode;
+  bool _syncingPendingCashExport = false;
   int _paperWidthMm = 80;
   AdminBillingSection _activeSection = AdminBillingSection.dashboard;
   final _scrollController = ScrollController();
@@ -142,6 +147,23 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       );
     } catch (_) {
       // Local bills are independent from streak synchronization.
+    }
+  }
+
+  Future<void> _loadBarcodePairingCode() async {
+    if (!_isWindowsOperatorMode || _barcodePairingCode != null) return;
+    final preferences = await SharedPreferences.getInstance();
+    _barcodePairingCode =
+        preferences.getString(_barcodePairingCodePreferenceKey);
+  }
+
+  Future<void> _storeBarcodePairingCode(String? code) async {
+    _barcodePairingCode = code;
+    final preferences = await SharedPreferences.getInstance();
+    if (code == null || code.isEmpty) {
+      await preferences.remove(_barcodePairingCodePreferenceKey);
+    } else {
+      await preferences.setString(_barcodePairingCodePreferenceKey, code);
     }
   }
 
@@ -256,6 +278,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         _exchangeError = exchangeError;
         _loading = false;
       });
+      if (_isWindowsOperatorMode) unawaited(_syncPendingCashExport());
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -275,12 +298,29 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         heldSale: heldSale,
         scannedProduct: scannedProduct,
         onScan: _scanProduct,
+        onNewBill: startNewBill,
       ),
     );
     if (!mounted) return;
     if (completedSale?.localPath == null) await _load();
     if (completedSale != null && mounted) {
+      if (_isWindowsOperatorMode && completedSale.localPath != null) {
+        unawaited(_syncPendingCashExport());
+      }
       var printMessage = '';
+      final hasCustomerDetails =
+          (completedSale.customerName?.trim().isNotEmpty ?? false) ||
+              (completedSale.customerPhone?.trim().isNotEmpty ?? false);
+      if (_isWindowsOperatorMode && hasCustomerDetails) {
+        try {
+          final customerFile =
+              await BillingExcelExportService.recordBillCustomer(completedSale);
+          printMessage = ' Customer record saved to $customerFile.';
+        } catch (error) {
+          printMessage =
+              ' Customer record could not be saved: ${error.toString().replaceFirst('Exception: ', '')}';
+        }
+      }
       if (completedSale.localPath != null) {
         printMessage = ' Saved on this computer: ${completedSale.localPath}';
       } else if (defaultTargetPlatform == TargetPlatform.windows) {
@@ -319,6 +359,78 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     unawaited(_newBill());
   }
 
+  Future<void> _syncPendingCashExport({bool showMessage = false}) async {
+    if (!_isWindowsOperatorMode || _syncingPendingCashExport) return;
+    _syncingPendingCashExport = true;
+    try {
+      final pendingHistory = <PosSale>[];
+      var page = 1;
+      var pageCount = 1;
+      do {
+        final result = await _adminApi.getPosSales(
+          page: page,
+          pageSize: 100,
+        );
+        pendingHistory.addAll(result.sales.where((sale) =>
+            sale.paymentStatus == 'PENDING' ||
+            sale.paymentCollections.isNotEmpty));
+        pageCount = result.pageCount;
+        page++;
+      } while (page <= pageCount);
+
+      final localPendingRecords = <Map<String, dynamic>>[];
+      final billsDirectory = Directory('C:/Ramprasad store/bills');
+      if (await billsDirectory.exists()) {
+        await for (final entity in billsDirectory.list(followLinks: false)) {
+          if (entity is! File || !entity.path.toLowerCase().endsWith('.json')) {
+            continue;
+          }
+          try {
+            final decoded = jsonDecode(await entity.readAsString());
+            if (decoded is! Map<String, dynamic> ||
+                decoded['paymentStatus'] != 'PENDING') continue;
+            final total = (decoded['total'] as num?)?.toDouble() ?? 0;
+            final paid = (decoded['paidAmount'] as num?)?.toDouble() ?? 0;
+            if (total <= paid) continue;
+            localPendingRecords.add({
+              'invoiceNumber': decoded['invoiceNumber'],
+              'date': decoded['date'],
+              'customerName': decoded['customerName'],
+              'customerPhone': decoded['customerPhone'],
+              'total': total,
+              'paid': paid,
+              'due': total - paid,
+              'paymentStatus': decoded['paymentStatus'],
+            });
+          } catch (_) {
+            // Ignore malformed local bill files and keep exporting valid bills.
+          }
+        }
+      }
+      final path = await BillingExcelExportService.writePendingCash(
+        pendingHistory,
+        localPendingRecords: localPendingRecords,
+      );
+      if (showMessage && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Pending cash Excel file saved to $path')),
+        );
+      }
+    } catch (error) {
+      if (showMessage && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Could not update pending cash Excel file: ${error.toString().replaceFirst('Exception: ', '')}',
+            ),
+          ),
+        );
+      }
+    } finally {
+      _syncingPendingCashExport = false;
+    }
+  }
+
   void openBarcodeScanner() {
     if (defaultTargetPlatform == TargetPlatform.windows) {
       startNewBill();
@@ -350,9 +462,16 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   }
 
   Future<PosProduct?> _scanProduct() async {
+    await _loadBarcodePairingCode();
+    if (!mounted) return null;
     final scanned = await Navigator.of(context).push<ScannedProductBarcode>(
       MaterialPageRoute(
-        builder: (_) => BarcodeScannerScreen(api: _adminApi),
+        builder: (_) => BarcodeScannerScreen(
+          api: _adminApi,
+          existingPairingCode: _barcodePairingCode,
+          onPairingCodeChanged: (code) =>
+              unawaited(_storeBarcodePairingCode(code)),
+        ),
       ),
     );
     if (scanned == null || !mounted) return null;
@@ -1862,6 +1981,14 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         _sectionHeading(
           'Pending cash',
           actions: [
+            if (_isWindowsOperatorMode)
+              OutlinedButton.icon(
+                onPressed: _syncingPendingCashExport
+                    ? null
+                    : () => _syncPendingCashExport(showMessage: true),
+                icon: const Icon(Icons.table_view_outlined),
+                label: const Text('Save Excel'),
+              ),
             if (page != null)
               Chip(
                 avatar: const Icon(Icons.account_balance_wallet_outlined),
@@ -2613,10 +2740,69 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   }
 }
 
+class _PosProductQuantityDialog extends StatefulWidget {
+  const _PosProductQuantityDialog({
+    required this.product,
+    required this.isWeightProduct,
+  });
+
+  final PosProduct product;
+  final bool isWeightProduct;
+
+  @override
+  State<_PosProductQuantityDialog> createState() =>
+      _PosProductQuantityDialogState();
+}
+
+class _PosProductQuantityDialogState extends State<_PosProductQuantityDialog> {
+  late final TextEditingController _quantityController =
+      TextEditingController(text: '1');
+
+  @override
+  void dispose() {
+    _quantityController.dispose();
+    super.dispose();
+  }
+
+  void _submit(BuildContext context) {
+    final quantity = int.tryParse(_quantityController.text.trim());
+    if (quantity != null && quantity > 0) Navigator.pop(context, quantity);
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: Text('Add ${widget.product.name}'),
+        content: TextField(
+          controller: _quantityController,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+          ],
+          decoration: InputDecoration(
+            labelText: widget.isWeightProduct ? 'Weight in grams' : 'Quantity',
+            suffixText: widget.isWeightProduct ? 'g' : null,
+          ),
+          onSubmitted: (_) => _submit(context),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => _submit(context),
+            child: const Text('Add to bill'),
+          ),
+        ],
+      );
+}
+
 class _PosBillDialog extends StatefulWidget {
   const _PosBillDialog({
     required this.api,
     required this.onScan,
+    required this.onNewBill,
     this.heldSale,
     this.scannedProduct,
   });
@@ -2625,6 +2811,7 @@ class _PosBillDialog extends StatefulWidget {
   final PosHeldSale? heldSale;
   final PosProduct? scannedProduct;
   final Future<PosProduct?> Function() onScan;
+  final VoidCallback onNewBill;
 
   @override
   State<_PosBillDialog> createState() => _PosBillDialogState();
@@ -2937,6 +3124,8 @@ class _PosBillDialogState extends State<_PosBillDialog> {
         'customerPhone': sale.customerPhone,
         'paymentMethod': _paymentMethod,
         'paymentStatus': sale.paymentStatus,
+        'paidAmount': sale.paidAmount,
+        'outstandingAmount': sale.outstandingAmount,
         'subtotal': _subtotal,
         'discount': discount,
         'vatRate': vatRate,
@@ -3070,53 +3259,18 @@ class _PosBillDialogState extends State<_PosBillDialog> {
     }
   }
 
-  Future<void> _addProduct(PosProduct product) async {
-    final quantityController = TextEditingController(text: '1');
+  Future<bool> _addProduct(PosProduct product) async {
     final quantity = await showDialog<int>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('Add ${product.name}'),
-        content: TextField(
-          controller: quantityController,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
-          ],
-          decoration: InputDecoration(
-            labelText:
-                _isWeightProduct(product) ? 'Weight in grams' : 'Quantity',
-            suffixText: _isWeightProduct(product) ? 'g' : null,
-          ),
-          onSubmitted: (value) {
-            final parsed = int.tryParse(value.trim());
-            if (parsed != null && parsed > 0) {
-              Navigator.pop(dialogContext, parsed);
-            }
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final parsed = int.tryParse(quantityController.text.trim());
-              if (parsed != null && parsed > 0) {
-                Navigator.pop(dialogContext, parsed);
-              }
-            },
-            child: const Text('Add to bill'),
-          ),
-        ],
+      builder: (dialogContext) => _PosProductQuantityDialog(
+        product: product,
+        isWeightProduct: _isWeightProduct(product),
       ),
     );
-    quantityController.dispose();
-    if (quantity == null || !mounted) return;
+    if (quantity == null || !mounted) return false;
     if (_isWeightProduct(product)) {
       setState(() => _cart.add(_PosCartLine(product, weightGrams: quantity)));
-      return;
+      return true;
     }
     final existing = _cart.where((item) => item.product.id == product.id);
     if (existing.isNotEmpty) {
@@ -3124,11 +3278,24 @@ class _PosBillDialogState extends State<_PosBillDialog> {
     } else {
       setState(() => _cart.add(_PosCartLine(product, quantity: quantity)));
     }
+    return true;
   }
 
+  bool _scanInProgress = false;
+
   Future<void> _scan() async {
-    final product = await widget.onScan();
-    if (product != null && mounted) await _addProduct(product);
+    if (_scanInProgress || _saving) return;
+    _scanInProgress = true;
+    try {
+      while (mounted && !_saving) {
+        final product = await widget.onScan();
+        if (product == null || !mounted) break;
+        final added = await _addProduct(product);
+        if (!added) break;
+      }
+    } finally {
+      _scanInProgress = false;
+    }
   }
 
   List<Map<String, dynamic>> _requestItems() => _cart
@@ -3764,6 +3931,23 @@ class _PosBillDialogState extends State<_PosBillDialog> {
                     color: Colors.white,
                   ),
             ),
+            OutlinedButton.icon(
+              onPressed: _saving
+                  ? null
+                  : () {
+                      Navigator.pop(context);
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        widget.onNewBill();
+                      });
+                    },
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('New bill'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: BorderSide(color: Colors.white.withValues(alpha: 0.4)),
+              ),
+            ),
+            const SizedBox(width: 6),
             IconButton(
               tooltip: 'Close',
               onPressed: _saving ? null : () => Navigator.pop(context),
@@ -3787,6 +3971,19 @@ class _PosBillDialogState extends State<_PosBillDialog> {
               style: Theme.of(context).textTheme.headlineMedium,
             ),
           ),
+          OutlinedButton.icon(
+            onPressed: _saving
+                ? null
+                : () {
+                    Navigator.pop(context);
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      widget.onNewBill();
+                    });
+                  },
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('New bill'),
+          ),
+          const SizedBox(width: 4),
           if (defaultTargetPlatform == TargetPlatform.windows)
             Text(
               'F2 Search · F8 Complete',

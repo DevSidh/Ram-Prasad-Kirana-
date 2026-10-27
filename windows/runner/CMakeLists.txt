@@ -15,7 +15,6 @@ add_executable(${BINARY_NAME} WIN32
   "Runner.rc"
   "runner.exe.manifest"
 )
-set_target_properties(${BINARY_NAME} PROPERTIES OUTPUT_NAME "RamPrasadStore")
 
 # Apply the standard set of build settings. This can be removed for applications
 # that need different build settings.

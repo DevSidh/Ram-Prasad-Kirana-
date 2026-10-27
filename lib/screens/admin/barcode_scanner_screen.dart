@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../models/scanned_product_barcode.dart';
@@ -9,9 +10,16 @@ import '../../services/admin_api_service.dart';
 import '../../theme/app_colors.dart';
 
 class BarcodeScannerScreen extends StatefulWidget {
-  const BarcodeScannerScreen({super.key, this.api});
+  const BarcodeScannerScreen({
+    super.key,
+    this.api,
+    this.existingPairingCode,
+    this.onPairingCodeChanged,
+  });
 
   final AdminApiService? api;
+  final String? existingPairingCode;
+  final ValueChanged<String?>? onPairingCodeChanged;
 
   @override
   State<BarcodeScannerScreen> createState() => _BarcodeScannerScreenState();
@@ -34,8 +42,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
     ],
   );
   bool _didScan = false;
-  late bool _useCamera = defaultTargetPlatform == TargetPlatform.android ||
-      defaultTargetPlatform == TargetPlatform.iOS;
+  bool _useCamera = false;
   String? _scanError;
   String? _lastRejectedValue;
   String? _pairingCode;
@@ -43,7 +50,21 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
   bool _remoteDesktopMode = false;
   bool _remotePhoneMode = false;
   bool _remoteSending = false;
+  String? _lastRemoteSentValue;
+  final List<String> _pendingRemoteValues = [];
   Timer? _remotePoll;
+
+  @override
+  void initState() {
+    super.initState();
+    _useCamera = _supportsLocalCamera || widget.existingPairingCode != null;
+    _remoteDesktopMode = _useCamera && !_supportsLocalCamera;
+    if (_remoteDesktopMode) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_startDesktopPairing());
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -56,10 +77,15 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
 
   void _onDetect(BarcodeCapture capture) {
     if (_didScan || !_useCamera) return;
+    if (_remotePhoneMode && capture.barcodes.isEmpty) {
+      _lastRemoteSentValue = null;
+      return;
+    }
     for (final barcode in capture.barcodes) {
       final value = barcode.rawValue?.trim();
       if (value == null || value.isEmpty) continue;
       if (_remotePhoneMode) {
+        if (_lastRemoteSentValue == value) return;
         unawaited(_sendRemoteBarcode(value));
         return;
       }
@@ -72,6 +98,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
         return;
       }
       _didScan = true;
+      unawaited(SystemSound.play(SystemSoundType.alert));
       Navigator.of(context).pop(parsed);
       return;
     }
@@ -104,6 +131,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
       setState(() => _scanError = 'Enter a valid product barcode.');
       return;
     }
+    unawaited(SystemSound.play(SystemSoundType.alert));
     Navigator.of(context).pop(parsed);
   }
 
@@ -111,17 +139,25 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
       defaultTargetPlatform == TargetPlatform.android ||
       defaultTargetPlatform == TargetPlatform.iOS;
 
-  Future<void> _startDesktopPairing() async {
+  Future<void> _startDesktopPairing({bool createNew = false}) async {
     final api = widget.api;
     if (api == null) return;
     setState(() => _remoteStatus = 'Creating a secure pairing code…');
     try {
-      final code = await api.createBarcodeScannerSession();
+      if (createNew && widget.existingPairingCode != null) {
+        await api.disconnectBarcodeScannerSession(widget.existingPairingCode!);
+      }
+      final code = !createNew && widget.existingPairingCode != null
+          ? widget.existingPairingCode!
+          : await api.createBarcodeScannerSession();
       if (!mounted) return;
       setState(() {
         _pairingCode = code;
-        _remoteStatus = 'Enter this code on the signed-in phone.';
+        _remoteStatus = widget.existingPairingCode == null
+            ? 'Enter this code on the phone once. It stays paired until disconnected.'
+            : 'Reusing the active pairing. The phone does not need to enter the code again.';
       });
+      widget.onPairingCodeChanged?.call(code);
       _remotePoll?.cancel();
       _remotePoll = Timer.periodic(const Duration(milliseconds: 800), (_) {
         unawaited(_pollRemoteBarcode());
@@ -151,6 +187,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
     } catch (error) {
       if (!mounted) return;
       _remotePoll?.cancel();
+      widget.onPairingCodeChanged?.call(null);
       setState(() => _remoteStatus = _pairingErrorMessage(error));
     }
   }
@@ -184,13 +221,41 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
     });
   }
 
+  Future<void> _disconnectPhoneFromPc() async {
+    final code = _pairingCode;
+    if (code != null) {
+      try {
+        await widget.api?.disconnectBarcodeScannerSession(code);
+      } catch (_) {
+        // Clear the phone state even if the network is temporarily unavailable.
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _pairingCode = null;
+      _remotePhoneMode = false;
+      _lastRemoteSentValue = null;
+      _pendingRemoteValues.clear();
+      _remoteStatus = 'Disconnected from Windows billing.';
+    });
+  }
+
   Future<void> _sendRemoteBarcode(String value) async {
     final api = widget.api;
     final code = _pairingCode;
-    if (api == null || code == null || _remoteSending || value.isEmpty) return;
+    if (api == null || code == null || value.isEmpty) return;
+    if (_remoteSending) {
+      if (value != _lastRemoteSentValue &&
+          !_pendingRemoteValues.contains(value)) {
+        _pendingRemoteValues.add(value);
+      }
+      return;
+    }
     _remoteSending = true;
     try {
       await api.submitBarcodeScannerResult(code: code, barcode: value);
+      _lastRemoteSentValue = value;
+      unawaited(SystemSound.play(SystemSoundType.alert));
       if (mounted)
         setState(() => _remoteStatus = 'Barcode sent to the computer.');
     } catch (error) {
@@ -200,6 +265,12 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
     } finally {
       await Future<void>.delayed(const Duration(milliseconds: 1200));
       _remoteSending = false;
+      final pending = _pendingRemoteValues.isEmpty
+          ? null
+          : _pendingRemoteValues.removeAt(0);
+      if (pending != null && pending != _lastRemoteSentValue) {
+        unawaited(_sendRemoteBarcode(pending));
+      }
     }
   }
 
@@ -419,9 +490,15 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
               child: OutlinedButton.icon(
-                onPressed: _connectPhoneToPc,
-                icon: const Icon(Icons.desktop_windows_outlined),
-                label: const Text('Send scans to Windows billing'),
+                onPressed: _remotePhoneMode
+                    ? _disconnectPhoneFromPc
+                    : _connectPhoneToPc,
+                icon: Icon(_remotePhoneMode
+                    ? Icons.link_off_rounded
+                    : Icons.desktop_windows_outlined),
+                label: Text(_remotePhoneMode
+                    ? 'Disconnect from Windows billing'
+                    : 'Send scans to Windows billing'),
               ),
             ),
         ],
@@ -449,12 +526,12 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
                   textAlign: TextAlign.center),
               const SizedBox(height: 14),
               const Text(
-                'On the signed-in billing app on your phone, open Scan barcode, tap “Send scans to Windows billing”, and enter this code. Code expires in 3 minutes.',
+                'Enter the code on the phone once. Keep this invoice open to scan multiple products; disconnect from the phone when finished.',
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 18),
               OutlinedButton.icon(
-                onPressed: _startDesktopPairing,
+                onPressed: () => _startDesktopPairing(createNew: true),
                 icon: const Icon(Icons.refresh_rounded),
                 label: const Text('Create new code'),
               ),

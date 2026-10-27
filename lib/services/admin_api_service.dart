@@ -28,6 +28,12 @@ class AdminApiService {
     return response['barcode'] as String?;
   }
 
+  Future<void> disconnectBarcodeScannerSession(String code) async {
+    await _api.delete(
+      '/admin/billing/scanner-sessions/${Uri.encodeComponent(code)}',
+    );
+  }
+
   Future<void> joinBarcodeScannerSession(String code) async {
     await _api.post(
       '/admin/billing/scanner-sessions/${Uri.encodeComponent(code)}/join',
