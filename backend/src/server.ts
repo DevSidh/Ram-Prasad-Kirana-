@@ -1612,10 +1612,12 @@ app.get('/api/v1/coupons/offer', async (_req: Request, res: Response) => {
     const coupons = await prisma.coupon.findMany({
       where: {
         isActive: true,
-        OR: [{ isBannerFeatured: true }, { isAnnounced: true }],
+        AND: [
+          { OR: [{ isBannerFeatured: true }, { isAnnounced: true }] },
+          { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+        ],
         productId: null,
         assignedUserId: null,
-        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
       },
       select: {
         id: true,

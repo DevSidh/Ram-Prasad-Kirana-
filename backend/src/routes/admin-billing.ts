@@ -126,15 +126,6 @@ function authenticatedRole(res: Parameters<RequestHandler>[1]): string | null {
   return typeof role === 'string' ? role : null;
 }
 
-async function findOrCreateOpenShift(
-  tx: Prisma.TransactionClient,
-  cashierId: string,
-) {
-  const shift = await tx.posShift.findFirst({
-    where: { cashierId, status: 'OPEN' },
-    select: { id: true, openingCash: true },
-  });
-
 const barcodePairingSessions = new Map<string, {
   ownerId: string;
   expiresAt: number;
@@ -151,6 +142,16 @@ const offlineStreakPurchaseInput = z.object({
   customerId: z.string().trim().min(1).max(100),
   invoiceNumber: z.string().trim().regex(/^RPGS-INV-\d{4}-\d{6,}$/),
 }).strict();
+
+async function findOrCreateOpenShift(
+  tx: Prisma.TransactionClient,
+  cashierId: string,
+) {
+  const shift = await tx.posShift.findFirst({
+    where: { cashierId, status: 'OPEN' },
+    select: { id: true, openingCash: true },
+  });
+
   if (shift) return shift;
   return tx.posShift.create({
     data: { cashierId, openingCash: 0 },
@@ -880,7 +881,7 @@ export function createAdminBillingRouter(
         const shift = await findOrCreateOpenShift(tx, cashierId);
         const customer = parsed.data.customerId
           ? await tx.user.findFirst({
-            where: { id: parsed.data.customerId, isDeleted: false, isActive: true },
+            where: { id: parsed.data.customerId, isActive: true },
             select: { name: true, phone: true },
           })
           : null;
@@ -1091,7 +1092,7 @@ export function createAdminBillingRouter(
         }
         const customer = parsed.data.customerId
           ? await tx.user.findFirst({
-            where: { id: parsed.data.customerId, isDeleted: false },
+            where: { id: parsed.data.customerId, isActive: true },
             select: { name: true, phone: true, isActive: true },
           })
           : null;
