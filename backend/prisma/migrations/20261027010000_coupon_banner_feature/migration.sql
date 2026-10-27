@@ -1,3 +1,5 @@
+ALTER TABLE "Coupon" SET (schema_locked = false);
+
 ALTER TABLE "Coupon"
 ADD COLUMN "isBannerFeatured" BOOLEAN NOT NULL DEFAULT false;
 
@@ -18,3 +20,5 @@ WHERE "id" = (
   ORDER BY "createdAt" DESC
   LIMIT 1
 );
+
+ALTER TABLE "Coupon" SET (schema_locked = true);

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "prestart": "npm run prisma:migrate:deploy",
+    "prestart": "node scripts/recover-failed-vat-migration.mjs && npm run prisma:migrate:deploy",
     "start": "node dist/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate:deploy": "prisma migrate deploy",

@@ -5,6 +5,10 @@ CREATE TABLE "InvoiceSequence" (
   CONSTRAINT "InvoiceSequence_pkey" PRIMARY KEY ("year")
 );
 
+ALTER TABLE "Order" SET (schema_locked = false);
+ALTER TABLE "PosSale" SET (schema_locked = false);
+ALTER TABLE "User" SET (schema_locked = false);
+
 ALTER TABLE "Order" ADD COLUMN "invoiceNumber" STRING;
 CREATE UNIQUE INDEX "Order_invoiceNumber_key" ON "Order"("invoiceNumber");
 
@@ -25,3 +29,7 @@ CREATE UNIQUE INDEX "PosOfflineStreakPurchase_invoiceNumber_key"
   ON "PosOfflineStreakPurchase"("invoiceNumber");
 CREATE INDEX "PosOfflineStreakPurchase_userId_purchaseDate_idx"
   ON "PosOfflineStreakPurchase"("userId", "purchaseDate");
+
+ALTER TABLE "Order" SET (schema_locked = true);
+ALTER TABLE "PosSale" SET (schema_locked = true);
+ALTER TABLE "User" SET (schema_locked = true);
