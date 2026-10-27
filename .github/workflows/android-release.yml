@@ -111,7 +111,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            "build/app/outputs/flutter-apk/Ram-Prasad-General-Store-${GITHUB_REF_NAME#v}.apk" \
-            --title "Ram Prasad General Store ${GITHUB_REF_NAME#v}" \
-            --generate-notes
+          APK="build/app/outputs/flutter-apk/Ram-Prasad-General-Store-${GITHUB_REF_NAME#v}.apk"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            # Re-runs and tag rebuilds should replace the APK instead of failing
+            # because the release already exists.
+            gh release upload "$GITHUB_REF_NAME" "$APK" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$APK" \
+              --title "Ram Prasad General Store ${GITHUB_REF_NAME#v}" \
+              --generate-notes
+          fi
