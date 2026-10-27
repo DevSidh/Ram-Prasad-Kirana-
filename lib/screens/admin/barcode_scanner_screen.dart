@@ -156,34 +156,10 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
   }
 
   Future<void> _connectPhoneToPc() async {
-    final controller = TextEditingController();
     final code = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Connect to Windows billing'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: TextInputType.number,
-          maxLength: 8,
-          decoration: const InputDecoration(
-            labelText: '8 digit pairing code',
-            hintText: 'Enter the code shown on the computer',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Connect'),
-          ),
-        ],
-      ),
+      builder: (_) => const _BarcodePairingCodeDialog(),
     );
-    controller.dispose();
     if (!mounted || code == null) return;
     if (!RegExp(r'^\d{8}$').hasMatch(code)) {
       setState(
@@ -485,5 +461,52 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
             ],
           ),
         ),
+      );
+}
+
+class _BarcodePairingCodeDialog extends StatefulWidget {
+  const _BarcodePairingCodeDialog();
+
+  @override
+  State<_BarcodePairingCodeDialog> createState() =>
+      _BarcodePairingCodeDialogState();
+}
+
+class _BarcodePairingCodeDialogState extends State<_BarcodePairingCodeDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _connect() => Navigator.of(context).pop<String>(_controller.text.trim());
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Connect to Windows billing'),
+        content: TextField(
+          controller: _controller,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          textInputAction: TextInputAction.done,
+          maxLength: 8,
+          onSubmitted: (_) => _connect(),
+          decoration: const InputDecoration(
+            labelText: '8 digit pairing code',
+            hintText: 'Enter the code shown on the computer',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: _connect,
+            child: const Text('Connect'),
+          ),
+        ],
       );
 }

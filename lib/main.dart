@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
@@ -20,7 +21,17 @@ import 'widgets/store_animation.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   AppConstants.validateApiConfiguration();
-  ErrorWidget.builder = (_) => const StorePageError();
+  ErrorWidget.builder = (details) {
+    if (kDebugMode) {
+      debugPrint('Unhandled widget error: ${details.exceptionAsString()}');
+      if (details.stack != null) debugPrintStack(stackTrace: details.stack);
+    }
+    return StorePageError(
+      message: kDebugMode
+          ? details.exceptionAsString()
+          : 'This page could not be displayed. Please go back and try again.',
+    );
+  };
 
   final apiService = ApiService();
 
