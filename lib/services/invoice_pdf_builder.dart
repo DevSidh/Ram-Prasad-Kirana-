@@ -30,6 +30,8 @@ class InvoicePdfBuilder {
     required double total,
     required String paymentMethod,
     required String paymentStatus,
+    double? paidAmount,
+    double? outstandingAmount,
     double deliveryOrOther = 0,
   }) async {
     const rule = PdfColor(0.55, 0.57, 0.59);
@@ -126,6 +128,9 @@ class InvoicePdfBuilder {
               _total('Grand Total', total, bold: true, size: 12),
               pw.SizedBox(height: 12),
               _meta('Payment Method', _paymentLabel(paymentMethod)),
+              if (paidAmount != null) _total('Paid', paidAmount),
+              if (outstandingAmount != null && outstandingAmount > 0)
+                _total('Balance due', outstandingAmount, bold: true),
               _meta('Payment Status', _statusLabel(paymentStatus)),
               pw.Divider(color: rule, height: 15),
               pw.Center(

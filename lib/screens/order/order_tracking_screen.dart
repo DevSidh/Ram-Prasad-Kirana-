@@ -19,6 +19,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/customer_location_consent.dart';
 import '../../services/location_service.dart';
+import '../../widgets/delivery_person_photo.dart';
 
 const LatLng _storeLocation = LatLng(26.743218, 85.918854);
 const Duration _nepalUtcOffset = Duration(hours: 5, minutes: 45);
@@ -775,6 +776,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                         _DeliveryPersonCard(
                           name: order.deliveryPersonName!,
                           phone: order.deliveryPersonPhone,
+                          avatarUrl: order.deliveryPersonAvatarUrl,
                           onCall: _callDeliveryPerson,
                           theme: theme,
                         ),
@@ -1039,9 +1041,8 @@ class _DeliveryTimeCard extends StatelessWidget {
       children: [
         Icon(
           isDelivered ? Icons.task_alt_rounded : Icons.schedule_rounded,
-          color: isDelivered
-              ? theme.colorScheme.primary
-              : const Color(0xFF35D39A),
+          color:
+              isDelivered ? theme.colorScheme.primary : const Color(0xFF35D39A),
           size: 22,
         ),
         const SizedBox(width: 12),
@@ -1075,12 +1076,14 @@ class _DeliveryTimeCard extends StatelessWidget {
 class _DeliveryPersonCard extends StatelessWidget {
   final String name;
   final String? phone;
+  final String? avatarUrl;
   final VoidCallback onCall;
   final ThemeData theme;
 
   const _DeliveryPersonCard({
     required this.name,
     required this.phone,
+    required this.avatarUrl,
     required this.onCall,
     required this.theme,
   });
@@ -1090,10 +1093,12 @@ class _DeliveryPersonCard extends StatelessWidget {
         theme: theme,
         child: Row(
           children: [
-            CircleAvatar(
-              backgroundColor: theme.colorScheme.primaryContainer,
-              foregroundColor: theme.colorScheme.primary,
-              child: const Icon(Icons.person_outline_rounded),
+            DeliveryPersonPhoto(
+              name: name,
+              avatarUrl: avatarUrl,
+              apiBaseUrl: AppConstants.apiBaseUrl,
+              authToken: context.read<AuthProvider>().authToken,
+              radius: 20,
             ),
             const SizedBox(width: 12),
             Expanded(

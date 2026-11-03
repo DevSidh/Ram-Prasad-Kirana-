@@ -27,8 +27,12 @@ const saleInput = z.object({
     .default(0),
   vatRate: z.number().finite().min(0).max(100).default(0),
   paymentMethod: z.enum(['CASH', 'DIGITAL', 'PENDING']),
+  paidAmount: z.number().finite().min(0).max(999999999)
+    .refine((value) => Number.isSafeInteger(Math.round(value * 100)))
+    .optional(),
+  paidNowMethod: z.enum(['CASH', 'DIGITAL']).default('CASH'),
   customerName: z.string().trim().max(120).nullable().optional(),
-  customerPhone: z.string().trim().max(32).nullable().optional(),
+  customerPhone: z.string().trim().regex(/^9[78]\d{8}$/).nullable().optional(),
   customerId: z.string().trim().min(1).max(100).nullable().optional(),
   heldSaleId: z.string().trim().min(1).max(100).nullable().optional(),
 }).strict().superRefine((sale, context) => {
@@ -53,7 +57,7 @@ const holdInput = z.object({
     unitLabel: z.string().trim().max(50),
   }).strict()).min(1).max(100),
   customerName: z.string().trim().max(120).nullable().optional(),
-  customerPhone: z.string().trim().max(32).nullable().optional(),
+  customerPhone: z.string().trim().regex(/^9[78]\d{8}$/).nullable().optional(),
   customerId: z.string().trim().min(1).max(100).nullable().optional(),
 }).strict();
 
@@ -1160,6 +1164,19 @@ export function createAdminBillingRouter(
           update: { nextNumber: { increment: 1 } },
         });
         const invoiceNumber = `RPGS-INV-${invoiceYear}-${String(invoiceSequence.nextNumber).padStart(6, '0')}`;
+        const paidAmount = roundMoney(
+          parsed.data.paymentMethod === 'PENDING'
+            ? Math.min(parsed.data.paidAmount ?? 0, total)
+            : total,
+        );
+        if (parsed.data.paymentMethod === 'PENDING' &&
+            (parsed.data.paidAmount ?? 0) > total) {
+          throw new Error('POS_PAID_AMOUNT_EXCEEDS_TOTAL');
+        }
+        const isPending = paidAmount < total;
+        const collectionMethod = parsed.data.paymentMethod === 'PENDING'
+          ? parsed.data.paidNowMethod
+          : parsed.data.paymentMethod;
         const sale = await tx.posSale.create({
           data: {
             receiptNumber,
@@ -1167,24 +1184,22 @@ export function createAdminBillingRouter(
             shiftId: shift.id,
             customerName: customer?.name ?? parsed.data.customerName ?? null,
             customerPhone: customer?.phone ?? parsed.data.customerPhone ?? null,
-            paymentMethod: parsed.data.paymentMethod,
-            paymentStatus: parsed.data.paymentMethod === 'PENDING'
-              ? 'PENDING'
-              : 'COMPLETED',
-            paidAmount: parsed.data.paymentMethod === 'PENDING' ? 0 : total,
+            paymentMethod: isPending ? 'PENDING' : collectionMethod,
+            paymentStatus: isPending ? 'PENDING' : 'COMPLETED',
+            paidAmount,
             subtotal,
             discount,
             vatRate,
             vatAmount,
             total,
-            ...(parsed.data.paymentMethod === 'PENDING' || total === 0
+            ...(paidAmount <= 0 || total === 0
               ? {}
               : {
                 paymentCollections: {
                   create: {
                     recordedById: cashierId,
-                    amount: total,
-                    method: parsed.data.paymentMethod,
+                    amount: paidAmount,
+                    method: collectionMethod,
                   },
                 },
               }),
@@ -1270,6 +1285,7 @@ export function createAdminBillingRouter(
       page: z.coerce.number().int().min(1).max(10000).default(1),
       pageSize: z.coerce.number().int().min(1).max(100).default(20),
       day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      search: z.string().trim().max(120).optional(),
     }).strict().safeParse(req.query);
     if (!parsed.success) return res.status(400).json({ error: 'Choose a valid bill-history filter.' });
     try {
@@ -1284,6 +1300,16 @@ export function createAdminBillingRouter(
       const where: Prisma.PosSaleWhereInput = {
         ...(range
           ? { createdAt: { gte: range.start, lt: range.end } }
+          : {}),
+        ...(parsed.data.search?.trim()
+          ? {
+            OR: [
+              { receiptNumber: { contains: parsed.data.search.trim(), mode: 'insensitive' } },
+              { invoiceNumber: { contains: parsed.data.search.trim(), mode: 'insensitive' } },
+              { customerName: { contains: parsed.data.search.trim(), mode: 'insensitive' } },
+              { customerPhone: { contains: parsed.data.search.trim() } },
+            ],
+          }
           : {}),
         ...(isBillingStaff && cashierId ? { shift: { cashierId } } : {}),
       };
@@ -1314,15 +1340,39 @@ export function createAdminBillingRouter(
     const parsed = z.object({
       page: z.coerce.number().int().min(1).max(10000).default(1),
       pageSize: z.coerce.number().int().min(1).max(100).default(50),
+      search: z.string().trim().max(120).optional(),
+      day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     }).strict().safeParse(req.query);
     if (!parsed.success) {
       return res.status(400).json({ error: 'Choose a valid pending-payment page.' });
     }
     const cashierId = authenticatedAdminId(res);
     if (!cashierId) return res.status(401).json({ error: 'Authentication is required.' });
+    let dayRange: { start: Date; end: Date } | undefined;
+    try {
+      dayRange = parsed.data.day
+        ? getLocalDayRangeForKey(parsed.data.day)
+        : undefined;
+    } catch {
+      return res.status(400).json({ error: 'Choose a valid pending-payment date.' });
+    }
+    const search = parsed.data.search?.trim();
     const where: Prisma.PosSaleWhereInput = {
       paymentStatus: 'PENDING',
       status: { not: 'CANCELLED' },
+      ...(dayRange
+        ? { createdAt: { gte: dayRange.start, lt: dayRange.end } }
+        : {}),
+      ...(search
+        ? {
+          OR: [
+            { receiptNumber: { contains: search, mode: 'insensitive' } },
+            { invoiceNumber: { contains: search, mode: 'insensitive' } },
+            { customerName: { contains: search, mode: 'insensitive' } },
+            { customerPhone: { contains: search } },
+          ],
+        }
+        : {}),
       ...(authenticatedRole(res) === 'BILLING_STAFF'
         ? { shift: { cashierId } }
         : {}),
@@ -1547,13 +1597,52 @@ export function createAdminBillingRouter(
     }
   });
 
-  router.get('/refunds', adminOnly, async (_req, res) => {
+  router.get('/refunds', adminOnly, async (req, res) => {
+    const parsed = z.object({
+      search: z.string().trim().max(120).optional(),
+      day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    }).strict().safeParse(req.query);
+    if (!parsed.success) return res.status(400).json({ error: 'Choose a valid refund filter.' });
+    let dayRange: { start: Date; end: Date } | undefined;
     try {
+      dayRange = parsed.data.day
+        ? getLocalDayRangeForKey(parsed.data.day)
+        : undefined;
+    } catch {
+      return res.status(400).json({ error: 'Choose a valid refund date.' });
+    }
+    try {
+      const search = parsed.data.search?.trim();
       const refunds = await prisma.posRefund.findMany({
+        where: {
+          ...(dayRange
+            ? { requestedAt: { gte: dayRange.start, lt: dayRange.end } }
+            : {}),
+          ...(search
+            ? {
+              OR: [
+                { reason: { contains: search, mode: 'insensitive' } },
+                { sale: { is: { OR: [
+                  { receiptNumber: { contains: search, mode: 'insensitive' } },
+                  { invoiceNumber: { contains: search, mode: 'insensitive' } },
+                  { customerName: { contains: search, mode: 'insensitive' } },
+                  { customerPhone: { contains: search } },
+                ] } } },
+                { requestedBy: { is: { name: { contains: search, mode: 'insensitive' } } } },
+              ],
+            }
+            : {}),
+        },
         orderBy: { requestedAt: 'desc' },
         take: 100,
         include: {
-          sale: { select: { receiptNumber: true, total: true, paymentMethod: true } },
+          sale: { select: {
+            receiptNumber: true,
+            total: true,
+            paymentMethod: true,
+            customerName: true,
+            customerPhone: true,
+          } },
           requestedBy: { select: { name: true } },
         },
       });
@@ -1562,6 +1651,8 @@ export function createAdminBillingRouter(
           id: refund.id,
           saleId: refund.saleId,
           receiptNumber: refund.sale.receiptNumber,
+          customerName: refund.sale.customerName,
+          customerPhone: refund.sale.customerPhone,
           amount: Number(refund.amount),
           reason: refund.reason,
           status: refund.status,

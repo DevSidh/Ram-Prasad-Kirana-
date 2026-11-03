@@ -36,7 +36,7 @@ export interface PendingRegistrationInput {
 
 export function normalizeRegistrationPhone(phone: string): string | null {
   const normalizedPhone = phone.trim().replace(/[\s()-]/g, '');
-  const match = /^(?:\+977)?(9[78]\d{8})$/.exec(normalizedPhone);
+  const match = /^(9[78]\d{8})$/.exec(normalizedPhone);
   return match?.[1] ?? null;
 }
 

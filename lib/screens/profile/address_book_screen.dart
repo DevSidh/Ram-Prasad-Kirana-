@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/constants.dart';
+import '../../core/nepal_phone.dart';
 import '../../models/address.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/address_service.dart';
@@ -331,10 +332,7 @@ class _AddressFormDialogState extends State<_AddressFormDialog> {
   String? _required(String? value) =>
       value == null || value.trim().isEmpty ? 'Required' : null;
 
-  String? _validatePhone(String? value) =>
-      value == null || !RegExp(r'^9[78]\d{8}$').hasMatch(value.trim())
-          ? 'Enter a 10-digit number starting with 98 or 97'
-          : null;
+  String? _validatePhone(String? value) => validateNepalPhone(value);
 
   Future<void> _chooseMapLocation() async {
     final location = await Navigator.push<PickedAddressLocation>(
@@ -415,12 +413,9 @@ class _AddressFormDialogState extends State<_AddressFormDialog> {
                 _field(_name, 'Recipient name', validator: _required),
                 _field(_phone, 'Phone number',
                     keyboardType: TextInputType.phone,
+                    inputFormatters: nepalPhoneInputFormatters,
                     validator: _validatePhone,
-                    prefixText: '+977 ',
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      LengthLimitingTextInputFormatter(10),
-                    ]),
+                    prefixText: '+977 '),
                 _field(_street, 'Ward, street, and house details',
                     validator: _required),
                 _field(_landmark, 'Landmark (optional)'),

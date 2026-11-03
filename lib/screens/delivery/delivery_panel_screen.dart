@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
@@ -12,7 +14,9 @@ import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/delivery_api_service.dart';
 import '../../services/location_service.dart';
+import '../../widgets/delivery_person_photo.dart';
 import '../auth/login_screen.dart';
+import '../profile/profile_image_crop_screen.dart';
 import '../../widgets/store_animation.dart';
 
 class DeliveryPanelScreen extends StatefulWidget {
@@ -40,6 +44,7 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen>
   bool _refreshInProgress = false;
   int _selectedIndex = 0;
   bool _availabilitySaving = false;
+  bool _uploadingAvatar = false;
   bool _publishingLocation = false;
   String? _locationError;
 
@@ -201,6 +206,7 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen>
             name: _profile!.name,
             email: _profile!.email,
             phone: _profile!.phone,
+            avatarUrl: _profile!.avatarUrl,
             isAvailable: value,
           );
         }
@@ -210,6 +216,41 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen>
       if (!mounted) return;
       setState(() => _availabilitySaving = false);
       _showMessage(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _selectAvatar() async {
+    try {
+      final files = await FilePicker.pickFiles(type: FileType.image);
+      if (files.isEmpty) return;
+      final bytes = await files.single.readAsBytes();
+      if (bytes.isEmpty) {
+        throw StateError('The selected image could not be read.');
+      }
+      if (bytes.length > 5 * 1024 * 1024) {
+        throw StateError('Choose a profile photo that is 5 MB or smaller.');
+      }
+      if (!mounted) return;
+      final croppedBytes = await Navigator.push<Uint8List>(
+        context,
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => ProfileImageCropScreen(imageBytes: bytes),
+        ),
+      );
+      if (croppedBytes == null || croppedBytes.isEmpty || !mounted) return;
+      setState(() => _uploadingAvatar = true);
+      await context
+          .read<AuthProvider>()
+          .updateAvatar(croppedBytes, 'profile.png');
+      await _refresh(silent: true);
+      if (mounted) _showMessage('Profile photo updated.');
+    } catch (error) {
+      if (mounted) {
+        _showMessage(error.toString().replaceFirst('Exception: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingAvatar = false);
     }
   }
 
@@ -700,13 +741,42 @@ class _DeliveryPanelScreenState extends State<DeliveryPanelScreen>
     return ListView(
       padding: const EdgeInsets.all(18),
       children: [
-        CircleAvatar(
-          radius: 36,
-          backgroundColor: AppConstants.primaryLight,
-          child: Icon(
-            Icons.delivery_dining_rounded,
-            color: AppConstants.primaryDark,
-            size: 38,
+        Center(
+          child: InkWell(
+            onTap: _uploadingAvatar ? null : _selectAvatar,
+            customBorder: const CircleBorder(),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                DeliveryPersonPhoto(
+                  name: profile?.name ?? 'Delivery staff',
+                  avatarUrl: profile?.avatarUrl,
+                  apiBaseUrl: widget.api.baseUrl,
+                  authToken: context.read<AuthProvider>().authToken,
+                  radius: 36,
+                  backgroundColor: AppConstants.primaryLight,
+                  iconColor: AppConstants.primaryDark,
+                ),
+                Positioned(
+                  right: -2,
+                  bottom: -2,
+                  child: CircleAvatar(
+                    radius: 13,
+                    backgroundColor: AppConstants.primary,
+                    child: _uploadingAvatar
+                        ? const SizedBox.square(
+                            dimension: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.camera_alt_rounded,
+                            size: 14, color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 12),

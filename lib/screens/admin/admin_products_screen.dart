@@ -10,10 +10,12 @@ import '../../core/media.dart';
 import '../../core/product_sku.dart';
 import '../../models/admin_models.dart';
 import '../../models/scanned_product_barcode.dart';
+import '../../models/pos_models.dart';
 import '../../screens/admin/barcode_scanner_screen.dart';
 import '../../providers/product_provider.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../services/offline_pos_store.dart';
 import '../../theme/admin_widgets.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/store_animation.dart';
@@ -42,6 +44,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
   int _page = 1;
   int _loadRequest = 0;
   Timer? _searchTimer;
+  Timer? _offlineSyncTimer;
   bool _observedTabVisibility = false;
   bool _wasTabVisible = true;
 
@@ -49,11 +52,15 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
   void initState() {
     super.initState();
     _load();
+    _offlineSyncTimer = Timer.periodic(const Duration(seconds: 45), (_) {
+      unawaited(_retryPendingProducts());
+    });
   }
 
   @override
   void dispose() {
     _searchTimer?.cancel();
+    _offlineSyncTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -76,6 +83,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
       _error = null;
     });
     try {
+      await _adminApi.syncPendingOfflineProducts();
       final results = await Future.wait([
         _adminApi.getCategories(),
         _adminApi.getProducts(
@@ -84,20 +92,64 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
           vendingDrink: widget.vendingOnly ? true : null,
         ),
       ]);
+      final loadedProducts = (results[1] as AdminProductPage).products;
+      await const OfflinePosStore().mergeCatalog(
+        loadedProducts
+            .where((product) => product.isActive)
+            .map((product) => PosProduct(
+                  id: product.id,
+                  name: product.name,
+                  sku: product.sku,
+                  barcode: product.barcode,
+                  price: product.price,
+                  unitLabel: product.unitLabel,
+                  available: product.availableStock.ceil(),
+                  imageUrl: product.imageUrl,
+                ))
+            .toList(growable: false),
+      );
+      final pendingProducts =
+          await const OfflinePosStore().readPendingProducts();
+      final conflictCount =
+          pendingProducts.where((entry) => entry['syncError'] is String).length;
       if (!mounted || request != _loadRequest) return;
       setState(() {
         _categories = results[0] as List<AdminCategory>;
         _productPage = results[1] as AdminProductPage;
         _page = page;
+        _error = conflictCount == 0
+            ? null
+            : '$conflictCount offline product(s) need review because the server already has a matching barcode or SKU.';
         _loading = false;
       });
     } catch (error) {
       if (!mounted || request != _loadRequest) return;
+      final cachedCategories = await const OfflinePosStore().readCategories();
+      if (cachedCategories.isNotEmpty) {
+        setState(() {
+          _categories = cachedCategories.map(AdminCategory.fromJson).toList();
+          _productPage = const AdminProductPage(
+            products: [],
+            pagination: AdminPagination(page: 1, pageSize: 20, total: 0),
+          );
+          _page = page;
+          _error =
+              'Offline mode: new products will be saved on this computer and synchronized when the connection returns.';
+          _loading = false;
+        });
+        return;
+      }
       setState(() {
         _error = _cleanError(error);
         _loading = false;
       });
     }
+  }
+
+  Future<void> _retryPendingProducts() async {
+    if (!mounted || _loading) return;
+    final pending = await const OfflinePosStore().readPendingProducts();
+    if (pending.isNotEmpty) await _load(page: _page);
   }
 
   void _onSearchChanged(String value) {
@@ -550,6 +602,32 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
           imageName: _pickedImageName,
         );
       }
+      if (mounted) Navigator.pop(context, true);
+    } on ApiNetworkException {
+      if (widget.product != null) {
+        if (mounted) {
+          setState(() {
+            _saving = false;
+            _error =
+                'Editing an existing product requires a connection. The product was not queued as a duplicate.';
+          });
+        }
+        return;
+      }
+      await const OfflinePosStore().queueProduct(data, stock);
+      if (mounted) Navigator.pop(context, true);
+    } on ApiTimeoutException {
+      if (widget.product != null) {
+        if (mounted) {
+          setState(() {
+            _saving = false;
+            _error =
+                'Editing an existing product requires a connection. The product was not queued as a duplicate.';
+          });
+        }
+        return;
+      }
+      await const OfflinePosStore().queueProduct(data, stock);
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
       if (!mounted) return;

@@ -3,6 +3,7 @@ class DeliveryProfile {
   final String name;
   final String email;
   final String phone;
+  final String? avatarUrl;
   final bool isAvailable;
 
   const DeliveryProfile({
@@ -10,6 +11,7 @@ class DeliveryProfile {
     required this.name,
     required this.email,
     required this.phone,
+    this.avatarUrl,
     required this.isAvailable,
   });
 
@@ -19,6 +21,7 @@ class DeliveryProfile {
       name: json['name']?.toString() ?? '',
       email: json['email']?.toString() ?? '',
       phone: json['phone']?.toString() ?? '',
+      avatarUrl: json['avatarUrl']?.toString(),
       isAvailable: json['isAvailable'] as bool? ?? false,
     );
   }

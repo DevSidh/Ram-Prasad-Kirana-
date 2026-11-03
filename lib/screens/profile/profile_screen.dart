@@ -22,6 +22,7 @@ import 'edit_profile_screen.dart';
 import 'profile_image_crop_screen.dart';
 import 'profile_options_screens.dart';
 import 'buying_streak_screen.dart';
+import '../update/app_update_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
@@ -676,30 +677,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ),
                     ],
-                    if (_menuFeatures.isEnabled('appearance') ||
-                        _menuFeatures.isEnabled('language') ||
-                        _menuFeatures.isEnabled('payments') ||
-                        _menuFeatures.isEnabled('notifications') ||
-                        _menuFeatures.isEnabled('notificationPreferences'))
-                      const SizedBox(height: 16),
-                    if (_menuFeatures.isEnabled('appearance') ||
-                        _menuFeatures.isEnabled('language') ||
-                        _menuFeatures.isEnabled('payments') ||
-                        _menuFeatures.isEnabled('notifications') ||
-                        _menuFeatures.isEnabled('notificationPreferences'))
-                      Text(
-                        context.tr('Preferences & payments'),
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              color: AppConstants.textDark,
-                              fontWeight: FontWeight.w800,
-                            ),
-                      ),
-                    if (_menuFeatures.isEnabled('appearance') ||
-                        _menuFeatures.isEnabled('language') ||
-                        _menuFeatures.isEnabled('payments') ||
-                        _menuFeatures.isEnabled('notifications') ||
-                        _menuFeatures.isEnabled('notificationPreferences'))
-                      const SizedBox(height: 8),
+                    const SizedBox(height: 16),
+                    Text(
+                      context.tr('Preferences & payments'),
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            color: AppConstants.textDark,
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
                     // Options List
                     Material(
                       color: AppConstants.glassSurfaceFor(isDark),
@@ -836,6 +822,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 ),
                               ),
                             ),
+                          ListTile(
+                            leading: const Icon(
+                              Icons.system_update_alt_rounded,
+                              color: AppConstants.primary,
+                            ),
+                            title: Text(
+                              context.tr('About & check for updates'),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(context.tr(
+                              'View the installed version and check GitHub for a newer release.',
+                            )),
+                            trailing: const Icon(Icons.chevron_right, size: 20),
+                            onTap: () => Navigator.push<void>(
+                              context,
+                              MaterialPageRoute<void>(
+                                builder: (_) => const AppUpdateScreen(),
+                              ),
+                            ),
+                          ),
                           const Divider(height: 1),
                           ListTile(
                             leading: const Icon(

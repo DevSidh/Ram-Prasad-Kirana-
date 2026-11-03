@@ -6,8 +6,10 @@ import 'package:flutter/material.dart';
 
 import '../../core/product_sku.dart';
 import '../../models/admin_models.dart';
+import '../../models/pos_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../services/offline_pos_store.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/product_thumbnail.dart';
 import '../../widgets/store_animation.dart';
@@ -30,16 +32,21 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
   int _pageNumber = 1;
   int _loadRequest = 0;
   Timer? _searchTimer;
+  Timer? _offlineSyncTimer;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _offlineSyncTimer = Timer.periodic(const Duration(seconds: 45), (_) {
+      unawaited(_retryPendingProducts());
+    });
   }
 
   @override
   void dispose() {
     _searchTimer?.cancel();
+    _offlineSyncTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -51,22 +58,68 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
       _error = null;
     });
     try {
+      await _adminApi.syncPendingOfflineProducts();
       final result = await _adminApi.getWholesaleItems(
         page: page,
         search: _searchController.text,
       );
+      await const OfflinePosStore().mergeCatalog(
+        result.items
+            .where((item) => item.isActive)
+            .map((item) => PosProduct(
+                  id: 'wholesale-${item.id}',
+                  name: item.name,
+                  sku: item.sku,
+                  barcode: null,
+                  price: item.price,
+                  unitLabel: item.unitLabel,
+                  available: item.stock,
+                  imageUrl: item.imageUrl,
+                ))
+            .toList(growable: false),
+      );
+      final pending = await const OfflinePosStore().readPendingProducts();
+      final conflictCount = pending
+          .where((entry) =>
+              entry['kind'] == 'wholesale' && entry['syncError'] is String)
+          .length;
       if (!mounted || request != _loadRequest) return;
       setState(() {
         _page = result;
         _pageNumber = page;
+        _error = conflictCount == 0
+            ? null
+            : '$conflictCount offline wholesale item(s) need review because the server already has a matching SKU.';
         _loading = false;
       });
     } catch (error) {
       if (!mounted || request != _loadRequest) return;
+      final cachedCategories = await const OfflinePosStore().readCategories();
+      if (cachedCategories.isNotEmpty) {
+        setState(() {
+          _page = const AdminWholesaleItemPage(
+            items: [],
+            pagination: AdminPagination(page: 1, pageSize: 20, total: 0),
+          );
+          _pageNumber = page;
+          _error =
+              'Offline mode: wholesale items will be saved locally and synchronized when the connection returns.';
+          _loading = false;
+        });
+        return;
+      }
       setState(() {
         _error = _cleanError(error);
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _retryPendingProducts() async {
+    if (!mounted || _loading) return;
+    final pending = await const OfflinePosStore().readPendingProducts();
+    if (pending.any((entry) => entry['kind'] == 'wholesale')) {
+      await _load(page: _pageNumber);
     }
   }
 
@@ -78,7 +131,14 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
   }
 
   Future<void> _editItem([AdminWholesaleItem? item]) async {
-    final categories = await _adminApi.getCategories();
+    List<AdminCategory> categories;
+    try {
+      categories = await _adminApi.getCategories();
+    } catch (_) {
+      categories = (await const OfflinePosStore().readCategories())
+          .map(AdminCategory.fromJson)
+          .toList(growable: false);
+    }
     if (!mounted) return;
     final activeCategories = categories.where((category) => category.isActive);
     if (activeCategories.isEmpty) {
@@ -519,6 +579,32 @@ class _WholesaleItemFormState extends State<_WholesaleItemForm> {
           imageName: _imageName,
         );
       }
+      if (mounted) Navigator.pop(context, true);
+    } on ApiNetworkException {
+      if (widget.item != null) {
+        if (mounted) {
+          setState(() {
+            _saving = false;
+            _error =
+                'Editing an existing wholesale item requires a connection. It was not queued as a duplicate.';
+          });
+        }
+        return;
+      }
+      await const OfflinePosStore().queueWholesaleItem(fields);
+      if (mounted) Navigator.pop(context, true);
+    } on ApiTimeoutException {
+      if (widget.item != null) {
+        if (mounted) {
+          setState(() {
+            _saving = false;
+            _error =
+                'Editing an existing wholesale item requires a connection. It was not queued as a duplicate.';
+          });
+        }
+        return;
+      }
+      await const OfflinePosStore().queueWholesaleItem(fields);
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
       if (!mounted) return;

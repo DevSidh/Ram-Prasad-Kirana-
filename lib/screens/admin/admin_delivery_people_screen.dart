@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../../core/nepal_phone.dart';
 import '../../core/order_time.dart';
 import '../../models/admin_models.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
 import '../../theme/admin_widgets.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/delivery_person_photo.dart';
 
 class AdminDeliveryPeopleScreen extends StatefulWidget {
   final ApiService api;
@@ -315,6 +319,8 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
             for (final person in _people)
               _DeliveryPersonCard(
                 person: person,
+                apiBaseUrl: widget.api.baseUrl,
+                authToken: context.read<AuthProvider>().authToken,
                 isSaving: _savingId == person.id,
                 onToggleActive: () => _toggleActive(person),
               ),
@@ -815,11 +821,15 @@ class _CashHandoverSection extends StatelessWidget {
 
 class _DeliveryPersonCard extends StatelessWidget {
   final AdminDeliveryPerson person;
+  final String apiBaseUrl;
+  final String? authToken;
   final bool isSaving;
   final VoidCallback onToggleActive;
 
   const _DeliveryPersonCard({
     required this.person,
+    required this.apiBaseUrl,
+    required this.authToken,
     required this.isSaving,
     required this.onToggleActive,
   });
@@ -835,14 +845,16 @@ class _DeliveryPersonCard extends StatelessWidget {
         padding: const EdgeInsets.all(14),
         child: Row(
           children: [
-            CircleAvatar(
+            DeliveryPersonPhoto(
+              name: person.name,
+              avatarUrl: person.avatarUrl,
+              apiBaseUrl: apiBaseUrl,
+              authToken: authToken,
+              radius: 20,
               backgroundColor: person.isActive
                   ? AppColors.thumbnailGreen
                   : AppColors.pageEnd,
-              child: Icon(
-                Icons.delivery_dining_rounded,
-                color: person.isActive ? AppColors.primary : AppColors.muted,
-              ),
+              iconColor: person.isActive ? AppColors.primary : AppColors.muted,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -975,9 +987,11 @@ class _NewDeliveryPersonDialogState extends State<_NewDeliveryPersonDialog> {
               TextFormField(
                 controller: _phone,
                 keyboardType: TextInputType.phone,
+                inputFormatters: nepalPhoneInputFormatters,
                 decoration: const InputDecoration(
                   labelText: 'Phone (optional)',
                 ),
+                validator: (value) => validateNepalPhone(value, optional: true),
               ),
               TextFormField(
                 controller: _password,

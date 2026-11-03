@@ -5,6 +5,7 @@ import '../models/admin_models.dart';
 import '../models/pos_models.dart';
 import '../models/store_availability.dart';
 import 'api_service.dart';
+import 'offline_pos_store.dart';
 
 class AdminApiService {
   final ApiService _api;
@@ -224,6 +225,8 @@ class AdminApiService {
     required double discount,
     double vatRate = 0,
     required String paymentMethod,
+    double? paidAmount,
+    String? paidNowMethod,
     String? customerName,
     String? customerPhone,
     String? customerId,
@@ -235,6 +238,8 @@ class AdminApiService {
       'discount': discount,
       'vatRate': vatRate,
       'paymentMethod': paymentMethod,
+      if (paidAmount != null) 'paidAmount': paidAmount,
+      if (paidNowMethod != null) 'paidNowMethod': paidNowMethod,
       'customerName': customerName,
       'customerPhone': customerPhone,
       'customerId': customerId,
@@ -262,6 +267,7 @@ class AdminApiService {
     int page = 1,
     int pageSize = 50,
     String? day,
+    String? search,
   }) async {
     if (page < 1 || pageSize < 1 || pageSize > 100) {
       throw ArgumentError('Bill-history pagination is out of range.');
@@ -272,6 +278,7 @@ class AdminApiService {
         'page': '$page',
         'pageSize': '$pageSize',
         if (day != null) 'day': day,
+        if (search?.trim().isNotEmpty == true) 'search': search!.trim(),
       },
     ));
     return PosSalesPage.fromJson(response);
@@ -303,10 +310,17 @@ class AdminApiService {
   Future<PosSalesPage> getPosPendingPayments({
     int page = 1,
     int pageSize = 50,
+    String? search,
+    String? day,
   }) async {
     final response = _asMap(await _api.get(
       '/admin/billing/pending-payments',
-      queryParams: {'page': '$page', 'pageSize': '$pageSize'},
+      queryParams: {
+        'page': '$page',
+        'pageSize': '$pageSize',
+        if (search?.trim().isNotEmpty == true) 'search': search!.trim(),
+        if (day?.trim().isNotEmpty == true) 'day': day!.trim(),
+      },
     ));
     return PosSalesPage.fromJson(response);
   }
@@ -323,8 +337,14 @@ class AdminApiService {
     );
   }
 
-  Future<List<PosRefund>> getPosRefunds() async {
-    final response = _asMap(await _api.get('/admin/billing/refunds'));
+  Future<List<PosRefund>> getPosRefunds({String? search, String? day}) async {
+    final response = _asMap(await _api.get(
+      '/admin/billing/refunds',
+      queryParams: {
+        if (search?.trim().isNotEmpty == true) 'search': search!.trim(),
+        if (day?.trim().isNotEmpty == true) 'day': day!.trim(),
+      },
+    ));
     final refunds = response['refunds'];
     if (refunds is! List) {
       throw const FormatException(
@@ -797,10 +817,113 @@ class AdminApiService {
     if (categories is! List) {
       throw Exception('The server returned an invalid category list.');
     }
-    return categories
+    final parsed = categories
         .whereType<Map<String, dynamic>>()
         .map(AdminCategory.fromJson)
         .toList();
+    await const OfflinePosStore().saveCategories([
+      for (final category in parsed)
+        {
+          'id': category.id,
+          'name': category.name,
+          'slug': category.slug,
+          'description': category.description,
+          'imageUrl': category.imageUrl,
+          'isActive': category.isActive,
+        },
+    ]);
+    return parsed;
+  }
+
+  /// Upload queued Windows-only products when connectivity returns.
+  /// Barcode/SKU matches are reused only when the saved details and stock agree;
+  /// conflicting records stay local for review instead of overwriting data.
+  Future<int> syncPendingOfflineProducts() async {
+    const store = OfflinePosStore();
+    final pending = (await store.readPendingProducts()).toList();
+    var synced = 0;
+    for (final entry in pending) {
+      final localId = entry['localId']?.toString();
+      final fields = entry['fields'];
+      final stock = entry['stock'];
+      if (localId == null || fields is! Map<String, dynamic> || stock is! num) {
+        continue;
+      }
+      try {
+        if (entry['kind'] == 'wholesale') {
+          final sku = fields['sku']?.toString().trim() ?? '';
+          final matches = sku.isEmpty
+              ? const <AdminWholesaleItem>[]
+              : (await getWholesaleItems(page: 1, pageSize: 50, search: sku))
+                  .items
+                  .where((item) => item.sku.toLowerCase() == sku.toLowerCase())
+                  .toList(growable: false);
+          if (matches.isEmpty) {
+            await createWholesaleItem(fields);
+          } else {
+            final existing = matches.first;
+            final sameProduct = existing.name.toLowerCase() ==
+                    fields['name']?.toString().toLowerCase() &&
+                existing.price == (fields['price'] as num?)?.toDouble() &&
+                existing.stock == stock.toInt();
+            if (!sameProduct) {
+              await store.setPendingProductError(
+                localId,
+                'A wholesale item with this SKU already exists with different details or stock. Review it before syncing.',
+              );
+              continue;
+            }
+          }
+          await store.removePendingProduct(localId);
+          synced++;
+          continue;
+        }
+        AdminProduct? match;
+        final barcode = fields['barcode']?.toString().trim() ?? '';
+        final sku = fields['sku']?.toString().trim() ?? '';
+        for (final code in [barcode, sku]) {
+          if (code.isEmpty) continue;
+          final result = await getProducts(page: 1, pageSize: 20, search: code);
+          for (final product in result.products) {
+            if (product.barcode?.toLowerCase() == code.toLowerCase() ||
+                product.sku.toLowerCase() == code.toLowerCase()) {
+              match = product;
+              break;
+            }
+          }
+          if (match != null) break;
+        }
+        if (match == null) {
+          await createProduct(fields, stock.toDouble());
+        } else {
+          final barcode = fields['barcode']?.toString().toLowerCase();
+          final sameProduct = match.name.toLowerCase() ==
+                  fields['name']?.toString().toLowerCase() &&
+              match.price == (fields['price'] as num?)?.toDouble() &&
+              (barcode == null ||
+                  barcode.isEmpty ||
+                  match.barcode?.toLowerCase() == barcode) &&
+              (match.availableStock - stock.toDouble()).abs() < 0.001;
+          if (!sameProduct) {
+            await store.setPendingProductError(
+              localId,
+              'A product with this barcode or SKU already exists with different details or stock. Review it before syncing.',
+            );
+            continue;
+          }
+        }
+        await store.removePendingProduct(localId);
+        synced++;
+      } on ApiNetworkException {
+        break;
+      } on ApiTimeoutException {
+        break;
+      } on ApiResponseException catch (error) {
+        await store.setPendingProductError(localId, error.message);
+        continue;
+      }
+    }
+    return synced;
   }
 
   Future<void> createCategory(Map<String, dynamic> data) async {
@@ -883,6 +1006,21 @@ class AdminApiService {
           : AdminPagination(
               page: page, pageSize: pageSize, total: items.length),
     );
+  }
+
+  Future<List<AdminWholesaleItem>> getAllWholesaleItems() async {
+    const pageSize = 100;
+    final allItems = <AdminWholesaleItem>[];
+    var page = 1;
+    while (true) {
+      final result = await getWholesaleItems(page: page, pageSize: pageSize);
+      allItems.addAll(result.items);
+      if (allItems.length >= result.pagination.total) return allItems;
+      if (result.items.isEmpty) {
+        throw Exception('The server returned an incomplete wholesale catalog.');
+      }
+      page++;
+    }
   }
 
   Future<void> createWholesaleItem(

@@ -30,6 +30,14 @@ class PosReceiptService {
       total: sale.total,
       paymentMethod: sale.paymentMethod,
       paymentStatus: sale.paymentStatus,
+      paidAmount: sale.paidAmount ??
+          (sale.paymentStatus == 'COMPLETED' ? sale.total : 0),
+      outstandingAmount: sale.outstandingAmount ??
+          (sale.total -
+                  (sale.paidAmount ??
+                      (sale.paymentStatus == 'COMPLETED' ? sale.total : 0)))
+              .clamp(0, sale.total)
+              .toDouble(),
     );
   }
 

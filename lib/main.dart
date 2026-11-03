@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +9,7 @@ import 'core/theme.dart';
 import 'core/constants.dart';
 import 'services/api_service.dart';
 import 'services/product_share_link.dart';
+import 'services/store_audio_service.dart';
 import 'providers/auth_provider.dart';
 import 'providers/product_provider.dart';
 import 'providers/cart_provider.dart';
@@ -17,6 +20,9 @@ import 'providers/store_availability_provider.dart';
 import 'screens/splash_screen.dart';
 import 'screens/product/shared_product_screen.dart';
 import 'widgets/store_animation.dart';
+import 'widgets/app_update_startup.dart';
+
+final _appNavigatorKey = GlobalKey<NavigatorState>();
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -75,6 +81,9 @@ void main() {
       child: const RamPrasadGeneralStoreApp(),
     ),
   );
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(StoreAudioService.playStartup());
+  });
 }
 
 class RamPrasadGeneralStoreApp extends StatelessWidget {
@@ -89,6 +98,7 @@ class RamPrasadGeneralStoreApp extends StatelessWidget {
             View.of(context).platformDispatcher.platformBrightness ==
                 Brightness.dark);
     return MaterialApp(
+      navigatorKey: _appNavigatorKey,
       title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
@@ -98,15 +108,19 @@ class RamPrasadGeneralStoreApp extends StatelessWidget {
       supportedLocales: const [Locale('en'), Locale('ne')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       scrollBehavior: const _StoreScrollBehavior(),
-      builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
-        value: SystemUiOverlayStyle(
-          statusBarColor: Colors.transparent,
-          statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
-          systemNavigationBarColor: AppConstants.backgroundFor(isDark),
-          systemNavigationBarIconBrightness:
-              isDark ? Brightness.light : Brightness.dark,
+      builder: (context, child) => AppUpdateStartup(
+        navigatorKey: _appNavigatorKey,
+        child: AnnotatedRegion<SystemUiOverlayStyle>(
+          value: SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness:
+                isDark ? Brightness.light : Brightness.dark,
+            systemNavigationBarColor: AppConstants.backgroundFor(isDark),
+            systemNavigationBarIconBrightness:
+                isDark ? Brightness.light : Brightness.dark,
+          ),
+          child: child ?? const SizedBox.shrink(),
         ),
-        child: child ?? const SizedBox.shrink(),
       ),
       home: const SplashScreen(),
       onGenerateRoute: (settings) {

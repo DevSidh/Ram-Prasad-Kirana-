@@ -97,6 +97,7 @@ jobs:
           LOCAL_API_BASE_URL="${LOCAL_API_BASE_URL:-http://10.0.2.2:4000/api/v1}"
           flutter build apk --release \
             --build-name="$VERSION" \
+            --build-number="$((100000 + GITHUB_RUN_NUMBER))" \
             --dart-define=API_BASE_URL="$API_BASE_URL" \
             --dart-define=LOCAL_API_BASE_URL="$LOCAL_API_BASE_URL" \
             --dart-define=GOOGLE_MAPS_CONFIGURED=true
@@ -110,14 +111,27 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          FASTSTORE_MANDATORY_UPDATE: ${{ vars.FASTSTORE_MANDATORY_UPDATE || 'false' }}
         run: |
+          set -euo pipefail
           APK="build/app/outputs/flutter-apk/Ram-Prasad-General-Store-${GITHUB_REF_NAME#v}.apk"
+          POLICY="build/app/outputs/flutter-apk/faststore-update-policy.json"
+          if [[ "$FASTSTORE_MANDATORY_UPDATE" != "true" && "$FASTSTORE_MANDATORY_UPDATE" != "false" ]]; then
+            echo "::error::FASTSTORE_MANDATORY_UPDATE must be 'true' or 'false'."
+            exit 1
+          fi
+          jq -n \
+            --arg appId "com.freshharvest.grocery_app" \
+            --arg releaseVersion "${GITHUB_REF_NAME#v}" \
+            --arg mandatory "$FASTSTORE_MANDATORY_UPDATE" \
+            '{schemaVersion: 1, appId: $appId, releaseVersion: $releaseVersion, mandatory: ($mandatory == "true")}' \
+            > "$POLICY"
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             # Re-runs and tag rebuilds should replace the APK instead of failing
             # because the release already exists.
-            gh release upload "$GITHUB_REF_NAME" "$APK" --clobber
+            gh release upload "$GITHUB_REF_NAME" "$APK" "$POLICY" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" "$APK" \
+            gh release create "$GITHUB_REF_NAME" "$APK" "$POLICY" \
               --title "Ram Prasad General Store ${GITHUB_REF_NAME#v}" \
               --generate-notes
           fi

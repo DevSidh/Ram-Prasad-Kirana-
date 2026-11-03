@@ -229,16 +229,20 @@ const customerMenuFeaturesInput = z.object(
 const updateCustomerInput = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   email: z.string().trim().email().max(254).transform(normalizeEmail).optional(),
-  phone: z.string().trim().min(7).max(30).nullable()
-    .transform(normalizePhone).optional(),
+  phone: z.string().trim().regex(/^9[78]\d{8}$/).nullable()
+    .transform(normalizePhone)
+    .refine((phone) => phone === null || /^9[78]\d{8}$/.test(phone),
+      'Enter a 10-digit Nepal mobile number starting with 98 or 97.')
+    .optional(),
   isActive: z.boolean().optional(),
 }).strict().refine((value) => Object.keys(value).length > 0);
 const deliveryPersonInput = z.object({
   name: z.string().trim().min(1).max(120),
   email: z.string().trim().email().max(254),
-  phone: z.string().trim().min(7).max(30).optional()
+  phone: z.string().trim().regex(/^9[78]\d{8}$/).optional()
     .transform((phone) => normalizePhone(phone))
-    .refine((phone) => phone === undefined || (phone !== null && phone.length >= 7 && phone.length <= 30)),
+    .refine((phone) => phone === undefined || (phone !== null && /^9[78]\d{8}$/.test(phone)),
+      'Enter a 10-digit Nepal mobile number starting with 98 or 97.'),
   password: z.string().min(10).max(200),
 }).strict();
 const deliveryAssignmentInput = z.object({
@@ -414,7 +418,7 @@ const restockHistoryQuery = z.object({
 });
 const supplierPurchaseBillInput = z.object({
   supplierName: z.string().trim().min(1).max(160),
-  supplierPhone: z.string().trim().max(40).nullable().optional(),
+  supplierPhone: z.string().trim().regex(/^9[78]\d{8}$/).nullable().optional(),
   invoiceNumber: z.string().trim().min(1).max(100),
   invoiceDate: z.string().datetime({ offset: true }),
   deliveryPerson: z.string().trim().max(120).nullable().optional(),
@@ -1877,6 +1881,7 @@ export function createAdminRouter(
           name: true,
           email: true,
           phone: true,
+          avatarUrl: true,
           isActive: true,
         },
       });
@@ -1991,6 +1996,7 @@ export function createAdminRouter(
           name: true,
           email: true,
           phone: true,
+          avatarUrl: true,
           isActive: true,
           isAvailable: true,
           _count: {
@@ -2137,7 +2143,15 @@ export function createAdminRouter(
           role: 'DELIVERY_PERSON',
           isAvailable: false,
         },
-        select: { id: true, name: true, email: true, phone: true, isActive: true, isAvailable: true },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
+          avatarUrl: true,
+          isActive: true,
+          isAvailable: true,
+        },
       });
       return res.status(201).json({ deliveryPerson: person });
     } catch (error) {

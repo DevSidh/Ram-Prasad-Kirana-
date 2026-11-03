@@ -20,6 +20,7 @@ class Order {
   final DateTime? scheduledDeliveryAt;
   final String? deliveryPersonName;
   final String? deliveryPersonPhone;
+  final String? deliveryPersonAvatarUrl;
   final double? deliveryPersonLatitude;
   final double? deliveryPersonLongitude;
   final DateTime? deliveryLocationUpdatedAt;
@@ -42,6 +43,7 @@ class Order {
     this.scheduledDeliveryAt,
     this.deliveryPersonName,
     this.deliveryPersonPhone,
+    this.deliveryPersonAvatarUrl,
     this.deliveryPersonLatitude,
     this.deliveryPersonLongitude,
     this.deliveryLocationUpdatedAt,
@@ -71,6 +73,7 @@ class Order {
           : null,
       deliveryPersonName: json['deliveryPersonName'],
       deliveryPersonPhone: json['deliveryPersonPhone'],
+      deliveryPersonAvatarUrl: json['deliveryPersonAvatarUrl'],
       deliveryPersonLatitude:
           (json['deliveryPersonLatitude'] as num?)?.toDouble(),
       deliveryPersonLongitude:
@@ -100,6 +103,7 @@ class Order {
       'scheduledDeliveryAt': scheduledDeliveryAt?.toIso8601String(),
       'deliveryPersonName': deliveryPersonName,
       'deliveryPersonPhone': deliveryPersonPhone,
+      'deliveryPersonAvatarUrl': deliveryPersonAvatarUrl,
       'deliveryPersonLatitude': deliveryPersonLatitude,
       'deliveryPersonLongitude': deliveryPersonLongitude,
       'deliveryLocationUpdatedAt': deliveryLocationUpdatedAt?.toIso8601String(),

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
+import '../../core/nepal_phone.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../widgets/custom_button.dart';
@@ -166,10 +167,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
                   maxLength: 10,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(10),
-                  ],
+                  inputFormatters: nepalPhoneInputFormatters,
                   decoration: const InputDecoration(
                     labelText: 'Phone Number',
                     prefixIcon: Icon(Icons.phone_outlined),
@@ -177,10 +175,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     helperText: 'Enter 10 digits starting with 98 or 97.',
                     counterText: '',
                   ),
-                  validator: (value) => value == null ||
-                          !RegExp(r'^9[78]\d{8}$').hasMatch(value.trim())
-                      ? 'Enter a 10-digit number starting with 98 or 97'
-                      : null,
+                  validator: validateNepalPhone,
                 ),
                 const SizedBox(height: 14),
                 TextFormField(

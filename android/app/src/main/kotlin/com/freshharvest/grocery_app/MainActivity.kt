@@ -7,12 +7,16 @@ import android.app.NotificationManager
 import android.content.pm.PackageManager
 import android.content.Intent
 import android.content.ContentValues
+import android.content.pm.Signature
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.view.WindowManager
 import android.provider.MediaStore
+import android.provider.Settings
 import java.io.File
 import java.io.FileOutputStream
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -137,6 +141,111 @@ class MainActivity : FlutterFragmentActivity() {
             } catch (error: Exception) {
                 result.error("invoice_save_failed", "Could not save the invoice PDF.", error.message)
             }
+        }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "faststore/app_update",
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "canInstallPackages" -> {
+                    result.success(
+                        Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+                            packageManager.canRequestPackageInstalls(),
+                    )
+                }
+
+                "openInstallPermissionSettings" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                        !packageManager.canRequestPackageInstalls()
+                    ) {
+                        startActivity(
+                            Intent(
+                                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                Uri.parse("package:$packageName"),
+                            ),
+                        )
+                    }
+                    result.success(null)
+                }
+
+                "installApk" -> {
+                    val path = call.argument<String>("path")
+                    if (path.isNullOrBlank()) {
+                        result.error("invalid_apk_path", "The APK path is missing.", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        val file = File(path).canonicalFile
+                        val cacheRoot = cacheDir.canonicalFile
+                        if (!file.path.startsWith(cacheRoot.path + File.separator) ||
+                            !file.isFile || file.length() == 0L
+                        ) {
+                            throw IllegalArgumentException("The update APK is not in FastStore's private cache.")
+                        }
+                        verifyUpdateApk(file)
+                        val apkUri = FileProvider.getUriForFile(
+                            this,
+                            "$packageName.fileprovider",
+                            file,
+                        )
+                        val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(apkUri, "application/vnd.android.package-archive")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(installIntent)
+                        result.success(true)
+                    } catch (error: SecurityException) {
+                        result.error("wrong_signing_certificate", error.message, null)
+                    } catch (error: Exception) {
+                        result.error("apk_install_failed", error.message, null)
+                    }
+                }
+
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun verifyUpdateApk(apk: File) {
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            PackageManager.GET_SIGNATURES
+        }
+        val archive = packageManager.getPackageArchiveInfo(apk.path, flags)
+            ?: throw IllegalArgumentException("Android could not read the downloaded APK.")
+        if (archive.packageName != packageName) {
+            throw SecurityException("This APK is for a different app and cannot update FastStore.")
+        }
+        val archiveSignatures: Array<Signature> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            archive.signingInfo?.apkContentsSigners
+        } else {
+            archive.signatures
+        } ?: emptyArray()
+        if (archiveSignatures.isEmpty()) {
+            throw SecurityException("The downloaded APK has no verifiable signing certificate.")
+        }
+
+        val matchesInstalledSignature = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            archiveSignatures.all { signature ->
+                packageManager.hasSigningCertificate(
+                    packageName,
+                    signature.toByteArray(),
+                    PackageManager.CERT_INPUT_RAW_X509,
+                )
+            }
+        } else {
+            val installed = packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
+                .signatures ?: emptyArray()
+            installed.isNotEmpty() && archiveSignatures.size == installed.size &&
+                archiveSignatures.all { candidate ->
+                    installed.any { it.toByteArray().contentEquals(candidate.toByteArray()) }
+                }
+        }
+        if (!matchesInstalledSignature) {
+            throw SecurityException("The APK was signed with a different certificate. Install stopped to protect your app data.")
         }
     }
 

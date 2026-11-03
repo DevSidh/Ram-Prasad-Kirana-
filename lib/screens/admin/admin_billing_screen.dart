@@ -7,22 +7,29 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:printing/printing.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/constants.dart';
+import '../../core/nepal_phone.dart';
 import '../../models/pos_models.dart';
 import '../../models/admin_models.dart';
 import '../../models/scanned_product_barcode.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
 import '../../services/billing_excel_export_service.dart';
+import '../../services/offline_pos_store.dart';
 import '../../services/pos_receipt_service.dart';
+import '../../services/store_audio_service.dart';
+import '../../widgets/personal_payment_qr_dialog.dart';
 import '../../theme/admin_widgets.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/product_thumbnail.dart';
 import 'barcode_scanner_screen.dart';
 import 'admin_billing_staff_screen.dart';
+import '../auth/login_screen.dart';
 
 const _pendingLocalStreaksPreferenceKey = 'pending_local_streak_receipts_v1';
 
@@ -73,10 +80,16 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   PosOverview? _reportOverview;
   List<PosSale> _sales = const [];
   PosSalesPage? _pendingPaymentPage;
+  List<PosSale> _localPendingSales = const [];
   int _salesPage = 1;
   int _salesPageSize = 50;
   int _salesTotal = 0;
   int _pendingPaymentPageNumber = 1;
+  final _billHistorySearchController = TextEditingController();
+  final _pendingPaymentSearchController = TextEditingController();
+  String _pendingPaymentDayKey = '';
+  final _refundSearchController = TextEditingController();
+  String _refundDayKey = '';
   List<PosRefund> _refunds = const [];
   List<PosHeldSale> _heldSales = const [];
   List<PosExchange> _exchanges = const [];
@@ -86,6 +99,8 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   DateTime? _reportDay;
   bool _loading = true;
   String? _error;
+  bool _sessionExpired = false;
+  int _loadRequestId = 0;
   bool _working = false;
   String? _barcodePairingCode;
   bool _syncingPendingCashExport = false;
@@ -108,6 +123,9 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     _scrollController.dispose();
     _customerSearch.dispose();
     _barcodeSearch.dispose();
+    _billHistorySearchController.dispose();
+    _pendingPaymentSearchController.dispose();
+    _refundSearchController.dispose();
     super.dispose();
   }
 
@@ -229,11 +247,13 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   String? get _reportDayKey => _formatDayKey(_reportDay);
 
   Future<void> _load({int? salesPage, int? pendingPage}) async {
+    final requestId = ++_loadRequestId;
     final requestedSalesPage = salesPage ?? _salesPage;
     final requestedPendingPage = pendingPage ?? _pendingPaymentPageNumber;
     setState(() {
       _loading = true;
       _error = null;
+      _sessionExpired = false;
     });
     try {
       final overview = await _adminApi.getPosOverview();
@@ -242,13 +262,21 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         _adminApi.getPosSales(
           page: requestedSalesPage,
           day: _billHistoryDayKey,
+          search: _billHistorySearchController.text.trim(),
         ),
         if (widget.isBillingStaff)
           Future<List<PosRefund>>.value(const [])
         else
-          _adminApi.getPosRefunds(),
+          _adminApi.getPosRefunds(
+            search: _refundSearchController.text.trim(),
+            day: _refundDayKey.isEmpty ? null : _refundDayKey,
+          ),
         _adminApi.getPosHeldSales(),
-        _adminApi.getPosPendingPayments(page: requestedPendingPage),
+        _adminApi.getPosPendingPayments(
+          page: requestedPendingPage,
+          search: _pendingPaymentSearchController.text.trim(),
+          day: _pendingPaymentDayKey.isEmpty ? null : _pendingPaymentDayKey,
+        ),
       ]);
       List<PosExchange> exchanges = const [];
       String? exchangeError;
@@ -257,21 +285,45 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       } catch (error) {
         exchangeError = error.toString().replaceFirst('Exception: ', '');
       }
-      if (!mounted) return;
+      if (!mounted || requestId != _loadRequestId) return;
       final reportOverview =
           _reportDayKey == null ? overview : results[0] as PosOverview;
       final salesIndex = _reportDayKey == null ? 0 : 1;
       final loadedSalesPage = results[salesIndex] as PosSalesPage;
+      final localSales = _isWindowsOperatorMode
+          ? await const OfflinePosStore().readOfflineSales()
+          : const <PosSale>[];
+      if (!mounted || requestId != _loadRequestId) return;
+      final filteredLocalSales = _billHistoryDayKey == null
+          ? localSales
+          : localSales.where((sale) =>
+              _formatDayKey(sale.createdAt.toLocal()) == _billHistoryDayKey);
+      final onlineInvoiceNumbers = loadedSalesPage.sales
+          .map((sale) => sale.invoiceNumber ?? sale.receiptNumber)
+          .toSet();
+      final uniqueLocalSales = filteredLocalSales
+          .where((sale) => !onlineInvoiceNumbers
+              .contains(sale.invoiceNumber ?? sale.receiptNumber))
+          .toList(growable: false);
+      final mergedSales = <PosSale>[
+        ...loadedSalesPage.sales,
+        ...uniqueLocalSales
+      ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
       setState(() {
         _overview = overview;
         _reportOverview = reportOverview;
-        _sales = loadedSalesPage.sales;
+        _sales = mergedSales;
         _salesPage = loadedSalesPage.page;
         _salesPageSize = loadedSalesPage.pageSize;
-        _salesTotal = loadedSalesPage.total;
+        _salesTotal = loadedSalesPage.total + uniqueLocalSales.length;
         _refunds = results[salesIndex + 1] as List<PosRefund>;
         _heldSales = results[salesIndex + 2] as List<PosHeldSale>;
         _pendingPaymentPage = results[salesIndex + 3] as PosSalesPage;
+        _localPendingSales = localSales
+            .where((sale) =>
+                sale.paymentStatus == 'PENDING' &&
+                (sale.outstandingAmount ?? 0) > 0)
+            .toList(growable: false);
         _pendingPaymentPageNumber =
             (results[salesIndex + 3] as PosSalesPage).page;
         _exchanges = exchanges;
@@ -280,13 +332,66 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       });
       if (_isWindowsOperatorMode) unawaited(_syncPendingCashExport());
     } catch (error) {
-      if (!mounted) return;
+      var localSales = const <PosSale>[];
+      if (_isWindowsOperatorMode) {
+        try {
+          localSales = await const OfflinePosStore().readOfflineSales();
+        } catch (localReadError) {
+          debugPrint('Could not read local billing history: $localReadError');
+        }
+      }
+      if (!mounted || requestId != _loadRequestId) return;
+      final sessionExpired =
+          error is ApiResponseException && error.statusCode == 401;
       setState(() {
-        _error = error.toString().replaceFirst('Exception: ', '');
+        _sales = localSales;
+        _salesTotal = localSales.length;
+        if (_isWindowsOperatorMode) {
+          _overview ??= PosOverview.fromJson(
+            const <String, dynamic>{'metrics': <String, dynamic>{}},
+          );
+          _reportOverview ??= _overview;
+        }
+        _sessionExpired = sessionExpired;
+        _error = sessionExpired
+            ? 'Your sign-in session has expired. Sign in again to reconnect.'
+            : error.toString().replaceFirst('Exception: ', '');
         _loading = false;
       });
     }
   }
+
+  Future<void> _signInAgain() async {
+    try {
+      await context.read<AuthProvider>().logout();
+    } catch (error) {
+      debugPrint('Could not clear expired billing session: $error');
+    }
+    if (!mounted) return;
+    final isWindows = defaultTargetPlatform == TargetPlatform.windows;
+    Navigator.of(context, rootNavigator: true).pushAndRemoveUntil<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => LoginScreen(
+          isWindowsStaffLogin: isWindows,
+          isAdminLogin: !isWindows && !widget.isBillingStaff,
+          isBillingLogin: !isWindows && widget.isBillingStaff,
+        ),
+      ),
+      (_) => false,
+    );
+  }
+
+  Widget _loadErrorAction() => _sessionExpired
+      ? TextButton.icon(
+          onPressed: _signInAgain,
+          icon: const Icon(Icons.login_rounded),
+          label: const Text('Sign in again'),
+        )
+      : TextButton.icon(
+          onPressed: _loading ? null : _load,
+          icon: const Icon(Icons.refresh_rounded),
+          label: const Text('Retry'),
+        );
 
   Future<void> _newBill(
       {PosHeldSale? heldSale, PosProduct? scannedProduct}) async {
@@ -304,6 +409,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     if (!mounted) return;
     if (completedSale?.localPath == null) await _load();
     if (completedSale != null && mounted) {
+      unawaited(StoreAudioService.playConfirmation());
       if (_isWindowsOperatorMode && completedSale.localPath != null) {
         unawaited(_syncPendingCashExport());
       }
@@ -1006,6 +1112,42 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     await _load(salesPage: 1);
   }
 
+  Future<void> _searchBillHistory() async {
+    setState(() => _salesPage = 1);
+    await _load(salesPage: 1);
+  }
+
+  Future<void> _selectPendingPaymentDay() async {
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: _pendingPaymentDayKey.isEmpty
+          ? DateTime.now()
+          : DateTime.parse(_pendingPaymentDayKey),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+    );
+    if (selected == null) return;
+    setState(() {
+      _pendingPaymentDayKey = _formatDayKey(selected)!;
+      _pendingPaymentPageNumber = 1;
+    });
+    await _load(pendingPage: 1);
+  }
+
+  Future<void> _selectRefundDay() async {
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: _refundDayKey.isEmpty
+          ? DateTime.now()
+          : DateTime.parse(_refundDayKey),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+    );
+    if (selected == null) return;
+    setState(() => _refundDayKey = _formatDayKey(selected)!);
+    await _load();
+  }
+
   Future<void> _selectReportDay() async {
     final selected = await showDatePicker(
       context: context,
@@ -1033,11 +1175,17 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
             children: [
               Text(_error!, textAlign: TextAlign.center),
               const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: _load,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Retry'),
-              ),
+              _sessionExpired
+                  ? FilledButton.icon(
+                      onPressed: _signInAgain,
+                      icon: const Icon(Icons.login_rounded),
+                      label: const Text('Sign in again'),
+                    )
+                  : FilledButton.icon(
+                      onPressed: _loading ? null : _load,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry'),
+                    ),
             ],
           ),
         ),
@@ -1066,9 +1214,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               if (_error != null)
                 MaterialBanner(
                   content: Text(_error!),
-                  actions: [
-                    TextButton(onPressed: _load, child: const Text('Retry')),
-                  ],
+                  actions: [_loadErrorAction()],
                 ),
               Container(
                 key: _sectionKeys[AdminBillingSection.cashRegister],
@@ -1150,6 +1296,11 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                 'Invoice Management',
                 key: _sectionKeys[AdminBillingSection.billHistory],
                 actions: [
+                  FilledButton.icon(
+                    onPressed: _working ? null : () => _newBill(),
+                    icon: const Icon(Icons.add_rounded),
+                    label: const Text('New bill'),
+                  ),
                   OutlinedButton.icon(
                     onPressed: _working ? null : _exportSalesCsv,
                     icon: const Icon(Icons.download_outlined),
@@ -1298,7 +1449,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       if (_error != null)
         MaterialBanner(
           content: Text(_error!),
-          actions: [TextButton(onPressed: _load, child: const Text('Retry'))],
+          actions: [_loadErrorAction()],
         ),
       ..._windowsOperatorSectionContent(overview, reportOverview),
       const SizedBox(height: 28),
@@ -1373,7 +1524,16 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         return [_buildHeldBills()];
       case AdminBillingSection.billHistory:
         return [
-          _sectionHeading('Invoice Management'),
+          _sectionHeading(
+            'Invoice Management',
+            actions: [
+              FilledButton.icon(
+                onPressed: _working ? null : () => _newBill(),
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('New bill'),
+              ),
+            ],
+          ),
           _buildInvoiceManagementToolbar(),
           if (_salesTotal > _salesPageSize) _buildSalesPagination(),
           if (_visibleSales.isEmpty)
@@ -1975,7 +2135,9 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   Widget _buildPayments() => _buildRefundRequests();
 
   Widget _buildPendingPayments() {
-    final pending = _pendingPaymentPage?.sales ?? const <PosSale>[];
+    final onlinePending = _pendingPaymentPage?.sales ?? const <PosSale>[];
+    final pending = [...onlinePending, ..._localPendingSales]
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     final page = _pendingPaymentPage;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1995,8 +2157,55 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               Chip(
                 avatar: const Icon(Icons.account_balance_wallet_outlined),
                 label: Text(
-                  '${page.total} bill${page.total == 1 ? '' : 's'}',
+                  '${page.total + _localPendingSales.length} bill${(page.total + _localPendingSales.length) == 1 ? '' : 's'}',
                 ),
+              )
+            else if (_localPendingSales.isNotEmpty)
+              Chip(
+                avatar: const Icon(Icons.account_balance_wallet_outlined),
+                label: Text('${_localPendingSales.length} local bill(s)'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            SizedBox(
+              width: 340,
+              child: TextField(
+                controller: _pendingPaymentSearchController,
+                textInputAction: TextInputAction.search,
+                onSubmitted: (_) => _load(pendingPage: 1),
+                decoration: InputDecoration(
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  hintText: 'Search customer, phone or POS code',
+                  suffixIcon: IconButton(
+                    tooltip: 'Search pending payments',
+                    onPressed: () => _load(pendingPage: 1),
+                    icon: const Icon(Icons.arrow_forward_rounded),
+                  ),
+                ),
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: _loading ? null : _selectPendingPaymentDay,
+              icon: const Icon(Icons.calendar_month_outlined),
+              label: Text(_pendingPaymentDayKey.isEmpty
+                  ? 'All dates'
+                  : _pendingPaymentDayKey),
+            ),
+            if (_pendingPaymentDayKey.isNotEmpty)
+              IconButton(
+                tooltip: 'Clear payment date filter',
+                onPressed: () {
+                  setState(() => _pendingPaymentDayKey = '');
+                  unawaited(_load(pendingPage: 1));
+                },
+                icon: const Icon(Icons.clear_rounded),
               ),
           ],
         ),
@@ -2174,42 +2383,73 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   }
 
   Widget _saleTile(PosSale sale) {
+    final isLocal = sale.localPath != null;
     return Card(
       margin: const EdgeInsets.only(top: 8),
       child: ExpansionTile(
-        leading: const CircleAvatar(child: Icon(Icons.receipt_long_outlined)),
-        title: Text(sale.receiptNumber),
+        leading: CircleAvatar(
+          child: Icon(
+              isLocal ? Icons.computer_outlined : Icons.receipt_long_outlined),
+        ),
+        title: Text(sale.invoiceNumber ?? sale.receiptNumber),
         subtitle: Text(
           '${_money(sale.total)} · ${sale.paymentStatus == 'PENDING' ? 'Due ${_money(sale.outstandingAmount ?? sale.total)}' : _paymentLabel(sale.paymentMethod)} · ${_dateTime(sale.createdAt)}',
         ),
-        trailing: sale.paymentStatus == 'PENDING'
-            ? Wrap(
-                children: [
-                  IconButton(
-                    tooltip: 'Record received payment',
-                    onPressed: () => _markPaid(sale),
-                    icon: const Icon(Icons.payments_outlined),
-                  ),
-                  if (!widget.isBillingStaff && (sale.paidAmount ?? 0) <= 0)
-                    IconButton(
-                      tooltip: 'Cancel unpaid bill',
-                      onPressed: () => _cancelSale(sale),
-                      icon: const Icon(Icons.cancel_outlined),
-                    ),
-                ],
-              )
-            : sale.status == 'REFUNDED'
-                ? const Chip(label: Text('Refunded'))
-                : widget.isBillingStaff
-                    ? const SizedBox.shrink()
-                    : IconButton(
-                        tooltip: 'Request refund',
-                        onPressed: sale.status == 'CANCELLED'
-                            ? null
-                            : () => _requestRefund(sale),
-                        icon: const Icon(Icons.currency_exchange_rounded),
+        trailing: isLocal
+            ? const Chip(label: Text('Local'))
+            : sale.paymentStatus == 'PENDING'
+                ? Wrap(
+                    children: [
+                      IconButton(
+                        tooltip: 'Record received payment',
+                        onPressed: () => _markPaid(sale),
+                        icon: const Icon(Icons.payments_outlined),
                       ),
+                      if (!widget.isBillingStaff && (sale.paidAmount ?? 0) <= 0)
+                        IconButton(
+                          tooltip: 'Cancel unpaid bill',
+                          onPressed: () => _cancelSale(sale),
+                          icon: const Icon(Icons.cancel_outlined),
+                        ),
+                    ],
+                  )
+                : sale.status == 'REFUNDED'
+                    ? const Chip(label: Text('Refunded'))
+                    : widget.isBillingStaff
+                        ? const SizedBox.shrink()
+                        : IconButton(
+                            tooltip: 'Request refund',
+                            onPressed: sale.status == 'CANCELLED'
+                                ? null
+                                : () => _requestRefund(sale),
+                            icon: const Icon(Icons.currency_exchange_rounded),
+                          ),
         children: [
+          ListTile(
+            dense: true,
+            title: const Text('Customer'),
+            subtitle: Text(
+              (sale.customerName?.trim().isNotEmpty ?? false) ||
+                      (sale.customerPhone?.trim().isNotEmpty ?? false)
+                  ? [sale.customerName, sale.customerPhone]
+                      .where((value) => value?.trim().isNotEmpty ?? false)
+                      .join(' · ')
+                  : 'Walk-in customer',
+            ),
+          ),
+          ListTile(
+            dense: true,
+            title: const Text('Invoice totals'),
+            subtitle: Text(
+              'Subtotal ${_money(sale.subtotal)}  ·  '
+              'Discount ${_money(sale.discount)}  ·  '
+              'VAT ${_money(sale.vatAmount)} (${sale.vatRate.toStringAsFixed(2)}%)',
+            ),
+            trailing: Text(
+              'Total ${_money(sale.total)}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
           for (final item in sale.items)
             ListTile(
               dense: true,
@@ -2246,6 +2486,13 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               ),
             ),
           ),
+          if (isLocal && sale.localPath != null)
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.folder_outlined),
+              title: const Text('Local invoice file'),
+              subtitle: SelectableText(sale.localPath!),
+            ),
         ],
       ),
     );
@@ -2261,12 +2508,20 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
             SizedBox(
               width: 340,
               child: TextField(
+                controller: _billHistorySearchController,
+                textInputAction: TextInputAction.search,
                 onChanged: (value) =>
                     setState(() => _billHistorySearch = value),
-                decoration: const InputDecoration(
+                onSubmitted: (_) => _searchBillHistory(),
+                decoration: InputDecoration(
                   prefixIcon: Icon(Icons.search_rounded),
-                  hintText: 'Search invoice number, customer or phone',
+                  hintText: 'Search POS code, customer or phone',
                   isDense: true,
+                  suffixIcon: IconButton(
+                    tooltip: 'Search invoices',
+                    onPressed: _searchBillHistory,
+                    icon: const Icon(Icons.arrow_forward_rounded),
+                  ),
                 ),
               ),
             ),
@@ -2504,6 +2759,46 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               Chip(label: Text('${requested.length} pending')),
           ],
         ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            SizedBox(
+              width: 340,
+              child: TextField(
+                controller: _refundSearchController,
+                textInputAction: TextInputAction.search,
+                onSubmitted: (_) => _load(),
+                decoration: InputDecoration(
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  hintText: 'Search invoice, customer, phone or reason',
+                  suffixIcon: IconButton(
+                    tooltip: 'Search refunds',
+                    onPressed: _load,
+                    icon: const Icon(Icons.arrow_forward_rounded),
+                  ),
+                ),
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: _loading ? null : _selectRefundDay,
+              icon: const Icon(Icons.calendar_month_outlined),
+              label: Text(_refundDayKey.isEmpty ? 'All dates' : _refundDayKey),
+            ),
+            if (_refundDayKey.isNotEmpty)
+              IconButton(
+                tooltip: 'Clear refund date filter',
+                onPressed: () {
+                  setState(() => _refundDayKey = '');
+                  unawaited(_load());
+                },
+                icon: const Icon(Icons.clear_rounded),
+              ),
+          ],
+        ),
         if (requested.isEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 8),
@@ -2518,8 +2813,14 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               child: ListTile(
                 title:
                     Text('${refund.receiptNumber} · ${_money(refund.amount)}'),
-                subtitle: Text(
-                    '${refund.reason} · Requested by ${refund.requestedBy}'),
+                subtitle: Text([
+                  if (refund.customerName?.trim().isNotEmpty == true)
+                    refund.customerName!.trim(),
+                  if (refund.customerPhone?.trim().isNotEmpty == true)
+                    refund.customerPhone!.trim(),
+                  refund.reason,
+                  'Requested by ${refund.requestedBy}',
+                ].join(' · ')),
                 trailing: Wrap(
                   children: [
                     IconButton(
@@ -2603,6 +2904,25 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                   }
                 },
               ),
+              if (paymentMethod == 'DIGITAL') ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    final amount =
+                        double.tryParse(amountController.text.trim());
+                    if (amount == null || amount <= 0 || amount > remaining) {
+                      setDialogState(() {
+                        validationError =
+                            'Enter the amount first to show its QR.';
+                      });
+                      return;
+                    }
+                    showPersonalPaymentQrDialog(context, amount: amount);
+                  },
+                  icon: const Icon(Icons.qr_code_2_rounded),
+                  label: const Text('Show bank QR for amount received'),
+                ),
+              ],
               const SizedBox(height: 8),
               TextField(
                 controller: noteController,
@@ -2659,14 +2979,85 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     amountController.dispose();
     noteController.dispose();
     if (payment == null) return;
-    await _perform(
-      () => _adminApi.recordPosPayment(
-        sale.id,
-        amount: payment.amount,
-        paymentMethod: payment.method,
-        note: payment.note,
-      ),
-    );
+    var paymentSaved = false;
+    await _perform(() async {
+      if (sale.localPath != null) {
+        final jsonFile = File(sale.localPath!);
+        final decoded = jsonDecode(await jsonFile.readAsString());
+        if (decoded is! Map<String, dynamic>) {
+          throw const FormatException('The local bill file is invalid.');
+        }
+        final newPaid = ((sale.paidAmount ?? 0) + payment.amount)
+            .clamp(0, sale.total)
+            .toDouble();
+        final due = (sale.total - newPaid).clamp(0, sale.total).toDouble();
+        final now = DateTime.now();
+        final collections = [
+          ...sale.paymentCollections,
+          PosPaymentCollection(
+            id: 'local-payment-${const Uuid().v4()}',
+            amount: payment.amount,
+            method: payment.method,
+            note: payment.note,
+            createdAt: now,
+          ),
+        ];
+        decoded['paidAmount'] = newPaid;
+        decoded['outstandingAmount'] = due;
+        decoded['paymentStatus'] = due > 0 ? 'PENDING' : 'COMPLETED';
+        decoded['paymentMethod'] = due > 0 ? 'PENDING' : payment.method;
+        decoded['paymentCollections'] = collections
+            .map((collection) => {
+                  'id': collection.id,
+                  'amount': collection.amount,
+                  'method': collection.method,
+                  'note': collection.note,
+                  'createdAt': collection.createdAt.toIso8601String(),
+                })
+            .toList(growable: false);
+        await jsonFile.writeAsString(jsonEncode(decoded), flush: true);
+        final updatedSale = PosSale(
+          id: sale.id,
+          receiptNumber: sale.receiptNumber,
+          invoiceNumber: sale.invoiceNumber,
+          customerName: sale.customerName,
+          customerPhone: sale.customerPhone,
+          status: sale.status,
+          paymentMethod: due > 0 ? 'PENDING' : payment.method,
+          paymentStatus: due > 0 ? 'PENDING' : 'COMPLETED',
+          subtotal: sale.subtotal,
+          discount: sale.discount,
+          vatRate: sale.vatRate,
+          vatAmount: sale.vatAmount,
+          total: sale.total,
+          refundedAmount: sale.refundedAmount,
+          createdAt: sale.createdAt,
+          items: sale.items,
+          paidAmount: newPaid,
+          outstandingAmount: due,
+          paymentCollections: collections,
+          localPath: sale.localPath,
+        );
+        final basename = jsonFile.uri.pathSegments.last.replaceFirst(
+          RegExp(r'\.json$', caseSensitive: false),
+          '',
+        );
+        await File('${jsonFile.parent.path}/$basename.pdf').writeAsBytes(
+          await PosReceiptService.createInvoicePdf(updatedSale),
+          flush: true,
+        );
+      } else {
+        await _adminApi.recordPosPayment(
+          sale.id,
+          amount: payment.amount,
+          paymentMethod: payment.method,
+          note: payment.note,
+        );
+      }
+      paymentSaved = true;
+      return null;
+    });
+    if (paymentSaved) unawaited(StoreAudioService.playConfirmation());
   }
 
   String _paymentLabel(String method) => switch (method) {
@@ -2821,24 +3212,30 @@ class _PosBillDialog extends StatefulWidget {
 
 class _PosBillDialogState extends State<_PosBillDialog> {
   static const _offlineInvoiceCounterPrefix = 'offline_invoice_counter_';
+  static const _offlinePosStore = OfflinePosStore();
   late final String _idempotencyKey = const Uuid().v4();
   final _search = TextEditingController();
   final _customerName = TextEditingController();
   final _customerPhone = TextEditingController();
   final _discount = TextEditingController(text: '0');
   final _vatRate = TextEditingController(text: '0');
+  final _paidNow = TextEditingController(text: '0');
   final _searchFocus = FocusNode();
   Timer? _searchTimer;
+  Timer? _offlineSyncTimer;
   List<PosProduct> _matches = const [];
   final List<_PosCartLine> _cart = [];
   bool _searching = false;
   bool _saving = false;
   bool _discountIsPercent = false;
   bool _saveOnThisComputer = false;
+  bool _usingOfflineCatalog = false;
   AdminCustomer? _selectedCustomer;
   Timer? _customerSearchTimer;
   int _customerSearchRequest = 0;
+  int _productSearchRequest = 0;
   String _paymentMethod = 'CASH';
+  String _paidNowMethod = 'CASH';
   String? _error;
 
   @override
@@ -2867,6 +3264,10 @@ class _PosBillDialogState extends State<_PosBillDialog> {
     final scanned = widget.scannedProduct;
     if (scanned != null) _addProduct(scanned);
     unawaited(_searchProducts(''));
+    unawaited(_refreshOfflineCatalog());
+    _offlineSyncTimer = Timer.periodic(const Duration(seconds: 45), (_) {
+      unawaited(_retryPendingProductSync());
+    });
     if (defaultTargetPlatform == TargetPlatform.windows) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _searchFocus.requestFocus();
@@ -2878,12 +3279,17 @@ class _PosBillDialogState extends State<_PosBillDialog> {
   void dispose() {
     _searchTimer?.cancel();
     _customerSearchTimer?.cancel();
+    _offlineSyncTimer?.cancel();
     _search.dispose();
     _customerName.dispose();
     _customerPhone.dispose();
     _discount.dispose();
     _vatRate.dispose();
+    _paidNow.dispose();
     _searchFocus.dispose();
+    for (final line in _cart) {
+      line.dispose();
+    }
     super.dispose();
   }
 
@@ -2906,15 +3312,42 @@ class _PosBillDialogState extends State<_PosBillDialog> {
             customer.name.trim().toLowerCase() == name.trim().toLowerCase();
         return customer.isActive && (samePhone || sameName);
       });
-      if (exact.isEmpty) return;
-      final customer = exact.first;
+      final local = await BillingExcelExportService.readSavedCustomers();
+      final localExact = local.where((customer) {
+        final samePhone = normalizedPhone.isNotEmpty &&
+            customer.phone.replaceAll(RegExp(r'\D'), '') == normalizedPhone;
+        final sameName = name.trim().isNotEmpty &&
+            customer.name.trim().toLowerCase() == name.trim().toLowerCase();
+        return customer.isActive && (samePhone || sameName);
+      });
+      if (exact.isEmpty && localExact.isEmpty) return;
+      final customer = exact.isNotEmpty ? exact.first : localExact.first;
       setState(() {
         _selectedCustomer = customer;
         _customerName.text = customer.name;
         _customerPhone.text = customer.phone;
       });
     } catch (_) {
-      // Free-form walk-in details remain valid when customer search is offline.
+      try {
+        final local = await BillingExcelExportService.readSavedCustomers();
+        if (!mounted || requestId != _customerSearchRequest) return;
+        final normalizedPhone = phone.replaceAll(RegExp(r'\D'), '');
+        final customer = local.where((candidate) {
+          final samePhone = normalizedPhone.isNotEmpty &&
+              candidate.phone.replaceAll(RegExp(r'\D'), '') == normalizedPhone;
+          final sameName = name.trim().isNotEmpty &&
+              candidate.name.trim().toLowerCase() == name.trim().toLowerCase();
+          return candidate.isActive && (samePhone || sameName);
+        }).firstOrNull;
+        if (customer == null) return;
+        setState(() {
+          _selectedCustomer = customer;
+          _customerName.text = customer.name;
+          _customerPhone.text = customer.phone;
+        });
+      } catch (_) {
+        // Free-form walk-in details remain valid when customer search is offline.
+      }
     }
   }
 
@@ -2934,26 +3367,45 @@ class _PosBillDialogState extends State<_PosBillDialog> {
               loading = true;
               loadError = null;
             });
+            List<AdminCustomer> onlineCustomers = const [];
+            String? onlineError;
             try {
               final page = await widget.api.getCustomers(
                 page: 1,
                 pageSize: 30,
                 search: query.trim().isEmpty ? null : query.trim(),
               );
-              if (!dialogContext.mounted) return;
-              setDialogState(() {
-                customers = page.customers
-                    .where((customer) => customer.isActive)
-                    .toList(growable: false);
-                loading = false;
-              });
+              onlineCustomers = page.customers
+                  .where((customer) => customer.isActive)
+                  .toList();
             } catch (error) {
-              if (!dialogContext.mounted) return;
-              setDialogState(() {
-                loading = false;
-                loadError = error.toString().replaceFirst('Exception: ', '');
-              });
+              onlineError = error.toString().replaceFirst('Exception: ', '');
             }
+            final localCustomers =
+                await BillingExcelExportService.readSavedCustomers();
+            if (!dialogContext.mounted) return;
+            final search = query.trim().toLowerCase();
+            final localMatches = localCustomers.where((customer) {
+              if (!customer.isActive) return false;
+              return search.isEmpty ||
+                  customer.name.toLowerCase().contains(search) ||
+                  customer.phone.toLowerCase().contains(search);
+            });
+            final merged = <AdminCustomer>[...onlineCustomers];
+            final seenPhones = onlineCustomers
+                .map((customer) => customer.phone.replaceAll(RegExp(r'\D'), ''))
+                .where((phone) => phone.isNotEmpty)
+                .toSet();
+            for (final customer in localMatches) {
+              final phone = customer.phone.replaceAll(RegExp(r'\D'), '');
+              if (phone.isNotEmpty && !seenPhones.add(phone)) continue;
+              merged.add(customer);
+            }
+            setDialogState(() {
+              customers = merged;
+              loading = false;
+              loadError = merged.isEmpty ? onlineError : null;
+            });
           }
 
           if (!initialSearchStarted) {
@@ -2996,7 +3448,12 @@ class _PosBillDialogState extends State<_PosBillDialog> {
                                         leading:
                                             const Icon(Icons.person_outline),
                                         title: Text(customer.name),
-                                        subtitle: Text(customer.phone),
+                                        subtitle: Text(
+                                          customer.id
+                                                  .startsWith('local-customer-')
+                                              ? '${customer.phone} · Saved on this computer'
+                                              : customer.phone,
+                                        ),
                                         onTap: () => Navigator.pop(
                                           dialogContext,
                                           customer,
@@ -3073,6 +3530,12 @@ class _PosBillDialogState extends State<_PosBillDialog> {
         'RPGS-INV-${now.year}-${nextLocalNumber.toString().padLeft(6, '0')}';
     final vatAmount = (_subtotal - discount) * vatRate / 100;
     final total = _subtotal - discount + vatAmount;
+    final paidNow = _paymentMethod == 'PENDING'
+        ? (double.tryParse(_paidNow.text.trim()) ?? 0)
+            .clamp(0, total)
+            .toDouble()
+        : total;
+    final isPending = paidNow < total;
     final sale = PosSale(
       id: 'local-$invoiceNumber',
       receiptNumber: invoiceNumber,
@@ -3083,8 +3546,10 @@ class _PosBillDialogState extends State<_PosBillDialog> {
           ? null
           : _customerPhone.text.trim(),
       status: 'COMPLETED',
-      paymentMethod: _paymentMethod,
-      paymentStatus: _paymentMethod == 'PENDING' ? 'PENDING' : 'COMPLETED',
+      paymentMethod: isPending
+          ? 'PENDING'
+          : (_paymentMethod == 'PENDING' ? _paidNowMethod : _paymentMethod),
+      paymentStatus: isPending ? 'PENDING' : 'COMPLETED',
       subtotal: _subtotal,
       discount: discount,
       vatRate: vatRate,
@@ -3092,8 +3557,21 @@ class _PosBillDialogState extends State<_PosBillDialog> {
       total: total,
       refundedAmount: 0,
       createdAt: now,
-      paidAmount: _paymentMethod == 'PENDING' ? 0 : total,
-      outstandingAmount: _paymentMethod == 'PENDING' ? total : 0,
+      paidAmount: paidNow,
+      outstandingAmount: (total - paidNow).clamp(0, total).toDouble(),
+      paymentCollections: paidNow <= 0
+          ? const []
+          : [
+              PosPaymentCollection(
+                id: 'local-payment-$invoiceNumber',
+                amount: paidNow,
+                method: _paymentMethod == 'PENDING'
+                    ? _paidNowMethod
+                    : _paymentMethod,
+                note: null,
+                createdAt: now,
+              ),
+            ],
       items: [
         for (final line in _cart)
           PosSaleItem(
@@ -3115,8 +3593,10 @@ class _PosBillDialogState extends State<_PosBillDialog> {
     final directory = Directory(directoryPath);
     await directory.create(recursive: true);
     final pdfFile = File('${directory.path}/$invoiceNumber.pdf');
-    final pdfBytes = await PosReceiptService.createInvoicePdf(sale);
-    await pdfFile.writeAsBytes(pdfBytes, flush: true);
+    await pdfFile.writeAsBytes(
+      await PosReceiptService.createInvoicePdf(sale),
+      flush: true,
+    );
     final dataFile = File('${directory.path}/$invoiceNumber.json');
     await dataFile.writeAsString(
       jsonEncode({
@@ -3124,10 +3604,19 @@ class _PosBillDialogState extends State<_PosBillDialog> {
         'date': now.toIso8601String(),
         'customerName': sale.customerName,
         'customerPhone': sale.customerPhone,
-        'paymentMethod': _paymentMethod,
+        'paymentMethod': sale.paymentMethod,
         'paymentStatus': sale.paymentStatus,
         'paidAmount': sale.paidAmount,
         'outstandingAmount': sale.outstandingAmount,
+        'paymentCollections': sale.paymentCollections
+            .map((payment) => {
+                  'id': payment.id,
+                  'amount': payment.amount,
+                  'method': payment.method,
+                  'note': payment.note,
+                  'createdAt': payment.createdAt.toIso8601String(),
+                })
+            .toList(growable: false),
         'subtotal': _subtotal,
         'discount': discount,
         'vatRate': vatRate,
@@ -3190,26 +3679,121 @@ class _PosBillDialogState extends State<_PosBillDialog> {
   }
 
   Future<void> _searchProducts(String query) async {
+    final requestId = ++_productSearchRequest;
     setState(() {
       _searching = true;
       _error = null;
     });
     try {
-      final products = await widget.api.searchPosProducts(query);
+      final serverProducts = await widget.api.searchPosProducts(query);
+      await _offlinePosStore.mergeCatalog(serverProducts);
+      final products = await _includeCachedWholesale(serverProducts, query);
+      if (!mounted || requestId != _productSearchRequest) return;
       if (mounted) {
         setState(() {
           _matches = products;
+          _usingOfflineCatalog = false;
           _searching = false;
         });
       }
     } catch (error) {
-      if (mounted) {
+      final cachedProducts = await _offlinePosStore.searchCatalog(query);
+      if (mounted && requestId == _productSearchRequest) {
         setState(() {
-          _error = error.toString().replaceFirst('Exception: ', '');
+          _matches = cachedProducts;
+          _usingOfflineCatalog = cachedProducts.isNotEmpty;
+          _error = cachedProducts.isNotEmpty
+              ? null
+              : 'No offline catalog is saved on this computer yet. Connect to the store once to load products for offline billing.';
           _searching = false;
         });
       }
     }
+  }
+
+  Future<List<PosProduct>> _includeCachedWholesale(
+    List<PosProduct> serverProducts,
+    String query,
+  ) async {
+    final cachedProducts = await _offlinePosStore.searchCatalog(query);
+    final merged = <String, PosProduct>{
+      for (final product in serverProducts) product.id: product,
+      for (final product in cachedProducts)
+        if (product.id.startsWith('wholesale-')) product.id: product,
+    };
+    return merged.values.toList(growable: false);
+  }
+
+  Future<void> _refreshOfflineCatalog() async {
+    try {
+      // A failed queue upload must not prevent refreshing the server catalog.
+      try {
+        await widget.api.syncPendingOfflineProducts();
+      } catch (_) {
+        // Keep queued items locally and continue with any available catalog API.
+      }
+      final products = await widget.api.getAllProducts(sort: 'name_asc');
+      List<AdminWholesaleItem> wholesaleItems = const [];
+      var usedCachedWholesale = false;
+      try {
+        wholesaleItems = await widget.api.getAllWholesaleItems();
+      } catch (_) {
+        usedCachedWholesale = true;
+      }
+      final cachedWholesale = usedCachedWholesale
+          ? (await _offlinePosStore.readCatalog())
+              .where((product) => product.id.startsWith('wholesale-'))
+              .toList(growable: false)
+          : const <PosProduct>[];
+      final catalog = <PosProduct>[
+        ...products
+            .where((product) => product.isActive)
+            .map((product) => PosProduct(
+                  id: product.id,
+                  name: product.name,
+                  sku: product.sku,
+                  barcode: product.barcode,
+                  price: product.price,
+                  unitLabel: product.unitLabel,
+                  available: product.availableStock.ceil(),
+                  imageUrl: product.imageUrl,
+                )),
+        if (usedCachedWholesale) ...cachedWholesale,
+        if (!usedCachedWholesale)
+          ...wholesaleItems.where((item) => item.isActive).map(
+                (item) => PosProduct(
+                  id: 'wholesale-${item.id}',
+                  name: item.name,
+                  sku: item.sku,
+                  barcode: null,
+                  price: item.price,
+                  unitLabel: item.unitLabel,
+                  available: item.stock,
+                  imageUrl: item.imageUrl,
+                ),
+              ),
+      ];
+      await _offlinePosStore.saveCatalog(catalog);
+      if (mounted) await _searchProducts(_search.text.trim());
+      final pending = await _offlinePosStore.readPendingProducts();
+      final conflictCount =
+          pending.where((entry) => entry['syncError'] is String).length;
+      if (mounted && conflictCount > 0) {
+        setState(() {
+          _error =
+              '$conflictCount offline product(s) match existing server codes but have different details or stock. They remain on this computer for review.';
+        });
+      }
+    } catch (_) {
+      // Keep the last successful catalog snapshot available while offline.
+    }
+  }
+
+  Future<void> _retryPendingProductSync() async {
+    if (!mounted) return;
+    final pending = await _offlinePosStore.readPendingProducts();
+    if (pending.isEmpty) return;
+    await _refreshOfflineCatalog();
   }
 
   void _onSearchChanged(String value) {
@@ -3227,7 +3811,9 @@ class _PosBillDialogState extends State<_PosBillDialog> {
       _error = null;
     });
     try {
-      final products = await widget.api.searchPosProducts(barcode);
+      final serverProducts = await widget.api.searchPosProducts(barcode);
+      await _offlinePosStore.mergeCatalog(serverProducts);
+      final products = await _includeCachedWholesale(serverProducts, barcode);
       final normalized = barcode.toLowerCase();
       final exact = products.where((product) =>
           product.barcode?.toLowerCase() == normalized ||
@@ -3253,9 +3839,32 @@ class _PosBillDialogState extends State<_PosBillDialog> {
       _search.clear();
       _searchFocus.requestFocus();
     } catch (error) {
+      final cachedProducts = await _offlinePosStore.searchCatalog(barcode);
+      final exact = cachedProducts.where((product) {
+        final normalized = barcode.toLowerCase();
+        return product.barcode?.toLowerCase() == normalized ||
+            product.sku.toLowerCase() == normalized ||
+            product.id.toLowerCase() == normalized;
+      });
+      if (exact.isNotEmpty) {
+        await _addProduct(exact.first);
+        if (!mounted) return;
+        setState(() {
+          _matches = cachedProducts;
+          _usingOfflineCatalog = true;
+          _searching = false;
+        });
+        _search.clear();
+        _searchFocus.requestFocus();
+        return;
+      }
       if (!mounted) return;
       setState(() {
-        _error = error.toString().replaceFirst('Exception: ', '');
+        _usingOfflineCatalog = cachedProducts.isNotEmpty;
+        _matches = cachedProducts;
+        _error = cachedProducts.isNotEmpty
+            ? 'No offline product matches barcode "$barcode".'
+            : 'No offline catalog is saved on this computer yet. Connect to the store once to load products for offline billing.';
         _searching = false;
       });
     }
@@ -3274,13 +3883,27 @@ class _PosBillDialogState extends State<_PosBillDialog> {
       setState(() => _cart.add(_PosCartLine(product, weightGrams: quantity)));
       return true;
     }
-    final existing = _cart.where((item) => item.product.id == product.id);
+    final existing = _cart.where((item) =>
+        item.weightGrams == null && _sameProduct(item.product, product));
     if (existing.isNotEmpty) {
-      setState(() => existing.first.quantity += quantity);
+      setState(
+          () => existing.first.setQuantity(existing.first.quantity + quantity));
     } else {
       setState(() => _cart.add(_PosCartLine(product, quantity: quantity)));
     }
     return true;
+  }
+
+  bool _sameProduct(PosProduct first, PosProduct second) {
+    if (first.id == second.id) return true;
+    final firstBarcode = first.barcode?.trim().toLowerCase() ?? '';
+    final secondBarcode = second.barcode?.trim().toLowerCase() ?? '';
+    if (firstBarcode.isNotEmpty && firstBarcode == secondBarcode) return true;
+    final firstSku = first.sku.trim().toLowerCase();
+    final secondSku = second.sku.trim().toLowerCase();
+    return firstSku.isNotEmpty &&
+        firstSku == secondSku &&
+        first.name.trim().toLowerCase() == second.name.trim().toLowerCase();
   }
 
   bool _scanInProgress = false;
@@ -3308,9 +3931,17 @@ class _PosBillDialogState extends State<_PosBillDialog> {
           })
       .toList(growable: false);
 
-  Future<void> _hold() async {
+  Future<void> _hold({bool startNewBillAfterHold = false}) async {
     if (_cart.isEmpty) {
       setState(() => _error = 'Add at least one product to hold a bill.');
+      return;
+    }
+    final phoneError = validateNepalPhone(
+      _customerPhone.text,
+      optional: true,
+    );
+    if (phoneError != null) {
+      setState(() => _error = phoneError);
       return;
     }
     setState(() => _saving = true);
@@ -3335,7 +3966,14 @@ class _PosBillDialogState extends State<_PosBillDialog> {
             : _customerPhone.text.trim(),
         customerId: _selectedCustomer?.id,
       );
-      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        Navigator.pop(context);
+        if (startNewBillAfterHold) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            widget.onNewBill();
+          });
+        }
+      }
     } catch (error) {
       if (mounted) {
         setState(() {
@@ -3376,6 +4014,34 @@ class _PosBillDialogState extends State<_PosBillDialog> {
           _error = 'Enter the customer name and phone for a pending balance.');
       return;
     }
+    final enteredPaidNow = _paymentMethod == 'PENDING'
+        ? double.tryParse(_paidNow.text.trim())
+        : _total;
+    if (enteredPaidNow == null ||
+        !enteredPaidNow.isFinite ||
+        enteredPaidNow < 0 ||
+        enteredPaidNow > _total) {
+      setState(() =>
+          _error = 'Enter an amount paid from Rs. 0 up to ${_money(_total)}.');
+      return;
+    }
+    final receivedBy =
+        _paymentMethod == 'PENDING' ? _paidNowMethod : _paymentMethod;
+    if (receivedBy == 'DIGITAL' && enteredPaidNow > 0) {
+      final verified = await confirmPersonalPaymentQrDialog(
+        context,
+        amount: enteredPaidNow,
+      );
+      if (verified != true || !mounted) return;
+    }
+    final phoneError = validateNepalPhone(
+      _customerPhone.text,
+      optional: true,
+    );
+    if (phoneError != null) {
+      setState(() => _error = phoneError);
+      return;
+    }
     setState(() {
       _saving = true;
       _error = null;
@@ -3389,16 +4055,52 @@ class _PosBillDialogState extends State<_PosBillDialog> {
               discount: discount,
               vatRate: vatRate,
               paymentMethod: _paymentMethod,
+              paidAmount: _paymentMethod == 'PENDING' ? enteredPaidNow : null,
+              paidNowMethod:
+                  _paymentMethod == 'PENDING' ? _paidNowMethod : null,
               customerName: _customerName.text.trim().isEmpty
                   ? null
                   : _customerName.text.trim(),
               customerPhone: _customerPhone.text.trim().isEmpty
                   ? null
                   : _customerPhone.text.trim(),
-              customerId: _selectedCustomer?.id,
+              customerId: _selectedCustomer == null ||
+                      _selectedCustomer!.id.startsWith('local-customer-')
+                  ? null
+                  : _selectedCustomer!.id,
               heldSaleId: widget.heldSale?.id,
             );
       if (mounted) Navigator.pop(context, sale);
+    } on ApiNetworkException {
+      if (!mounted) return;
+      try {
+        final sale =
+            await _createLocalSale(discount: discount, vatRate: vatRate);
+        if (mounted) Navigator.pop(context, sale);
+      } catch (error) {
+        if (mounted) {
+          setState(() {
+            _error =
+                'Could not reach the server, and the local bill could not be saved: $error';
+            _saving = false;
+          });
+        }
+      }
+    } on ApiTimeoutException {
+      if (!mounted) return;
+      try {
+        final sale =
+            await _createLocalSale(discount: discount, vatRate: vatRate);
+        if (mounted) Navigator.pop(context, sale);
+      } catch (error) {
+        if (mounted) {
+          setState(() {
+            _error =
+                'The server timed out, and the local bill could not be saved: $error';
+            _saving = false;
+          });
+        }
+      }
     } catch (error) {
       if (mounted) {
         setState(() {
@@ -3457,6 +4159,22 @@ class _PosBillDialogState extends State<_PosBillDialog> {
 
   Widget _buildWindowsItemsColumn() => Column(
         children: [
+          if (_usingOfflineCatalog) ...[
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
+              ),
+              child: const Text(
+                'Offline catalog · using last-synced prices and stock. Bills are saved on this computer.',
+                style: TextStyle(fontSize: 12),
+              ),
+            ),
+          ],
           _buildWindowsCustomerCard(),
           const SizedBox(height: 8),
           Expanded(child: _buildWindowsItemsCard()),
@@ -3536,6 +4254,7 @@ class _PosBillDialogState extends State<_PosBillDialog> {
                     controller: _customerPhone,
                     enabled: !_saving,
                     keyboardType: TextInputType.phone,
+                    inputFormatters: nepalPhoneInputFormatters,
                     onChanged: (_) {
                       setState(() => _selectedCustomer = null);
                       _customerSearchTimer?.cancel();
@@ -3581,7 +4300,7 @@ class _PosBillDialogState extends State<_PosBillDialog> {
                     borderRadius: BorderRadius.circular(AppRadii.pill),
                   ),
                   child: Text(
-                    '${_cart.length} items',
+                    '${_cart.fold<int>(0, (sum, line) => sum + (line.weightGrams == null ? line.quantity : 1))} items',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
                           color: AppColors.muted,
                           fontWeight: FontWeight.w600,
@@ -3597,31 +4316,57 @@ class _PosBillDialogState extends State<_PosBillDialog> {
             ),
             const SizedBox(height: 6),
             Expanded(
+              flex: 3,
               child: Scrollbar(
-                child: _searching || _search.text.trim().isNotEmpty
-                    ? _buildMatches()
-                    : _cart.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.shopping_cart_outlined,
-                                    size: 38, color: AppColors.outline),
-                                const SizedBox(height: 8),
-                                Text('No items added yet',
-                                    style:
-                                        Theme.of(context).textTheme.bodyMedium),
-                                const SizedBox(height: 3),
-                                Text('Search below or press F2',
-                                    style:
-                                        Theme.of(context).textTheme.bodySmall),
-                              ],
+                child: _cart.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.shopping_cart_outlined,
+                                size: 38, color: AppColors.outline),
+                            const SizedBox(height: 8),
+                            Text('No items added yet',
+                                style: Theme.of(context).textTheme.bodyMedium),
+                            const SizedBox(height: 3),
+                            Text(
+                              'Your bill stays visible while you search products.',
+                              style: Theme.of(context).textTheme.bodySmall,
+                              textAlign: TextAlign.center,
                             ),
-                          )
-                        : _buildCart(),
+                          ],
+                        ),
+                      )
+                    : _buildCart(),
               ),
             ),
-            const Divider(height: 14),
+            const Divider(height: 12),
+            Row(
+              children: [
+                Text(
+                  'PRODUCTS',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(width: 8),
+                Text('${_matches.length} found',
+                    style: Theme.of(context).textTheme.bodySmall),
+                const Spacer(),
+                if (_searching)
+                  const SizedBox.square(
+                    dimension: 15,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Expanded(
+              flex: 2,
+              child: Scrollbar(child: _buildMatches()),
+            ),
+            const Divider(height: 12),
             Row(
               children: [
                 Expanded(child: _buildSearchField(isDesktop: true)),
@@ -3684,13 +4429,13 @@ class _PosBillDialogState extends State<_PosBillDialog> {
                     _error = null;
                   }),
                 ),
-                if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows)
+                if (defaultTargetPlatform == TargetPlatform.windows)
                   SwitchListTile.adaptive(
                     contentPadding: EdgeInsets.zero,
                     value: _saveOnThisComputer,
                     title: const Text('Save on this computer only'),
                     subtitle: const Text(
-                      'Stores the bill under C:/Ramprasad store/bills/ without uploading bill details.',
+                      'Bill, invoice and customer details stay in C:/Ramprasad store/bills/.',
                     ),
                     onChanged: _saving
                         ? null
@@ -3936,23 +4681,6 @@ class _PosBillDialogState extends State<_PosBillDialog> {
                     color: Colors.white,
                   ),
             ),
-            OutlinedButton.icon(
-              onPressed: _saving
-                  ? null
-                  : () {
-                      Navigator.pop(context);
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        widget.onNewBill();
-                      });
-                    },
-              icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text('New bill'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.white,
-                side: BorderSide(color: Colors.white.withValues(alpha: 0.4)),
-              ),
-            ),
-            const SizedBox(width: 6),
             IconButton(
               tooltip: 'Close',
               onPressed: _saving ? null : () => Navigator.pop(context),
@@ -3976,19 +4704,6 @@ class _PosBillDialogState extends State<_PosBillDialog> {
               style: Theme.of(context).textTheme.headlineMedium,
             ),
           ),
-          OutlinedButton.icon(
-            onPressed: _saving
-                ? null
-                : () {
-                    Navigator.pop(context);
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      widget.onNewBill();
-                    });
-                  },
-            icon: const Icon(Icons.add_rounded, size: 18),
-            label: const Text('New bill'),
-          ),
-          const SizedBox(width: 4),
           if (defaultTargetPlatform == TargetPlatform.windows)
             Text(
               'F2 Search · F8 Complete',
@@ -4128,8 +4843,9 @@ class _PosBillDialogState extends State<_PosBillDialog> {
                               ? null
                               : () => setState(() {
                                     if (line.quantity > 1) {
-                                      line.quantity--;
+                                      line.setQuantity(line.quantity - 1);
                                     } else {
+                                      line.dispose();
                                       _cart.removeAt(index);
                                     }
                                   }),
@@ -4138,8 +4854,8 @@ class _PosBillDialogState extends State<_PosBillDialog> {
                         SizedBox(
                           width: 76,
                           child: TextFormField(
-                            key: ValueKey('pos-quantity-${line.product.id}'),
-                            initialValue: '${line.quantity}',
+                            key: ObjectKey(line),
+                            controller: line.quantityController,
                             enabled: !_saving,
                             textAlign: TextAlign.center,
                             keyboardType: TextInputType.number,
@@ -4165,7 +4881,8 @@ class _PosBillDialogState extends State<_PosBillDialog> {
                           visualDensity: VisualDensity.compact,
                           onPressed: _saving
                               ? null
-                              : () => setState(() => line.quantity++),
+                              : () => setState(
+                                  () => line.setQuantity(line.quantity + 1)),
                           icon: const Icon(Icons.add_circle_outline),
                         ),
                       ],
@@ -4180,7 +4897,10 @@ class _PosBillDialogState extends State<_PosBillDialog> {
                     tooltip: 'Remove item',
                     onPressed: _saving
                         ? null
-                        : () => setState(() => _cart.removeAt(index)),
+                        : () => setState(() {
+                              line.dispose();
+                              _cart.removeAt(index);
+                            }),
                     icon: const Icon(Icons.delete_outline),
                   ),
                 ],
@@ -4256,6 +4976,7 @@ class _PosBillDialogState extends State<_PosBillDialog> {
                 child: TextField(
                   controller: _customerPhone,
                   keyboardType: TextInputType.phone,
+                  inputFormatters: nepalPhoneInputFormatters,
                   decoration: InputDecoration(
                     labelText: _paymentMethod == 'PENDING'
                         ? 'Customer phone *'
@@ -4266,6 +4987,79 @@ class _PosBillDialogState extends State<_PosBillDialog> {
               ),
             ],
           ),
+          if (_paymentMethod == 'PENDING') ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _paidNow,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: (_) => setState(() {}),
+                    decoration: const InputDecoration(
+                      labelText: 'Paying now',
+                      prefixText: 'Rs. ',
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _paidNowMethod,
+                    decoration: const InputDecoration(
+                      labelText: 'Received by',
+                      isDense: true,
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'CASH', child: Text('Cash')),
+                      DropdownMenuItem(
+                        value: 'DIGITAL',
+                        child: Text('Bank QR / digital'),
+                      ),
+                    ],
+                    onChanged: (value) => setState(() {
+                      _paidNowMethod = value ?? 'CASH';
+                    }),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                'Remaining in pending cash: ${_money((_total - (double.tryParse(_paidNow.text.trim()) ?? 0)).clamp(0, _total).toDouble())}',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ),
+          ],
+          if (_paymentMethod == 'DIGITAL' ||
+              (_paymentMethod == 'PENDING' &&
+                  _paidNowMethod == 'DIGITAL' &&
+                  (double.tryParse(_paidNow.text.trim()) ?? 0) > 0)) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: () => showPersonalPaymentQrDialog(
+                  context,
+                  amount: _paymentMethod == 'PENDING'
+                      ? (double.tryParse(_paidNow.text.trim()) ?? 0)
+                          .clamp(0, _total)
+                          .toDouble()
+                      : _total,
+                ),
+                icon: const Icon(Icons.qr_code_2_rounded),
+                label: Text(
+                  'Show bank QR · ${_money(_paymentMethod == 'PENDING' ? (double.tryParse(_paidNow.text.trim()) ?? 0).clamp(0, _total).toDouble() : _total)}',
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
           SegmentedButton<bool>(
             segments: const [
@@ -4306,7 +5100,7 @@ class _PosBillDialogState extends State<_PosBillDialog> {
                     DropdownMenuItem(value: 'CASH', child: Text('Cash')),
                     DropdownMenuItem(
                       value: 'DIGITAL',
-                      child: Text('PhonePe / UPI'),
+                      child: Text('Bank QR / digital'),
                     ),
                     DropdownMenuItem(value: 'PENDING', child: Text('Pending')),
                   ],
@@ -4365,9 +5159,20 @@ class _PosCartLine {
     this.product, {
     this.quantity = 1,
     this.weightGrams,
-  });
+  }) : quantityController = TextEditingController(text: '$quantity');
 
   final PosProduct product;
+  final TextEditingController quantityController;
   int quantity;
   final int? weightGrams;
+
+  void setQuantity(int value) {
+    quantity = value;
+    quantityController.value = TextEditingValue(
+      text: '$value',
+      selection: TextSelection.collapsed(offset: '$value'.length),
+    );
+  }
+
+  void dispose() => quantityController.dispose();
 }

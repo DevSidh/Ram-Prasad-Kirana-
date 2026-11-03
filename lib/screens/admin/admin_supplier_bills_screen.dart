@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/admin_models.dart';
+import '../../core/nepal_phone.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
 import '../../theme/admin_widgets.dart';
@@ -551,10 +552,37 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
         _savedSuppliersKey,
         next.map((supplier) => jsonEncode(supplier)).toList(growable: false),
       );
-      if (mounted) setState(() => _savedSuppliers = next);
     } catch (_) {
-      // The purchase bill remains saved even if local convenience storage fails.
+      // Continue to write the readable supplier ledger below when possible.
     }
+    try {
+      const directoryPath = 'C:/Ramprasad store/suppliers';
+      final directory = Directory(directoryPath);
+      await directory.create(recursive: true);
+      final file = File('${directory.path}/suppliers.csv');
+      final rows = <List<String>>[
+        ['Supplier name', 'Phone', 'Delivery person'],
+        for (final supplier in next)
+          [
+            supplier['name'] ?? '',
+            supplier['phone'] ?? '',
+            supplier['deliveryPerson'] ?? '',
+          ],
+      ];
+      await file.writeAsString(
+        '\uFEFF${rows.map((row) => row.map(_csvCell).join(',')).join('\r\n')}\r\n',
+        flush: true,
+      );
+    } catch (_) {
+      // Supplier selection remains available from local app preferences.
+    }
+    if (mounted) setState(() => _savedSuppliers = next);
+  }
+
+  String _csvCell(String value) {
+    var safe = value;
+    if (RegExp(r'^[=+\-@\t\r]').hasMatch(safe)) safe = "'$safe";
+    return '"${safe.replaceAll('"', '""')}"';
   }
 
   void _selectSavedSupplier(Map<String, String> supplier) {
@@ -746,6 +774,9 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
       _error = null;
     });
     try {
+      // Keep supplier contact details on this computer even if the server is
+      // offline or the supplier bill cannot be uploaded yet.
+      await _rememberSupplier();
       final bill = await widget.api.createSupplierPurchaseBill({
         'supplierName': _supplierName.text.trim(),
         'supplierPhone': _nullable(_supplierPhone.text),
@@ -759,7 +790,6 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
         'notes': _nullable(_notes.text),
         'items': items,
       }, photoBytes: _photoBytes!, photoFileName: _photoName!);
-      await _rememberSupplier();
       if (mounted) {
         Navigator.of(context).pop(bill);
       }
@@ -815,9 +845,12 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
                       controller: _supplierPhone,
                       enabled: !_saving,
                       keyboardType: TextInputType.phone,
+                      inputFormatters: nepalPhoneInputFormatters,
                       decoration: const InputDecoration(
                         labelText: 'Supplier phone',
                       ),
+                      validator: (value) =>
+                          validateNepalPhone(value, optional: true),
                     ),
                   ),
                   SizedBox(

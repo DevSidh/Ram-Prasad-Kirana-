@@ -524,7 +524,14 @@ export function createDeliveryRouter(
     try {
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true, name: true, email: true, phone: true, isAvailable: true },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
+          avatarUrl: true,
+          isAvailable: true,
+        },
       });
       if (!user) return res.status(401).json({ error: 'Authentication is required.' });
       return res.json(user);

@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:convert';
 
+import '../models/admin_models.dart';
 import '../models/pos_models.dart';
 
 /// Writes Excel-compatible CSV ledgers beside locally stored Windows bills.
@@ -98,7 +100,178 @@ class BillingExcelExportService {
       mode: FileMode.append,
       flush: true,
     );
+    await _upsertSavedCustomer(sale);
     return file.path;
+  }
+
+  /// Returns customer details previously saved with billing records on this PC.
+  static Future<List<AdminCustomer>> readSavedCustomers() async {
+    if (!Platform.isWindows) return const [];
+    final file = File('$_baseDirectory/bill customer/customers.json');
+    List<Map<String, dynamic>> records = [];
+    try {
+      if (await file.exists()) {
+        final decoded = jsonDecode(await file.readAsString());
+        if (decoded is List) {
+          records = decoded.whereType<Map<String, dynamic>>().toList();
+        }
+      }
+      if (records.isEmpty) {
+        records = await _customersFromLegacyCsv();
+      }
+      return records
+          .map((record) => AdminCustomer(
+                id: record['id']?.toString() ?? '',
+                profileId: record['id']?.toString() ?? '',
+                name: record['name']?.toString() ?? '',
+                email: record['email']?.toString() ?? '',
+                phone: record['phone']?.toString() ?? '',
+                isActive: record['isActive'] as bool? ?? true,
+                createdAt: record['createdAt']?.toString(),
+                orderCount: (record['orderCount'] as num?)?.toInt() ?? 0,
+                orderValue: _number(record['orderValue']),
+                addresses: const [],
+                recentOrders: const [],
+              ))
+          .where((customer) => customer.name.trim().isNotEmpty)
+          .toList(growable: false);
+    } on FormatException {
+      return const [];
+    } on FileSystemException {
+      return const [];
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> _customersFromLegacyCsv() async {
+    final file = File('$_baseDirectory/bill customer/bill_customers.csv');
+    if (!await file.exists()) return [];
+    final rows = _parseCsv(await file.readAsString());
+    if (rows.length < 2) return [];
+    final customers = <String, Map<String, dynamic>>{};
+    for (final row in rows.skip(1)) {
+      if (row.length < 4) continue;
+      final name = row[2].trim();
+      final phone = row[3].trim();
+      if (name.isEmpty && phone.isEmpty) continue;
+      final normalizedPhone = phone.replaceAll(RegExp(r'\D'), '');
+      final key =
+          normalizedPhone.isNotEmpty ? normalizedPhone : name.toLowerCase();
+      final customer = customers.putIfAbsent(
+          key,
+          () => {
+                'id': 'local-customer-$key',
+                'name': name,
+                'phone': phone,
+                'email': '',
+                'isActive': true,
+                'createdAt': row.length > 1 ? row[1] : '',
+                'orderCount': 0,
+                'orderValue': 0.0,
+              });
+      customer['orderCount'] = (customer['orderCount'] as int) + 1;
+      customer['orderValue'] = _number(customer['orderValue']) +
+          (row.length > 6 ? _number(row[6]) : 0);
+    }
+    return customers.values.toList(growable: false);
+  }
+
+  static List<List<String>> _parseCsv(String source) {
+    final rows = <List<String>>[];
+    var row = <String>[];
+    final field = StringBuffer();
+    var quoted = false;
+    for (var index = 0; index < source.length; index++) {
+      final character = source[index];
+      if (character == '"') {
+        if (quoted && index + 1 < source.length && source[index + 1] == '"') {
+          field.write('"');
+          index++;
+        } else {
+          quoted = !quoted;
+        }
+      } else if (character == ',' && !quoted) {
+        row.add(field.toString());
+        field.clear();
+      } else if ((character == '\r' || character == '\n') && !quoted) {
+        row.add(field.toString());
+        field.clear();
+        if (row.any((value) => value.isNotEmpty)) rows.add(row);
+        row = <String>[];
+        if (character == '\r' &&
+            index + 1 < source.length &&
+            source[index + 1] == '\n') {
+          index++;
+        }
+      } else {
+        field.write(character);
+      }
+    }
+    if (field.isNotEmpty || row.isNotEmpty) {
+      row.add(field.toString());
+      if (row.any((value) => value.isNotEmpty)) rows.add(row);
+    }
+    if (rows.isNotEmpty && rows.first.isNotEmpty) {
+      rows.first[0] = rows.first[0].replaceFirst('\uFEFF', '');
+    }
+    return rows;
+  }
+
+  static Future<void> _upsertSavedCustomer(PosSale sale) async {
+    final name = sale.customerName?.trim() ?? '';
+    final phone = sale.customerPhone?.trim() ?? '';
+    if (name.isEmpty && phone.isEmpty) return;
+    final directory = Directory('$_baseDirectory/bill customer');
+    await directory.create(recursive: true);
+    final file = File('${directory.path}/customers.json');
+    final customers = <Map<String, dynamic>>[];
+    if (await file.exists()) {
+      try {
+        final decoded = jsonDecode(await file.readAsString());
+        if (decoded is List) {
+          customers.addAll(decoded.whereType<Map<String, dynamic>>());
+        }
+      } catch (_) {
+        // Rebuild the searchable contact list from this bill if the old file
+        // is unreadable; the CSV bill ledger remains intact.
+      }
+    }
+    final normalizedPhone = phone.replaceAll(RegExp(r'\D'), '');
+    final key =
+        normalizedPhone.isNotEmpty ? normalizedPhone : name.toLowerCase();
+    final index = customers.indexWhere((customer) {
+      final existingPhone =
+          customer['phone']?.toString().replaceAll(RegExp(r'\D'), '') ?? '';
+      final existingName = customer['name']?.toString().toLowerCase() ?? '';
+      return normalizedPhone.isNotEmpty
+          ? existingPhone == key
+          : existingPhone.isEmpty && existingName == key;
+    });
+    final existing = index < 0 ? <String, dynamic>{} : customers[index];
+    final invoices = (existing['invoices'] as List? ?? const [])
+        .map((invoice) => invoice.toString())
+        .toSet();
+    final invoiceNumber = sale.invoiceNumber ?? sale.receiptNumber;
+    final isNewBill = invoices.add(invoiceNumber);
+    final next = <String, dynamic>{
+      'id': existing['id']?.toString() ?? 'local-customer-$key',
+      'name': name.isNotEmpty ? name : existing['name']?.toString() ?? '',
+      'phone': phone.isNotEmpty ? phone : existing['phone']?.toString() ?? '',
+      'email': existing['email']?.toString() ?? '',
+      'isActive': true,
+      'createdAt':
+          existing['createdAt']?.toString() ?? sale.createdAt.toIso8601String(),
+      'orderCount': (existing['orderCount'] as num?)?.toInt() ?? 0,
+      'orderValue':
+          _number(existing['orderValue']) + (isNewBill ? sale.total : 0),
+      'invoices': invoices.toList(growable: false),
+    };
+    if (isNewBill) next['orderCount'] = (next['orderCount'] as int) + 1;
+    if (index < 0) {
+      customers.add(next);
+    } else {
+      customers[index] = next;
+    }
+    await file.writeAsString(jsonEncode(customers), flush: true);
   }
 
   static String _encode(List<List<String>> rows, {bool includeBom = true}) {

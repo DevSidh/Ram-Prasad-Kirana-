@@ -313,6 +313,8 @@ class PosRefund {
     required this.restockStock,
     required this.requestedBy,
     required this.requestedAt,
+    this.customerName,
+    this.customerPhone,
   });
 
   final String id;
@@ -323,6 +325,8 @@ class PosRefund {
   final bool restockStock;
   final String requestedBy;
   final DateTime requestedAt;
+  final String? customerName;
+  final String? customerPhone;
 
   factory PosRefund.fromJson(Map<String, dynamic> json) {
     final requestedAt = DateTime.tryParse(json['requestedAt'] as String? ?? '');
@@ -339,6 +343,8 @@ class PosRefund {
       restockStock: json['restockStock'] as bool? ?? false,
       requestedBy: json['requestedBy'] as String? ?? '',
       requestedAt: requestedAt,
+      customerName: json['customerName'] as String?,
+      customerPhone: json['customerPhone'] as String?,
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/nepal_phone.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
@@ -126,13 +127,10 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
                   TextFormField(
                     controller: phoneController,
                     keyboardType: TextInputType.phone,
+                    inputFormatters: nepalPhoneInputFormatters,
                     decoration: const InputDecoration(labelText: 'Phone'),
-                    validator: (value) {
-                      final phone = value?.trim() ?? '';
-                      return phone.isEmpty || phone.length >= 7
-                          ? null
-                          : 'Enter at least 7 characters or leave blank.';
-                    },
+                    validator: (value) =>
+                        validateNepalPhone(value, optional: true),
                   ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,

@@ -603,6 +603,14 @@ class AdminDashboard {
           : const [],
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'products': products,
+        'customers': customers,
+        'orders': orders,
+        'sales': sales,
+        'recentOrders': recentOrders,
+      };
 }
 
 class AdminDeliveryPerson {
@@ -610,6 +618,7 @@ class AdminDeliveryPerson {
   final String name;
   final String email;
   final String phone;
+  final String? avatarUrl;
   final bool isActive;
   final bool isAvailable;
   final int activeDeliveries;
@@ -619,6 +628,7 @@ class AdminDeliveryPerson {
     required this.name,
     required this.email,
     required this.phone,
+    this.avatarUrl,
     required this.isActive,
     required this.isAvailable,
     required this.activeDeliveries,
@@ -630,6 +640,7 @@ class AdminDeliveryPerson {
       name: json['name']?.toString() ?? '',
       email: json['email']?.toString() ?? '',
       phone: json['phone']?.toString() ?? '',
+      avatarUrl: json['avatarUrl']?.toString(),
       isActive: json['isActive'] as bool? ?? false,
       isAvailable: json['isAvailable'] as bool? ?? false,
       activeDeliveries: _asInt(json['activeDeliveries']),

@@ -4,6 +4,7 @@ import '../../core/constants.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../services/offline_pos_store.dart';
 import '../../theme/admin_widgets.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/store_animation.dart';
@@ -27,6 +28,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   AdminDashboard? _dashboard;
   String? _error;
   bool _loading = true;
+  double _offlineSalesTotal = 0;
+  bool _observedTabVisibility = false;
+  bool _wasTabVisible = true;
 
   @override
   void initState() {
@@ -34,22 +38,51 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _load();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final isVisible = TickerMode.valuesOf(context).enabled;
+    if (_observedTabVisibility && isVisible && !_wasTabVisible) {
+      _load();
+    }
+    _observedTabVisibility = true;
+    _wasTabVisible = isVisible;
+  }
+
   Future<void> _load() async {
+    const offlineStore = OfflinePosStore();
     setState(() {
-      _loading = true;
+      _loading = _dashboard == null;
       _error = null;
     });
+    final offlineSales = await offlineStore.readOfflineSalesTotal();
+    final cachedSnapshot = await offlineStore.readDashboardSnapshot();
+    if (mounted) {
+      setState(() {
+        _offlineSalesTotal = offlineSales;
+        if (_dashboard == null && cachedSnapshot != null) {
+          _dashboard = AdminDashboard.fromJson(cachedSnapshot);
+        }
+        _loading = _dashboard == null;
+      });
+    }
     try {
       final result = await _adminApi.getDashboard();
+      await offlineStore.saveDashboardSnapshot(result.toJson());
       if (!mounted) return;
       setState(() {
         _dashboard = result;
+        _offlineSalesTotal = offlineSales;
+        _error = null;
         _loading = false;
       });
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _error = _cleanError(error);
+        _dashboard ??= AdminDashboard.fromJson(const {});
+        _error = cachedSnapshot == null
+            ? 'Offline mode: online sales are unavailable until this computer reconnects. Offline bills are still included below.'
+            : 'Showing the last saved online totals. Reconnect to refresh them.';
         _loading = false;
       });
     }
@@ -83,28 +116,36 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             _InlineError(message: _error!),
           ],
           const SizedBox(height: 20),
-          const _SectionHeading(title: 'Sales', trailing: 'LIVE'),
+          const _SectionHeading(title: 'Sales', trailing: 'ONLINE + OFFLINE'),
           const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
                 child: _SalesCard(
-                  label: 'Today',
-                  value: _money(dashboard.sales['today']),
-                  icon: Icons.wb_sunny_outlined,
+                  label: 'Online sales',
+                  value: _money(dashboard.sales['total']),
+                  icon: Icons.cloud_outlined,
                   color: AppColors.successText,
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: _SalesCard(
-                  label: 'All time',
-                  value: _money(dashboard.sales['total']),
-                  icon: Icons.account_balance_wallet_outlined,
+                  label: 'Offline sales',
+                  value: _money(_offlineSalesTotal),
+                  icon: Icons.computer_outlined,
                   color: AppColors.warningText,
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 10),
+          _SalesCard(
+            label: 'Total sales',
+            value:
+                _totalSalesLabel(dashboard.sales['total'], _offlineSalesTotal),
+            icon: Icons.account_balance_wallet_outlined,
+            color: AppColors.successText,
           ),
           const SizedBox(height: 22),
           const _SectionHeading(title: 'Products', trailing: 'CATALOG'),
@@ -410,5 +451,10 @@ String _money(dynamic value) {
   return '${AppConstants.currencySymbol}${amount.toStringAsFixed(2)}';
 }
 
-String _cleanError(Object error) =>
-    error.toString().replaceFirst('Exception: ', '');
+String _totalSalesLabel(dynamic onlineSales, double offlineSales) {
+  final onlineAmount = onlineSales is num
+      ? onlineSales.toDouble()
+      : double.tryParse(onlineSales?.toString() ?? '');
+  if (onlineAmount == null) return 'â€”';
+  return _money(onlineAmount + offlineSales);
+}

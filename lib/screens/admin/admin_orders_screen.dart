@@ -1,36 +1,44 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/admin_models.dart';
 import '../../core/order_time.dart';
 import '../../services/admin_order_notification_service.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../services/online_order_archive_service.dart';
+import '../../services/store_audio_service.dart';
 import '../../theme/app_colors.dart';
 
 class AdminOrdersScreen extends StatefulWidget {
   final ApiService api;
   final bool isActive;
   final AdminOrderNotificationService? notificationService;
+  final ValueChanged<int>? onUnreadOrderCountChanged;
 
   const AdminOrdersScreen({
     super.key,
     required this.api,
     this.isActive = false,
     this.notificationService,
+    this.onUnreadOrderCountChanged,
   });
 
   @override
-  State<AdminOrdersScreen> createState() => _AdminOrdersScreenState();
+  AdminOrdersScreenState createState() => AdminOrdersScreenState();
 }
 
-class _AdminOrdersScreenState extends State<AdminOrdersScreen>
+class AdminOrdersScreenState extends State<AdminOrdersScreen>
     with WidgetsBindingObserver {
   late final AdminApiService _adminApi = AdminApiService(widget.api);
   late final AdminOrderNotificationService _notificationService =
       widget.notificationService ?? const AdminOrderNotificationService();
+  final OnlineOrderArchiveService _orderArchive =
+      const OnlineOrderArchiveService();
   final _searchController = TextEditingController();
   AdminOrderPage? _page;
   List<AdminDeliveryPerson> _deliveryPeople = const [];
@@ -44,9 +52,15 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen>
   Timer? _orderPollTimer;
   bool _hasPollBaseline = false;
   bool _pollInFlight = false;
+  bool _archiveInFlight = false;
+  bool _archiveRefreshQueued = false;
+  DateTime? _lastArchiveSyncAt;
+  String? _archiveError;
   bool _isAppForeground = true;
   final Set<String> _seenOrderIds = {};
+  final Set<String> _unreadOrderIds = {};
   int _pageNumber = 1;
+  static const _readOrderIdsPreferenceKey = 'admin_read_order_alert_ids_v1';
 
   static const _statuses = <(String, String)>[
     ('PLACED', 'New'),
@@ -61,8 +75,74 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(_prepareOnlineOrderArchive());
     _load();
     if (widget.isActive) _startOrderPolling();
+  }
+
+  bool get _supportsComputerArchive =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+
+  Future<void> _prepareOnlineOrderArchive() async {
+    if (!_supportsComputerArchive) return;
+    try {
+      await _orderArchive.ensureFolders();
+      await _syncOnlineOrderArchive(force: true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _archiveError = error.toString().replaceFirst('Exception: ', '');
+      });
+    }
+  }
+
+  Future<void> _syncOnlineOrderArchive({bool force = false}) async {
+    if (!_supportsComputerArchive) return;
+    final lastSync = _lastArchiveSyncAt;
+    if (!force &&
+        lastSync != null &&
+        DateTime.now().difference(lastSync) < const Duration(minutes: 2)) {
+      return;
+    }
+    if (_archiveInFlight) {
+      if (force) _archiveRefreshQueued = true;
+      return;
+    }
+
+    _archiveInFlight = true;
+    var succeeded = false;
+    try {
+      const pageSize = 100;
+      final firstPage = await _adminApi.getOrders(page: 1, pageSize: pageSize);
+      final allOrders = <AdminOrder>[...firstPage.orders];
+      final effectivePageSize = firstPage.pagination.pageSize > 0
+          ? firstPage.pagination.pageSize
+          : pageSize;
+      final pageCount = (firstPage.pagination.total / effectivePageSize).ceil();
+      for (var page = 2; page <= pageCount; page++) {
+        final result =
+            await _adminApi.getOrders(page: page, pageSize: pageSize);
+        allOrders.addAll(result.orders);
+      }
+      await _orderArchive.archiveOrders(allOrders);
+      succeeded = true;
+      if (mounted && _archiveError != null) {
+        setState(() => _archiveError = null);
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _archiveError = error.toString().replaceFirst('Exception: ', '');
+        });
+      }
+    } finally {
+      _archiveInFlight = false;
+      if (succeeded) _lastArchiveSyncAt = DateTime.now();
+      if (_archiveRefreshQueued) {
+        _archiveRefreshQueued = false;
+        unawaited(_syncOnlineOrderArchive(force: true));
+      }
+    }
   }
 
   @override
@@ -124,29 +204,30 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen>
       final incoming = await _adminApi.getRecentOrderAlerts();
       if (!mounted || !widget.isActive || !_isAppForeground) return;
       if (!_hasPollBaseline) {
+        final preferences = await SharedPreferences.getInstance();
+        final storedReadIds =
+            preferences.getStringList(_readOrderIdsPreferenceKey);
+        final knownReadIds = storedReadIds?.toSet();
+        final newOrders = storedReadIds == null
+            ? const <({String id, String orderNumber})>[]
+            : incoming
+                .where((order) => !knownReadIds!.contains(order.id))
+                .toList(growable: false);
         _seenOrderIds.addAll(incoming.map((order) => order.id));
+        if (storedReadIds == null) {
+          await preferences.setStringList(
+            _readOrderIdsPreferenceKey,
+            _seenOrderIds.toList(growable: false),
+          );
+        }
         _hasPollBaseline = true;
+        if (newOrders.isNotEmpty) _announceNewOrders(newOrders);
+        widget.onUnreadOrderCountChanged?.call(_unreadOrderIds.length);
         return;
       }
       final newOrders =
           incoming.where((order) => _seenOrderIds.add(order.id)).toList();
-      if (newOrders.isNotEmpty) {
-        for (final order in newOrders) {
-          unawaited(_notificationService.showNewOrder(order.orderNumber));
-        }
-        final order = newOrders.first;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              newOrders.length == 1
-                  ? 'New order received: ${order.orderNumber}'
-                  : '${newOrders.length} new orders received. Latest: ${order.orderNumber}',
-            ),
-            duration: const Duration(seconds: 6),
-          ),
-        );
-        unawaited(_load());
-      }
+      if (newOrders.isNotEmpty) _announceNewOrders(newOrders);
     } catch (_) {
       // Keep the existing order list usable when a background check fails.
     } finally {
@@ -154,7 +235,51 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen>
     }
   }
 
-  Future<void> _load() async {
+  void _announceNewOrders(List<({String id, String orderNumber})> newOrders) {
+    _unreadOrderIds.addAll(newOrders.map((order) => order.id));
+    widget.onUnreadOrderCountChanged?.call(_unreadOrderIds.length);
+    unawaited(StoreAudioService.playNotification());
+    for (final order in newOrders) {
+      unawaited(_notificationService.showNewOrder(order.orderNumber));
+    }
+    final order = newOrders.first;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          newOrders.length == 1
+              ? 'New order received: ${order.orderNumber}'
+              : '${newOrders.length} new orders received. Latest: ${order.orderNumber}',
+        ),
+        duration: const Duration(seconds: 6),
+      ),
+    );
+    unawaited(_load(forceArchive: true));
+  }
+
+  /// Clears the delivery badge when the administrator opens the order list.
+  void markOrdersRead() {
+    if (_unreadOrderIds.isEmpty) return;
+    _unreadOrderIds.clear();
+    widget.onUnreadOrderCountChanged?.call(0);
+    unawaited(_saveReadOrders());
+  }
+
+  Future<void> _saveReadOrders() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final previous =
+          preferences.getStringList(_readOrderIdsPreferenceKey) ?? const [];
+      final read = <String>{...previous, ..._seenOrderIds};
+      await preferences.setStringList(
+        _readOrderIdsPreferenceKey,
+        read.take(500).toList(growable: false),
+      );
+    } catch (error) {
+      debugPrint('Could not save read order alerts: $error');
+    }
+  }
+
+  Future<void> _load({bool forceArchive = false}) async {
     setState(() {
       _loading = true;
       _error = null;
@@ -189,6 +314,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen>
         _savingId = null;
         _optimisticStatuses.clear();
       });
+      unawaited(_syncOnlineOrderArchive(force: forceArchive));
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -211,7 +337,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen>
         SnackBar(
             content: Text('${order.orderNumber} assigned to ${person.name}.')),
       );
-      await _load();
+      await _load(forceArchive: true);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -280,7 +406,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen>
           ),
         ),
       );
-      unawaited(_load());
+      unawaited(_load(forceArchive: true));
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -346,7 +472,7 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen>
           ),
         ),
       );
-      await _load();
+      await _load(forceArchive: true);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -474,6 +600,13 @@ class _AdminOrdersScreenState extends State<AdminOrdersScreen>
           if (_deliveryError != null) ...[
             const SizedBox(height: 8),
             _OrderNotice(message: _deliveryError!),
+          ],
+          if (_archiveError != null) ...[
+            const SizedBox(height: 8),
+            _OrderNotice(
+              message:
+                  'Local online-order archive could not sync: $_archiveError',
+            ),
           ],
           const SizedBox(height: 8),
           if (_loading && _page == null)

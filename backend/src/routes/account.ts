@@ -42,9 +42,10 @@ const updateAddressInput = z.object(addressFields).partial().strict()
   .refine((value) => Object.keys(value).length > 0);
 const updateProfileInput = z.object({
   fullName: z.string().trim().min(1).max(120),
-  phone: z.string().trim().min(7).max(30).nullable()
+  phone: z.string().trim().regex(/^9[78]\d{8}$/).nullable()
     .transform((phone) => normalizePhone(phone))
-    .refine((phone) => phone === null || (phone.length >= 7 && phone.length <= 30)),
+    .refine((phone) => phone === null || /^9[78]\d{8}$/.test(phone),
+      'Enter a 10-digit Nepal mobile number starting with 98 or 97.'),
 }).strict();
 const deleteAccountInput = z.object({
   password: z.string().min(1).max(256),

@@ -17,6 +17,7 @@ import 'admin_coupons_screen.dart';
 import 'admin_customers_screen.dart';
 import 'admin_dashboard_screen.dart';
 import 'admin_delivery_people_screen.dart';
+import 'admin_inventory_expiry_screen.dart';
 import 'admin_orders_screen.dart';
 import 'admin_products_screen.dart';
 import 'admin_restock_screen.dart';
@@ -35,7 +36,7 @@ class AdminShell extends StatefulWidget {
   State<AdminShell> createState() => _AdminShellState();
 }
 
-enum _BillingAction { section, newBill, barcode, profile }
+enum _BillingAction { section, newBill, barcode, expiry, profile }
 
 class _BillingModule {
   const _BillingModule(
@@ -59,6 +60,8 @@ class _AdminShellState extends State<AdminShell> {
   int _selectedIndex = 0;
   late final List<Widget> _screens;
   final _billingKey = GlobalKey<AdminBillingScreenState>();
+  final _ordersKey = GlobalKey<AdminOrdersScreenState>();
+  int _unreadDeliveryCount = 0;
 
   static const _windowsOperatorOrder = [
     0,
@@ -81,13 +84,14 @@ class _AdminShellState extends State<AdminShell> {
   static const _primaryNavigationIndices = [
     0,
     3,
-    16,
     20,
     22,
     26,
   ];
+  static const _onlineDeliveryDestinationIndices = [1, 2, 12];
 
   bool _billingToolsExpanded = false;
+  bool _onlineDeliveryExpanded = false;
   bool _managementExpanded = false;
   bool _useDarkWindowsTheme = false;
 
@@ -148,7 +152,15 @@ class _AdminShellState extends State<AdminShell> {
           if (mounted) _selectIndex(1);
         },
       ),
-      AdminOrdersScreen(api: api, isActive: true),
+      AdminOrdersScreen(
+        key: _ordersKey,
+        api: api,
+        isActive: true,
+        onUnreadOrderCountChanged: (count) {
+          if (!mounted || _unreadDeliveryCount == count) return;
+          setState(() => _unreadDeliveryCount = count);
+        },
+      ),
       AdminDeliveryPeopleScreen(api: api),
       AdminCustomersScreen(api: api),
       AdminAnnouncementsScreen(api: api),
@@ -207,14 +219,22 @@ class _AdminShellState extends State<AdminShell> {
   void _selectIndex(int index) {
     setState(() {
       _selectedIndex = index;
+      if (!widget.isBillingStaff && index == 1) {
+        _unreadDeliveryCount = 0;
+      }
       if (!widget.isBillingStaff) {
         if (index >= _titles.length) {
           _billingToolsExpanded = true;
+        } else if (_onlineDeliveryDestinationIndices.contains(index)) {
+          _onlineDeliveryExpanded = true;
         } else if (index >= 4 && index < _titles.length) {
           _managementExpanded = true;
         }
       }
     });
+    if (!widget.isBillingStaff && index == 1) {
+      _ordersKey.currentState?.markOrdersRead();
+    }
     final moduleIndex = widget.isBillingStaff
         ? index
         : index >= _titles.length
@@ -240,6 +260,15 @@ class _AdminShellState extends State<AdminShell> {
           break;
         case _BillingAction.profile:
           _showProfile();
+          break;
+        case _BillingAction.expiry:
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => AdminInventoryExpiryScreen(
+                api: context.read<ApiService>(),
+              ),
+            ),
+          );
           break;
         case _BillingAction.section:
           final section = module.section;
@@ -781,6 +810,33 @@ class _AdminShellState extends State<AdminShell> {
                             ),
                       ),
                     ),
+                    if (!widget.isBillingStaff &&
+                        titleForIndex(index) == 'Orders' &&
+                        _unreadDeliveryCount > 0) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        constraints: const BoxConstraints(
+                          minWidth: 19,
+                          minHeight: 19,
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 5),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFE53935),
+                          shape: BoxShape.circle,
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          _unreadDeliveryCount > 99
+                              ? '99+'
+                              : '$_unreadDeliveryCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
                     if (_isWindows && selected) ...[
                       const SizedBox(width: 6),
                       Container(
@@ -806,15 +862,27 @@ class _AdminShellState extends State<AdminShell> {
     }
 
     final primaryIndices = _primaryNavigationIndices.toSet();
+    final onlineDeliveryIndices = _onlineDeliveryDestinationIndices.toSet();
     final children = <Widget>[
       for (final index in _primaryNavigationIndices) navigationTile(index),
+      _buildNavigationGroup(
+        title: 'Online delivery',
+        expanded: _onlineDeliveryExpanded,
+        onChanged: (expanded) => _onlineDeliveryExpanded = expanded,
+        children: [
+          for (final index in _onlineDeliveryDestinationIndices)
+            navigationTile(index),
+        ],
+      ),
       _buildNavigationGroup(
         title: 'Store setup & management',
         expanded: _managementExpanded,
         onChanged: (expanded) => _managementExpanded = expanded,
         children: [
           for (var index = 4; index < _titles.length; index++)
-            if (!primaryIndices.contains(index)) navigationTile(index),
+            if (!primaryIndices.contains(index) &&
+                !onlineDeliveryIndices.contains(index))
+              navigationTile(index),
         ],
       ),
       _buildNavigationGroup(
@@ -822,8 +890,25 @@ class _AdminShellState extends State<AdminShell> {
         expanded: _billingToolsExpanded,
         onChanged: (expanded) => _billingToolsExpanded = expanded,
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(6, 6, 6, 4),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () {
+                  _selectIndex(_titles.length);
+                  if (MediaQuery.sizeOf(context).width < 900) {
+                    Navigator.pop(context);
+                  }
+                },
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: const Text('New bill'),
+              ),
+            ),
+          ),
           for (var index = _titles.length; index < destinations.length; index++)
-            if (!primaryIndices.contains(index)) navigationTile(index),
+            if (index != _titles.length && !primaryIndices.contains(index))
+              navigationTile(index),
         ],
       ),
     ];
@@ -1037,6 +1122,12 @@ class _AdminShellState extends State<AdminShell> {
       Icons.analytics_outlined,
       Icons.analytics_rounded,
       section: AdminBillingSection.reports,
+    ),
+    _BillingModule(
+      'Expiry',
+      Icons.event_busy_outlined,
+      Icons.event_busy_rounded,
+      action: _BillingAction.expiry,
     ),
     _BillingModule(
       'Receipt & Printer Settings',

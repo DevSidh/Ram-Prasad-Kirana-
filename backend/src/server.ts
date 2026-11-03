@@ -256,7 +256,7 @@ const orderInclude = {
   delivery: {
     include: {
       deliveryPerson: {
-        select: { name: true, phone: true },
+        select: { name: true, phone: true, avatarUrl: true },
       },
     },
   },
@@ -344,6 +344,7 @@ function orderResponse(order: OrderRecord) {
     status: order.status,
     deliveryPersonName: order.delivery?.deliveryPerson?.name ?? null,
     deliveryPersonPhone: order.delivery?.deliveryPerson?.phone ?? null,
+    deliveryPersonAvatarUrl: order.delivery?.deliveryPerson?.avatarUrl ?? null,
     deliveryPersonLatitude: deliveryLocationIsFresh
       ? order.delivery?.latitude ?? null
       : null,

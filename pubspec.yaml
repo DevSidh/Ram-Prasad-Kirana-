@@ -51,6 +51,9 @@ dependencies:
   printing: ^5.15.1
   mobile_scanner: ^7.4.2
   image_picker: ^1.2.4
+  package_info_plus: ^10.2.2
+  crypto: ^3.0.8
+  audioplayers: 6.4.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -69,6 +72,7 @@ flutter:
     - assets/onboarding/
     - assets/videos/dia.mp4
     - assets/videos/faststore_order_placed_preview.mp4
+    - assets/audio/
 
 flutter_launcher_icons:
   android: true
