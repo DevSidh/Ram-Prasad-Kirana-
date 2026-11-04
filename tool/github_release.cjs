@@ -36,7 +36,10 @@ async function main(){
     })});console.log(JSON.stringify({id:release.id,url:release.html_url}));return;
   }
   if(command==='upload'){
-    const release=await api(`/repos/${repo}/releases/tags/${encodeURIComponent(tag)}`);
+    // GitHub's tag lookup can omit drafts even with authenticated access.
+    const releases=await api(`/repos/${repo}/releases?per_page=100`);
+    const release=releases.find(value=>value.tag_name===tag);
+    if(!release)throw Error('No release with this tag exists, including drafts.');
     const name=path.basename(file);
     if(release.assets.some(a=>a.name===name))throw Error('An asset with this name already exists; inspect before replacement.');
     const bytes=fs.readFileSync(file);
