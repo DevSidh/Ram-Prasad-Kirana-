@@ -164,6 +164,7 @@ class PosSale {
     this.outstandingAmount,
     this.paymentCollections = const [],
     this.localPath,
+    this.autoPrintAllowed = true,
   });
 
   final String id;
@@ -186,6 +187,29 @@ class PosSale {
   final double? outstandingAmount;
   final List<PosPaymentCollection> paymentCollections;
   final String? localPath;
+  final bool autoPrintAllowed;
+  PosSale withAutoPrintAllowed(bool value) => PosSale(
+      id: id,
+      receiptNumber: receiptNumber,
+      invoiceNumber: invoiceNumber,
+      customerName: customerName,
+      customerPhone: customerPhone,
+      status: status,
+      paymentMethod: paymentMethod,
+      paymentStatus: paymentStatus,
+      subtotal: subtotal,
+      discount: discount,
+      vatRate: vatRate,
+      vatAmount: vatAmount,
+      total: total,
+      refundedAmount: refundedAmount,
+      createdAt: createdAt,
+      items: items,
+      paidAmount: paidAmount,
+      outstandingAmount: outstandingAmount,
+      paymentCollections: paymentCollections,
+      localPath: localPath,
+      autoPrintAllowed: value);
 
   factory PosSale.fromJson(Map<String, dynamic> json) {
     final createdAt = DateTime.tryParse(json['createdAt'] as String? ?? '');
@@ -196,6 +220,7 @@ class PosSale {
       throw const FormatException('The server returned an invalid POS bill.');
     }
     return PosSale(
+      autoPrintAllowed: json['autoPrintAllowed'] != false,
       id: json['id'] as String,
       receiptNumber: json['receiptNumber'] as String,
       invoiceNumber: json['invoiceNumber'] as String?,

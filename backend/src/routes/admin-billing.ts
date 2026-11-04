@@ -12,6 +12,9 @@ import {
 import { isWeightUnitLabel } from '../services/product-validation.js';
 import { runTransactionWithRetry } from '../services/transaction-retry.js';
 import { recordBuyingStreakPurchase } from '../services/buying-streak.js';
+import { serializeSale } from '../services/pos-sale-serializer.js';
+import { configuredFonepayGateway, FonepayError, type FonepayGateway } from '../services/fonepay-gateway.js';
+import { createFonepayRouter } from './admin-fonepay.js';
 
 const saleItemsInput = z.array(z.object({
   productId: z.string().trim().min(1).max(100),
@@ -26,7 +29,7 @@ const saleInput = z.object({
     .refine((value) => Number.isSafeInteger(Math.round(value * 100)))
     .default(0),
   vatRate: z.number().finite().min(0).max(100).default(0),
-  paymentMethod: z.enum(['CASH', 'DIGITAL', 'PENDING']),
+  paymentMethod: z.enum(['CASH', 'DIGITAL', 'PENDING', 'FONEPAY']),
   paidAmount: z.number().finite().min(0).max(999999999)
     .refine((value) => Number.isSafeInteger(Math.round(value * 100)))
     .optional(),
@@ -35,6 +38,16 @@ const saleInput = z.object({
   customerPhone: z.string().trim().regex(/^9[78]\d{8}$/).nullable().optional(),
   customerId: z.string().trim().min(1).max(100).nullable().optional(),
   heldSaleId: z.string().trim().min(1).max(100).nullable().optional(),
+  quote: z.object({
+    expectedTotal: z.number().finite().nonnegative(),
+    unitPrices: z.record(z.string(), z.number().finite().nonnegative()),
+  }).strict().optional(),
+  offlineSale: z.object({
+    invoiceNumber: z.string().regex(/^RPGS-INV-\d{4}-L-[A-F0-9]{32}$/),
+    occurredAt: z.string().datetime(),
+    expectedTotal: z.number().finite().nonnegative(),
+    unitPrices: z.record(z.string(), z.number().finite().nonnegative()),
+  }).strict().optional(),
 }).strict().superRefine((sale, context) => {
   if (sale.paymentMethod === 'PENDING' &&
       (!sale.customerName || !sale.customerPhone)) {
@@ -70,7 +83,7 @@ const cashMovementInput = z.object({
 
 const refundInput = z.object({
   amount: z.number().finite().positive().max(999999999)
-    .refine((value) => Number.isSafeInteger(Math.round(value * 100))),
+    .refine((value) => Number.isSafeInteger(Math.round(value * 100)) && Math.round(value * 100) >= 1),
   reason: z.string().trim().min(2).max(500),
   restockStock: z.boolean().default(false),
 }).strict();
@@ -83,6 +96,7 @@ const paymentInput = z.object({
   paymentMethod: z.enum(['CASH', 'DIGITAL']),
 }).strict();
 const paymentCollectionInput = z.object({
+  idempotencyKey: z.string().uuid().optional(),
   amount: z.number().finite().positive().max(999999999)
     .refine((value) =>
       Number.isSafeInteger(Math.round(value * 100)) &&
@@ -155,95 +169,15 @@ function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-function serializeSale(sale: {
-  id: string;
-  receiptNumber: string;
-  invoiceNumber: string | null;
-  customerName: string | null;
-  customerPhone: string | null;
-  status: string;
-  paymentMethod: string;
-  paymentStatus: string;
-  subtotal: Prisma.Decimal;
-  discount: Prisma.Decimal;
-  vatRate: Prisma.Decimal;
-  vatAmount: Prisma.Decimal;
-  total: Prisma.Decimal;
-  paidAmount?: Prisma.Decimal;
-  refundedAmount: Prisma.Decimal;
-  createdAt: Date;
-  paymentCollections?: Array<{
-    id: string;
-    amount: Prisma.Decimal;
-    method: string;
-    note: string | null;
-    createdAt: Date;
-  }>;
-  items: Array<{
-    id: string;
-    productId: string | null;
-    productName: string;
-    sku: string;
-    quantity: number;
-    weightGrams: number | null;
-    unitPrice: Prisma.Decimal;
-    lineTotal: Prisma.Decimal;
-  }>;
-}) {
-  return {
-    id: sale.id,
-    receiptNumber: sale.receiptNumber,
-    invoiceNumber: sale.invoiceNumber ?? sale.receiptNumber,
-    customerName: sale.customerName,
-    customerPhone: sale.customerPhone,
-    status: sale.status,
-    paymentMethod: sale.paymentMethod,
-    paymentStatus: sale.paymentStatus,
-    subtotal: Number(sale.subtotal),
-    discount: Number(sale.discount),
-    vatRate: Number(sale.vatRate),
-    vatAmount: Number(sale.vatAmount),
-    total: Number(sale.total),
-    paidAmount: sale.paidAmount === undefined
-      ? sale.paymentStatus === 'COMPLETED' ? Number(sale.total) : 0
-      : Number(sale.paidAmount),
-    outstandingAmount: roundMoney(
-      Math.max(
-        0,
-        Number(sale.total) -
-          (sale.paidAmount === undefined
-            ? sale.paymentStatus === 'COMPLETED' ? Number(sale.total) : 0
-            : Number(sale.paidAmount)),
-      ),
-    ),
-    refundedAmount: Number(sale.refundedAmount),
-    createdAt: sale.createdAt.toISOString(),
-    paymentCollections: (sale.paymentCollections ?? []).map((payment) => ({
-      id: payment.id,
-      amount: Number(payment.amount),
-      method: payment.method,
-      note: payment.note,
-      createdAt: payment.createdAt.toISOString(),
-    })),
-    items: sale.items.map((item) => ({
-      id: item.id,
-      productId: item.productId,
-      productName: item.productName,
-      sku: item.sku,
-      quantity: item.quantity,
-      weightGrams: item.weightGrams,
-      unitPrice: Number(item.unitPrice),
-      lineTotal: Number(item.lineTotal),
-    })),
-  };
-}
 
 export function createAdminBillingRouter(
   prisma: PrismaClient,
   inventoryService: InventoryService,
   requireAdmin?: RequestHandler,
+  fonepayGatewayFactory:()=>FonepayGateway=configuredFonepayGateway,
 ): Router {
   const router = Router();
+  router.use('/fonepay', createFonepayRouter(prisma,fonepayGatewayFactory));
   const adminOnly: RequestHandler = requireAdmin ?? ((_req, res) => {
     res.status(403).json({ error: 'Administrator access required.' });
   });
@@ -504,7 +438,7 @@ export function createAdminBillingRouter(
         prisma.posSale.findMany({
           where: {
             createdAt: { gte: range.start, lt: range.end },
-            status: { not: 'CANCELLED' },
+            status: { notIn: ['CANCELLED', 'CHECKOUT'] },
             ...saleScope,
           },
           select: {
@@ -539,7 +473,7 @@ export function createAdminBillingRouter(
           where: {
             sale: {
               createdAt: { gte: range.start, lt: range.end },
-              status: { not: 'CANCELLED' },
+              status: { notIn: ['CANCELLED', 'CHECKOUT'] },
               ...saleScope,
             },
             productId: { not: null },
@@ -618,13 +552,13 @@ export function createAdminBillingRouter(
           return sum;
         }, 0);
       const digitalSales = paymentCollections
-        .filter((payment) => payment.method === 'DIGITAL')
+        .filter((payment) => ['DIGITAL','FONEPAY'].includes(payment.method))
         .reduce((sum, payment) => sum + Number(payment.amount), 0) +
         sales
           .filter((sale) =>
             sale.paymentCollections.length === 0 &&
             sale.paymentStatus === 'COMPLETED' &&
-            sale.paymentMethod === 'DIGITAL',
+            ['DIGITAL','FONEPAY'].includes(sale.paymentMethod),
           )
           .reduce((sum, sale) => sum + Number(sale.total), 0) +
         exchanges.reduce((sum, exchange) => {
@@ -679,7 +613,7 @@ export function createAdminBillingRouter(
       if (currentShift) {
         const [shiftSales, shiftMovements, shiftExchanges] = await Promise.all([
           prisma.posSale.findMany({
-            where: { shiftId: currentShift.id, status: { not: 'CANCELLED' } },
+            where: { shiftId: currentShift.id, status: { notIn: ['CANCELLED', 'CHECKOUT'] } },
             select: {
               total: true,
               paymentMethod: true,
@@ -793,7 +727,7 @@ export function createAdminBillingRouter(
         const shift = await findOrCreateOpenShift(tx, actorId);
         const [sales, movements] = await Promise.all([
           tx.posSale.findMany({
-            where: { shiftId: shift.id, status: { not: 'CANCELLED' } },
+            where: { shiftId: shift.id, status: { notIn: ['CANCELLED', 'CHECKOUT'] } },
             select: {
               total: true,
               paymentMethod: true,
@@ -1057,9 +991,42 @@ export function createAdminBillingRouter(
     if (!cashierId) return res.status(401).json({ error: 'Authentication is required.' });
     const parsed = saleInput.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Check the bill items and payment details.' });
+    const fonepayCheckout = parsed.data.paymentMethod === 'FONEPAY';
+    if (fonepayCheckout) {
+      if (!parsed.data.idempotencyKey || !parsed.data.quote || parsed.data.offlineSale || (parsed.data.paidAmount ?? 0) !== 0) {
+        return res.status(400).json({ error: 'Fonepay requires an online, idempotent checkout without a client payment claim.' });
+      }
+      try { fonepayGatewayFactory(); } catch (error) {
+        if (error instanceof FonepayError) return res.status(error.statusCode).json({ code:error.code, error:error.message });
+        return res.status(503).json({ error:'Fonepay is unavailable.' });
+      }
+    }
+    const offline = parsed.data.offlineSale;
+    if (offline && (authenticatedRole(res) !== 'ADMIN' ||
+        parsed.data.paymentMethod === 'DIGITAL' ||
+        (parsed.data.paymentMethod === 'PENDING' && parsed.data.paidNowMethod === 'DIGITAL'))) {
+      return res.status(403).json({ error: 'Only an administrator may import offline cash bills. Digital payments require online verification.' });
+    }
+    if (offline && (!parsed.data.idempotencyKey ||
+        new Date(offline.occurredAt).getTime() > Date.now() + 300000 ||
+        offline.invoiceNumber !== `RPGS-INV-${getStoreDayKey(new Date(offline.occurredAt)).slice(0, 4)}-L-${parsed.data.idempotencyKey.replaceAll('-', '').toUpperCase()}`)) {
+      return res.status(400).json({ error: 'The offline reference or sale date is invalid.' });
+    }
     const receiptNumber = parsed.data.idempotencyKey
       ? `POS-${parsed.data.idempotencyKey.toUpperCase()}`
       : `POS-${Date.now()}-${randomUUID().slice(0, 8).toUpperCase()}`;
+    const offlineReplayMatches = (existing: {
+      total: Prisma.Decimal; discount: Prisma.Decimal; vatRate: Prisma.Decimal;
+      items: Array<{ productId: string | null; quantity: number; weightGrams: number | null; unitPrice: Prisma.Decimal }>;
+    }) => !(offline || fonepayCheckout) || (
+      roundMoney(Number(existing.total)) === roundMoney((offline?.expectedTotal ?? parsed.data.quote!.expectedTotal)) &&
+      roundMoney(Number(existing.discount)) === roundMoney(parsed.data.discount) &&
+      roundMoney(Number(existing.vatRate)) === roundMoney(parsed.data.vatRate) &&
+      JSON.stringify(existing.items.map((item) =>
+        `${item.productId}:${item.quantity}:${item.weightGrams ?? ''}:${Number(item.unitPrice)}`).sort()) ===
+      JSON.stringify(parsed.data.items.map((item) =>
+        `${item.productId}:${item.quantity}:${item.weightGrams ?? ''}:${(offline?.unitPrices ?? parsed.data.quote!.unitPrices)[item.productId]}`).sort())
+    );
     try {
       let replayed = false;
       const sale = await runTransactionWithRetry(prisma, async (tx) => {
@@ -1076,11 +1043,13 @@ export function createAdminBillingRouter(
             if (existing.shift.cashierId !== cashierId) {
               throw new Error('POS_IDEMPOTENCY_KEY_REUSED');
             }
+            if (!offlineReplayMatches(existing)) {
+              throw new Error('POS_OFFLINE_PRICE_CONFLICT');
+            }
             replayed = true;
             return existing;
           }
         }
-        const shift = await findOrCreateOpenShift(tx, cashierId);
         const products = await tx.product.findMany({
           where: {
             id: { in: parsed.data.items.map((item) => item.productId) },
@@ -1112,6 +1081,11 @@ export function createAdminBillingRouter(
           );
           if (stockQuantity > available) throw new Error('POS_INSUFFICIENT_STOCK');
           const unitPrice = Number(product.price);
+          const quotedPrices = offline?.unitPrices ?? parsed.data.quote?.unitPrices;
+          if (quotedPrices && (quotedPrices[product.id] === undefined ||
+              quotedPrices[product.id] !== unitPrice)) {
+            throw new Error(offline ? 'POS_OFFLINE_PRICE_CONFLICT' : 'POS_QUOTE_CHANGED');
+          }
           const lineTotal = roundMoney(
             unitPrice * (weightGrams === null ? item.quantity : weightGrams / 1000),
           );
@@ -1157,15 +1131,19 @@ export function createAdminBillingRouter(
         const vatRate = roundMoney(parsed.data.vatRate);
         const vatAmount = roundMoney((subtotal - discount) * vatRate / 100);
         const total = roundMoney(subtotal - discount + vatAmount);
+        const quotedTotal = offline?.expectedTotal ?? parsed.data.quote?.expectedTotal;
+        if (quotedTotal !== undefined && roundMoney(quotedTotal) !== total) {
+          throw new Error(offline ? 'POS_OFFLINE_PRICE_CONFLICT' : 'POS_QUOTE_CHANGED');
+        }
         const invoiceYear = Number(getStoreDayKey(new Date()).slice(0, 4));
-        const invoiceSequence = await tx.invoiceSequence.upsert({
+        const invoiceSequence = offline || fonepayCheckout ? null : await tx.invoiceSequence.upsert({
           where: { year: invoiceYear },
           create: { year: invoiceYear, nextNumber: 1 },
           update: { nextNumber: { increment: 1 } },
         });
-        const invoiceNumber = `RPGS-INV-${invoiceYear}-${String(invoiceSequence.nextNumber).padStart(6, '0')}`;
+        const invoiceNumber = fonepayCheckout ? null : offline?.invoiceNumber ?? `RPGS-INV-${invoiceYear}-${String(invoiceSequence!.nextNumber).padStart(6, '0')}`;
         const paidAmount = roundMoney(
-          parsed.data.paymentMethod === 'PENDING'
+          fonepayCheckout ? 0 : parsed.data.paymentMethod === 'PENDING'
             ? Math.min(parsed.data.paidAmount ?? 0, total)
             : total,
         );
@@ -1173,10 +1151,23 @@ export function createAdminBillingRouter(
             (parsed.data.paidAmount ?? 0) > total) {
           throw new Error('POS_PAID_AMOUNT_EXCEEDS_TOTAL');
         }
+        if (fonepayCheckout && total <= 0) throw new Error('POS_FONEPAY_EMPTY_TOTAL');
         const isPending = paidAmount < total;
         const collectionMethod = parsed.data.paymentMethod === 'PENDING'
           ? parsed.data.paidNowMethod
           : parsed.data.paymentMethod;
+        // Imported cash belongs to an explicitly closed import shift, never
+        // silently to the currently open till. No physical cash count is claimed.
+        const shift = offline
+          ? await tx.posShift.create({ data: {
+            cashierId,
+            status: 'CLOSED',
+            openingCash: 0,
+            expectedClosingCash: collectionMethod === 'CASH' ? paidAmount : 0,
+            openedAt: new Date(offline.occurredAt),
+            closedAt: new Date(offline.occurredAt),
+          } })
+          : await findOrCreateOpenShift(tx, cashierId);
         const sale = await tx.posSale.create({
           data: {
             receiptNumber,
@@ -1184,7 +1175,8 @@ export function createAdminBillingRouter(
             shiftId: shift.id,
             customerName: customer?.name ?? parsed.data.customerName ?? null,
             customerPhone: customer?.phone ?? parsed.data.customerPhone ?? null,
-            paymentMethod: isPending ? 'PENDING' : collectionMethod,
+            status: fonepayCheckout ? 'CHECKOUT' : 'COMPLETED',
+            paymentMethod: fonepayCheckout ? 'FONEPAY' : isPending ? 'PENDING' : collectionMethod,
             paymentStatus: isPending ? 'PENDING' : 'COMPLETED',
             paidAmount,
             subtotal,
@@ -1192,6 +1184,7 @@ export function createAdminBillingRouter(
             vatRate,
             vatAmount,
             total,
+            ...(offline ? { createdAt: new Date(offline.occurredAt) } : {}),
             ...(paidAmount <= 0 || total === 0
               ? {}
               : {
@@ -1200,6 +1193,7 @@ export function createAdminBillingRouter(
                     recordedById: cashierId,
                     amount: paidAmount,
                     method: collectionMethod,
+                    ...(offline ? { createdAt: new Date(offline.occurredAt) } : {}),
                   },
                 },
               }),
@@ -1217,7 +1211,7 @@ export function createAdminBillingRouter(
           },
           include: { items: true, paymentCollections: true },
         });
-        await inventoryService.consumeStockForPosSale(
+        if (!fonepayCheckout) await inventoryService.consumeStockForPosSale(
           tx,
           [...stockTotals].map(([productId, quantity]) => ({
             productId,
@@ -1226,9 +1220,11 @@ export function createAdminBillingRouter(
           sale.id,
           cashierId,
         );
-        if (parsed.data.heldSaleId) {
+        if (!fonepayCheckout && parsed.data.heldSaleId) {
           await tx.posHeldSale.deleteMany({
-            where: { id: parsed.data.heldSaleId, shiftId: shift.id },
+            where: offline
+              ? { id: parsed.data.heldSaleId, shift: { cashierId } }
+              : { id: parsed.data.heldSaleId, shiftId: shift.id },
           });
         }
         return sale;
@@ -1250,6 +1246,9 @@ export function createAdminBillingRouter(
             },
           });
           if (existing?.shift.cashierId === cashierId) {
+            if (!offlineReplayMatches(existing)) {
+              return res.status(409).json({ error: 'The server bill differs from this offline snapshot. Review the original record; nothing was overwritten.' });
+            }
             return res.status(200).json({ sale: serializeSale(existing) });
           }
         } catch (lookupError) {
@@ -1268,6 +1267,9 @@ export function createAdminBillingRouter(
           POS_INSUFFICIENT_STOCK: 'The requested quantity exceeds available stock.',
           POS_DISCOUNT_EXCEEDS_TOTAL: 'The discount cannot exceed the bill subtotal.',
           POS_CUSTOMER_UNAVAILABLE: 'The selected customer is no longer available.',
+          POS_QUOTE_CHANGED: 'Prices or totals changed. Refresh the products and review the bill before collecting payment. No sale was saved.',
+          POS_OFFLINE_PRICE_CONFLICT: 'Offline bill prices differ from the current catalogue. Review this conflict; the original bill has not been changed or imported.',
+          POS_PAID_AMOUNT_EXCEEDS_TOTAL: 'The received amount exceeds the bill total.',
         };
         if (clientErrors[error.message]) {
           return res.status(409).json({ error: clientErrors[error.message] });
@@ -1298,6 +1300,7 @@ export function createAdminBillingRouter(
         return res.status(401).json({ error: 'Authentication is required.' });
       }
       const where: Prisma.PosSaleWhereInput = {
+        status: { not: 'CHECKOUT' },
         ...(range
           ? { createdAt: { gte: range.start, lt: range.end } }
           : {}),
@@ -1336,6 +1339,18 @@ export function createAdminBillingRouter(
     }
   });
 
+  router.get('/fonepay-checkouts', async (_req, res) => {
+    const id = authenticatedAdminId(res);
+    if (!id) return res.status(401).json({ error:'Authentication required.' });
+    try {
+      const sales = await prisma.posSale.findMany({
+        where: { status:'CHECKOUT', shift: { cashierId:id } },
+        include: { items:true, paymentCollections:true }, orderBy:{ createdAt:'desc' }, take:50,
+      });
+      return res.json({ sales:sales.map(serializeSale) });
+    } catch(error) { sendAdminError(error,res); }
+  });
+
   router.get('/pending-payments', async (req, res) => {
     const parsed = z.object({
       page: z.coerce.number().int().min(1).max(10000).default(1),
@@ -1359,7 +1374,7 @@ export function createAdminBillingRouter(
     const search = parsed.data.search?.trim();
     const where: Prisma.PosSaleWhereInput = {
       paymentStatus: 'PENDING',
-      status: { not: 'CANCELLED' },
+      status: { notIn: ['CANCELLED', 'CHECKOUT'] },
       ...(dayRange
         ? { createdAt: { gte: dayRange.start, lt: dayRange.end } }
         : {}),
@@ -1413,15 +1428,34 @@ export function createAdminBillingRouter(
     if (!parsed.success) {
       return res.status(400).json({ error: 'Enter a valid received amount and payment method.' });
     }
+    const paymentId = parsed.data.idempotencyKey
+      ? `PPC-${parsed.data.idempotencyKey.toUpperCase()}` : null;
+    const matchesAttempt = (payment: {
+      saleId: string; recordedById: string; amount: Prisma.Decimal;
+      method: string; note: string | null;
+    }) => payment.saleId === req.params.id &&
+      payment.recordedById === cashierId &&
+      roundMoney(Number(payment.amount)) === roundMoney(parsed.data.amount) &&
+      payment.method === parsed.data.paymentMethod &&
+      (payment.note ?? '') === (parsed.data.note?.trim() ?? '');
+    let replayed = false;
     try {
       const payment = await runTransactionWithRetry(prisma, async (tx) => {
+        if (paymentId) {
+          const existing = await tx.posPaymentCollection.findUnique({ where: { id: paymentId } });
+          if (existing) {
+            if (!matchesAttempt(existing)) throw new Error('POS_PAYMENT_KEY_REUSED');
+            replayed = true;
+            return existing;
+          }
+        }
         const sale = await tx.posSale.findUnique({
           where: { id: req.params.id },
           include: { shift: { select: { cashierId: true } } },
         });
         const isBillingStaff = authenticatedRole(res) === 'BILLING_STAFF';
         if (!sale ||
-            sale.status === 'CANCELLED' ||
+            ['CHECKOUT','CANCELLED'].includes(sale.status) ||
             sale.paymentStatus !== 'PENDING' ||
             (isBillingStaff && sale.shift.cashierId !== cashierId)) {
           throw new Error('POS_SALE_NOT_AWAITING_PAYMENT');
@@ -1438,7 +1472,7 @@ export function createAdminBillingRouter(
             id: sale.id,
             paymentStatus: 'PENDING',
             paidAmount: sale.paidAmount,
-            status: { not: 'CANCELLED' },
+            status: { notIn: ['CANCELLED', 'CHECKOUT'] },
           },
           data: {
             paidAmount: nextPaidAmount,
@@ -1453,6 +1487,7 @@ export function createAdminBillingRouter(
         if (updated.count !== 1) throw new Error('POS_PAYMENT_CONCURRENT_UPDATE');
         return tx.posPaymentCollection.create({
           data: {
+            ...(paymentId ? { id: paymentId } : {}),
             saleId: sale.id,
             recordedById: cashierId,
             amount,
@@ -1461,7 +1496,7 @@ export function createAdminBillingRouter(
           },
         });
       });
-      return res.status(201).json({
+      return res.status(replayed ? 200 : 201).json({
         payment: {
           id: payment.id,
           amount: Number(payment.amount),
@@ -1471,7 +1506,24 @@ export function createAdminBillingRouter(
         },
       });
     } catch (error) {
+      if (paymentId && error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        try {
+          const existing = await prisma.posPaymentCollection.findUnique({ where: { id: paymentId } });
+          if (existing && matchesAttempt(existing)) {
+            return res.status(200).json({ payment: {
+              id: existing.id, amount: Number(existing.amount), method: existing.method,
+              note: existing.note, createdAt: existing.createdAt.toISOString(),
+            } });
+          }
+        } catch (lookupError) {
+          return sendAdminError(lookupError, res);
+        }
+        return res.status(409).json({ error: 'This payment request key is already in use. Refresh the payment ledger.' });
+      }
       if (error instanceof Error) {
+        if (error.message === 'POS_PAYMENT_KEY_REUSED') {
+          return res.status(409).json({ error: 'This request key belongs to a different payment. No extra payment was recorded.' });
+        }
         if (error.message === 'POS_SALE_NOT_AWAITING_PAYMENT') {
           return res.status(409).json({ error: 'This bill is not awaiting payment.' });
         }
@@ -1501,7 +1553,7 @@ export function createAdminBillingRouter(
         });
         const isBillingStaff = authenticatedRole(res) === 'BILLING_STAFF';
         if (!sale ||
-            sale.status === 'CANCELLED' ||
+            ['CHECKOUT','CANCELLED'].includes(sale.status) ||
             sale.paymentStatus !== 'PENDING' ||
             (isBillingStaff && sale.shift.cashierId !== cashierId)) {
           return false;
@@ -1552,7 +1604,7 @@ export function createAdminBillingRouter(
           include: { items: true, refunds: { where: { status: 'APPROVED' } } },
         });
         if (!sale ||
-            sale.status === 'CANCELLED' ||
+            ['CHECKOUT','CANCELLED'].includes(sale.status) ||
             sale.paymentStatus !== 'PENDING' ||
             Number(sale.paidAmount) > 0 ||
             sale.refunds.length > 0) {
@@ -1671,8 +1723,9 @@ export function createAdminBillingRouter(
     if (!requestedById) return res.status(401).json({ error: 'Authentication is required.' });
     const parsed = refundInput.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Enter a valid refund amount and reason.' });
+    const requestedAmount = roundMoney(parsed.data.amount);
     try {
-      const refund = await prisma.$transaction(async (tx) => {
+      const refund = await runTransactionWithRetry(prisma, async (tx) => {
         const sale = await tx.posSale.findUnique({
           where: { id: req.params.id },
           include: {
@@ -1687,7 +1740,7 @@ export function createAdminBillingRouter(
             },
           },
         });
-        if (!sale || sale.status === 'CANCELLED') throw new Error('POS_SALE_NOT_REFUNDABLE');
+        if (!sale || ['CHECKOUT','CANCELLED'].includes(sale.status)) throw new Error('POS_SALE_NOT_REFUNDABLE');
         if (sale.exchanges.length > 0) {
           throw new Error('POS_REFUND_EXCHANGE_EXISTS');
         }
@@ -1695,18 +1748,21 @@ export function createAdminBillingRouter(
           (sum, item) => sum + Number(item.amount),
           0,
         );
-        const remaining = roundMoney(Number(sale.total) - alreadyRefunded);
-        if (parsed.data.amount > remaining) throw new Error('POS_REFUND_TOO_LARGE');
+        const received = sale.paidAmount === undefined
+          ? sale.paymentStatus === 'COMPLETED' ? Number(sale.total) : 0
+          : Number(sale.paidAmount);
+        const remaining = roundMoney(Math.min(Number(sale.total), received) - alreadyRefunded);
+        if (requestedAmount > remaining) throw new Error('POS_REFUND_TOO_LARGE');
         if (parsed.data.restockStock &&
             (alreadyRefunded > 0 ||
-              parsed.data.amount !== Number(sale.total))) {
+              requestedAmount !== Number(sale.total))) {
           throw new Error('POS_RESTOCK_REQUIRES_FULL_REFUND');
         }
         return tx.posRefund.create({
           data: {
             saleId: sale.id,
             requestedById,
-            amount: parsed.data.amount,
+            amount: requestedAmount,
             reason: parsed.data.reason,
             restockStock: parsed.data.restockStock,
           },
@@ -1717,7 +1773,7 @@ export function createAdminBillingRouter(
       if (error instanceof Error) {
         const messages: Record<string, string> = {
           POS_SALE_NOT_REFUNDABLE: 'This bill cannot be refunded.',
-          POS_REFUND_TOO_LARGE: 'The refund exceeds the remaining refundable amount.',
+          POS_REFUND_TOO_LARGE: 'The refund exceeds the amount actually received after earlier or pending refunds.',
           POS_RESTOCK_REQUIRES_FULL_REFUND: 'Stock can only be restored for a full refund.',
           POS_REFUND_EXCHANGE_EXISTS: 'A bill with an exchange cannot also have a refund request.',
         };
@@ -1760,7 +1816,10 @@ export function createAdminBillingRouter(
         const otherPendingRefunds = refund.sale.refunds
           .filter((item) => item.id !== refund.id)
           .reduce((sum, item) => sum + Number(item.amount), 0);
-        if (totalRefunded + otherPendingRefunds > Number(refund.sale.total)) {
+        const received = refund.sale.paidAmount === undefined
+          ? refund.sale.paymentStatus === 'COMPLETED' ? Number(refund.sale.total) : 0
+          : Number(refund.sale.paidAmount);
+        if (totalRefunded + otherPendingRefunds > Math.min(Number(refund.sale.total), received)) {
           throw new Error('POS_REFUND_TOO_LARGE');
         }
         if (refund.restockStock) {
@@ -1810,6 +1869,9 @@ export function createAdminBillingRouter(
     } catch (error) {
       if (error instanceof InventoryAdjustmentError) {
         return res.status(409).json({ error: error.message });
+      }
+      if (error instanceof Error && error.message === 'POS_REFUND_TOO_LARGE') {
+        return res.status(409).json({ error: 'This refund exceeds the remaining amount actually received. Refresh and review the payment ledger.' });
       }
       sendAdminError(error, res);
     }
@@ -1909,7 +1971,7 @@ export function createAdminBillingRouter(
             },
           },
         });
-        if (!sale || sale.status === 'CANCELLED' ||
+        if (!sale || ['CHECKOUT','CANCELLED'].includes(sale.status) ||
             sale.paymentStatus !== 'COMPLETED') {
           throw new Error('POS_SALE_NOT_EXCHANGEABLE');
         }

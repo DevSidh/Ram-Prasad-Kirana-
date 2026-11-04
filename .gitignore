@@ -42,3 +42,9 @@ ios/Pods/
 !.env.example
 # Widget Preview related
 .widget_preview/
+
+# Local distribution output (publish through GitHub release assets).
+FastStore-Windows-*/
+FastStore-Windows-*.zip
+FastStore-Windows-*.zip.sha256
+tmp/

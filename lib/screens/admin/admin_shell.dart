@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/product_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/offline_pos_store.dart';
 import '../../theme/admin_widgets.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
@@ -28,9 +29,13 @@ import 'admin_streak_screen.dart';
 import 'admin_wholesale_screen.dart';
 
 class AdminShell extends StatefulWidget {
-  const AdminShell({super.key, this.isBillingStaff = false});
+  const AdminShell(
+      {super.key,
+      this.isBillingStaff = false,
+      this.offlineStore = const OfflinePosStore()});
 
   final bool isBillingStaff;
+  final OfflinePosStore offlineStore;
 
   @override
   State<AdminShell> createState() => _AdminShellState();
@@ -136,6 +141,7 @@ class _AdminShellState extends State<AdminShell> {
     if (widget.isBillingStaff) {
       _screens = [
         AdminBillingScreen(
+          offlineStore: widget.offlineStore,
           key: _billingKey,
           api: api,
           isBillingStaff: true,
@@ -147,6 +153,7 @@ class _AdminShellState extends State<AdminShell> {
     final productProvider = context.read<ProductProvider>();
     final adminScreens = <Widget>[
       AdminDashboardScreen(
+        offlineStore: widget.offlineStore,
         api: api,
         onOrdersRequested: () {
           if (mounted) _selectIndex(1);
@@ -178,7 +185,8 @@ class _AdminShellState extends State<AdminShell> {
       const AdminStoreHoursScreen(),
       AdminStreakScreen(api: api),
       AdminCouponsScreen(api: api),
-      AdminBillingScreen(key: _billingKey, api: api),
+      AdminBillingScreen(
+          key: _billingKey, api: api, offlineStore: widget.offlineStore),
     ];
     _screens = [
       for (final index in _adminScreenOrder) adminScreens[index],

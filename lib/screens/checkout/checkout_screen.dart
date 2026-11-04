@@ -21,7 +21,6 @@ import '../../services/api_service.dart';
 import '../profile/address_book_screen.dart';
 import '../order/order_confirmation_screen.dart';
 import '../../widgets/store_animation.dart';
-import '../../widgets/personal_payment_qr_dialog.dart';
 
 class CheckoutScreen extends StatefulWidget {
   const CheckoutScreen({super.key});
@@ -824,29 +823,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             value: 'COD',
                             selectedValue: _selectedPaymentMethod,
                             title: 'Cash on Delivery (COD)',
-                            subtitle: 'Pay cash or QR scan upon arrival',
+                            subtitle: 'Pay on delivery',
                             activeColor: AppConstants.primary,
                             secondary: const Icon(Icons.payments_outlined,
                                 color: AppConstants.primary),
                             onChanged: (value) =>
                                 setState(() => _selectedPaymentMethod = value),
-                          ),
-                          const SizedBox(height: 10),
-                          OutlinedButton.icon(
-                            onPressed: () => showPersonalPaymentQrDialog(
-                              context,
-                              amount: total,
-                            ),
-                            icon: const Icon(Icons.qr_code_2_rounded),
-                            label: Text(
-                              'Show store QR · Rs. ${total.toStringAsFixed(2)}',
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            'This static personal QR does not send payment confirmation to the app. The order remains cash on delivery until the store verifies any bank transfer.',
-                            style: Theme.of(context).textTheme.bodySmall,
-                            textAlign: TextAlign.center,
                           ),
                         ],
                       ),

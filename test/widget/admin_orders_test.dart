@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:freshharvest_grocery/screens/admin/admin_orders_screen.dart';
 import 'package:freshharvest_grocery/services/admin_order_notification_service.dart';
@@ -110,6 +111,7 @@ class _OrdersApi extends ApiService {
 }
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   testWidgets('admin can review an order and advance it to confirmed',
       (tester) async {
     final api = _OrdersApi();

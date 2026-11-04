@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -6,11 +7,19 @@ import '../models/pos_models.dart';
 import '../models/store_availability.dart';
 import 'api_service.dart';
 import 'offline_pos_store.dart';
+import 'fonepay_api_service.dart';
 
 class AdminApiService {
   final ApiService _api;
 
   AdminApiService(this._api);
+  FonepayApiService get fonepay => FonepayApiService(_api);
+  Future<List<PosSale>> getFonepayCheckouts() async {
+    final body = _asMap(await _api.get('/admin/billing/fonepay-checkouts'));
+    return (body['sales'] as List)
+        .map((value) => PosSale.fromJson(Map<String, dynamic>.from(value)))
+        .toList();
+  }
 
   Future<String> createBarcodeScannerSession() async {
     final response =
@@ -170,6 +179,21 @@ class AdminApiService {
   }
 
   Future<List<PosProduct>> searchPosProducts(String query) async {
+    final key = '${_api.sessionRevision}:${query.trim()}';
+    final existing = _posSearches[key];
+    if (existing != null) return existing;
+    final request = _searchPosProducts(query.trim());
+    _posSearches[key] = request;
+    try {
+      return await request;
+    } finally {
+      if (identical(_posSearches[key], request)) _posSearches.remove(key);
+    }
+  }
+
+  final _posSearches = <String, Future<List<PosProduct>>>{};
+
+  Future<List<PosProduct>> _searchPosProducts(String query) async {
     final response = _asMap(await _api.get(
       '/admin/billing/products',
       queryParams: {'query': query},
@@ -231,8 +255,15 @@ class AdminApiService {
     String? customerPhone,
     String? customerId,
     String? heldSaleId,
+    double? expectedTotal,
+    Map<String, double>? unitPrices,
   }) async {
     final response = _asMap(await _api.post('/admin/billing/sales', {
+      if (expectedTotal != null && unitPrices != null)
+        'quote': {
+          'expectedTotal': expectedTotal,
+          'unitPrices': unitPrices,
+        },
       'idempotencyKey': idempotencyKey,
       'items': items,
       'discount': discount,
@@ -296,6 +327,7 @@ class AdminApiService {
     required String paymentMethod,
     required double amount,
     String? note,
+    String? idempotencyKey,
   }) async {
     await _api.post(
       '/admin/billing/sales/${Uri.encodeComponent(id)}/payments',
@@ -303,6 +335,7 @@ class AdminApiService {
         'paymentMethod': paymentMethod,
         'amount': amount,
         'note': note,
+        if (idempotencyKey != null) 'idempotencyKey': idempotencyKey,
       },
     );
   }
@@ -821,7 +854,7 @@ class AdminApiService {
         .whereType<Map<String, dynamic>>()
         .map(AdminCategory.fromJson)
         .toList();
-    await const OfflinePosStore().saveCategories([
+    unawaited(const OfflinePosStore().saveCategories([
       for (final category in parsed)
         {
           'id': category.id,
@@ -831,7 +864,9 @@ class AdminApiService {
           'imageUrl': category.imageUrl,
           'isActive': category.isActive,
         },
-    ]);
+    ]).catchError((Object _) {
+      // A cache write must not delay or hide valid server category results.
+    }));
     return parsed;
   }
 
@@ -1036,9 +1071,11 @@ class AdminApiService {
         fileName: imageName,
         fields: {'wholesaleItem': jsonEncode(fields)},
       );
+      OfflinePosStore.invalidateFullRefresh();
       return;
     }
     await _api.post('/admin/wholesale-items', fields);
+    OfflinePosStore.invalidateFullRefresh();
   }
 
   Future<void> updateWholesaleItem(
@@ -1056,13 +1093,16 @@ class AdminApiService {
         fields: {'wholesaleItem': jsonEncode(fields)},
         method: 'PATCH',
       );
+      OfflinePosStore.invalidateFullRefresh();
       return;
     }
     await _api.patch('/admin/wholesale-items/$id', fields);
+    OfflinePosStore.invalidateFullRefresh();
   }
 
   Future<void> setWholesaleItemActive(String id, bool isActive) async {
     await _api.patch('/admin/wholesale-items/$id', {'isActive': isActive});
+    OfflinePosStore.invalidateFullRefresh();
   }
 
   Future<List<AdminProduct>> getAllProducts({
@@ -1109,12 +1149,14 @@ class AdminApiService {
           'product': jsonEncode({...fields, 'stock': stock})
         },
       );
+      OfflinePosStore.invalidateFullRefresh();
       return;
     }
     await _api.post('/admin/products', {
       ...fields,
       'stock': stock,
     });
+    OfflinePosStore.invalidateFullRefresh();
   }
 
   Future<void> updateProduct(
@@ -1135,20 +1177,24 @@ class AdminApiService {
         },
         method: 'PATCH',
       );
+      OfflinePosStore.invalidateFullRefresh();
       return;
     }
     await _api.patch('/admin/products/$id', {
       ...fields,
       'stock': stock,
     });
+    OfflinePosStore.invalidateFullRefresh();
   }
 
   Future<void> deactivateProduct(String id) async {
     await _api.delete('/admin/products/$id');
+    OfflinePosStore.invalidateFullRefresh();
   }
 
   Future<void> setProductActive(String id, bool isActive) async {
     await _api.patch('/admin/products/$id', {'isActive': isActive});
+    OfflinePosStore.invalidateFullRefresh();
   }
 
   Future<AdminProduct> restockProduct(
@@ -1222,6 +1268,8 @@ class AdminApiService {
     required int page,
     int pageSize = 25,
     DateTime? day,
+    String? movementType,
+    String? search,
   }) async {
     final response = _asMap(
       await _api.get(
@@ -1230,6 +1278,9 @@ class AdminApiService {
           'page': '$page',
           'pageSize': '$pageSize',
           if (day != null) 'day': _storeDayKey(day),
+          if (movementType != null) 'movementType': movementType,
+          if (search != null && search.trim().isNotEmpty)
+            'search': search.trim(),
         },
       ),
     );
@@ -1309,6 +1360,7 @@ class AdminApiService {
 
   Future<void> updateProductSku(String id, String sku) async {
     await _api.patch('/admin/products/$id', {'sku': sku});
+    OfflinePosStore.invalidateFullRefresh();
   }
 
   Future<void> updateProductFeatured(String id, bool isFeatured) async {
@@ -1324,6 +1376,7 @@ class AdminApiService {
       'price': price,
       'originalPrice': originalPrice,
     });
+    OfflinePosStore.invalidateFullRefresh();
   }
 
   Future<String> updateProductImage(

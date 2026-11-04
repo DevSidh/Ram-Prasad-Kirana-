@@ -33,6 +33,7 @@ class InvoicePdfBuilder {
     double? paidAmount,
     double? outstandingAmount,
     double deliveryOrOther = 0,
+    pw.Widget? paymentInstructions,
   }) async {
     const rule = PdfColor(0.55, 0.57, 0.59);
     final document = pw.Document();
@@ -132,6 +133,10 @@ class InvoicePdfBuilder {
               if (outstandingAmount != null && outstandingAmount > 0)
                 _total('Balance due', outstandingAmount, bold: true),
               _meta('Payment Status', _statusLabel(paymentStatus)),
+              if (paymentInstructions != null) ...[
+                pw.SizedBox(height: 12),
+                paymentInstructions,
+              ],
               pw.Divider(color: rule, height: 15),
               pw.Center(
                 child: pw.Text(
@@ -220,7 +225,9 @@ class InvoicePdfBuilder {
   static String _money(double amount) => 'Rs. ${amount.toStringAsFixed(2)}';
 
   static String _paymentLabel(String value) => switch (value.toUpperCase()) {
-        'DIGITAL' || 'ESEWA' => 'eSewa',
+        'FONEPAY' => 'Fonepay',
+        'DIGITAL' => 'Bank transfer',
+        'ESEWA' => 'eSewa',
         'KHALTI' => 'Khalti',
         'CARD' => 'Card',
         'PENDING' || 'UNPAID' => 'Cash / digital',

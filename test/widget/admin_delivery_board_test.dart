@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:freshharvest_grocery/providers/auth_provider.dart';
 
 import 'package:freshharvest_grocery/screens/admin/admin_delivery_people_screen.dart';
 import 'package:freshharvest_grocery/services/api_service.dart';
@@ -97,11 +100,17 @@ void main() {
   testWidgets('admin assigns a prepared order from the delivery board',
       (tester) async {
     final api = _DeliveryBoardApi();
+    SharedPreferences.setMockInitialValues({});
+    final auth = AuthProvider(apiService: api);
+    await auth.sessionReady;
+    addTearDown(auth.dispose);
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(body: AdminDeliveryPeopleScreen(api: api)),
-      ),
+      ChangeNotifierProvider<AuthProvider>.value(
+          value: auth,
+          child: MaterialApp(
+            home: Scaffold(body: AdminDeliveryPeopleScreen(api: api)),
+          )),
     );
     await tester.pumpAndSettle();
 

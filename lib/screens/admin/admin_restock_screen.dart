@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -212,6 +215,15 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
   String? _error;
   int _page = 1;
   DateTime? _selectedDay;
+  final _search = TextEditingController();
+  String _movementType = 'RESTOCKED';
+  int _request = 0;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -220,6 +232,7 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
   }
 
   Future<void> _load({int page = 1}) async {
+    final request = ++_request;
     setState(() {
       _loading = true;
       _error = null;
@@ -228,15 +241,17 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
       final history = await _adminApi.getRestockHistory(
         page: page,
         day: _selectedDay,
+        movementType: _movementType,
+        search: _search.text,
       );
-      if (!mounted) return;
+      if (!mounted || request != _request) return;
       setState(() {
         _history = history;
         _page = page;
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || request != _request) return;
       setState(() {
         _error = error.toString().replaceFirst('Exception: ', '');
         _loading = false;
@@ -255,6 +270,60 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
     if (!mounted || day == null) return;
     setState(() => _selectedDay = day);
     await _load();
+  }
+
+  Future<void> _exportPage() async {
+    final history = _history;
+    if (history == null) return;
+    String cell(String value) {
+      final safe = RegExp(r'^[=+\-@\t\r]').hasMatch(value) ? "'$value" : value;
+      return '"${safe.replaceAll('"', '""')}"';
+    }
+
+    final rows = <List<String>>[
+      [
+        'Movement ID',
+        'Date',
+        'Product',
+        'SKU',
+        'Type',
+        'Quantity',
+        'Available after',
+        'Unit',
+        'Staff',
+        'Reference',
+        'Reason'
+      ],
+      for (final movement in history.receipts)
+        [
+          movement.id,
+          movement.createdAt.toLocal().toString(),
+          movement.productName,
+          movement.productSku,
+          movement.movementType,
+          '${movement.quantity}',
+          '${movement.balanceAfter}',
+          movement.unitLabel,
+          movement.staffName ?? '',
+          movement.referenceId ?? '',
+          movement.notes ?? '',
+        ],
+    ];
+    try {
+      await FilePicker.saveFile(
+        fileName: 'Stock-movements-page-$_page.csv',
+        bytes: Uint8List.fromList(utf8.encode(
+            '\uFEFF${rows.map((row) => row.map(cell).join(',')).join('\r\n')}\r\n')),
+        mimeType: 'text/csv',
+        allowedExtensions: const ['csv'],
+        dialogTitle: 'Export the displayed stock-history page',
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Export failed: $error')));
+      }
+    }
   }
 
   @override
@@ -289,7 +358,7 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
           padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
           children: [
             Text(
-              'Stock receipts recorded by admin staff.',
+              'Recorded product stock movements. Receipt history remains the default filter.',
               style: TextStyle(color: AppColors.muted),
             ),
             const SizedBox(height: 10),
@@ -298,6 +367,53 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
               runSpacing: 6,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
+                SizedBox(
+                    width: 300,
+                    child: TextField(
+                      controller: _search,
+                      onSubmitted: (_) => _load(),
+                      decoration: InputDecoration(
+                        labelText: 'Product, SKU, reference, staff or reason',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: IconButton(
+                            onPressed: _loading ? null : () => _load(),
+                            icon: const Icon(Icons.arrow_forward)),
+                      ),
+                    )),
+                SizedBox(
+                    width: 200,
+                    child: DropdownButtonFormField<String>(
+                      initialValue: _movementType,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'Movement'),
+                      items: const [
+                        DropdownMenuItem(
+                            value: 'RESTOCKED', child: Text('Stock receipts')),
+                        DropdownMenuItem(
+                            value: 'ALL', child: Text('All movements')),
+                        DropdownMenuItem(
+                            value: 'PURCHASED',
+                            child: Text('Sales deductions')),
+                        DropdownMenuItem(
+                            value: 'RESERVED', child: Text('Reservations')),
+                        DropdownMenuItem(
+                            value: 'RELEASED', child: Text('Released stock')),
+                        DropdownMenuItem(
+                            value: 'ADJUSTED',
+                            child: Text('Adjustments / returns')),
+                      ],
+                      onChanged: _loading
+                          ? null
+                          : (value) {
+                              setState(
+                                  () => _movementType = value ?? 'RESTOCKED');
+                              unawaited(_load());
+                            },
+                    )),
+                OutlinedButton.icon(
+                    onPressed: _loading ? null : _exportPage,
+                    icon: const Icon(Icons.download_outlined),
+                    label: const Text('Export this page')),
                 OutlinedButton.icon(
                   onPressed: _loading ? null : _selectDay,
                   icon: const Icon(Icons.calendar_month_rounded, size: 18),
@@ -411,7 +527,7 @@ class _RestockReceiptCard extends StatelessWidget {
                 ),
               ),
               Text(
-                '${_formatQuantity(receipt.balanceAfter)} available after receipt',
+                '${_formatQuantity(receipt.balanceAfter)} available after movement',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
@@ -433,6 +549,9 @@ class _RestockReceiptCard extends StatelessWidget {
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
+          if (receipt.referenceId?.isNotEmpty == true)
+            SelectableText('Reference: ${receipt.referenceId}',
+                style: Theme.of(context).textTheme.bodySmall),
         ],
       ),
     );
@@ -443,6 +562,14 @@ class _RestockReceiptCard extends StatelessWidget {
       : quantity.toStringAsFixed(3).replaceFirst(RegExp(r'\.?0+$'), '');
 
   String _receiptQuantityLabel(AdminRestockReceipt receipt) {
+    if (receipt.movementType != 'RESTOCKED') {
+      final unit =
+          RegExp(r'^\s*\d+(?:\.\d+)?\s*(?:kg|g)\s*$', caseSensitive: false)
+                  .hasMatch(receipt.unitLabel)
+              ? 'kg'
+              : 'units';
+      return '${receipt.movementType}: ${_formatQuantity(receipt.quantity)} $unit';
+    }
     if (RegExp(r'^\s*\d+(?:\.\d+)?\s*(?:kg|g)\s*$', caseSensitive: false)
         .hasMatch(receipt.unitLabel)) {
       return '+${_formatQuantity(receipt.quantity)} kg';

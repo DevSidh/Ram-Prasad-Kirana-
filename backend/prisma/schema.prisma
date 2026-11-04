@@ -547,10 +547,42 @@ model PosSale {
   refunds        PosRefund[]
   exchanges      PosExchange[]
   paymentCollections PosPaymentCollection[]
+  fonepayRequests PosFonepayRequest[]
 
   @@index([shiftId, createdAt])
   @@index([createdAt, status])
   @@index([paymentStatus])
+}
+
+// Provider requests never change a sale until server-to-server verification.
+model PosFonepayRequest {
+  id                    String   @id
+  saleId                String
+  reference             String   @unique
+  activeKey             String?  @unique
+  requestedById         String
+  environment           String
+  merchantCode          String
+  merchantName          String?
+  currency              String   @default("NPR")
+  amount                Decimal  @db.Decimal(12, 2)
+  billFingerprint       String
+  invoiceNumber         String
+  state                 String   @default("CREATING")
+  qrPayload             String?
+  expiresAt             DateTime?
+  lastCheckedAt         DateTime?
+  providerTransactionId String?
+  verifiedAt DateTime?
+  autoPrintClaimedAt DateTime?
+  failureCode           String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  sale                  PosSale @relation(fields: [saleId], references: [id], onDelete: Restrict)
+
+  @@unique([environment, merchantCode, providerTransactionId])
+  @@index([saleId, createdAt])
+  @@index([state, expiresAt])
 }
 
 model PosPaymentCollection {
@@ -937,6 +969,7 @@ enum SupplierPurchaseBillStatus {
 }
 
 enum PosSaleStatus {
+  CHECKOUT
   COMPLETED
   PARTIALLY_REFUNDED
   REFUNDED
@@ -944,6 +977,7 @@ enum PosSaleStatus {
 }
 
 enum PosPaymentMethod {
+  FONEPAY
   CASH
   DIGITAL
   PENDING

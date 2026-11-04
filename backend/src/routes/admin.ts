@@ -412,6 +412,8 @@ const restockInput = batchDetailsFields.extend({
   notes: z.string().trim().max(500).optional(),
 }).strict().superRefine(validateBatchDetails);
 const restockHistoryQuery = z.object({
+  movementType: z.enum(['ALL', 'RESERVED', 'PURCHASED', 'RELEASED', 'RESTOCKED', 'ADJUSTED']).default('RESTOCKED'),
+  search: z.string().trim().max(120).optional(),
   day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
@@ -3662,7 +3664,7 @@ export function createAdminRouter(
   router.get('/inventory/restock-history', async (req, res) => {
     const parsed = restockHistoryQuery.safeParse(req.query);
     if (!parsed.success) return invalidInput(res, parsed.error);
-    const { day, page, pageSize } = parsed.data;
+    const { day, page, pageSize, movementType, search } = parsed.data;
     let dayRange: { start: Date; end: Date } | undefined;
     try {
       dayRange = day ? getLocalDayRangeForKey(day) : undefined;
@@ -3670,7 +3672,14 @@ export function createAdminRouter(
       return res.status(400).json({ error: 'Choose a valid store calendar day.' });
     }
     const where: Prisma.InventoryTransactionWhereInput = {
-      type: 'RESTOCKED',
+      ...(movementType === 'ALL' ? {} : { type: movementType }),
+      ...(search ? { OR: [
+        { referenceId: { contains: search, mode: 'insensitive' as const } },
+        { notes: { contains: search, mode: 'insensitive' as const } },
+        { inventory: { product: { name: { contains: search, mode: 'insensitive' as const } } } },
+        { inventory: { product: { sku: { contains: search, mode: 'insensitive' as const } } } },
+        { performedBy: { name: { contains: search, mode: 'insensitive' as const } } },
+      ] } : {}),
       ...(dayRange
         ? { createdAt: { gte: dayRange.start, lt: dayRange.end } }
         : {}),
@@ -3687,6 +3696,8 @@ export function createAdminRouter(
             id: true,
             quantity: true,
             balanceAfter: true,
+            type: true,
+            referenceId: true,
             notes: true,
             createdAt: true,
             performedBy: { select: { id: true, name: true } },

@@ -14,6 +14,8 @@ class ApiService {
   final Duration _requestTimeout;
   final Duration _uploadTimeout;
   String? _authToken;
+  int _sessionRevision = 0;
+  int get sessionRevision => _sessionRevision;
 
   ApiService({
     String? baseUrl,
@@ -26,10 +28,12 @@ class ApiService {
         _uploadTimeout = uploadTimeout;
 
   void setAuthToken(String token) {
+    if (token != _authToken) _sessionRevision++;
     _authToken = token;
   }
 
   void clearAuthToken() {
+    if (_authToken != null) _sessionRevision++;
     _authToken = null;
   }
 
@@ -300,7 +304,7 @@ class ApiService {
       return 'The server returned an error response ($statusCode).';
     }
     final missingRoute = RegExp(
-            r'^Cannot (GET|POST|PATCH|PUT|DELETE) (/api/v1/admin/billing/\S+)$')
+            r'^(?:Error\s+)?Cannot (GET|POST|PATCH|PUT|DELETE) (/api/v1/admin/billing/\S+)$')
         .firstMatch(plainText);
     if (missingRoute != null) {
       return 'Billing endpoint unavailable: ${missingRoute.group(1)} '

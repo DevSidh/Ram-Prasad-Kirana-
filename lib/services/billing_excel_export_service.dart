@@ -13,10 +13,12 @@ class BillingExcelExportService {
   static Future<String> writePendingCash(
     List<PosSale> sales, {
     List<Map<String, dynamic>> localPendingRecords = const [],
+    bool localOnly = false,
   }) async {
     final directory = Directory('$_baseDirectory/pending cash');
     await directory.create(recursive: true);
-    final file = File('${directory.path}/pending_cash.csv');
+    final file = File(
+        '${directory.path}/${localOnly ? 'pending_cash_local.csv' : 'pending_cash.csv'}');
     final rows = <List<String>>[
       [
         'Invoice number',
@@ -70,6 +72,13 @@ class BillingExcelExportService {
     await directory.create(recursive: true);
     final file = File('${directory.path}/bill_customers.csv');
     final exists = await file.exists();
+    if (exists &&
+        _parseCsv(await file.readAsString()).skip(1).any((row) =>
+            row.isNotEmpty &&
+            row.first == (sale.invoiceNumber ?? sale.receiptNumber))) {
+      await _upsertSavedCustomer(sale);
+      return file.path;
+    }
     final rows = <List<String>>[
       if (!exists || await file.length() == 0)
         [
@@ -110,15 +119,21 @@ class BillingExcelExportService {
     final file = File('$_baseDirectory/bill customer/customers.json');
     List<Map<String, dynamic>> records = [];
     try {
-      if (await file.exists()) {
-        final decoded = jsonDecode(await file.readAsString());
-        if (decoded is List) {
-          records = decoded.whereType<Map<String, dynamic>>().toList();
+      try {
+        if (await file.exists()) {
+          final decoded = jsonDecode(await file.readAsString());
+          if (decoded is List) {
+            records = decoded.whereType<Map<String, dynamic>>().toList();
+          }
         }
-      }
-      if (records.isEmpty) {
-        records = await _customersFromLegacyCsv();
-      }
+      } on FormatException {
+        /* Recover names from the CSV export below. */
+      } on FileSystemException {/* The CSV can still be readable. */}
+      try {
+        records.addAll(await _customersFromLegacyCsv());
+      } on FormatException {
+        /* Keep valid JSON customers. */
+      } on FileSystemException {/* Keep valid JSON customers. */}
       return records
           .map((record) => AdminCustomer(
                 id: record['id']?.toString() ?? '',
@@ -126,9 +141,13 @@ class BillingExcelExportService {
                 name: record['name']?.toString() ?? '',
                 email: record['email']?.toString() ?? '',
                 phone: record['phone']?.toString() ?? '',
-                isActive: record['isActive'] as bool? ?? true,
+                isActive: record['isActive'] is bool
+                    ? record['isActive'] as bool
+                    : true,
                 createdAt: record['createdAt']?.toString(),
-                orderCount: (record['orderCount'] as num?)?.toInt() ?? 0,
+                orderCount: record['orderCount'] is num
+                    ? (record['orderCount'] as num).toInt()
+                    : int.tryParse('${record['orderCount']}') ?? 0,
                 orderValue: _number(record['orderValue']),
                 addresses: const [],
                 recentOrders: const [],

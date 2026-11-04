@@ -507,6 +507,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
   }
 
   Future<void> _save() async {
+    if (_saving) return;
     if (!_formKey.currentState!.validate()) return;
     final stock = double.parse(_stockController.text.trim());
     if (widget.product == null &&

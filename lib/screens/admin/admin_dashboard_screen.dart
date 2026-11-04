@@ -17,7 +17,9 @@ class AdminDashboardScreen extends StatefulWidget {
     super.key,
     required this.api,
     this.onOrdersRequested,
+    this.offlineStore = const OfflinePosStore(),
   });
+  final OfflinePosStore offlineStore;
 
   @override
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
@@ -31,6 +33,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   double _offlineSalesTotal = 0;
   bool _observedTabVisibility = false;
   bool _wasTabVisible = true;
+  int _requestId = 0;
 
   @override
   void initState() {
@@ -50,13 +53,24 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Future<void> _load() async {
-    const offlineStore = OfflinePosStore();
+    final request = ++_requestId;
+    final offlineStore = widget.offlineStore;
     setState(() {
       _loading = _dashboard == null;
       _error = null;
     });
-    final offlineSales = await offlineStore.readOfflineSalesTotal();
-    final cachedSnapshot = await offlineStore.readDashboardSnapshot();
+    // Start the server request immediately instead of waiting for every local
+    // invoice to be read. Capture failures until the cached view is ready.
+    final server = _adminApi
+        .getDashboard()
+        .then<Object>((value) => value, onError: (Object error) => error);
+    final local = await Future.wait<dynamic>([
+      offlineStore.readOfflineSalesTotal(),
+      offlineStore.readDashboardSnapshot(),
+    ]);
+    final offlineSales = local[0] as double;
+    final cachedSnapshot = local[1] as Map<String, dynamic>?;
+    if (!mounted || request != _requestId) return;
     if (mounted) {
       setState(() {
         _offlineSalesTotal = offlineSales;
@@ -67,17 +81,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       });
     }
     try {
-      final result = await _adminApi.getDashboard();
-      await offlineStore.saveDashboardSnapshot(result.toJson());
-      if (!mounted) return;
+      final response = await server;
+      if (response is! AdminDashboard) throw response;
+      final result = response;
+      if (!mounted || request != _requestId) return;
       setState(() {
         _dashboard = result;
         _offlineSalesTotal = offlineSales;
         _error = null;
         _loading = false;
       });
+      try {
+        await offlineStore.saveDashboardSnapshot(result.toJson());
+      } catch (_) {
+        if (mounted && request == _requestId) {
+          setState(() => _error =
+              'Live totals loaded, but their local snapshot could not be saved.');
+        }
+      }
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || request != _requestId) return;
       setState(() {
         _dashboard ??= AdminDashboard.fromJson(const {});
         _error = cachedSnapshot == null
@@ -250,7 +273,11 @@ class _MetricGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 620 ? 3 : 2;
+        final columns = constraints.maxWidth >= 620
+            ? 3
+            : constraints.maxWidth >= 420
+                ? 2
+                : 1;
         return GridView.builder(
           itemCount: items.length,
           shrinkWrap: true,

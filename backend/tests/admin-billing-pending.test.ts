@@ -99,7 +99,7 @@ async function main(): Promise<void> {
     assert.equal(pendingResponse.status, 200);
     assert.deepEqual(pendingQuery, {
       paymentStatus: 'PENDING',
-      status: { not: 'CANCELLED' },
+      status: { notIn: ['CANCELLED', 'CHECKOUT'] },
     });
     const pendingBody = await pendingResponse.json() as {
       sales: Array<{

@@ -215,4 +215,24 @@ assertOrder(
   'ALTER TABLE "User" SET (schema_locked = true)',
 );
 
+const fonepayRequests = migration('20261119000000_fonepay_payment_requests');
+assertOrder(fonepayRequests,
+  'CREATE TABLE "PosFonepayRequest"',
+  'ALTER TABLE "PosFonepayRequest" SET (schema_locked = false)',
+  'CREATE UNIQUE INDEX "PosFonepayRequest_activeKey_key"',
+  'ALTER TABLE "PosSale" SET (schema_locked = false)',
+  'ADD CONSTRAINT "PosFonepayRequest_saleId_fkey"',
+  'ALTER TABLE "PosSale" SET (schema_locked = true)',
+  'ALTER TABLE "PosFonepayRequest" SET (schema_locked = true)',
+);
+assert.ok(fonepayRequests.includes('CHECK ("amount" > 0 AND "currency" = \'NPR\')'));
 console.log('Migration schema-lock and range-guard regression tests passed.');
+const checkout = migration('20261120000000_fonepay_checkout');
+assertOrder(checkout,
+  'ALTER TABLE "PosFonepayRequest" SET (schema_locked = false)',
+  'ADD COLUMN IF NOT EXISTS "verifiedAt"',
+  'ADD COLUMN IF NOT EXISTS "autoPrintClaimedAt"',
+  'ADD CONSTRAINT "PosFonepayRequest_state_check"',
+  'ALTER TABLE "PosFonepayRequest" SET (schema_locked = true)');
+assert.ok(checkout.includes("ADD VALUE IF NOT EXISTS 'CHECKOUT'"));
+assert.ok(checkout.includes("ADD VALUE IF NOT EXISTS 'FONEPAY'"));

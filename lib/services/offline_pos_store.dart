@@ -5,35 +5,84 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/pos_models.dart';
+import 'local_billing_store.dart';
 
 /// Persistent local POS catalog used by the Windows billing screen when the
 /// server cannot be reached. The server remains the source of truth online.
 class OfflinePosStore {
-  const OfflinePosStore();
+  const OfflinePosStore(
+      {this.storageDirectory,
+      this.billingStore = const LocalBillingStore(),
+      this.useLocalStock});
+  final Directory? storageDirectory;
+  final LocalBillingStore billingStore;
+  final bool? useLocalStock;
+  static final _catalogs = <String, _CatalogSnapshot>{};
+  static final _refreshes = <String, Future<bool>>{};
+  static final _refreshedAt = <String, DateTime>{};
+
+  /// Share one full refresh across bill windows, then reuse it for five minutes.
+  /// Exact stock/prices are still checked by the sale transaction.
+  Future<bool> refreshCatalogIfNeeded(Future<List<PosProduct>> Function() load,
+      {bool force = false}) async {
+    if (kIsWeb) return false;
+    final file = await _catalogFile();
+    final key = file.absolute.path;
+    final inFlight = _refreshes[key];
+    if (inFlight != null) return inFlight;
+    final last = _refreshedAt[key];
+    if (!force &&
+        last != null &&
+        DateTime.now().difference(last) < const Duration(minutes: 5) &&
+        await file.exists()) {
+      return false;
+    }
+    final request = () async {
+      final products = await load();
+      await saveCatalog(products);
+      if (_refreshedAt.length >= 4) {
+        _refreshedAt.remove(_refreshedAt.keys.first);
+      }
+      _refreshedAt[key] = DateTime.now();
+      return true;
+    }();
+    _refreshes[key] = request;
+    try {
+      return await request;
+    } finally {
+      if (identical(_refreshes[key], request)) _refreshes.remove(key);
+    }
+  }
+
+  static void invalidateFullRefresh() => _refreshedAt.clear();
 
   Future<File> _catalogFile() async {
-    final directory = await getApplicationSupportDirectory();
+    final directory =
+        storageDirectory ?? await getApplicationSupportDirectory();
     final offlineDirectory = Directory('${directory.path}/offline_pos');
     await offlineDirectory.create(recursive: true);
     return File('${offlineDirectory.path}/catalog.json');
   }
 
   Future<File> _pendingProductsFile() async {
-    final directory = await getApplicationSupportDirectory();
+    final directory =
+        storageDirectory ?? await getApplicationSupportDirectory();
     final offlineDirectory = Directory('${directory.path}/offline_pos');
     await offlineDirectory.create(recursive: true);
     return File('${offlineDirectory.path}/pending_products.json');
   }
 
   Future<File> _categoriesFile() async {
-    final directory = await getApplicationSupportDirectory();
+    final directory =
+        storageDirectory ?? await getApplicationSupportDirectory();
     final offlineDirectory = Directory('${directory.path}/offline_pos');
     await offlineDirectory.create(recursive: true);
     return File('${offlineDirectory.path}/categories.json');
   }
 
   Future<File> _dashboardFile() async {
-    final directory = await getApplicationSupportDirectory();
+    final directory =
+        storageDirectory ?? await getApplicationSupportDirectory();
     final offlineDirectory = Directory('${directory.path}/offline_pos');
     await offlineDirectory.create(recursive: true);
     return File('${offlineDirectory.path}/dashboard.json');
@@ -59,7 +108,7 @@ class OfflinePosStore {
 
   Future<double> readOfflineSalesTotal() async {
     if (kIsWeb) return 0;
-    final directory = Directory('C:/Ramprasad store/bills');
+    final directory = Directory(billingStore.rootPath);
     if (!await directory.exists()) return 0;
     var total = 0.0;
     try {
@@ -68,13 +117,15 @@ class OfflinePosStore {
           continue;
         }
         try {
-          final decoded = jsonDecode(await entity.readAsString());
-          if (decoded is Map<String, dynamic>) {
-            final amount = decoded['total'];
-            total += amount is num
-                ? amount.toDouble()
-                : double.tryParse(amount?.toString() ?? '') ?? 0;
+          final decoded = await billingStore.readJson(entity);
+          if (decoded['syncState'] == 'synced' ||
+              decoded['status'] == 'CANCELLED') {
+            continue;
           }
+          final amount = decoded['total'];
+          total += amount is num
+              ? amount.toDouble()
+              : double.tryParse(amount?.toString() ?? '') ?? 0;
         } catch (_) {
           // Skip malformed local bill files while retaining valid totals.
         }
@@ -89,7 +140,7 @@ class OfflinePosStore {
   /// appear in the admin invoice history without being uploaded to the server.
   Future<List<PosSale>> readOfflineSales() async {
     if (kIsWeb || !Platform.isWindows) return const [];
-    final directory = Directory('C:/Ramprasad store/bills');
+    final directory = Directory(billingStore.rootPath);
     if (!await directory.exists()) return const [];
     final sales = <PosSale>[];
     try {
@@ -98,8 +149,7 @@ class OfflinePosStore {
           continue;
         }
         try {
-          final decoded = jsonDecode(await entity.readAsString());
-          if (decoded is! Map<String, dynamic>) continue;
+          final decoded = await billingStore.readJson(entity);
           final invoiceNumber = decoded['invoiceNumber']?.toString().trim();
           final createdAt = DateTime.tryParse(
             decoded['date']?.toString() ??
@@ -139,9 +189,11 @@ class OfflinePosStore {
           final total = _offlineNumber(decoded['total']);
           final paidAmount = _offlineNumber(decoded['paidAmount']);
           sales.add(PosSale(
-            id: 'local-$invoiceNumber',
-            receiptNumber: invoiceNumber,
-            invoiceNumber: invoiceNumber,
+            id: decoded['serverSaleId']?.toString() ?? 'local-$invoiceNumber',
+            receiptNumber:
+                decoded['serverReceiptNumber']?.toString() ?? invoiceNumber,
+            invoiceNumber:
+                decoded['serverInvoiceNumber']?.toString() ?? invoiceNumber,
             customerName: decoded['customerName']?.toString(),
             customerPhone: decoded['customerPhone']?.toString(),
             status: decoded['status']?.toString() ?? 'COMPLETED',
@@ -197,19 +249,58 @@ class OfflinePosStore {
     }
   }
 
-  Future<List<PosProduct>> readCatalog() async {
+  Future<List<PosProduct>> readCatalog({bool freshStock = false}) async =>
+      projectLocalStock(await _readRawCatalog(fresh: freshStock),
+          freshStock: freshStock);
+
+  /// A conservative local estimate; central availability is a separate value.
+  Future<List<PosProduct>> projectLocalStock(List<PosProduct> products,
+      {bool freshStock = false}) async {
+    if (kIsWeb || !(useLocalStock ?? Platform.isWindows)) return products;
+    if (products.isEmpty) return products;
+    final deductions = freshStock
+        ? await billingStore.stockDeductions()
+        : await billingStore.stockDeductionsForDisplay();
+    return products
+        .map((product) => PosProduct(
+              id: product.id,
+              name: product.name,
+              sku: product.sku,
+              barcode: product.barcode,
+              price: product.price,
+              unitLabel: product.unitLabel,
+              available: (product.available - (deductions[product.id] ?? 0))
+                  .clamp(0, product.available)
+                  .toInt(),
+              imageUrl: product.imageUrl,
+            ))
+        .toList(growable: false);
+  }
+
+  Future<List<PosProduct>> _readRawCatalog({bool fresh = false}) async {
     if (kIsWeb) return const [];
     try {
       final file = await _catalogFile();
-      if (!await file.exists()) return const [];
-      final decoded = jsonDecode(await file.readAsString());
-      if (decoded is! Map<String, dynamic> || decoded['products'] is! List) {
+      final stat = await file.stat();
+      if (stat.type != FileSystemEntityType.file) return const [];
+      final cached = _catalogs[file.absolute.path];
+      if (!fresh && cached != null && cached.matches(stat)) {
+        return cached.products;
+      }
+      final decoded = await const LocalBillingStore().readJson(file);
+      if (decoded['products'] is! List) {
         return const [];
       }
-      return (decoded['products'] as List)
+      final products = (decoded['products'] as List)
           .whereType<Map<String, dynamic>>()
           .map(PosProduct.fromJson)
           .toList(growable: false);
+      // Recovery copies must remain observable; never cache a broken primary.
+      if (decoded['_recoveredFromBackup'] != true && products.length <= 20000) {
+        if (_catalogs.length >= 4) _catalogs.remove(_catalogs.keys.first);
+        _catalogs[file.absolute.path] = _CatalogSnapshot(stat, products);
+      }
+      return products;
     } catch (_) {
       return const [];
     }
@@ -217,6 +308,12 @@ class OfflinePosStore {
 
   Future<void> saveCatalog(List<PosProduct> products) async {
     if (kIsWeb) return;
+    final file = await _catalogFile();
+    await LocalBillingStore(rootPath: file.parent.path)
+        .withLock(() => _writeCatalog(file, products));
+  }
+
+  Future<void> _writeCatalog(File file, List<PosProduct> products) async {
     final pending = await readPendingProducts();
     final combined = <String, PosProduct>{
       for (final product in products) product.id: product,
@@ -225,28 +322,31 @@ class OfflinePosStore {
           (entry['posProduct'] as Map<String, dynamic>)['id'] as String:
               PosProduct.fromJson(entry['posProduct'] as Map<String, dynamic>),
     };
-    final file = await _catalogFile();
-    final temporary = File('${file.path}.tmp');
-    await temporary.writeAsString(
-      jsonEncode({
-        'savedAt': DateTime.now().toUtc().toIso8601String(),
-        'products': combined.values.map(_toJson).toList(growable: false),
-      }),
-      flush: true,
-    );
-    if (await file.exists()) await file.delete();
-    await temporary.rename(file.path);
+    await const LocalBillingStore().writeJson(file, {
+      'savedAt': DateTime.now().toUtc().toIso8601String(),
+      'products': combined.values.map(_toJson).toList(growable: false),
+    });
+    _catalogs.remove(file.absolute.path);
   }
 
   /// Adds partial catalog results without deleting products cached earlier.
   /// Use this for paginated admin screens and server-side search results.
   Future<void> mergeCatalog(List<PosProduct> products) async {
     if (kIsWeb || products.isEmpty) return;
-    final merged = <String, PosProduct>{
-      for (final product in await readCatalog()) product.id: product,
-      for (final product in products) product.id: product,
-    };
-    await saveCatalog(merged.values.toList(growable: false));
+    final file = await _catalogFile();
+    await LocalBillingStore(rootPath: file.parent.path).withLock(() async {
+      final existing = await _readRawCatalog();
+      final byId = {for (final product in existing) product.id: product};
+      if (products
+          .every((product) => _sameSnapshot(byId[product.id], product))) {
+        return; // An unchanged lookup is not a catalogue mutation.
+      }
+      final merged = <String, PosProduct>{
+        ...byId,
+        for (final product in products) product.id: product,
+      };
+      await _writeCatalog(file, merged.values.toList(growable: false));
+    });
   }
 
   Future<List<Map<String, dynamic>>> readPendingProducts() async {
@@ -328,7 +428,7 @@ class OfflinePosStore {
     });
     await savePendingProducts(entries);
     final catalog =
-        (await readCatalog()).where((item) => item.id != id).toList();
+        (await _readRawCatalog()).where((item) => item.id != id).toList();
     await saveCatalog(catalog);
   }
 
@@ -348,15 +448,28 @@ class OfflinePosStore {
   }
 
   Future<List<PosProduct>> searchCatalog(String query) async {
-    final products = await readCatalog();
+    final products = await _readRawCatalog();
     final normalized = query.trim().toLowerCase();
-    if (normalized.isEmpty) return products;
-    return products.where((product) {
+    if (normalized.isEmpty) return projectLocalStock(products);
+    // Filter before projecting stock; never allocate the entire projected
+    // catalogue for a lookup that displays one product.
+    return projectLocalStock(products.where((product) {
       return product.name.toLowerCase().contains(normalized) ||
           product.sku.toLowerCase().contains(normalized) ||
           (product.barcode?.toLowerCase().contains(normalized) ?? false);
-    }).toList(growable: false);
+    }).toList(growable: false));
   }
+
+  static bool _sameSnapshot(PosProduct? a, PosProduct b) =>
+      a != null &&
+      a.id == b.id &&
+      a.name == b.name &&
+      a.sku == b.sku &&
+      a.barcode == b.barcode &&
+      a.price == b.price &&
+      a.unitLabel == b.unitLabel &&
+      a.available == b.available &&
+      a.imageUrl == b.imageUrl;
 
   Map<String, dynamic> _toJson(PosProduct product) => {
         'id': product.id,
@@ -368,4 +481,15 @@ class OfflinePosStore {
         'available': product.available,
         'imageUrl': product.imageUrl,
       };
+}
+
+class _CatalogSnapshot {
+  _CatalogSnapshot(this.stat, List<PosProduct> products)
+      : products = List.unmodifiable(products);
+  final FileStat stat;
+  final List<PosProduct> products;
+  bool matches(FileStat next) =>
+      stat.size == next.size &&
+      stat.modified == next.modified &&
+      stat.changed == next.changed;
 }

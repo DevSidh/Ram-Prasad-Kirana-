@@ -6,10 +6,13 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../core/constants.dart';
 import '../models/pos_models.dart';
+import '../models/fonepay_payment_request.dart';
 import 'invoice_pdf_builder.dart';
 
 class PosReceiptService {
-  static Future<Uint8List> createInvoicePdf(PosSale sale) async {
+  static Future<Uint8List> createInvoicePdf(PosSale sale,
+      {FonepayPaymentRequest? fonepay}) async {
+    _validateFonepay(sale, fonepay);
     return InvoicePdfBuilder.create(
       invoiceNumber: sale.invoiceNumber ?? sale.receiptNumber,
       date: sale.createdAt,
@@ -30,6 +33,7 @@ class PosReceiptService {
       total: sale.total,
       paymentMethod: sale.paymentMethod,
       paymentStatus: sale.paymentStatus,
+      paymentInstructions: fonepay == null ? null : _fonepayQr(fonepay),
       paidAmount: sale.paidAmount ??
           (sale.paymentStatus == 'COMPLETED' ? sale.total : 0),
       outstandingAmount: sale.outstandingAmount ??
@@ -330,8 +334,17 @@ class PosReceiptService {
   static Future<Uint8List> createPdf(
     PosSale sale, {
     required int paperWidthMm,
+    FonepayPaymentRequest? fonepay,
   }) async {
-    final format = pageFormat(sale, paperWidthMm: paperWidthMm);
+    _validateFonepay(sale, fonepay);
+    final baseFormat = pageFormat(sale, paperWidthMm: paperWidthMm);
+    final format = fonepay == null
+        ? baseFormat
+        : PdfPageFormat(
+            baseFormat.width,
+            baseFormat.height + 260,
+            marginAll: 4 * PdfPageFormat.mm,
+          );
     final document = pw.Document();
     document.addPage(
       pw.Page(
@@ -400,6 +413,8 @@ class PosReceiptService {
               'Payment: ${sale.paymentMethod}',
               style: const pw.TextStyle(fontSize: 8),
             ),
+            if (fonepay != null)
+              _fonepayQr(fonepay, size: paperWidthMm == 58 ? 104 : 135),
             pw.SizedBox(height: 10),
             pw.Text(
               'Thank you for shopping with us!',
@@ -412,6 +427,48 @@ class PosReceiptService {
     );
     return document.save();
   }
+
+  static void _validateFonepay(PosSale sale, FonepayPaymentRequest? request) {
+    if (request != null && !request.matchesPayableBill(sale)) {
+      throw StateError(
+          'This Fonepay QR is expired, inactive or does not match the saved bill balance. Refresh verification before printing.');
+    }
+  }
+
+  static pw.Widget _fonepayQr(FonepayPaymentRequest request,
+          {double size = 150}) =>
+      pw.Column(children: [
+        pw.SizedBox(height: 8),
+        pw.Text(
+            request.isTest
+                ? 'SANDBOX TEST - NOT A REAL PAYMENT'
+                : 'Pay with Fonepay',
+            textAlign: pw.TextAlign.center,
+            style: const pw.TextStyle(
+                fontSize: 9, fontWeight: pw.FontWeight.bold)),
+        pw.Text(request.merchantName!, style: const pw.TextStyle(fontSize: 8)),
+        pw.Text('Bill: ${request.invoiceNumber}',
+            style: const pw.TextStyle(fontSize: 7)),
+        pw.SizedBox(height: 6),
+        pw.Container(
+            color: PdfColors.white,
+            padding: const pw.EdgeInsets.all(16),
+            child: pw.BarcodeWidget(
+                barcode: pw.Barcode.qrCode(),
+                data: request.qrPayload!,
+                width: size,
+                height: size,
+                drawText: false)),
+        pw.SizedBox(height: 6),
+        pw.Text('Payable: NPR ${request.amount}',
+            style: const pw.TextStyle(fontSize: 9)),
+        pw.Text('Ref: ${request.reference}',
+            style: const pw.TextStyle(fontSize: 7)),
+        pw.Text('Valid until ${request.expiresAt!.toUtc().toIso8601String()}',
+            style: const pw.TextStyle(fontSize: 7)),
+        pw.Text('Payment unconfirmed. Verify with Fonepay.',
+            style: const pw.TextStyle(fontSize: 7)),
+      ]);
 
   static pw.Widget _totalRow(String label, double amount, {bool bold = false}) {
     final style = pw.TextStyle(

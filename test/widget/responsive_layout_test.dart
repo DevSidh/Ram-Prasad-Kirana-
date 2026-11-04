@@ -22,6 +22,30 @@ import 'package:freshharvest_grocery/widgets/custom_button.dart';
 import 'package:freshharvest_grocery/navigation/main_bottom_nav.dart';
 import 'package:freshharvest_grocery/services/api_service.dart';
 import 'package:freshharvest_grocery/models/product.dart';
+import 'package:freshharvest_grocery/models/pos_models.dart';
+import 'package:freshharvest_grocery/services/offline_pos_store.dart';
+
+class _LayoutStore extends OfflinePosStore {
+  const _LayoutStore();
+  @override
+  Future<double> readOfflineSalesTotal() async => 0;
+  @override
+  Future<List<PosSale>> readOfflineSales() async => [];
+  @override
+  Future<Map<String, dynamic>?> readDashboardSnapshot() async => null;
+  @override
+  Future<void> saveDashboardSnapshot(Map<String, dynamic> snapshot) async {}
+  @override
+  Future<List<PosProduct>> searchCatalog(String query) async => [];
+  @override
+  Future<void> mergeCatalog(List<PosProduct> products) async {}
+  @override
+  Future<bool> refreshCatalogIfNeeded(Future<List<PosProduct>> Function() load,
+          {bool force = false}) async =>
+      false;
+  @override
+  Future<List<Map<String, dynamic>>> readPendingProducts() async => [];
+}
 
 class _ResponsiveApiService extends ApiService {
   Map<String, dynamic>? storeSettingsUpdate;
@@ -32,6 +56,14 @@ class _ResponsiveApiService extends ApiService {
     String endpoint, {
     Map<String, String>? queryParams,
   }) async {
+    if (endpoint == '/admin/dashboard') return <String, dynamic>{};
+    if (endpoint == '/admin/billing/products') return {'products': []};
+    if (endpoint == '/admin/billing/pending-payments') {
+      return {
+        'sales': [],
+        'pagination': {'page': 1, 'pageSize': 50, 'total': 0}
+      };
+    }
     if (endpoint == '/admin/billing/overview') {
       return {
         'day': '2026-11-10',
@@ -80,6 +112,12 @@ class _ResponsiveApiService extends ApiService {
           },
         ],
         'pagination': {'page': 1, 'pageSize': 100, 'total': 1},
+      };
+    }
+    if (endpoint == '/admin/products') {
+      return {
+        'products': [],
+        'pagination': {'page': 1, 'pageSize': 100, 'total': 0}
       };
     }
     if (endpoint == '/admin/inventory/restock-history') {
@@ -464,7 +502,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final apiService = ApiService();
+    final apiService = _ResponsiveApiService();
     await tester.pumpWidget(
       MultiProvider(
         providers: [
@@ -476,7 +514,8 @@ void main() {
             create: (_) => ProductProvider(apiService: apiService),
           ),
         ],
-        child: const MaterialApp(home: AdminShell()),
+        child:
+            const MaterialApp(home: AdminShell(offlineStore: _LayoutStore())),
       ),
     );
     await tester.pump();
@@ -567,7 +606,8 @@ void main() {
             create: (_) => ProductProvider(apiService: apiService),
           ),
         ],
-        child: const MaterialApp(home: AdminShell()),
+        child:
+            const MaterialApp(home: AdminShell(offlineStore: _LayoutStore())),
       ),
     );
     await tester.pumpAndSettle();
@@ -580,7 +620,6 @@ void main() {
     for (final label in [
       'Dashboard',
       'Billing',
-      'New Bill / POS',
       'Essential',
       'Barcode Scanner',
       'Held / Suspended Bills',
@@ -631,7 +670,7 @@ void main() {
     expect(find.text('Notifications'), findsWidgets);
     final posNavigationItem = find.descendant(
       of: find.byKey(const ValueKey('admin-navigation-list')),
-      matching: find.text('New Bill / POS'),
+      matching: find.widgetWithText(FilledButton, 'New bill'),
     );
     await tester.ensureVisible(posNavigationItem);
     await tester.tap(posNavigationItem);

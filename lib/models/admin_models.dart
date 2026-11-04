@@ -120,6 +120,8 @@ class AdminRestockReceipt {
   final String? staffName;
   final String? notes;
   final DateTime createdAt;
+  final String movementType;
+  final String? referenceId;
 
   const AdminRestockReceipt({
     required this.id,
@@ -131,6 +133,8 @@ class AdminRestockReceipt {
     required this.staffName,
     required this.notes,
     required this.createdAt,
+    this.movementType = 'RESTOCKED',
+    this.referenceId,
   });
 
   factory AdminRestockReceipt.fromJson(Map<String, dynamic> json) {
@@ -156,6 +160,8 @@ class AdminRestockReceipt {
           staff is Map<String, dynamic> ? staff['name']?.toString() : null,
       notes: json['notes']?.toString(),
       createdAt: createdAt,
+      movementType: json['type']?.toString() ?? 'RESTOCKED',
+      referenceId: json['referenceId']?.toString(),
     );
   }
 }

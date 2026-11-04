@@ -135,3 +135,6 @@ jobs:
               --title "Ram Prasad General Store ${GITHUB_REF_NAME#v}" \
               --generate-notes
           fi
+          # A Windows asset may already be staged in a draft. Publish only once
+          # the APK and its update policy have been uploaded successfully.
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest
