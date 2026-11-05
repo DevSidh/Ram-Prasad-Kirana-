@@ -82,6 +82,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.expiryQuery?['categoryId'], 'beverages');
 
+    await tester.enterText(find.byType(TextField).first, 'LOT-A');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    expect(api.expiryQuery?['search'], 'LOT-A');
+    expect(api.expiryQuery?['categoryId'], 'beverages');
+
     await tester.tap(find.text('Rice'));
     await tester.pumpAndSettle();
     expect(find.text('Batch ID: batch-1'), findsOneWidget);

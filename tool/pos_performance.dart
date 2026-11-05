@@ -13,6 +13,8 @@ import 'package:freshharvest_grocery/models/pos_models.dart';
 import 'package:freshharvest_grocery/services/local_billing_store.dart';
 import 'package:freshharvest_grocery/services/offline_pos_store.dart';
 
+import 'pos_performance_support.dart';
+
 const _label = String.fromEnvironment('PERF_LABEL', defaultValue: 'run');
 const _billCount = int.fromEnvironment('PERF_BILLS', defaultValue: 3000);
 
@@ -43,24 +45,33 @@ class _WorkloadState extends State<_Workload> {
     if (_measuring) _frames.addAll(values);
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeTimingsCallback(_timings);
+    super.dispose();
+  }
+
   Future<void> _run() async {
-    final root = await Directory.systemTemp.createTemp('faststore-perf-');
-    final billing = LocalBillingStore(rootPath: '${root.path}/bills');
-    final store = OfflinePosStore(
-        storageDirectory: root, billingStore: billing, useLocalStock: true);
-    final results = <String, dynamic>{
-      'label': _label,
-      'mode': kProfileMode ? 'profile' : (kReleaseMode ? 'release' : 'debug'),
-      'os': Platform.operatingSystemVersion,
-      'processors': Platform.numberOfProcessors,
-      'catalogueSize': 2000,
-      'billCount': _billCount,
-      'scope':
-          'isolated real service calls; animated heartbeat, not end-to-end checkout',
-    };
+    Directory? root;
     try {
+      final fixtures =
+          PerformanceFixtures(label: _label, billCount: _billCount);
+      root = await Directory.systemTemp.createTemp('faststore-perf-');
+      final billing = LocalBillingStore(rootPath: '${root.path}/bills');
+      final store = OfflinePosStore(
+          storageDirectory: root, billingStore: billing, useLocalStock: true);
+      final results = <String, dynamic>{
+        'label': _label,
+        'mode': kProfileMode ? 'profile' : (kReleaseMode ? 'release' : 'debug'),
+        'os': Platform.operatingSystemVersion,
+        'processors': Platform.numberOfProcessors,
+        'catalogueSize': PerformanceFixtures.catalogueSize,
+        'billCount': _billCount,
+        'scope':
+            'isolated real service calls; animated heartbeat, not end-to-end checkout',
+      };
       final products = List.generate(
-          2000,
+          PerformanceFixtures.catalogueSize,
           (i) => PosProduct(
                 id: 'fixture-$i',
                 name: 'Fixture product $i',
@@ -68,7 +79,7 @@ class _WorkloadState extends State<_Workload> {
                 barcode: '${8900000000000 + i}',
                 price: 10.25,
                 unitLabel: 'pcs',
-                available: 10000,
+                available: PerformanceFixtures.initialStock,
               ));
       await store.saveCatalog(products);
       await Directory(billing.rootPath).create(recursive: true);
@@ -81,28 +92,37 @@ class _WorkloadState extends State<_Workload> {
           'trackLocalStock': true,
           'syncState': 'local_only',
           'items': [
-            {'productId': 'fixture-$i', 'quantity': 1}
+            {
+              'productId': 'fixture-${fixtures.productIndexForBill(i)}',
+              'quantity': 1
+            }
           ],
         }));
       }
       final rssBefore = ProcessInfo.currentRss;
       Future<void> measure(
           String name, int count, Future<void> Function(int) work) async {
-        setState(() => _phase = name);
+        if (mounted) setState(() => _phase = name);
         await Future<void>.delayed(const Duration(milliseconds: 350));
         _frames.clear();
         _measuring = true;
         final samples = <double>[];
-        for (var i = 0; i < count; i++) {
-          final task = developer.TimelineTask()..start(name);
-          final watch = Stopwatch()..start();
-          await work(i);
-          watch.stop();
-          task.finish();
-          samples.add(watch.elapsedMicroseconds / 1000);
+        try {
+          for (var i = 0; i < count; i++) {
+            final task = developer.TimelineTask()..start(name);
+            final watch = Stopwatch()..start();
+            try {
+              await work(i);
+            } finally {
+              watch.stop();
+              task.finish();
+            }
+            samples.add(watch.elapsedMicroseconds / 1000);
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 150));
+        } finally {
+          _measuring = false;
         }
-        await Future<void>.delayed(const Duration(milliseconds: 150));
-        _measuring = false;
         results[name] = {
           ..._summary(samples),
           'buildMs': _summary(_frames
@@ -120,7 +140,8 @@ class _WorkloadState extends State<_Workload> {
       });
       await measure('cachedBarcodeSearch', 30, (i) async {
         final matches = await store.searchCatalog('${8900000000000 + i}');
-        if (matches.length != 1 || matches.single.available != 9999) {
+        if (matches.length != 1 ||
+            matches.single.available != fixtures.expectedStock(i)) {
           throw StateError('Incorrect stock or lookup result');
         }
       });
@@ -128,26 +149,25 @@ class _WorkloadState extends State<_Workload> {
           (i) => store.mergeCatalog([products[i]]));
       await measure('durableSaleWithStockValidation', 10, (i) async {
         final key = '550e8400-e29b-41d4-a716-${i.toString().padLeft(12, '0')}';
-        await billing.saveBill(
-            record: {
-              'date': '2026-11-03T06:00:00Z',
-              'total': 10.25,
-              'items': [
-                {'productId': 'fixture-1500', 'quantity': 1}
-              ],
-            },
-            requestId: key,
-            ownerId: 'fixture',
-            queueForSync: false,
-            uploadPayload: {},
-            validate: () async {
-              await store.readCatalog(freshStock: true);
-            });
+        await savePerformanceSale(
+          billing: billing,
+          store: store,
+          productId: 'fixture-1500',
+          requestId: key,
+        );
       });
+      final finalStock = await store.readCatalog(freshStock: true);
+      if (finalStock
+              .singleWhere((product) => product.id == 'fixture-1500')
+              .available !=
+          fixtures.expectedStock(1500) - 10) {
+        throw StateError(
+            'Committed fixture sales did not deduct stock correctly');
+      }
       results['rssBeforeBytes'] = rssBefore;
       results['rssAfterBytes'] = ProcessInfo.currentRss;
       results['peakRssBytes'] = ProcessInfo.maxRss;
-      final output = File('docs/performance/$_label.json');
+      final output = File('docs/performance/${fixtures.label}.json');
       await output.parent.create(recursive: true);
       await output
           .writeAsString(const JsonEncoder.withIndent('  ').convert(results));
@@ -158,7 +178,12 @@ class _WorkloadState extends State<_Workload> {
     } finally {
       WidgetsBinding.instance.removeTimingsCallback(_timings);
       // Only our uniquely allocated temporary directory is removed.
-      await root.delete(recursive: true);
+      try {
+        if (root != null) await root.delete(recursive: true);
+      } catch (error) {
+        print('PERFORMANCE_CLEANUP_FAILURE $error');
+        exitCode = 1;
+      }
       exit(exitCode);
     }
   }

@@ -171,6 +171,7 @@ const createProductInput = z.object({
   initialBatch: initialBatchInput.optional(),
 }).strict();
 const expiryQuery = z.object({
+  search: z.string().trim().max(200).optional(),
   days: z.coerce.number().int().refine(
     (value) => [7, 15, 30, 60].includes(value),
     'Warning days must be 7, 15, 30, or 60.',
@@ -1426,9 +1427,18 @@ export function createAdminRouter(
     }
   });
 
-  router.get('/dashboard', async (_req, res) => {
+  router.get('/dashboard', async (req, res) => {
+    const parsed = z.object({ day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }).safeParse(req.query);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+    let dayRange: { start: Date; end: Date } | undefined;
     try {
-      const { start: todayStart, end: tomorrowStart } = getLocalDayRange();
+      dayRange = parsed.data.day ? getLocalDayRangeForKey(parsed.data.day) : undefined;
+    } catch {
+      return res.status(400).json({ error: 'Choose a valid store calendar day.' });
+    }
+    const dateWhere = dayRange ? { createdAt: { gte: dayRange.start, lt: dayRange.end } } : {};
+    try {
+      const { start: todayStart, end: tomorrowStart } = dayRange ?? getLocalDayRange();
       const [
         totalProducts,
         activeProducts,
@@ -1459,7 +1469,7 @@ export function createAdminRouter(
           LEFT JOIN "Inventory" AS i ON i."productId" = p."id"
         `,
         prisma.user.count({ where: { role: 'CUSTOMER' } }),
-        prisma.order.groupBy({ by: ['status'], _count: { _all: true } }),
+        prisma.order.groupBy({ by: ['status'], _count: { _all: true }, where: dateWhere }),
         prisma.order.aggregate({
           where: {
             createdAt: { gte: todayStart, lt: tomorrowStart },
@@ -1468,10 +1478,11 @@ export function createAdminRouter(
           _sum: { total: true },
         }),
         prisma.order.aggregate({
-          where: { status: { not: 'CANCELLED' } },
+          where: { status: { not: 'CANCELLED' }, ...dateWhere },
           _sum: { total: true },
         }),
         prisma.order.findMany({
+          where: dateWhere,
           take: 5,
           orderBy: { createdAt: 'desc' },
           select: {
@@ -3203,12 +3214,18 @@ export function createAdminRouter(
   router.get('/inventory/expiry', async (req, res) => {
     const parsed = expiryQuery.safeParse(req.query);
     if (!parsed.success) return invalidInput(res, parsed.error);
-    const { days, status, categoryId, lowStock, page, pageSize } = parsed.data;
+    const { days, status, categoryId, lowStock, page, pageSize, search } = parsed.data;
     const today = getLocalDayRange();
     const warningEnd = new Date(today.end.getTime() + days * 24 * 60 * 60 * 1000);
     const baseWhere: Prisma.InventoryBatchWhereInput = {
       remainingQuantity: { gt: 0 },
       ...(categoryId ? { product: { categoryId } } : {}),
+      ...(search ? { AND: [{ OR: [
+        { product: { name: { contains: search, mode: 'insensitive' as const } } },
+        { product: { sku: { contains: search, mode: 'insensitive' as const } } },
+        { product: { barcode: { contains: search, mode: 'insensitive' as const } } },
+        { lotNumber: { contains: search, mode: 'insensitive' as const } },
+      ] }] } : {}),
     };
     const expiredWhere: Prisma.InventoryBatchWhereInput = {
       ...baseWhere,
@@ -3226,6 +3243,9 @@ export function createAdminRouter(
       Prisma.sql`b."remainingQuantity" > 0`,
     ];
     if (categoryId) conditions.push(Prisma.sql`p."categoryId" = ${categoryId}`);
+    if (search) conditions.push(Prisma.sql`
+      POSITION(${search.toLowerCase()} IN LOWER(CONCAT_WS(' ', p."name", p."sku", p."barcode", b."lotNumber"))) > 0
+    `);
     if (lowStock) {
       conditions.push(
         Prisma.sql`b."remainingQuantity" <= CASE

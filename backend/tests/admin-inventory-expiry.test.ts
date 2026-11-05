@@ -7,6 +7,7 @@ async function main(): Promise<void> {
   const updatedAt = new Date('2026-11-10T10:00:00.000Z');
   const expiresAt = new Date('2026-11-12T00:00:00.000Z');
   const queries: string[] = [];
+  const queryValues: unknown[][] = [];
   const batch = {
     id: 'batch-1',
     productId: 'product-1',
@@ -29,8 +30,9 @@ async function main(): Promise<void> {
     purchasePrice: null,
   };
   const prisma = {
-    $queryRaw: async (query: { sql: string }) => {
+    $queryRaw: async (query: { sql: string; values: unknown[] }) => {
       queries.push(query.sql);
+      queryValues.push(query.values);
       return query.sql.includes('COUNT(*)')
         ? [{ count: 1n }]
         : [batch];
@@ -64,6 +66,12 @@ async function main(): Promise<void> {
     assert.equal(body.batches[0].lowStockThreshold, 2);
     assert.equal(body.batches[0].receivedQuantity, 5);
     assert.equal(body.batches[0].remainingQuantity, 3);
+    const search = "LOT-1' OR 1=1 --";
+    const filtered = await fetch(`http://127.0.0.1:${address.port}/admin/inventory/expiry?search=${encodeURIComponent(search)}&categoryId=dairy&status=expiring`);
+    assert.equal(filtered.status, 200);
+    assert(queries.at(-1)?.includes('POSITION('));
+    assert(!queries.at(-1)?.includes(search));
+    assert(queryValues.at(-1)?.includes(search.toLowerCase()));
     console.log('Admin expiry inventory serializes CockroachDB integer values.');
   } finally {
     await new Promise<void>((resolve, reject) => {

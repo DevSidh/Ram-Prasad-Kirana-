@@ -92,8 +92,11 @@ class _AdminShellState extends State<AdminShell> {
     20,
     22,
     26,
+    21,
+    23,
+    27,
   ];
-  static const _onlineDeliveryDestinationIndices = [1, 2, 12];
+  static const _onlineDeliveryDestinationIndices = [1, 2, 4, 12, 13, 14, 15];
 
   bool _billingToolsExpanded = false;
   bool _onlineDeliveryExpanded = false;
@@ -231,7 +234,8 @@ class _AdminShellState extends State<AdminShell> {
         _unreadDeliveryCount = 0;
       }
       if (!widget.isBillingStaff) {
-        if (index >= _titles.length) {
+        if (index >= _titles.length &&
+            !_primaryNavigationIndices.contains(index)) {
           _billingToolsExpanded = true;
         } else if (_onlineDeliveryDestinationIndices.contains(index)) {
           _onlineDeliveryExpanded = true;

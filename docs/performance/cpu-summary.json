@@ -1,0 +1,140 @@
+{
+  "scope": "Diagnostic only; VM sampling overhead excluded from clean timings",
+  "sampleCount": 1308,
+  "samplePeriodMicros": 1000,
+  "timeExtentMicros": 6247023,
+  "memoryBefore": {
+    "type": "MemoryUsage",
+    "heapUsage": 16248464,
+    "heapCapacity": 26021888,
+    "externalUsage": 14160
+  },
+  "memoryAfter": {
+    "type": "MemoryUsage",
+    "heapUsage": 185564192,
+    "heapCapacity": 190611456,
+    "externalUsage": 12480
+  },
+  "topExclusiveFunctions": [
+    {
+      "name": "[Native] E:\\Ram Prasad APP Host\\build\\windows\\x64\\runner\\Profile\\flutter_windows.dll+0x7cfda4",
+      "url": "",
+      "exclusiveTicks": 56,
+      "inclusiveTicks": 56
+    },
+    {
+      "name": "RtlSizeHeap",
+      "url": "",
+      "exclusiveTicks": 34,
+      "inclusiveTicks": 34
+    },
+    {
+      "name": "RtlAcquireSRWLockExclusive",
+      "url": "",
+      "exclusiveTicks": 32,
+      "inclusiveTicks": 32
+    },
+    {
+      "name": "[Stub] StackOverflowSharedWithoutFPURegs",
+      "url": "",
+      "exclusiveTicks": 20,
+      "inclusiveTicks": 181
+    },
+    {
+      "name": "_beginFrame",
+      "url": "org-dartlang-sdk:///flutter/lib/ui/hooks.dart",
+      "exclusiveTicks": 18,
+      "inclusiveTicks": 280
+    },
+    {
+      "name": "[Stub] InvokeDartCode",
+      "url": "",
+      "exclusiveTicks": 18,
+      "inclusiveTicks": 813
+    },
+    {
+      "name": "[Stub] AllocateObject",
+      "url": "",
+      "exclusiveTicks": 18,
+      "inclusiveTicks": 18
+    },
+    {
+      "name": "_beginFrame",
+      "url": "org-dartlang-sdk:///flutter/lib/ui/platform_dispatcher.dart",
+      "exclusiveTicks": 17,
+      "inclusiveTicks": 253
+    },
+    {
+      "name": "start",
+      "url": "org-dartlang-sdk:///flutter/third_party/dart/sdk/lib/developer/timeline.dart",
+      "exclusiveTicks": 16,
+      "inclusiveTicks": 79
+    },
+    {
+      "name": "[Stub] AllocateObjectParameterized",
+      "url": "",
+      "exclusiveTicks": 15,
+      "inclusiveTicks": 15
+    },
+    {
+      "name": "_getValueOrData",
+      "url": "org-dartlang-sdk:///flutter/third_party/dart/sdk/lib/_internal/vm_shared/lib/compact_hash.dart",
+      "exclusiveTicks": 12,
+      "inclusiveTicks": 22
+    },
+    {
+      "name": "[Native] E:\\Ram Prasad APP Host\\build\\windows\\x64\\runner\\Profile\\flutter_windows.dll+0x8527e6",
+      "url": "",
+      "exclusiveTicks": 12,
+      "inclusiveTicks": 12
+    },
+    {
+      "name": "[Native] E:\\Ram Prasad APP Host\\build\\windows\\x64\\runner\\Profile\\flutter_windows.dll+0x8d3d80",
+      "url": "",
+      "exclusiveTicks": 11,
+      "inclusiveTicks": 11
+    },
+    {
+      "name": "[Native] E:\\Ram Prasad APP Host\\build\\windows\\x64\\runner\\Profile\\flutter_windows.dll+0x3a3ee0",
+      "url": "",
+      "exclusiveTicks": 10,
+      "inclusiveTicks": 10
+    },
+    {
+      "name": "_queueFromTimeoutEvent",
+      "url": "org-dartlang-sdk:///flutter/third_party/dart/sdk/lib/_internal/vm/lib/timer_impl.dart",
+      "exclusiveTicks": 9,
+      "inclusiveTicks": 22
+    },
+    {
+      "name": "[Stub] Allocate Duration",
+      "url": "",
+      "exclusiveTicks": 9,
+      "inclusiveTicks": 9
+    },
+    {
+      "name": "_handleBeginFrame",
+      "url": "file:///D:/flutter/packages/flutter/lib/src/scheduler/binding.dart",
+      "exclusiveTicks": 9,
+      "inclusiveTicks": 218
+    },
+    {
+      "name": "markNeedsPaint",
+      "url": "file:///D:/flutter/packages/flutter/lib/src/rendering/object.dart",
+      "exclusiveTicks": 9,
+      "inclusiveTicks": 10
+    },
+    {
+      "name": "length",
+      "url": "org-dartlang-sdk:///flutter/third_party/dart/sdk/lib/_internal/vm/lib/array.dart",
+      "exclusiveTicks": 9,
+      "inclusiveTicks": 9
+    },
+    {
+      "name": "RtlReleaseSRWLockExclusive",
+      "url": "",
+      "exclusiveTicks": 9,
+      "inclusiveTicks": 9
+    }
+  ]
+}

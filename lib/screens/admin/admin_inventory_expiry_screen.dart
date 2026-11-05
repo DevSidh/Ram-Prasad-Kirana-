@@ -32,6 +32,16 @@ class _AdminInventoryExpiryScreenState
   String? _categoryId;
   String? _error;
   String? _categoryError;
+  final _search = TextEditingController();
+  Timer? _searchDebounce;
+  int _requestId = 0;
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _search.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -57,6 +67,7 @@ class _AdminInventoryExpiryScreenState
   }
 
   Future<void> _load({int page = 1}) async {
+    final request = ++_requestId;
     setState(() {
       _loading = true;
       _error = null;
@@ -68,15 +79,16 @@ class _AdminInventoryExpiryScreenState
         page: page,
         categoryId: _categoryId,
         lowStock: _lowStockOnly,
+        search: _search.text,
       );
-      if (!mounted) return;
+      if (!mounted || request != _requestId) return;
       setState(() {
         _result = result;
         _page = page;
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || request != _requestId) return;
       setState(() {
         _error = error.toString().replaceFirst('Exception: ', '');
         _loading = false;
@@ -141,6 +153,20 @@ class _AdminInventoryExpiryScreenState
               Text(
                 'Review dated stock and prioritize batches with the earliest expiry.',
                 style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _search,
+                decoration: const InputDecoration(
+                  hintText: 'Search product, SKU, barcode or batch',
+                  prefixIcon: Icon(Icons.search_rounded),
+                ),
+                onChanged: (_) {
+                  _requestId++;
+                  _searchDebounce?.cancel();
+                  _searchDebounce = Timer(const Duration(milliseconds: 350),
+                      () => unawaited(_load()));
+                },
               ),
               const SizedBox(height: 16),
               Wrap(

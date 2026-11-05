@@ -34,6 +34,28 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   bool _observedTabVisibility = false;
   bool _wasTabVisible = true;
   int _requestId = 0;
+  DateTime? _filterDay;
+
+  String? get _dayKey => _filterDay == null
+      ? null
+      : '${_filterDay!.year}-${_filterDay!.month.toString().padLeft(2, '0')}-${_filterDay!.day.toString().padLeft(2, '0')}';
+
+  Future<void> _chooseDay() async {
+    final nepalNow =
+        DateTime.now().toUtc().add(const Duration(hours: 5, minutes: 45));
+    final day = await showDatePicker(
+        context: context,
+        initialDate:
+            _filterDay ?? DateTime(nepalNow.year, nepalNow.month, nepalNow.day),
+        firstDate: DateTime(2020),
+        lastDate: DateTime(nepalNow.year + 1, 12, 31));
+    if (day == null || !mounted) return;
+    setState(() {
+      _filterDay = day;
+      _dashboard = null;
+    });
+    await _load();
+  }
 
   @override
   void initState() {
@@ -54,6 +76,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Future<void> _load() async {
     final request = ++_requestId;
+    final day = _dayKey;
     final offlineStore = widget.offlineStore;
     setState(() {
       _loading = _dashboard == null;
@@ -62,14 +85,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     // Start the server request immediately instead of waiting for every local
     // invoice to be read. Capture failures until the cached view is ready.
     final server = _adminApi
-        .getDashboard()
+        .getDashboard(day: day)
         .then<Object>((value) => value, onError: (Object error) => error);
     final local = await Future.wait<dynamic>([
-      offlineStore.readOfflineSalesTotal(),
+      day == null
+          ? offlineStore.readOfflineSalesTotal()
+          : offlineStore.readOfflineSalesTotalForDay(day),
       offlineStore.readDashboardSnapshot(),
     ]);
     final offlineSales = local[0] as double;
-    final cachedSnapshot = local[1] as Map<String, dynamic>?;
+    final snapshot = local[1] as Map<String, dynamic>?;
+    final cachedSnapshot = snapshot?['filterDay'] == day ? snapshot : null;
     if (!mounted || request != _requestId) return;
     if (mounted) {
       setState(() {
@@ -92,7 +118,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _loading = false;
       });
       try {
-        await offlineStore.saveDashboardSnapshot(result.toJson());
+        await offlineStore
+            .saveDashboardSnapshot({...result.toJson(), 'filterDay': day});
       } catch (_) {
         if (mounted && request == _requestId) {
           setState(() => _error =
@@ -126,13 +153,32 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
         children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: IconButton(
-              tooltip: 'Refresh dashboard',
-              onPressed: _load,
-              icon: const Icon(Icons.refresh_rounded),
-            ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                  onPressed: _chooseDay,
+                  icon: const Icon(Icons.filter_alt_outlined),
+                  label: Text(_dayKey ?? 'All dates')),
+              if (_filterDay != null)
+                TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _filterDay = null;
+                        _dashboard = null;
+                      });
+                      _load();
+                    },
+                    child: const Text('Clear date filter')),
+              const Text('Date applies to sales and orders'),
+              IconButton(
+                tooltip: 'Refresh dashboard',
+                onPressed: _load,
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+            ],
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),

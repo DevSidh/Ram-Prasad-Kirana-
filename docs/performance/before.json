@@ -1,0 +1,88 @@
+{
+  "label": "before",
+  "mode": "profile",
+  "os": "\"Windows 10 Pro\" 10.0 (Build 26300)",
+  "processors": 24,
+  "catalogueSize": 2000,
+  "billCount": 300,
+  "scope": "isolated real service calls; animated heartbeat, not end-to-end checkout",
+  "catalogueColdRead": {
+    "samples": 1,
+    "p50": 105.341,
+    "p95": 105.341,
+    "max": 105.341,
+    "buildMs": {
+      "samples": 41,
+      "p50": 0.221,
+      "p95": 0.365,
+      "max": 0.405
+    },
+    "rasterMs": {
+      "samples": 41,
+      "p50": 0.743,
+      "p95": 1.055,
+      "max": 1.225
+    },
+    "rssBytes": 136200192
+  },
+  "cachedBarcodeSearch": {
+    "samples": 30,
+    "p50": 93.869,
+    "p95": 116.086,
+    "max": 156.764,
+    "buildMs": {
+      "samples": 598,
+      "p50": 0.173,
+      "p95": 0.283,
+      "max": 0.63
+    },
+    "rasterMs": {
+      "samples": 598,
+      "p50": 0.671,
+      "p95": 1.066,
+      "max": 1.533
+    },
+    "rssBytes": 138477568
+  },
+  "unchangedProductMerge": {
+    "samples": 20,
+    "p50": 19.897,
+    "p95": 30.358,
+    "max": 30.358,
+    "buildMs": {
+      "samples": 102,
+      "p50": 0.187,
+      "p95": 0.337,
+      "max": 0.986
+    },
+    "rasterMs": {
+      "samples": 102,
+      "p50": 0.744,
+      "p95": 1.213,
+      "max": 1.859
+    },
+    "rssBytes": 149786624
+  },
+  "durableSaleWithStockValidation": {
+    "samples": 10,
+    "p50": 88.247,
+    "p95": 103.795,
+    "max": 103.795,
+    "buildMs": {
+      "samples": 209,
+      "p50": 0.169,
+      "p95": 0.243,
+      "max": 0.409
+    },
+    "rasterMs": {
+      "samples": 209,
+      "p50": 0.62,
+      "p95": 0.83,
+      "max": 1.095
+    },
+    "rssBytes": 144318464
+  },
+  "rssBeforeBytes": 130043904,
+  "rssAfterBytes": 144318464,
+  "peakRssBytes": 158625792
+}

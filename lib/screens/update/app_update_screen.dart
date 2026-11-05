@@ -53,6 +53,7 @@ class _AppUpdateScreenState extends State<AppUpdateScreen>
   String? _currentVersion;
   String? _currentBuild;
   bool _installing = false;
+  bool _verifying = false;
 
   bool get _mandatory => _check?.isMandatory ?? false;
   GitHubAppRelease? get _release => _check?.release;
@@ -129,12 +130,18 @@ class _AppUpdateScreenState extends State<AppUpdateScreen>
       _state = _UpdateViewState.downloading;
       _receivedBytes = 0;
       _totalBytes = release.sizeBytes;
+      _verifying = false;
+      _apkFile = null;
       _error = null;
     });
     try {
       final file = await _downloads.download(
         release,
         cancelToken: token,
+        onStage: (stage) {
+          if (!mounted || token.isCancelled) return;
+          setState(() => _verifying = stage == ApkDownloadStage.verifying);
+        },
         onProgress: (received, total) {
           if (!mounted) return;
           setState(() {
@@ -144,11 +151,14 @@ class _AppUpdateScreenState extends State<AppUpdateScreen>
         },
       );
       if (!mounted) return;
+      final downloadedLength = await file.length();
+      if (!mounted) return;
       setState(() {
         _apkFile = file;
-        _receivedBytes = file.lengthSync();
+        _receivedBytes = downloadedLength;
         _state = _UpdateViewState.ready;
       });
+      await _installUpdate();
     } catch (error) {
       if (!mounted) return;
       if (error is DioException && CancelToken.isCancel(error)) {
@@ -335,7 +345,7 @@ class _AppUpdateScreenState extends State<AppUpdateScreen>
         SizedBox(height: compact ? 8 : 18),
         _PhoneUpdateIllustration(
           orbitController: _orbitController,
-          progress: _state == _UpdateViewState.downloading
+          progress: _state == _UpdateViewState.downloading && !_verifying
               ? (_totalBytes == 0
                   ? null
                   : (_receivedBytes / _totalBytes).clamp(0, 1).toDouble())
@@ -381,10 +391,14 @@ class _AppUpdateScreenState extends State<AppUpdateScreen>
         ],
         if (_state == _UpdateViewState.downloading) ...[
           const SizedBox(height: 20),
-          _DownloadProgress(
-            receivedBytes: _receivedBytes,
-            totalBytes: _totalBytes,
-          ),
+          if (_verifying)
+            const Text('Download complete. Checking APK integrity…',
+                textAlign: TextAlign.center)
+          else
+            _DownloadProgress(
+              receivedBytes: _receivedBytes,
+              totalBytes: _totalBytes,
+            ),
         ],
         if (_state == _UpdateViewState.failed && _error != null) ...[
           const SizedBox(height: 18),
@@ -444,7 +458,8 @@ class _AppUpdateScreenState extends State<AppUpdateScreen>
   String get _headline => switch (_state) {
         _UpdateViewState.checking => 'Checking for updates…',
         _UpdateViewState.available => 'A fresh update is ready!',
-        _UpdateViewState.downloading => 'Downloading your update…',
+        _UpdateViewState.downloading =>
+          _verifying ? 'Verifying your update…' : 'Downloading your update…',
         _UpdateViewState.ready => 'Your update is ready!',
         _UpdateViewState.failed => 'We couldn’t finish the update',
         _UpdateViewState.current => 'You’re using the latest version!',
@@ -485,7 +500,7 @@ class _AppUpdateScreenState extends State<AppUpdateScreen>
           borderRadius: BorderRadius.circular(18),
           child: LinearProgressIndicator(
             minHeight: 5,
-            value: _totalBytes > 0
+            value: !_verifying && _totalBytes > 0
                 ? (_receivedBytes / _totalBytes).clamp(0, 1)
                 : null,
           ),
@@ -783,7 +798,7 @@ class _DownloadProgress extends StatelessWidget {
         Text(
             progress == null
                 ? 'Preparing download…'
-                : '${(progress * 100).round()}%',
+                : '${(progress * 100).floor()}%',
             style: Theme.of(context)
                 .textTheme
                 .titleLarge

@@ -918,6 +918,14 @@
 			"command": "git status --short; git diff -- .vscode/tasks.json; Get-Item assets\\animations\\diwali_greeting.lottie | Select-Object FullName,Length,LastWriteTime; Get-Content pubspec.yaml -TotalCount 18",
 			"isBackground": false,
 			"problemMatcher": []
+		},
+		{
+			"label": "Build Windows reliability release",
+			"type": "shell",
+			"command": "rtk flutter build windows --release",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
 		}
 	]
 }

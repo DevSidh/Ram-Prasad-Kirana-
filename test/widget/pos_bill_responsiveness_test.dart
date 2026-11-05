@@ -72,6 +72,17 @@ const _tea = PosProduct(
 // are covered by local_billing_store_test and pos_performance_correctness_test.
 class _MemoryStore extends OfflinePosStore {
   @override
+  Future<List<PosSale>> readOfflineSales() async => [
+        PosSale.fromJson({
+          'id': 'fixture-local-customer',
+          'receiptNumber': 'FIXTURE',
+          'createdAt': '2026-11-04T00:00:00Z',
+          'items': [],
+          'customerName': 'SS',
+          'customerPhone': '9801234567',
+        })
+      ];
+  @override
   Future<void> saveCatalog(List<PosProduct> products) async {}
   @override
   Future<void> mergeCatalog(List<PosProduct> products) async {}
@@ -149,6 +160,24 @@ void main() {
 
   Finder field(String label) => find.byWidgetPredicate(
       (w) => w is TextField && w.decoration?.labelText == label);
+
+  testWidgets('typing a saved offline customer name also fills its phone',
+      (tester) async {
+    await start(tester);
+    final name = find.byWidgetPredicate((widget) =>
+        widget is TextField &&
+        widget.decoration?.hintText == 'Temporary customer name');
+    final phone = find.byWidgetPredicate((widget) =>
+        widget is TextField &&
+        widget.decoration?.hintText == 'Temporary customer phone');
+    await tester.enterText(name, 'SS');
+    await tester.pump(const Duration(milliseconds: 450));
+    await settleIO(tester);
+    expect(tester.widget<TextField>(phone).controller!.text, '9801234567');
+    expect(find.textContaining('Saved on this computer'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('quantity updates row, item count and total without losing focus',
       (tester) async {

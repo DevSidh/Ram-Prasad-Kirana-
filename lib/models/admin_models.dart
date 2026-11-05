@@ -445,6 +445,10 @@ class AdminProduct {
   final bool isBestSeller;
 
   double get availableStock => weightStockKg ?? stock.toDouble();
+
+  /// POS weight quantities use grams; the management screen displays kilograms.
+  int get posStockUnits =>
+      weightStockKg == null ? stock : (weightStockKg! * 1000).round();
   String get availableStockLabel => weightStockKg == null
       ? stock.toString()
       : weightStockKg!.toStringAsFixed(3).replaceFirst(

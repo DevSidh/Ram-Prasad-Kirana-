@@ -152,7 +152,9 @@ class BillingExcelExportService {
                 addresses: const [],
                 recentOrders: const [],
               ))
-          .where((customer) => customer.name.trim().isNotEmpty)
+          .where((customer) =>
+              customer.name.trim().isNotEmpty ||
+              customer.phone.trim().isNotEmpty)
           .toList(growable: false);
     } on FormatException {
       return const [];

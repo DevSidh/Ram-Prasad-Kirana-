@@ -187,6 +187,7 @@ void main() {
     await catalog.saveCatalog([product('test-tea', 10)]);
     final file = await save(queued: true);
     expect((await catalog.readCatalog()).single.available, 8);
+    expect((await catalog.readCatalogBaseline()).single.available, 10);
     await catalog.mergeCatalog([product('test-tea', 10)]);
     expect((await catalog.readCatalog()).single.available, 8);
     await catalog.mergeCatalog([product('test-tea', 8)]);

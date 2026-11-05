@@ -89,6 +89,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   PosOverview? _overview;
   PosOverview? _reportOverview;
   List<PosSale> _sales = const [];
+  List<AdminCustomer> _localBillingCustomers = const [];
   PosSalesPage? _pendingPaymentPage;
   List<PosSale> _localPendingSales = const [];
   int _salesPage = 1;
@@ -268,6 +269,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   String? get _reportDayKey => _formatDayKey(_reportDay);
 
   Future<void> _load({int? salesPage, int? pendingPage}) async {
+    unawaited(_loadLocalBillingCustomers());
     final requestId = ++_loadRequestId;
     final requestedSalesPage = salesPage ?? _salesPage;
     final requestedPendingPage = pendingPage ?? _pendingPaymentPageNumber;
@@ -464,6 +466,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         try {
           final customerFile =
               await BillingExcelExportService.recordBillCustomer(completedSale);
+          unawaited(_loadLocalBillingCustomers());
           printMessage = ' Customer record saved to $customerFile.';
         } catch (error) {
           printMessage =
@@ -1937,6 +1940,12 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     );
   }
 
+  Future<void> _loadLocalBillingCustomers() async {
+    final customers =
+        await BillingCustomerService.readLocal(widget.offlineStore);
+    if (mounted) setState(() => _localBillingCustomers = customers);
+  }
+
   Widget _buildCustomers() {
     final customers = <String, List<PosSale>>{};
     for (final sale in _sales) {
@@ -1946,12 +1955,30 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       if (key.isNotEmpty) customers.putIfAbsent(key, () => []).add(sale);
     }
     final query = _customerSearch.text.trim().toLowerCase();
-    final visibleCustomers = customers.entries.where((entry) {
+    final contacts = BillingCustomerService.merge([
+      ..._localBillingCustomers,
+      ...customers.entries.map((entry) {
+        final sale = entry.value.first;
+        return AdminCustomer(
+            id: 'local-customer-${entry.key}',
+            profileId: '',
+            name: sale.customerName ?? 'Customer',
+            email: '',
+            phone: sale.customerPhone ?? '',
+            isActive: true,
+            createdAt: sale.createdAt.toIso8601String(),
+            orderCount: entry.value.length,
+            orderValue: entry.value
+                .fold<double>(0, (total, sale) => total + sale.total),
+            addresses: const [],
+            recentOrders: const []);
+      }),
+    ]);
+    final visibleCustomers = contacts.where((customer) {
       if (query.isEmpty) return true;
-      final latest = entry.value.first;
-      return (latest.customerName ?? '').toLowerCase().contains(query) ||
-          (latest.customerPhone ?? '').toLowerCase().contains(query);
-    }).take(8);
+      return customer.name.toLowerCase().contains(query) ||
+          BillingCustomerService.phoneKey(customer.phone).contains(query);
+    }).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1959,7 +1986,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         TextField(
           controller: _customerSearch,
           decoration: const InputDecoration(
-            labelText: 'Search customers in recent bills',
+            labelText: 'Search billing customers by name or phone',
             prefixIcon: Icon(Icons.search_rounded),
           ),
           onChanged: (_) => setState(() {}),
@@ -1968,30 +1995,25 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           Padding(
             padding: const EdgeInsets.only(top: 10),
             child: Text(
-              customers.isEmpty
+              contacts.isEmpty
                   ? 'Customer details captured during checkout will appear here.'
-                  : 'No recent billing customers match that search.',
+                  : 'No billing customers match that search.',
               style: TextStyle(color: _muted),
             ),
           )
         else
-          ...visibleCustomers.map((entry) {
-            final sales = entry.value;
-            final latestSale = sales.first;
-            final name = latestSale.customerName?.trim() ?? '';
-            final phone = latestSale.customerPhone?.trim() ?? '';
-            final totalSpend = sales.fold<double>(
-              0,
-              (total, sale) => total + sale.total,
-            );
+          ...visibleCustomers.map((customer) {
+            final name = customer.name.trim();
+            final phone = customer.phone.trim();
+            final totalSpend = customer.orderValue;
             return ListTile(
               contentPadding: EdgeInsets.zero,
               leading:
                   const CircleAvatar(child: Icon(Icons.person_outline_rounded)),
               title: Text(name.isNotEmpty ? name : 'Customer'),
               subtitle: Text(
-                '${phone.isNotEmpty ? phone : latestSale.receiptNumber} · '
-                '${sales.length} bill${sales.length == 1 ? '' : 's'}',
+                '${phone.isNotEmpty ? phone : 'No phone saved'} · '
+                '${customer.orderCount} bill${customer.orderCount == 1 ? '' : 's'}',
               ),
               trailing: Text(_money(totalSpend)),
             );
@@ -3528,31 +3550,49 @@ class _PosBillDialogState extends State<PosBillDialog> {
     super.dispose();
   }
 
-  Future<void> _lookupRegisteredCustomer(String name, String phone) async {
+  void _customerDetailsChanged({required bool byName}) {
+    ++_customerSearchRequest;
+    if (_selectedCustomer != null) {
+      if (byName) {
+        _customerPhone.clear();
+      } else {
+        _customerName.clear();
+      }
+    }
+    setState(() => _selectedCustomer = null);
+    _customerSearchTimer?.cancel();
+    _customerSearchTimer = Timer(
+        const Duration(milliseconds: 400),
+        () => unawaited(_lookupRegisteredCustomer(
+            _customerName.text, _customerPhone.text,
+            byName: byName)));
+  }
+
+  Future<void> _lookupRegisteredCustomer(String name, String phone,
+      {bool byName = false}) async {
     final requestId = ++_customerSearchRequest;
-    final query = phone.trim().isNotEmpty ? phone.trim() : name.trim();
-    if (query.length < 3) return;
+    final query =
+        !byName && phone.trim().isNotEmpty ? phone.trim() : name.trim();
+    if (query.trim().isEmpty || (!byName && query.length < 3)) return;
     final normalizedPhone = BillingCustomerService.phoneKey(phone);
-    bool matches(AdminCustomer customer) =>
-        customer.isActive &&
-        (normalizedPhone.isNotEmpty
-            ? BillingCustomerService.phoneKey(customer.phone) == normalizedPhone
-            : customer.name.trim().toLowerCase() == name.trim().toLowerCase());
     final local = await _readLocalBillingCustomers();
     if (!mounted || requestId != _customerSearchRequest) return;
-    final localMatch = local.where(matches).firstOrNull;
+    final localMatch = BillingCustomerService.findExact(local,
+        name: name, phone: normalizedPhone, byName: byName);
     if (localMatch != null) {
       setState(() {
         _selectedCustomer = localMatch;
         _customerName.text = localMatch.name;
         _customerPhone.text = localMatch.phone;
       });
+      return;
     }
     try {
       final page =
           await widget.api.getCustomers(page: 1, pageSize: 10, search: query);
       if (!mounted || requestId != _customerSearchRequest) return;
-      final match = page.customers.where(matches).firstOrNull;
+      final match = BillingCustomerService.findExact(page.customers,
+          name: name, phone: normalizedPhone, byName: byName);
       if (match != null) {
         setState(() {
           _selectedCustomer = match;
@@ -3566,6 +3606,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
   }
 
   Future<void> _selectRegisteredCustomer() async {
+    _customerSearchTimer?.cancel();
+    ++_customerSearchRequest;
     final searchController = TextEditingController();
     var customers = <AdminCustomer>[];
     var loading = true;
@@ -4025,7 +4067,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
           usedCachedWholesale = true;
         }
         final cachedWholesale = usedCachedWholesale
-            ? (await _offlinePosStore.readCatalog())
+            ? (await _offlinePosStore.readCatalogBaseline())
                 .where((product) => product.id.startsWith('wholesale-'))
                 .toList(growable: false)
             : const <PosProduct>[];
@@ -4039,7 +4081,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                     barcode: product.barcode,
                     price: product.price,
                     unitLabel: product.unitLabel,
-                    available: product.availableStock.ceil(),
+                    available: product.posStockUnits,
                     imageUrl: product.imageUrl,
                   )),
           if (usedCachedWholesale) ...cachedWholesale,
@@ -4657,7 +4699,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                   child: Text(
                     _selectedCustomer == null
                         ? 'Use a saved customer or enter a temporary name and phone.'
-                        : 'Registered customer · ${_selectedCustomer!.profileId}',
+                        : '${_selectedCustomer!.id.startsWith('local-customer-') ? 'Saved on this computer' : 'Registered customer'} · ${_selectedCustomer!.phone}',
                     style: Theme.of(context).textTheme.bodySmall,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -4677,17 +4719,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                   child: TextField(
                     controller: _customerName,
                     enabled: !_saving,
-                    onChanged: (_) {
-                      setState(() => _selectedCustomer = null);
-                      _customerSearchTimer?.cancel();
-                      _customerSearchTimer = Timer(
-                        const Duration(milliseconds: 400),
-                        () => unawaited(_lookupRegisteredCustomer(
-                          _customerName.text,
-                          _customerPhone.text,
-                        )),
-                      );
-                    },
+                    onChanged: (_) => _customerDetailsChanged(byName: true),
                     decoration: const InputDecoration(
                       hintText: 'Temporary customer name',
                       isDense: true,
@@ -4701,17 +4733,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                     enabled: !_saving,
                     keyboardType: TextInputType.phone,
                     inputFormatters: nepalPhoneInputFormatters,
-                    onChanged: (_) {
-                      setState(() => _selectedCustomer = null);
-                      _customerSearchTimer?.cancel();
-                      _customerSearchTimer = Timer(
-                        const Duration(milliseconds: 400),
-                        () => unawaited(_lookupRegisteredCustomer(
-                          _customerName.text,
-                          _customerPhone.text,
-                        )),
-                      );
-                    },
+                    onChanged: (_) => _customerDetailsChanged(byName: false),
                     decoration: const InputDecoration(
                       hintText: 'Temporary customer phone',
                       isDense: true,
@@ -5447,6 +5469,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
               Expanded(
                 child: TextField(
                   controller: _customerName,
+                  onChanged: (_) => _customerDetailsChanged(byName: true),
                   decoration: InputDecoration(
                     labelText: _paymentMethod == 'PENDING'
                         ? 'Customer name *'
@@ -5461,6 +5484,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                   controller: _customerPhone,
                   keyboardType: TextInputType.phone,
                   inputFormatters: nepalPhoneInputFormatters,
+                  onChanged: (_) => _customerDetailsChanged(byName: false),
                   decoration: InputDecoration(
                     labelText: _paymentMethod == 'PENDING'
                         ? 'Customer phone *'

@@ -1,0 +1,43 @@
+{
+  "label": "billing-ui-diagnostic",
+  "mode": "profile",
+  "diagnostic": true,
+  "scope": "production PosBillDialog, isolated fixture API/files; no payments or saves",
+  "heldCartLines": 100,
+  "catalogueProducts": 2000,
+  "firstComposerFrameMs": 30.695,
+  "quantityCallbackMs": {
+    "samples": 60,
+    "p50": 0.035,
+    "p95": 0.056,
+    "max": 0.111
+  },
+  "quantityToFrameMs": {
+    "samples": 60,
+    "p50": 4.628,
+    "p95": 8.073,
+    "max": 8.481
+  },
+  "buildMs": {
+    "samples": 60,
+    "p50": 1.649,
+    "p95": 2.218,
+    "max": 2.391
+  },
+  "rasterMs": {
+    "samples": 60,
+    "p50": 1.373,
+    "p95": 2.181,
+    "max": 2.278
+  },
+  "queuedScanToPromptMs": {
+    "samples": 20,
+    "p50": 0.413,
+    "p95": 13.71,
+    "max": 13.71
+  },
+  "scansAdmitted": 20,
+  "scansAdded": 20,
+  "serverProductLookups": 1,
+  "rssBytes": 173363200
+}

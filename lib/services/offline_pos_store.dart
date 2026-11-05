@@ -106,7 +106,16 @@ class OfflinePosStore {
     }
   }
 
-  Future<double> readOfflineSalesTotal() async {
+  Future<double> readOfflineSalesTotal() => _readOfflineSalesTotal();
+
+  /// Original server quantities, for rebuilding a cache after a partial refresh.
+  /// Financial validation must use readCatalog(freshStock: true) instead.
+  Future<List<PosProduct>> readCatalogBaseline() => _readRawCatalog();
+
+  Future<double> readOfflineSalesTotalForDay(String day) =>
+      _readOfflineSalesTotal(day: day);
+
+  Future<double> _readOfflineSalesTotal({String? day}) async {
     if (kIsWeb) return 0;
     final directory = Directory(billingStore.rootPath);
     if (!await directory.exists()) return 0;
@@ -121,6 +130,16 @@ class OfflinePosStore {
           if (decoded['syncState'] == 'synced' ||
               decoded['status'] == 'CANCELLED') {
             continue;
+          }
+          if (day != null) {
+            final date = DateTime.tryParse(
+                    '${decoded['date'] ?? decoded['createdAt'] ?? ''}')
+                ?.toUtc()
+                .add(const Duration(hours: 5, minutes: 45));
+            if (date == null) continue;
+            final key =
+                '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+            if (key != day) continue;
           }
           final amount = decoded['total'];
           total += amount is num

@@ -133,8 +133,9 @@ class AdminApiService {
     );
   }
 
-  Future<AdminDashboard> getDashboard() async {
-    return AdminDashboard.fromJson(_asMap(await _api.get('/admin/dashboard')));
+  Future<AdminDashboard> getDashboard({String? day}) async {
+    return AdminDashboard.fromJson(_asMap(await _api
+        .get('/admin/dashboard', queryParams: {if (day != null) 'day': day})));
   }
 
   Future<PosOverview> getPosOverview({String? day}) async {
@@ -1249,6 +1250,7 @@ class AdminApiService {
     required int page,
     String? categoryId,
     bool lowStock = false,
+    String? search,
   }) async {
     final response = _asMap(await _api.get(
       '/admin/inventory/expiry',
@@ -1258,6 +1260,7 @@ class AdminApiService {
         'page': '$page',
         'pageSize': '25',
         'lowStock': '$lowStock',
+        if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
         if (categoryId != null) 'categoryId': categoryId,
       },
     ));

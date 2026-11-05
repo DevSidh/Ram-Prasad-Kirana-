@@ -613,6 +613,33 @@ void main() {
     await tester.pumpAndSettle();
 
     final billingToolsGroup = find.text('Billing management');
+    final navigation = find.byKey(const ValueKey('admin-navigation-list'));
+    for (final label in ['Pending Cash', 'Cash Register']) {
+      expect(find.descendant(of: navigation, matching: find.text(label)),
+          findsOneWidget);
+    }
+    final onlineGroup = find.text('Online delivery');
+    await tester.ensureVisible(onlineGroup);
+    await tester.tap(onlineGroup);
+    await tester.pumpAndSettle();
+    final onlineTile = find
+        .ancestor(of: onlineGroup, matching: find.byType(ExpansionTile))
+        .first;
+    for (final label in [
+      'Customers',
+      'Promotions',
+      'Announcements',
+      'Buying streak'
+    ]) {
+      expect(find.descendant(of: onlineTile, matching: find.text(label)),
+          findsOneWidget);
+    }
+    for (final label in ['Pending Cash', 'Cash Register']) {
+      expect(find.descendant(of: onlineTile, matching: find.text(label)),
+          findsNothing);
+    }
+    await tester.tap(onlineGroup);
+    await tester.pumpAndSettle();
     await tester.ensureVisible(billingToolsGroup);
     await tester.tap(billingToolsGroup);
     await tester.pumpAndSettle();

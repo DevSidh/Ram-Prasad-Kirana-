@@ -103,7 +103,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                   barcode: product.barcode,
                   price: product.price,
                   unitLabel: product.unitLabel,
-                  available: product.availableStock.ceil(),
+                  available: product.posStockUnits,
                   imageUrl: product.imageUrl,
                 ))
             .toList(growable: false),
