@@ -42,7 +42,15 @@ async function main(){
     const response=await fetch(`https://api.github.com/repos/${repo}/actions/jobs/${tag}/logs`,{
       headers:{Authorization:`Bearer ${token}`,Accept:'application/vnd.github+json'}});
     if(!response.ok)throw Error(`Job logs unavailable (HTTP ${response.status}).`);
-    console.log((await response.text()).split(/\r?\n/).slice(-180).join('\n'));return;
+    const lines=(await response.text()).split(/\r?\n/);
+    if(file==='errors'){
+      const indexes=new Set();
+      lines.forEach((line,i)=>{if(/EXCEPTION CAUGHT|Expected:|test description was:/.test(line)){
+        for(let n=Math.max(0,i-2);n<Math.min(lines.length,i+14);n++)indexes.add(n);
+      }});
+      console.log([...indexes].sort((a,b)=>a-b).map(i=>lines[i]).join('\n'));return;
+    }
+    console.log(lines.slice(-180).join('\n'));return;
   }
   if(command==='release'){
     const releases=await api(`/repos/${repo}/releases?per_page=30`);

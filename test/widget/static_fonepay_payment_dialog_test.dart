@@ -65,6 +65,8 @@ void main() {
   }
 
   Future<void> verify(WidgetTester tester) async {
+    await tester.ensureVisible(find.byType(CheckboxListTile));
+    await tester.pumpAndSettle();
     await tester.tap(find.byType(CheckboxListTile));
     await tester.pump();
   }
