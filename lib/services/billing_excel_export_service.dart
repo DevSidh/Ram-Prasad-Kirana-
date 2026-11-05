@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import '../models/admin_models.dart';
 import '../models/pos_models.dart';
+import '../core/nepal_phone.dart';
+import 'local_billing_store.dart';
 
 /// Writes Excel-compatible CSV ledgers beside locally stored Windows bills.
 class BillingExcelExportService {
@@ -63,7 +65,56 @@ class BillingExcelExportService {
           _cell('Offline bill'),
         ],
     ];
-    await file.writeAsString(_encode(rows), flush: true);
+    await const LocalBillingStore().withLock(() async {
+      final source = await file.exists() ? await file.readAsString() : '';
+      final incoming = _parseCsv(_encode(rows));
+      final existing = _parseCsv(source);
+      if (existing.isEmpty) {
+        await _replaceText(file, _encode(rows));
+        return;
+      }
+      final header = existing.first;
+      final invoiceColumn = header.indexOf('Invoice number');
+      if (invoiceColumn < 0) {
+        throw const FormatException(
+            'Keep the Invoice number header in the pending cash CSV. No rows were changed.');
+      }
+      // Preserve the user's row order, added columns and unrelated manual rows.
+      final positions = <String, int>{};
+      for (var i = 1; i < existing.length; i++) {
+        if (existing[i].length > invoiceColumn &&
+            existing[i][invoiceColumn].trim().isNotEmpty) {
+          positions.putIfAbsent(existing[i][invoiceColumn], () => i);
+        }
+      }
+      for (final next in incoming.skip(1)) {
+        final key = next.first;
+        final position = positions[key];
+        final row = position == null
+            ? List<String>.filled(header.length, '')
+            : existing[position];
+        while (row.length < header.length) {
+          row.add('');
+        }
+        for (var column = 0; column < incoming.first.length; column++) {
+          final target = header.indexOf(incoming.first[column]);
+          if (target >= 0) row[target] = next[column];
+        }
+        if (position == null) {
+          positions[key] = existing.length;
+          existing.add(row);
+        }
+      }
+      if (await file.readAsString() != source) {
+        throw StateError(
+            'The pending cash CSV changed in Excel. Save and close it, then retry.');
+      }
+      await _replaceText(
+          file,
+          _encode(existing
+              .map((row) => row.map((value) => _cell(value)).toList())
+              .toList()));
+    });
     return file.path;
   }
 
@@ -149,7 +200,11 @@ class BillingExcelExportService {
                     ? (record['orderCount'] as num).toInt()
                     : int.tryParse('${record['orderCount']}') ?? 0,
                 orderValue: _number(record['orderValue']),
-                addresses: const [],
+                addresses: record['addresses'] is List
+                    ? (record['addresses'] as List)
+                        .whereType<Map<String, dynamic>>()
+                        .toList()
+                    : const [],
                 recentOrders: const [],
               ))
           .where((customer) =>
@@ -237,7 +292,11 @@ class BillingExcelExportService {
     return rows;
   }
 
-  static Future<void> _upsertSavedCustomer(PosSale sale) async {
+  static Future<void> _upsertSavedCustomer(PosSale sale) =>
+      const LocalBillingStore()
+          .withLock(() => _upsertSavedCustomerUnlocked(sale));
+
+  static Future<void> _upsertSavedCustomerUnlocked(PosSale sale) async {
     final name = sale.customerName?.trim() ?? '';
     final phone = sale.customerPhone?.trim() ?? '';
     if (name.isEmpty && phone.isEmpty) return;
@@ -252,8 +311,8 @@ class BillingExcelExportService {
           customers.addAll(decoded.whereType<Map<String, dynamic>>());
         }
       } catch (_) {
-        // Rebuild the searchable contact list from this bill if the old file
-        // is unreadable; the CSV bill ledger remains intact.
+        throw const FormatException(
+            'The customer index could not be read. It was preserved; restore it before updating contacts.');
       }
     }
     final normalizedPhone = phone.replaceAll(RegExp(r'\D'), '');
@@ -278,6 +337,7 @@ class BillingExcelExportService {
       'name': name.isNotEmpty ? name : existing['name']?.toString() ?? '',
       'phone': phone.isNotEmpty ? phone : existing['phone']?.toString() ?? '',
       'email': existing['email']?.toString() ?? '',
+      'addresses': existing['addresses'] ?? const [],
       'isActive': true,
       'createdAt':
           existing['createdAt']?.toString() ?? sale.createdAt.toIso8601String(),
@@ -292,7 +352,71 @@ class BillingExcelExportService {
     } else {
       customers[index] = next;
     }
-    await file.writeAsString(jsonEncode(customers), flush: true);
+    await _replaceText(file, jsonEncode(customers));
+  }
+
+  static Future<void> saveCustomer(
+          {required String name,
+          required String phone,
+          required String address,
+          String email = ''}) =>
+      const LocalBillingStore().withLock(() async {
+        if (name.trim().isEmpty ||
+            address.trim().isEmpty ||
+            validateNepalPhone(phone) != null) {
+          throw const FormatException(
+              'Enter name, address and a valid 10-digit phone number.');
+        }
+        final normalizedEmail = email.trim();
+        if (normalizedEmail.isNotEmpty &&
+            !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(normalizedEmail)) {
+          throw const FormatException(
+              'Enter a valid email address or leave it empty.');
+        }
+        final file = File('$_baseDirectory/bill customer/customers.json');
+        await file.parent.create(recursive: true);
+        final records = <Map<String, dynamic>>[];
+        if (await file.exists()) {
+          final decoded = jsonDecode(await file.readAsString());
+          if (decoded is! List) {
+            throw const FormatException(
+                'The customer file is invalid. Restore it before saving.');
+          }
+          records.addAll(decoded.cast<Map<String, dynamic>>());
+        }
+        final index =
+            records.indexWhere((record) => record['phone'] == phone.trim());
+        final previous = index < 0 ? <String, dynamic>{} : records[index];
+        final next = <String, dynamic>{
+          ...previous,
+          'id': previous['id'] ?? 'local-customer-${phone.trim()}',
+          'name': name.trim(),
+          'phone': phone.trim(),
+          'email': normalizedEmail,
+          'addresses': [
+            {'address': address.trim()}
+          ],
+          'isActive': true,
+          'createdAt':
+              previous['createdAt'] ?? DateTime.now().toIso8601String(),
+        };
+        if (index < 0) {
+          records.add(next);
+        } else {
+          records[index] = next;
+        }
+        await _replaceText(file, jsonEncode(records));
+      });
+
+  static Future<void> _replaceText(File file, String contents) async {
+    final temp = File('${file.path}.pending');
+    try {
+      await temp.writeAsString(contents, flush: true);
+      if (await file.exists()) await file.copy('${file.path}.bak');
+      await temp.rename(file.path);
+    } finally {
+      if (await temp.exists()) await temp.delete();
+    }
   }
 
   static String _encode(List<List<String>> rows, {bool includeBom = true}) {

@@ -46,7 +46,9 @@ class BillingCustomerService {
                 previous.name != 'Customer'
             ? previous.name
             : (customer.name.trim().isEmpty ? 'Customer' : customer.name),
-        email: previous?.email ?? customer.email,
+        email: previous?.email.isNotEmpty == true
+            ? previous!.email
+            : customer.email,
         phone: phoneKey(previous?.phone ?? customer.phone),
         isActive: true,
         createdAt: previous?.createdAt ?? customer.createdAt,
@@ -56,7 +58,9 @@ class BillingCustomerService {
         orderValue: (previous?.orderValue ?? 0) > customer.orderValue
             ? previous!.orderValue
             : customer.orderValue,
-        addresses: previous?.addresses ?? customer.addresses,
+        addresses: previous?.addresses.isNotEmpty == true
+            ? previous!.addresses
+            : customer.addresses,
         recentOrders: previous?.recentOrders ?? customer.recentOrders,
       );
     }

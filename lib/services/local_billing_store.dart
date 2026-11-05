@@ -49,6 +49,18 @@ class LocalBillingStore {
 
   Future<T> withLock<T>(Future<T> Function() work) => _locked(work);
 
+  /// A saved manual payment is printed automatically at most once. Reprints
+  /// remain explicit actions on the same committed bill.
+  Future<bool> claimInitialPrint(File file) => _locked(() async {
+        final record = await readJson(file);
+        if (record['initialPrintClaimedAt'] != null) return false;
+        await writeJson(file, {
+          ...record,
+          'initialPrintClaimedAt': DateTime.now().toUtc().toIso8601String()
+        });
+        return true;
+      });
+
   String invoiceNumber(String requestId, DateTime date) {
     if (!RegExp(r'^[a-fA-F0-9]{8}-(?:[a-fA-F0-9]{4}-){3}[a-fA-F0-9]{12}$')
         .hasMatch(requestId)) {

@@ -14,6 +14,9 @@ import 'package:uuid/uuid.dart';
 import '../../core/constants.dart';
 import '../../core/nepal_phone.dart';
 import '../../models/pos_models.dart';
+import '../../models/manual_fonepay_verification.dart';
+import '../../widgets/static_fonepay_payment_dialog.dart';
+import '../../widgets/offline_customer_dialog.dart';
 import '../../models/admin_models.dart';
 import '../../models/scanned_product_barcode.dart';
 import '../../providers/auth_provider.dart';
@@ -22,6 +25,7 @@ import '../../services/api_service.dart';
 import '../../services/fonepay_api_service.dart';
 import '../../widgets/fonepay_payment_dialog.dart';
 import '../../services/billing_excel_export_service.dart';
+import '../../services/bill_pdf_archive_service.dart';
 import '../../services/billing_customer_service.dart';
 import '../../services/offline_pos_store.dart';
 import '../../services/local_billing_store.dart';
@@ -38,6 +42,16 @@ import 'admin_billing_staff_screen.dart';
 import '../auth/login_screen.dart';
 
 const _pendingLocalStreaksPreferenceKey = 'pending_local_streak_receipts_v1';
+
+String _paymentNoteLabel(String note) {
+  final manual = ManualFonepayVerification.fromNote(note);
+  final provider = manual?.provider == 'ESEWA' ? 'eSewa' : 'Fonepay';
+  return manual == null
+      ? note
+      : manual.isCashierConfirmation
+          ? '$provider payment received - confirmed by cashier ${manual.cashierId}'
+          : 'Manual $provider verification · Reference ${manual.transactionReference} · Cashier ${manual.cashierId}';
+}
 
 enum AdminBillingSection {
   dashboard,
@@ -121,6 +135,14 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   AdminBillingSection _activeSection = AdminBillingSection.dashboard;
   final _scrollController = ScrollController();
   final _customerSearch = TextEditingController();
+  final _returnsSearch = TextEditingController();
+  DateTime? _returnsDay;
+  List<PosSale>? _returnSales;
+  List<PosExchange>? _returnExchanges;
+  Timer? _returnsTimer;
+  int _returnsRequest = 0;
+  bool _returnsLoading = false;
+  String? _returnsError;
   final _barcodeSearch = TextEditingController();
   List<PosProduct> _barcodeMatches = const [];
   final _sectionKeys = <AdminBillingSection, GlobalKey>{
@@ -136,6 +158,8 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     _localBillingSync?.dispose();
     _scrollController.dispose();
     _customerSearch.dispose();
+    _returnsSearch.dispose();
+    _returnsTimer?.cancel();
     _barcodeSearch.dispose();
     _billHistorySearchController.dispose();
     _pendingPaymentSearchController.dispose();
@@ -436,6 +460,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         onNewBill: startNewBill,
         operatorId: context.read<AuthProvider>().currentUser?.id ?? '',
         allowOfflineSync: _isWindowsOperatorMode,
+        printSale: _printManuallyVerifiedBill,
       ),
     );
     if (!mounted) return;
@@ -478,17 +503,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       } else if (completedSale.autoPrintAllowed &&
           defaultTargetPlatform == TargetPlatform.windows) {
         try {
-          final printed = await Printing.layoutPdf(
-            name: completedSale.receiptNumber,
-            format: PosReceiptService.pageFormat(
-              completedSale,
-              paperWidthMm: _paperWidthMm,
-            ),
-            onLayout: (_) => PosReceiptService.createPdf(
-              completedSale,
-              paperWidthMm: _paperWidthMm,
-            ),
-          );
+          final printed = await _printManuallyVerifiedBill(completedSale);
           printMessage = printed
               ? ' Receipt sent to the printer.'
               : ' Receipt was not printed.';
@@ -497,7 +512,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               ' Bill is confirmed; receipt printing failed: ${error.toString().replaceFirst('Exception: ', '')}';
         }
       } else if (completedSale.autoPrintAllowed &&
-          completedSale.paymentMethod == 'FONEPAY') {
+          ['FONEPAY', 'ESEWA'].contains(completedSale.paymentMethod)) {
         await _printOrShareInvoice(completedSale);
       }
       if (!mounted) return;
@@ -513,6 +528,23 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
 
   void startNewBill() {
     unawaited(_newBill());
+  }
+
+  Future<bool> _printManuallyVerifiedBill(PosSale sale) async {
+    final bytes = defaultTargetPlatform == TargetPlatform.windows
+        ? await PosReceiptService.createPdf(sale, paperWidthMm: _paperWidthMm)
+        : await PosReceiptService.createInvoicePdf(sale);
+    await BillPdfArchiveService.save(sale, bytes);
+    if (defaultTargetPlatform != TargetPlatform.windows) {
+      return Printing.layoutPdf(
+          name: BillPdfArchiveService.fileName(sale),
+          onLayout: (_) async => bytes);
+    }
+    return Printing.layoutPdf(
+      name: BillPdfArchiveService.fileName(sale),
+      format: PosReceiptService.pageFormat(sale, paperWidthMm: _paperWidthMm),
+      onLayout: (_) async => bytes,
+    );
   }
 
   Future<void> _syncPendingCashExport({bool showMessage = false}) async {
@@ -546,13 +578,12 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           }
           try {
             final decoded = await const LocalBillingStore().readJson(entity);
-            if (decoded['paymentStatus'] != 'PENDING' ||
-                decoded['syncState'] == 'synced') {
+            if (decoded['syncState'] == 'synced') {
               continue;
             }
             final total = (decoded['total'] as num?)?.toDouble() ?? 0;
             final paid = (decoded['paidAmount'] as num?)?.toDouble() ?? 0;
-            if (total <= paid) continue;
+            if (total <= 0) continue;
             localPendingRecords.add({
               'invoiceNumber': decoded['invoiceNumber'],
               'date': decoded['date'],
@@ -560,7 +591,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               'customerPhone': decoded['customerPhone'],
               'total': total,
               'paid': paid,
-              'due': total - paid,
+              'due': (total - paid).clamp(0, total),
               'paymentStatus': decoded['paymentStatus'],
             });
           } catch (_) {
@@ -605,6 +636,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   }
 
   void activateSection(AdminBillingSection section) {
+    if (section == AdminBillingSection.returns) unawaited(_loadReturns());
     if (_isWindowsOperatorMode) {
       setState(() => _activeSection = section);
       return;
@@ -1451,7 +1483,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                 ..._visibleSales.map(_saleTile),
               const SizedBox(height: 20),
               _sectionHeading(
-                'Customers on this page',
+                'Offline customers',
                 key: _sectionKeys[AdminBillingSection.customers],
               ),
               _buildCustomers(),
@@ -1677,7 +1709,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         ];
       case AdminBillingSection.customers:
         return [
-          _sectionHeading('Customers on this page'),
+          _sectionHeading('Offline customers'),
           _buildCustomers(),
         ];
       case AdminBillingSection.returns:
@@ -1946,6 +1978,105 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     if (mounted) setState(() => _localBillingCustomers = customers);
   }
 
+  Future<void> _addOfflineCustomer() async {
+    final saved = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const OfflineCustomerDialog());
+    if (saved == true && mounted) await _loadLocalBillingCustomers();
+  }
+
+  Future<void> _showCustomerBills(AdminCustomer customer) async {
+    final phone = BillingCustomerService.phoneKey(customer.phone);
+    bool matches(PosSale sale) => phone.isNotEmpty
+        ? BillingCustomerService.phoneKey(sale.customerPhone ?? '') == phone
+        : (sale.customerPhone?.trim().isEmpty ?? true) &&
+            sale.customerName?.trim().toLowerCase() ==
+                customer.name.trim().toLowerCase();
+    Future<({List<PosSale> bills, String? warning})> load() async {
+      final all = <String, PosSale>{};
+      void add(Iterable<PosSale> bills) {
+        for (final sale in bills.where(matches)) {
+          all[sale.invoiceNumber ?? sale.receiptNumber] = sale;
+        }
+      }
+
+      add(_sales);
+      add(await widget.offlineStore.readOfflineSales());
+      String? warning;
+      try {
+        var page = 1;
+        while (true) {
+          final result = await _adminApi.getPosSales(
+              page: page,
+              pageSize: 100,
+              search: phone.isNotEmpty ? phone : customer.name);
+          add(result.sales);
+          if (page >= result.pageCount || result.sales.isEmpty) break;
+          page++;
+        }
+      } catch (_) {
+        warning =
+            'Server history is unavailable. Showing saved bills on this computer.';
+      }
+      final bills = all.values.toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return (bills: bills, warning: warning);
+    }
+
+    final history = load();
+    await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+              title: Text(customer.name),
+              content: SizedBox(
+                  width: 650,
+                  child: SingleChildScrollView(
+                      child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                        SelectableText(customer.phone),
+                        if (customer.email.isNotEmpty)
+                          SelectableText(customer.email),
+                        for (final address in customer.addresses)
+                          SelectableText(address['address']?.toString() ?? ''),
+                        const SizedBox(height: 16),
+                        const Text('Customer bills',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                        FutureBuilder<({List<PosSale> bills, String? warning})>(
+                            future: history,
+                            builder: (_, snapshot) {
+                              if (snapshot.hasError) {
+                                return Text(
+                                    'Could not load bills: ${snapshot.error}');
+                              }
+                              if (!snapshot.hasData) {
+                                return const Padding(
+                                    padding: EdgeInsets.all(20),
+                                    child: CircularProgressIndicator());
+                              }
+                              final data = snapshot.data!;
+                              return Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (data.warning != null)
+                                      Text(data.warning!),
+                                    if (data.bills.isEmpty)
+                                      const Text(
+                                          'No bills saved for this customer yet.'),
+                                    ...data.bills.map(_saleTile),
+                                  ]);
+                            }),
+                      ]))),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('Close'))
+              ],
+            ));
+  }
+
   Widget _buildCustomers() {
     final customers = <String, List<PosSale>>{};
     for (final sale in _sales) {
@@ -1983,6 +2114,12 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 8),
+        Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+                onPressed: _addOfflineCustomer,
+                icon: const Icon(Icons.person_add_alt_1),
+                label: const Text('New customer'))),
         TextField(
           controller: _customerSearch,
           decoration: const InputDecoration(
@@ -2007,6 +2144,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
             final phone = customer.phone.trim();
             final totalSpend = customer.orderValue;
             return ListTile(
+              onTap: () => _showCustomerBills(customer),
               contentPadding: EdgeInsets.zero,
               leading:
                   const CircleAvatar(child: Icon(Icons.person_outline_rounded)),
@@ -2069,15 +2207,127 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     );
   }
 
+  String? get _returnsDayKey => _returnsDay == null
+      ? null
+      : '${_returnsDay!.year}-${_returnsDay!.month.toString().padLeft(2, '0')}-${_returnsDay!.day.toString().padLeft(2, '0')}';
+
+  Future<void> _loadReturns() async {
+    if (!mounted) return;
+    final request = ++_returnsRequest;
+    final query = _returnsSearch.text.trim();
+    final day = _returnsDayKey;
+    setState(() {
+      _returnsLoading = true;
+      _returnsError = null;
+    });
+    final sales = <String, PosSale>{};
+    for (final sale in [
+      ..._sales,
+      ...await widget.offlineStore.readOfflineSales()
+    ]) {
+      sales[sale.invoiceNumber ?? sale.receiptNumber] = sale;
+    }
+    String? error;
+    List<PosExchange>? exchanges;
+    try {
+      var page = 1;
+      while (mounted && request == _returnsRequest) {
+        final result = await _adminApi.getPosSales(
+            page: page, pageSize: 100, search: query, day: day);
+        for (final sale in result.sales) {
+          sales[sale.invoiceNumber ?? sale.receiptNumber] = sale;
+        }
+        if (page >= result.pageCount || result.sales.isEmpty) break;
+        page++;
+      }
+      if (mounted && request == _returnsRequest) {
+        exchanges = await _adminApi.getPosExchanges(search: query, day: day);
+      }
+    } catch (exception) {
+      error =
+          'Could not refresh server records. Showing available saved records. $exception';
+    }
+    if (!mounted || request != _returnsRequest) return;
+    setState(() {
+      _returnSales = sales.values.toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      _returnExchanges = exchanges;
+      _returnsLoading = false;
+      _returnsError = error;
+    });
+  }
+
   Widget _buildReturnsAndRefunds() {
-    final eligibleSales = _sales.where((sale) =>
+    final query = _returnsSearch.text.trim().toLowerCase();
+    bool matches(String text, DateTime date) {
+      final nepal = date.toUtc().add(const Duration(hours: 5, minutes: 45));
+      return (query.isEmpty || text.toLowerCase().contains(query)) &&
+          (_returnsDay == null ||
+              (nepal.year == _returnsDay!.year &&
+                  nepal.month == _returnsDay!.month &&
+                  nepal.day == _returnsDay!.day));
+    }
+
+    final eligibleSales = (_returnSales ?? _sales).where((sale) =>
+        matches(
+            '${sale.customerName ?? ''} ${sale.customerPhone ?? ''} ${sale.receiptNumber} ${sale.invoiceNumber ?? ''}',
+            sale.createdAt) &&
         sale.status != 'CANCELLED' &&
         sale.paymentStatus == 'COMPLETED' &&
         sale.refundedAmount < sale.total);
+    final exchanges = (_returnExchanges ?? _exchanges)
+        .where((exchange) => matches(
+            '${exchange.customerName} ${exchange.customerPhone} ${exchange.receiptNumber} ${exchange.invoiceNumber ?? ''}',
+            exchange.requestedAt))
+        .toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionHeading('Returns & exchanges'),
+        const SizedBox(height: 8),
+        TextField(
+            controller: _returnsSearch,
+            decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                labelText: 'Search customer name, phone or bill number'),
+            onChanged: (_) {
+              setState(() {});
+              _returnsTimer?.cancel();
+              _returnsTimer =
+                  Timer(const Duration(milliseconds: 350), _loadReturns);
+            }),
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, children: [
+          OutlinedButton.icon(
+              icon: const Icon(Icons.date_range),
+              label: Text(_returnsDay == null ? 'All dates' : _returnsDayKey!),
+              onPressed: () async {
+                final selected = await showDatePicker(
+                    context: context,
+                    initialDate: _returnsDay ?? DateTime.now(),
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime.now().add(const Duration(days: 1)));
+                if (selected != null && mounted) {
+                  setState(() => _returnsDay = selected);
+                  unawaited(_loadReturns());
+                }
+              }),
+          if (_returnsDay != null || query.isNotEmpty)
+            TextButton(
+                onPressed: () {
+                  _returnsSearch.clear();
+                  setState(() => _returnsDay = null);
+                  unawaited(_loadReturns());
+                },
+                child: const Text('Clear filters')),
+          IconButton(
+              tooltip: 'Refresh returns',
+              onPressed: _returnsLoading ? null : _loadReturns,
+              icon: const Icon(Icons.refresh)),
+        ]),
+        if (_returnsLoading) const LinearProgressIndicator(),
+        if (_returnsError != null)
+          Text(_returnsError!, style: TextStyle(color: _muted)),
         if (_exchangeError != null)
           Padding(
             padding: const EdgeInsets.only(top: 8),
@@ -2093,7 +2343,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
             ),
           ),
         if (!widget.isBillingStaff)
-          ..._exchanges
+          ...exchanges
               .where((exchange) => exchange.status == 'REFUND_REQUESTED')
               .map(_exchangeReviewTile),
         if (eligibleSales.isEmpty)
@@ -2109,18 +2359,19 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
             (sale) => ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.swap_horiz_rounded),
-              title: Text(sale.receiptNumber),
-              subtitle: Text('Original bill ${_money(sale.total)}'),
+              title: Text(sale.invoiceNumber ?? sale.receiptNumber),
+              subtitle: Text(
+                  '${sale.customerName ?? 'Walk-in'} · ${sale.customerPhone ?? ''}\nOriginal bill ${_money(sale.total)}'),
               trailing: OutlinedButton(
                 onPressed: _working ? null : () => _openExchange(sale),
                 child: const Text('Start exchange'),
               ),
             ),
           ),
-        if (_exchanges.isNotEmpty) ...[
+        if (exchanges.isNotEmpty) ...[
           const SizedBox(height: 12),
           _sectionHeading('Exchange history'),
-          ..._exchanges.take(12).map(_exchangeHistoryTile),
+          ...exchanges.map(_exchangeHistoryTile),
         ],
       ],
     );
@@ -2391,7 +2642,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                     ListTile(
                       dense: true,
                       leading: Icon(
-                        ['DIGITAL', 'FONEPAY'].contains(payment.method)
+                        ['DIGITAL', 'FONEPAY', 'ESEWA'].contains(payment.method)
                             ? Icons.phone_android_rounded
                             : Icons.payments_outlined,
                       ),
@@ -2401,7 +2652,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                       ),
                       subtitle: Text(
                         '${_dateTime(payment.createdAt)}'
-                        '${payment.note?.isNotEmpty == true ? ' · ${payment.note}' : ''}',
+                        '${payment.note?.isNotEmpty == true ? ' · ${_paymentNoteLabel(payment.note!)}' : ''}',
                       ),
                     ),
                 ],
@@ -2741,8 +2992,9 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   Future<void> _printOrShareInvoice(PosSale sale) async {
     try {
       final bytes = await PosReceiptService.createInvoicePdf(sale);
+      await BillPdfArchiveService.save(sale, bytes);
       if (!mounted) return;
-      final filename = 'Invoice-${sale.receiptNumber}.pdf';
+      final filename = BillPdfArchiveService.fileName(sale);
       if (defaultTargetPlatform == TargetPlatform.windows ||
           defaultTargetPlatform == TargetPlatform.linux ||
           defaultTargetPlatform == TargetPlatform.macOS) {
@@ -3220,10 +3472,12 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           '',
         );
         try {
+          final bytes = await PosReceiptService.createInvoicePdf(updatedSale);
           await File('${jsonFile.parent.path}/$basename.pdf').writeAsBytes(
-            await PosReceiptService.createInvoicePdf(updatedSale),
+            bytes,
             flush: true,
           );
+          await BillPdfArchiveService.save(updatedSale, bytes);
         } catch (error) {
           receiptWarning =
               'Payment saved. Regenerate the invoice PDF from bill history: $error';
@@ -3290,6 +3544,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   String _paymentLabel(String method) => switch (method) {
         'DIGITAL' => 'Bank transfer',
         'FONEPAY' => 'Fonepay',
+        'ESEWA' => 'eSewa',
         'PENDING' => 'Pending',
         _ => 'Cash',
       };
@@ -3429,6 +3684,7 @@ class PosBillDialog extends StatefulWidget {
     this.refreshCatalogOnOpen = true,
     required this.operatorId,
     required this.allowOfflineSync,
+    this.printSale,
     this.heldSale,
     this.scannedProduct,
   });
@@ -3440,6 +3696,7 @@ class PosBillDialog extends StatefulWidget {
   final VoidCallback onNewBill;
   final String operatorId;
   final bool allowOfflineSync;
+  final Future<bool> Function(PosSale)? printSale;
   final OfflinePosStore offlineStore;
   final bool refreshCatalogOnOpen;
 
@@ -3451,13 +3708,11 @@ class _PosBillDialogState extends State<PosBillDialog> {
   OfflinePosStore get _offlinePosStore => widget.offlineStore;
   final _barcodeQueue = OrderedWorkQueue();
   final _additionQueue = OrderedWorkQueue();
-  String _idempotencyKey = const Uuid().v4();
-  PosSale? _fonepayDraft;
+  final String _idempotencyKey = const Uuid().v4();
   Future<List<AdminCustomer>>? _localBillingCustomers;
   Future<List<AdminCustomer>> _readLocalBillingCustomers() =>
       _localBillingCustomers ??=
           BillingCustomerService.readLocal(widget.offlineStore);
-  String? _fonepaySnapshot;
   final _search = TextEditingController();
   final _customerName = TextEditingController();
   final _customerPhone = TextEditingController();
@@ -3777,6 +4032,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
     required double discount,
     required double vatRate,
     bool queueForSync = false,
+    ManualFonepayVerification? manualVerification,
   }) async {
     if (!widget.allowOfflineSync) {
       throw StateError(
@@ -3833,7 +4089,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                 method: _paymentMethod == 'PENDING'
                     ? _paidNowMethod
                     : _paymentMethod,
-                note: null,
+                note: manualVerification?.toNote(total),
                 createdAt: now,
               ),
             ],
@@ -3941,10 +4197,12 @@ class _PosBillDialogState extends State<PosBillDialog> {
     // JSON is the committed financial record. A printer/PDF failure must not
     // turn a completed sale into a failed sale or cause a duplicate retry.
     try {
+      final bytes = await PosReceiptService.createInvoicePdf(sale);
       await File('${directory.path}/$invoiceNumber.pdf').writeAsBytes(
-        await PosReceiptService.createInvoicePdf(sale),
+        bytes,
         flush: true,
       );
+      await BillPdfArchiveService.save(sale, bytes);
     } catch (error) {
       debugPrint('Bill saved, PDF regeneration required: $error');
     }
@@ -3989,6 +4247,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
       outstandingAmount: sale.outstandingAmount,
       paymentCollections: sale.paymentCollections,
       localPath: dataFile.path,
+      autoPrintAllowed: manualVerification == null ||
+          await localStore.claimInitialPrint(dataFile),
     );
   }
 
@@ -4383,12 +4643,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
   }
 
   Future<void> _submitSale() async {
-    final payingFonepay = _paymentMethod == 'FONEPAY';
-    if (_fonepayDraft != null && _paymentMethod != 'FONEPAY') {
-      setState(() => _error =
-          'Reconcile the existing Fonepay checkout before using another payment method.');
-      return;
-    }
+    final payingFonepay = ['FONEPAY', 'ESEWA'].contains(_paymentMethod);
     if (_cart.isEmpty) {
       setState(() => _error = 'Add products before completing the bill.');
       return;
@@ -4531,65 +4786,67 @@ class _PosBillDialogState extends State<PosBillDialog> {
   }
 
   Future<void> _payWithFonepay(double discount, double vatRate) async {
-    if (_saveOnThisComputer) {
+    if (!_total.isFinite || _total <= 0) {
       throw StateError(
-          'Fonepay needs an online checkout. Turn off computer-only saving to pay with Fonepay.');
+          'QR payment requires a payable amount greater than NPR 0.00.');
     }
-    final api = widget.api.fonepay;
-    final config = await api.configuration();
-    if (config['enabled'] != true) {
-      throw ApiResponseException(config['message'] as String? ??
-          'Fonepay merchant integration is not activated.');
+    if (widget.operatorId.isEmpty) {
+      throw StateError('Sign in as a cashier to confirm a QR payment.');
     }
-    final snapshot = jsonEncode([
-      _requestItems(),
-      discount,
-      vatRate,
-      _total,
-      _customerName.text,
-      _customerPhone.text,
-      _selectedCustomer?.id
-    ]);
-    if (_fonepayDraft != null && _fonepaySnapshot != snapshot) {
-      // Remote cancellation must be confirmed before a revised checkout can pay.
-      final old = await api.create(_fonepayDraft!.id);
-      await api.cancel(old.id);
-      _fonepayDraft = null;
-      _idempotencyKey = const Uuid().v4();
-    }
-    _fonepayDraft ??= await widget.api.createPosSale(
-        idempotencyKey: _idempotencyKey,
-        items: _requestItems(),
-        discount: discount,
-        vatRate: vatRate,
-        paymentMethod: 'FONEPAY',
-        customerName: _customerName.text.trim().isEmpty
-            ? null
-            : _customerName.text.trim(),
-        customerPhone: _customerPhone.text.trim().isEmpty
-            ? null
-            : _customerPhone.text.trim(),
-        customerId: _selectedCustomer?.id.startsWith('local-customer-') == true
-            ? null
-            : _selectedCustomer?.id,
-        expectedTotal: _total,
-        unitPrices: {
-          for (final line in _cart) line.product.id: line.product.price
-        });
-    _fonepaySnapshot = snapshot;
-    if (!mounted) return;
-    final completion = await showDialog<FonepayCheckoutCompletion>(
+    final completion = await showDialog<PosSale>(
         context: context,
         barrierDismissible: false,
-        builder: (_) => FonepayPaymentDialog(
-            sale: _fonepayDraft!, api: api, finalizeCheckout: true));
+        builder: (_) => StaticFonepayPaymentDialog(
+              amount: _total,
+              cashierId: widget.operatorId,
+              qrAsset: AppConstants.staticFonepayQrAsset,
+              confirmationReference: 'CASHIER-$_idempotencyKey',
+              paymentMethod: _paymentMethod,
+              providerName: _paymentMethod == 'ESEWA' ? 'eSewa' : 'Fonepay',
+              onVerified: (verification) async {
+                if (_saveOnThisComputer) {
+                  return _createLocalSale(
+                      discount: discount,
+                      vatRate: vatRate,
+                      manualVerification: verification);
+                }
+                return widget.api.createPosSale(
+                    idempotencyKey: _idempotencyKey,
+                    items: _requestItems(),
+                    discount: discount,
+                    vatRate: vatRate,
+                    paymentMethod: _paymentMethod,
+                    manualVerification: verification.request,
+                    customerName: _customerName.text.trim().isEmpty
+                        ? null
+                        : _customerName.text.trim(),
+                    customerPhone: _customerPhone.text.trim().isEmpty
+                        ? null
+                        : _customerPhone.text.trim(),
+                    customerId:
+                        _selectedCustomer?.id.startsWith('local-customer-') ==
+                                true
+                            ? null
+                            : _selectedCustomer?.id,
+                    expectedTotal: _total,
+                    unitPrices: {
+                      for (final line in _cart)
+                        line.product.id: line.product.price
+                    });
+              },
+              onPrint: widget.printSale ??
+                  (sale) async {
+                    final bytes =
+                        await PosReceiptService.createInvoicePdf(sale);
+                    await BillPdfArchiveService.save(sale, bytes);
+                    return Printing.layoutPdf(
+                        name: BillPdfArchiveService.fileName(sale),
+                        onLayout: (_) async => bytes);
+                  },
+            ));
     if (!mounted) return;
     if (completion != null) {
-      Navigator.pop(context,
-          completion.sale.withAutoPrintAllowed(completion.autoPrintAllowed));
-    } else {
-      setState(() => _error =
-          'Payment checkout saved. Reopen Pay with the same items, or use Pending Fonepay checkouts to reconcile it.');
+      Navigator.pop(context, completion.withAutoPrintAllowed(false));
     }
     if (mounted) setState(() => _saving = false);
   }
@@ -4895,7 +5152,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                   ),
                   items: const [
                     DropdownMenuItem(value: 'CASH', child: Text('Cash')),
-                    DropdownMenuItem(value: 'FONEPAY', child: Text('Fonepay')),
+                    DropdownMenuItem(value: 'ESEWA', child: Text('eSewa / QR')),
                     DropdownMenuItem(
                         value: 'PENDING', child: Text('Pending balance')),
                   ],
@@ -5047,11 +5304,12 @@ class _PosBillDialogState extends State<PosBillDialog> {
                                         strokeWidth: 2),
                                   )
                                 : const Icon(Icons.save_outlined),
-                            label: Text(_paymentMethod == 'FONEPAY'
-                                ? 'Pay'
-                                : _saveOnThisComputer
-                                    ? 'Save local bill (F8)'
-                                    : 'Create bill (F8)'),
+                            label: Text(
+                                ['FONEPAY', 'ESEWA'].contains(_paymentMethod)
+                                    ? 'Pay'
+                                    : _saveOnThisComputer
+                                        ? 'Save local bill (F8)'
+                                        : 'Create bill (F8)'),
                           ),
                         ),
                       ],
@@ -5580,8 +5838,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
                   items: const [
                     DropdownMenuItem(value: 'CASH', child: Text('Cash')),
                     DropdownMenuItem(
-                      value: 'FONEPAY',
-                      child: Text('Fonepay'),
+                      value: 'ESEWA',
+                      child: Text('eSewa / QR'),
                     ),
                     DropdownMenuItem(value: 'PENDING', child: Text('Pending')),
                   ],
@@ -5624,8 +5882,9 @@ class _PosBillDialogState extends State<PosBillDialog> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.check_circle_outline),
-                label:
-                    Text(_paymentMethod == 'FONEPAY' ? 'Pay' : 'Create bill'),
+                label: Text(['FONEPAY', 'ESEWA'].contains(_paymentMethod)
+                    ? 'Pay'
+                    : 'Create bill'),
               ),
             ],
           ),

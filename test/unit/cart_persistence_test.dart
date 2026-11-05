@@ -12,6 +12,7 @@ class _CartApi extends ApiService {
   int saveCount = 0;
   int loadCount = 0;
   bool failNextSave = false;
+  bool expiredToken = false;
   final Completer<void> twoSavesCompleted = Completer<void>();
 
   @override
@@ -21,6 +22,10 @@ class _CartApi extends ApiService {
   }) async {
     if (endpoint == '/account/cart') {
       loadCount++;
+      if (expiredToken) {
+        throw const ApiResponseException('Invalid or expired access token',
+            statusCode: 401);
+      }
       return cartLoad?.future ?? savedCart;
     }
     return super.get(endpoint, queryParams: queryParams);
@@ -29,6 +34,10 @@ class _CartApi extends ApiService {
   @override
   Future<dynamic> put(String endpoint, Map<String, dynamic> body) async {
     if (endpoint == '/account/cart') {
+      if (expiredToken) {
+        throw const ApiResponseException('Invalid or expired access token',
+            statusCode: 401);
+      }
       if (failNextSave) {
         failNextSave = false;
         throw Exception('Network unavailable');
@@ -77,6 +86,62 @@ Map<String, dynamic> _savedItem(String id, int quantity) => {
     };
 
 void main() {
+  test(
+      'expired cart session requests sign-in and preserves additions through renewal',
+      () async {
+    final api = _CartApi()..expiredToken = true;
+    api.savedCart = {
+      'items': [_savedItem('apples', 2)]
+    };
+    api.setAuthToken('expired');
+    final cart = CartProvider(apiService: api);
+    addTearDown(cart.dispose);
+    cart.setAuthenticatedUser('customer-1');
+    await cart.refreshSavedCart();
+    expect(cart.requiresSignIn, isTrue);
+    expect(cart.syncError, contains('Sign in again'));
+    cart.addItem(Product.fromJson(
+        _savedItem('rice', 1)['product'] as Map<String, dynamic>));
+    expect(cart.itemCount, 1);
+    api.expiredToken = false;
+    api.setAuthToken('renewed');
+    cart.setAuthenticatedUser('customer-1');
+    await cart.refreshSavedCart();
+    expect(cart.requiresSignIn, isFalse);
+    expect(cart.items.keys.toSet(), {'apples', 'rice'});
+    expect(cart.itemCount, 3);
+  });
+
+  test(
+      'renewing after an unauthorized save keeps quantities and does not mix accounts',
+      () async {
+    final api = _CartApi()
+      ..savedCart = {
+        'items': [_savedItem('apples', 2)]
+      };
+    api.setAuthToken('old-token');
+    final cart = CartProvider(apiService: api);
+    addTearDown(cart.dispose);
+    cart.setAuthenticatedUser('customer-1');
+    await cart.refreshSavedCart();
+    api.expiredToken = true;
+    cart.addItem(Product.fromJson(
+        _savedItem('apples', 1)['product'] as Map<String, dynamic>));
+    await cart.refreshSavedCart();
+    expect(cart.requiresSignIn, isTrue);
+    expect(cart.itemCount, 3);
+    api.expiredToken = false;
+    api.setAuthToken('new-token');
+    cart.setAuthenticatedUser('customer-1');
+    await cart.retrySync();
+    expect(cart.requiresSignIn, isFalse);
+    expect(cart.itemCount, 3);
+    api.savedCart = {'items': <Map<String, dynamic>>[]};
+    cart.setAuthenticatedUser('customer-2');
+    await cart.refreshSavedCart();
+    expect(cart.itemCount, 0);
+  });
+
   test('cart restores, syncs, and switches account data without mixing',
       () async {
     final api = _CartApi()

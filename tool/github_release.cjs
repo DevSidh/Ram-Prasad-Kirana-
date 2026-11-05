@@ -29,6 +29,28 @@ async function main(){
     const runs=await api(`/repos/${repo}/actions/runs?per_page=5`);
     console.log(JSON.stringify(runs.workflow_runs.map(r=>({id:r.id,name:r.name,branch:r.head_branch,status:r.status,conclusion:r.conclusion,url:r.html_url,sha:r.head_sha})),null,2));return;
   }
+  if(command==='run'){
+    if(!/^\d+$/.test(tag??''))throw Error('Provide a workflow run ID.');
+    const run=await api(`/repos/${repo}/actions/runs/${tag}`);
+    const jobs=await api(`/repos/${repo}/actions/runs/${tag}/jobs`);
+    console.log(JSON.stringify({status:run.status,conclusion:run.conclusion,url:run.html_url,
+      jobs:jobs.jobs.map(job=>({id:job.id,status:job.status,conclusion:job.conclusion,
+        steps:job.steps.map(step=>({name:step.name,status:step.status,conclusion:step.conclusion}))}))},null,2));return;
+  }
+  if(command==='logs'){
+    if(!/^\d+$/.test(tag??''))throw Error('Provide a job ID.');
+    const response=await fetch(`https://api.github.com/repos/${repo}/actions/jobs/${tag}/logs`,{
+      headers:{Authorization:`Bearer ${token}`,Accept:'application/vnd.github+json'}});
+    if(!response.ok)throw Error(`Job logs unavailable (HTTP ${response.status}).`);
+    console.log((await response.text()).split(/\r?\n/).slice(-180).join('\n'));return;
+  }
+  if(command==='release'){
+    const releases=await api(`/repos/${repo}/releases?per_page=30`);
+    const release=releases.find(value=>value.tag_name===tag);
+    if(!release)throw Error('Release not found.');
+    console.log(JSON.stringify({tag:release.tag_name,draft:release.draft,url:release.html_url,
+      assets:release.assets.map(a=>({name:a.name,size:a.size,url:a.browser_download_url,digest:a.digest}))},null,2));return;
+  }
   if(command==='create'){
     if(!tag || !/^v\d+\.\d+\.\d+$/.test(tag) || !file)throw Error('Provide a version tag and release notes file.');
     const release=await api(`/repos/${repo}/releases`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
@@ -50,6 +72,6 @@ async function main(){
     if(!response.ok)throw Error(`GitHub release asset upload failed (HTTP ${response.status}).`);
     const asset=await response.json();console.log(JSON.stringify({name:asset.name,size:asset.size,url:asset.browser_download_url}));return;
   }
-  throw Error('Supported commands: account, status, create, upload.');
+  throw Error('Supported commands: account, status, run, logs, release, create, upload.');
 }
 main().catch(error=>{console.error(error.message);process.exitCode=1;});

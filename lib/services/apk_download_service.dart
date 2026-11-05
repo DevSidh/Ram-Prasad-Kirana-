@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
@@ -37,7 +38,7 @@ class ApkDownloadService {
     final temporary = await _temporaryDirectory();
     final directory = Directory('${temporary.path}/faststore-updates');
     await directory.create(recursive: true);
-    for (final entity in directory.listSync(followLinks: false)) {
+    await for (final entity in directory.list(followLinks: false)) {
       if (entity is File && entity.path.toLowerCase().endsWith('.apk')) {
         try {
           await entity.delete();
@@ -107,15 +108,36 @@ class ApkDownloadService {
       throw const FormatException('The downloaded file is not a valid APK.');
     }
     if (release.sha256 != null) {
-      final actualDigest = await sha256
-          .bind(partialFile.openRead().map((chunk) {
-            cancelToken.throwIfCancellationRequested();
-            return chunk;
-          }))
-          .first;
-      if (actualDigest.toString().toLowerCase() != release.sha256) {
+      final actualDigest = await _checksum(partialFile.path, cancelToken);
+      if (actualDigest.toLowerCase() != release.sha256) {
         throw const FormatException('The APK checksum did not match GitHub.');
       }
     }
   }
+
+  /// Hash large APKs off the UI isolate, and stop that worker on cancellation.
+  Future<String> _checksum(String path, CancelToken cancelToken) async {
+    final resultPort = ReceivePort();
+    final errors = ReceivePort();
+    Isolate? worker;
+    try {
+      worker = await Isolate.spawn(_hashApk, (path, resultPort.sendPort),
+          onError: errors.sendPort, errorsAreFatal: true);
+      return await Future.any<String>([
+        resultPort.first.then((value) => value as String),
+        errors.first.then((_) => throw StateError(
+            'Could not verify the downloaded APK. Please retry.')),
+        cancelToken.whenCancel.then((error) => throw error),
+      ]);
+    } finally {
+      worker?.kill(priority: Isolate.immediate);
+      resultPort.close();
+      errors.close();
+    }
+  }
+}
+
+Future<void> _hashApk((String, SendPort) arguments) async {
+  final digest = await sha256.bind(File(arguments.$1).openRead()).first;
+  arguments.$2.send(digest.toString());
 }

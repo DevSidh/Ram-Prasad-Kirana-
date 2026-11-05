@@ -23,9 +23,10 @@ enum _UpdateViewState {
 }
 
 class AppUpdateScreen extends StatefulWidget {
-  const AppUpdateScreen({super.key, this.initialCheck});
+  const AppUpdateScreen({super.key, this.initialCheck, this.downloads});
 
   final AppUpdateCheck? initialCheck;
+  final ApkDownloadService? downloads;
 
   @override
   State<AppUpdateScreen> createState() => _AppUpdateScreenState();
@@ -42,7 +43,7 @@ class _AppUpdateScreenState extends State<AppUpdateScreen>
     duration: const Duration(seconds: 14),
   )..repeat();
   final _updates = AppUpdateService();
-  final _downloads = ApkDownloadService();
+  late final _downloads = widget.downloads ?? ApkDownloadService();
   _UpdateViewState _state = _UpdateViewState.checking;
   AppUpdateCheck? _check;
   CancelToken? _cancelToken;
@@ -54,10 +55,12 @@ class _AppUpdateScreenState extends State<AppUpdateScreen>
   String? _currentBuild;
   bool _installing = false;
   bool _verifying = false;
+  DateTime? _lastProgressAt;
 
   bool get _mandatory => _check?.isMandatory ?? false;
   GitHubAppRelease? get _release => _check?.release;
-  bool get _supportsAndroidInstall => !kIsWeb && Platform.isAndroid;
+  bool get _supportsAndroidInstall =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   @override
   void initState() {
@@ -72,7 +75,9 @@ class _AppUpdateScreenState extends State<AppUpdateScreen>
 
   @override
   void dispose() {
-    _cancelToken?.cancel('Update screen closed.');
+    if (_cancelToken?.isCancelled == false) {
+      _cancelToken?.cancel('Update screen closed.');
+    }
     _entryController.dispose();
     _orbitController.dispose();
     super.dispose();
@@ -131,6 +136,7 @@ class _AppUpdateScreenState extends State<AppUpdateScreen>
       _receivedBytes = 0;
       _totalBytes = release.sizeBytes;
       _verifying = false;
+      _lastProgressAt = null;
       _apkFile = null;
       _error = null;
     });
@@ -144,15 +150,23 @@ class _AppUpdateScreenState extends State<AppUpdateScreen>
         },
         onProgress: (received, total) {
           if (!mounted) return;
+          final now = DateTime.now();
+          if (_lastProgressAt != null &&
+              now.difference(_lastProgressAt!) <
+                  const Duration(milliseconds: 80) &&
+              (total <= 0 || received < total)) {
+            return;
+          }
+          _lastProgressAt = now;
           setState(() {
             _receivedBytes = received;
             if (total > 0) _totalBytes = total;
           });
         },
       );
-      if (!mounted) return;
+      if (!mounted || token.isCancelled) return;
       final downloadedLength = await file.length();
-      if (!mounted) return;
+      if (!mounted || token.isCancelled) return;
       setState(() {
         _apkFile = file;
         _receivedBytes = downloadedLength;
@@ -244,6 +258,7 @@ class _AppUpdateScreenState extends State<AppUpdateScreen>
 
   void _continue() {
     if (!_mandatory && Navigator.of(context).canPop()) {
+      _cancelToken?.cancel('Download cancelled to continue using FastStore.');
       Navigator.of(context).pop();
     }
   }
@@ -270,8 +285,10 @@ class _AppUpdateScreenState extends State<AppUpdateScreen>
                 child: Icon(Icons.shopping_bag_rounded, color: colors.primary),
               ),
               const SizedBox(width: 11),
-              const Text('FastStore',
-                  style: TextStyle(fontWeight: FontWeight.w800)),
+              const Flexible(
+                  child: Text('FastStore',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontWeight: FontWeight.w800))),
             ],
           ),
           actions: [
@@ -291,9 +308,10 @@ class _AppUpdateScreenState extends State<AppUpdateScreen>
               )
             else
               TextButton(
-                onPressed:
-                    _state == _UpdateViewState.downloading ? null : _continue,
-                child: const Text('Maybe later'),
+                onPressed: _continue,
+                child: Text(_state == _UpdateViewState.downloading
+                    ? 'Cancel and continue'
+                    : 'Maybe later'),
               ),
           ],
         ),
@@ -416,12 +434,15 @@ class _AppUpdateScreenState extends State<AppUpdateScreen>
         ],
         if (!_mandatory &&
             (_state == _UpdateViewState.available ||
+                _state == _UpdateViewState.downloading ||
+                _state == _UpdateViewState.ready ||
                 _state == _UpdateViewState.failed)) ...[
           const SizedBox(height: 4),
           TextButton(
-            onPressed:
-                _state == _UpdateViewState.downloading ? null : _continue,
-            child: const Text('Continue using FastStore'),
+            onPressed: _continue,
+            child: Text(_state == _UpdateViewState.downloading
+                ? 'Cancel download and continue'
+                : 'Continue using FastStore'),
           ),
         ],
         const SizedBox(height: 8),

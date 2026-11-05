@@ -95,6 +95,7 @@ class _AdminShellState extends State<AdminShell> {
     21,
     23,
     27,
+    24,
   ];
   static const _onlineDeliveryDestinationIndices = [1, 2, 4, 12, 13, 14, 15];
 
@@ -870,7 +871,12 @@ class _AdminShellState extends State<AdminShell> {
     }
 
     if (widget.isBillingStaff) {
-      return List<Widget>.generate(destinations.length, navigationTile);
+      final customerIndex = _billingStaffModules.indexWhere((module) => module.section == AdminBillingSection.customers);
+      final expiryIndex = _billingStaffModules.indexWhere((module) => module.action == _BillingAction.expiry);
+      return [for (var index = 0; index < destinations.length; index++) ...[
+        if (index != customerIndex) navigationTile(index),
+        if (index == expiryIndex && customerIndex >= 0) navigationTile(customerIndex),
+      ]];
     }
 
     final primaryIndices = _primaryNavigationIndices.toSet();

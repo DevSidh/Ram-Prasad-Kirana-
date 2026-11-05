@@ -386,7 +386,14 @@ class PosExchange {
     required this.restockReturnedItems,
     required this.requestedAt,
     required this.items,
+    this.customerName = '',
+    this.customerPhone = '',
+    this.invoiceNumber,
   });
+
+  final String customerName;
+  final String customerPhone;
+  final String? invoiceNumber;
 
   final String id;
   final String receiptNumber;
@@ -409,6 +416,9 @@ class PosExchange {
       );
     }
     return PosExchange(
+      customerName: json['customerName']?.toString() ?? '',
+      customerPhone: json['customerPhone']?.toString() ?? '',
+      invoiceNumber: json['invoiceNumber']?.toString(),
       id: json['id'] as String,
       receiptNumber: json['receiptNumber'] as String? ?? '',
       returnedCredit: _posDouble(json['returnedCredit']),

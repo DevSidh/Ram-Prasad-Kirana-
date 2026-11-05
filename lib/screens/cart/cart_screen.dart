@@ -10,6 +10,7 @@ import '../../widgets/product_thumbnail.dart';
 import '../../widgets/weight_quantity_dialog.dart';
 import '../../widgets/empty_state.dart';
 import '../checkout/checkout_screen.dart';
+import '../auth/login_screen.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -19,6 +20,25 @@ class CartScreen extends StatefulWidget {
 }
 
 class _CartScreenState extends State<CartScreen> {
+  bool _signingIn = false;
+
+  Future<void> _recoverSession() async {
+    if (_signingIn) return;
+    _signingIn = true;
+    try {
+      final signedIn = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+            builder: (_) => const LoginScreen(returnToCaller: true)),
+      );
+      if (signedIn == true && mounted) {
+        final cart = context.read<CartProvider>();
+        if (cart.requiresSignIn) await cart.refreshSavedCart();
+      }
+    } finally {
+      _signingIn = false;
+    }
+  }
+
   String _translateText(String text) {
     return context.read<AppLanguageProvider?>()?.translate(text) ?? text;
   }
@@ -47,10 +67,15 @@ class _CartScreenState extends State<CartScreen> {
               ? const Center(child: CircularProgressIndicator())
               : cart.syncError != null
                   ? StorePageError(
-                      title: 'Basket unavailable',
+                      title: cart.requiresSignIn
+                          ? 'Sign in to restore your basket'
+                          : 'Basket unavailable',
                       message: cart.syncError!,
-                      retryLabel: 'Retry',
-                      onRetry: cart.retrySync,
+                      retryLabel:
+                          cart.requiresSignIn ? 'Sign in again' : 'Retry',
+                      onRetry: cart.requiresSignIn
+                          ? _recoverSession
+                          : cart.retrySync,
                     )
                   : EmptyState(
                       icon: Icons.shopping_basket_outlined,
@@ -135,9 +160,15 @@ class _CartScreenState extends State<CartScreen> {
                             style: const TextStyle(fontSize: 12),
                           ),
                           trailing: IconButton(
-                            tooltip: 'Retry basket sync',
-                            onPressed: cart.retrySync,
-                            icon: const Icon(Icons.refresh_rounded),
+                            tooltip: cart.requiresSignIn
+                                ? 'Sign in again'
+                                : 'Retry basket sync',
+                            onPressed: cart.requiresSignIn
+                                ? _recoverSession
+                                : cart.retrySync,
+                            icon: Icon(cart.requiresSignIn
+                                ? Icons.login_rounded
+                                : Icons.refresh_rounded),
                           ),
                         ),
                       ),
@@ -515,6 +546,10 @@ class _CartScreenState extends State<CartScreen> {
         onPressed: cart.isLoading || cart.hasUnavailableItems
             ? null
             : () {
+                if (cart.requiresSignIn) {
+                  _recoverSession();
+                  return;
+                }
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const CheckoutScreen()),
@@ -557,7 +592,9 @@ class _CartScreenState extends State<CartScreen> {
                       children: [
                         Flexible(
                           child: Text(
-                            context.tr('Proceed to Checkout'),
+                            context.tr(cart.requiresSignIn
+                                ? 'Sign in again'
+                                : 'Proceed to Checkout'),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             textAlign: TextAlign.end,

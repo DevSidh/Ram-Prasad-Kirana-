@@ -17,6 +17,8 @@ class CartProvider extends ChangeNotifier {
   bool _hasUnsavedChanges = false;
   String? _syncError;
   bool _syncErrorFromSave = false;
+  bool _requiresSignIn = false;
+  int _authRevision = -1;
   String? _suggestedCouponCode;
   Timer? _saveDebounce;
   int _revision = 0;
@@ -35,6 +37,7 @@ class CartProvider extends ChangeNotifier {
       _items.values.fold(0, (sum, item) => sum + item.quantity);
   bool get isLoading => _isLoading;
   String? get syncError => _syncError;
+  bool get requiresSignIn => _requiresSignIn;
   bool get hasUnavailableItems => _items.values.any((item) {
         final minimumQuantity =
             item.isWholesale ? item.product.wholesaleMinimumQuantity : 1;
@@ -60,7 +63,20 @@ class CartProvider extends ChangeNotifier {
       isWholesale ? '$productId:wholesale' : productId;
 
   void setAuthenticatedUser(String? userId) {
-    if (_accountUserId == userId) return;
+    final authRevision = _apiService?.sessionRevision ?? 0;
+    if (_accountUserId == userId) {
+      final renewed = _authRevision != authRevision;
+      _authRevision = authRevision;
+      if (renewed && userId != null && _requiresSignIn) {
+        _requiresSignIn = false;
+        scheduleMicrotask(() {
+          if (!_disposed && _accountUserId == userId) unawaited(retrySync());
+        });
+      }
+      return;
+    }
+    _authRevision = authRevision;
+    _requiresSignIn = false;
     _accountUserId = userId;
     final revision = ++_revision;
     _items.clear();
@@ -124,7 +140,7 @@ class CartProvider extends ChangeNotifier {
         await _writeCurrentCart();
       } on Exception catch (error) {
         if (_accountUserId != null) {
-          _syncError = error.toString().replaceFirst('Exception: ', '');
+          _setSyncFailure(error);
           _syncErrorFromSave = true;
           if (!_disposed) notifyListeners();
         }
@@ -135,6 +151,7 @@ class CartProvider extends ChangeNotifier {
   }
 
   Future<void> _loadAccountCart(String userId, int revision) async {
+    final authRevision = _apiService?.sessionRevision;
     try {
       final response = await _apiService!.get('/account/cart');
       if (response is! Map<String, dynamic> || response['items'] is! List) {
@@ -162,6 +179,7 @@ class CartProvider extends ChangeNotifier {
       }
       if (_accountUserId != userId) return;
       _hasLoadedAccountCart = true;
+      _requiresSignIn = false;
       if (_revision != revision ||
           _localOverridesDuringLoad.isNotEmpty ||
           _clearDuringLoad) {
@@ -193,13 +211,18 @@ class CartProvider extends ChangeNotifier {
       _clearDuringLoad = false;
       _isLoading = false;
       _syncError = null;
+      _requiresSignIn = false;
       _syncErrorFromSave = false;
       notifyListeners();
     } catch (error) {
       if (_accountUserId != userId) return;
+      if (_apiService?.sessionRevision != authRevision) {
+        await _loadAccountCart(userId, _revision);
+        return;
+      }
       _isLoading = false;
       _hasLoadedAccountCart = false;
-      _syncError = error.toString().replaceFirst('Exception: ', '');
+      _setSyncFailure(error);
       _syncErrorFromSave = false;
       notifyListeners();
     }
@@ -364,18 +387,19 @@ class CartProvider extends ChangeNotifier {
     if (_accountUserId != null && _apiService != null) {
       _hasUnsavedChanges = true;
     }
-    if (_isLoading && _accountUserId != null) {
+    if ((_isLoading || !_hasLoadedAccountCart) && _accountUserId != null) {
       if (clearAll) _clearDuringLoad = true;
       if (key != null) _localOverridesDuringLoad.add(key);
     }
     _revision++;
-    _syncError = null;
+    if (!_requiresSignIn) _syncError = null;
     notifyListeners();
     _scheduleServerSave();
   }
 
   void _scheduleServerSave() {
     if (_accountUserId == null || _apiService == null) return;
+    if (_requiresSignIn) return;
     if (_isLoading || !_hasLoadedAccountCart) return;
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(milliseconds: 250), () {
@@ -400,16 +424,22 @@ class CartProvider extends ChangeNotifier {
 
     Future<void> send() async {
       if (_accountUserId != userId) return;
+      final authRevision = apiService.sessionRevision;
       try {
         await apiService.put('/account/cart', {'items': items});
         if (_accountUserId == userId) {
           if (_revision == revision) _hasUnsavedChanges = false;
           _syncError = null;
+          _requiresSignIn = false;
           _syncErrorFromSave = false;
         }
       } catch (error) {
         if (_accountUserId == userId) {
-          _syncError = error.toString().replaceFirst('Exception: ', '');
+          if (authRevision != apiService.sessionRevision) {
+            _scheduleServerSave();
+            return;
+          }
+          _setSyncFailure(error);
           _syncErrorFromSave = true;
         }
         rethrow;
@@ -424,6 +454,17 @@ class CartProvider extends ChangeNotifier {
     );
     _syncQueue = pending;
     return pending;
+  }
+
+  void _setSyncFailure(Object error) {
+    _requiresSignIn = error is ApiResponseException && error.statusCode == 401;
+    _syncError = _requiresSignIn
+        ? 'Your sign-in session has expired. Sign in again to restore and sync your basket. Your current items are kept here.'
+        : error.toString().replaceFirst('Exception: ', '');
+    if (_requiresSignIn) {
+      _saveDebounce?.cancel();
+      _saveDebounce = null;
+    }
   }
 
   @override

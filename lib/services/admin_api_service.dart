@@ -258,6 +258,7 @@ class AdminApiService {
     String? heldSaleId,
     double? expectedTotal,
     Map<String, double>? unitPrices,
+    Map<String, dynamic>? manualVerification,
   }) async {
     final response = _asMap(await _api.post('/admin/billing/sales', {
       if (expectedTotal != null && unitPrices != null)
@@ -270,6 +271,7 @@ class AdminApiService {
       'discount': discount,
       'vatRate': vatRate,
       'paymentMethod': paymentMethod,
+      if (manualVerification != null) 'manualVerification': manualVerification,
       if (paidAmount != null) 'paidAmount': paidAmount,
       if (paidNowMethod != null) 'paidNowMethod': paidNowMethod,
       'customerName': customerName,
@@ -397,8 +399,13 @@ class AdminApiService {
     );
   }
 
-  Future<List<PosExchange>> getPosExchanges() async {
-    final response = _asMap(await _api.get('/admin/billing/exchanges'));
+  Future<List<PosExchange>> getPosExchanges(
+      {String? search, String? day}) async {
+    final response =
+        _asMap(await _api.get('/admin/billing/exchanges', queryParams: {
+      if (search?.trim().isNotEmpty == true) 'search': search!.trim(),
+      if (day != null) 'day': day,
+    }));
     final exchanges = response['exchanges'];
     if (exchanges is! List) {
       throw const FormatException(

@@ -323,7 +323,7 @@ class PosReceiptService {
               .toInt() +
           1,
     );
-    final heightMm = 72 + contentLines * 5.4;
+    final heightMm = 77 + contentLines * 5.4;
     return PdfPageFormat(
       paperWidthMm * PdfPageFormat.mm,
       heightMm * PdfPageFormat.mm,
@@ -361,6 +361,12 @@ class PosReceiptService {
               ),
             ),
             pw.SizedBox(height: 4),
+            pw.Text(
+              'PAN No. ${AppConstants.storePanNumber}',
+              textAlign: pw.TextAlign.center,
+              style: const pw.TextStyle(fontSize: 8),
+            ),
+            pw.SizedBox(height: 3),
             pw.Text(
               'Receipt ${sale.receiptNumber}',
               style: const pw.TextStyle(fontSize: 8),

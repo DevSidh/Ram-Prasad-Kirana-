@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../core/constants.dart';
+
 class InvoicePdfLine {
   const InvoicePdfLine({
     required this.quantity,
@@ -67,7 +69,13 @@ class InvoicePdfBuilder {
                 textAlign: pw.TextAlign.center,
                 style: const pw.TextStyle(color: ink, fontSize: 10),
               ),
-              pw.SizedBox(height: 16),
+              pw.SizedBox(height: 3),
+              pw.Text(
+                'PAN No. ${AppConstants.storePanNumber}',
+                textAlign: pw.TextAlign.center,
+                style: const pw.TextStyle(color: ink, fontSize: 10),
+              ),
+              pw.SizedBox(height: 12),
               pw.Divider(color: rule, height: 1),
               pw.SizedBox(height: 10),
               pw.Text(
@@ -226,8 +234,8 @@ class InvoicePdfBuilder {
 
   static String _paymentLabel(String value) => switch (value.toUpperCase()) {
         'FONEPAY' => 'Fonepay',
-        'DIGITAL' => 'Bank transfer',
         'ESEWA' => 'eSewa',
+        'DIGITAL' => 'Bank transfer',
         'KHALTI' => 'Khalti',
         'CARD' => 'Card',
         'PENDING' || 'UNPAID' => 'Cash / digital',

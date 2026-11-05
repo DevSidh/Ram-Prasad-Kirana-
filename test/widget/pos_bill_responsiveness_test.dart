@@ -51,7 +51,8 @@ class _Api extends AdminApiService {
       String? customerId,
       String? heldSaleId,
       double? expectedTotal,
-      Map<String, double>? unitPrices}) {
+      Map<String, double>? unitPrices,
+      Map<String, dynamic>? manualVerification}) {
     saves++;
     expect(expectedTotal, 10);
     expect(unitPrices, {'tea': 10});
@@ -238,8 +239,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
-  testWidgets(
-      'Fonepay replaces UPI and Pay blocks repeated clicks while processing',
+  testWidgets('eSewa QR Pay blocks repeated clicks while processing',
       (tester) async {
     await start(tester);
     await tester.tap(find.byWidgetPredicate((w) =>
@@ -247,25 +247,26 @@ void main() {
         w.decoration.labelText == 'Payment method'));
     await tester.pumpAndSettle();
     expect(find.textContaining('UPI'), findsNothing);
-    await tester.tap(find.text('Fonepay').last);
+    await tester.tap(find.text('eSewa / QR').last);
     await tester.pumpAndSettle();
     final button =
         tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Pay'));
     button.onPressed!();
     button.onPressed!();
     await tester.pump();
-    expect(api.payment.checks, 1);
+    expect(api.payment.checks, 0);
     expect(api.saves, 0);
     expect(
         tester
             .widget<FilledButton>(find.widgetWithText(FilledButton, 'Pay'))
             .onPressed,
         isNull);
-    api.payment.gate!.complete(
-        {'enabled': false, 'message': 'Official merchant profile required'});
-    await tester.pumpAndSettle();
-    expect(find.textContaining('Official merchant profile required'),
+    await settleIO(tester);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Waiting for cashier to confirm payment received.'),
         findsOneWidget);
+    await tester.tap(find.text('Cancel / Back'));
+    await tester.pumpAndSettle();
     expect(api.saves, 0);
     await tester.pumpWidget(const SizedBox.shrink());
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));

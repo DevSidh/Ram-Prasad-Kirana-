@@ -211,6 +211,18 @@ void main() {
     expect((await store.readJson(file))['paidAmount'], 15.0);
   });
 
+  test('initial print claim is durable and cannot be claimed by two callers',
+      () async {
+    final file = await save();
+    final claims = await Future.wait(
+        [store.claimInitialPrint(file), store.claimInitialPrint(file)]);
+    expect(claims.where((claimed) => claimed), hasLength(1));
+    final restarted = LocalBillingStore(rootPath: store.rootPath);
+    expect(await restarted.claimInitialPrint(file), isFalse);
+    expect((await restarted.readJson(file))['invoiceNumber'],
+        (await store.readJson(file))['invoiceNumber']);
+  });
+
   test('parallel catalogue merges preserve all independently fetched products',
       () async {
     final catalog = OfflinePosStore(
