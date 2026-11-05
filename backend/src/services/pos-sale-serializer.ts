@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { manualPaymentProvider } from './manual-fonepay.js';
 const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 export function serializeSale(sale: {
   id: string;
@@ -42,7 +43,7 @@ export function serializeSale(sale: {
     customerName: sale.customerName,
     customerPhone: sale.customerPhone,
     status: sale.status,
-    paymentMethod: sale.paymentMethod,
+    paymentMethod: sale.paymentMethod === 'DIGITAL' && sale.paymentCollections?.some(payment => manualPaymentProvider(payment.note) === 'ESEWA') ? 'ESEWA' : sale.paymentMethod,
     paymentStatus: sale.paymentStatus,
     subtotal: Number(sale.subtotal),
     discount: Number(sale.discount),
@@ -66,7 +67,7 @@ export function serializeSale(sale: {
     paymentCollections: (sale.paymentCollections ?? []).map((payment) => ({
       id: payment.id,
       amount: Number(payment.amount),
-      method: payment.method,
+      method: payment.method === 'DIGITAL' && manualPaymentProvider(payment.note) === 'ESEWA' ? 'ESEWA' : payment.method,
       note: payment.note,
       createdAt: payment.createdAt.toISOString(),
     })),

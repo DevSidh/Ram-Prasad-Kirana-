@@ -1805,6 +1805,7 @@ const healthCheck = async (_req: Request, res: Response) => {
       status: 'ok',
       service: 'Ram Prasad General Store API',
       database: 'connected',
+      billingCapabilities: { manualQrConfirmation: true, providers: ['FONEPAY', 'ESEWA'] },
       emailDelivery: getEmailDeliveryConfigurationStatus(),
       timestamp: new Date().toISOString(),
     });

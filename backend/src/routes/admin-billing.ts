@@ -15,6 +15,7 @@ import { recordBuyingStreakPurchase } from '../services/buying-streak.js';
 import { serializeSale } from '../services/pos-sale-serializer.js';
 import { configuredFonepayGateway, FonepayError, type FonepayGateway } from '../services/fonepay-gateway.js';
 import { createFonepayRouter } from './admin-fonepay.js';
+import { manualFonepayNote, manualFonepayReference, manualPaymentProvider } from '../services/manual-fonepay.js';
 
 const saleItemsInput = z.array(z.object({
   productId: z.string().trim().min(1).max(100),
@@ -29,7 +30,11 @@ const saleInput = z.object({
     .refine((value) => Number.isSafeInteger(Math.round(value * 100)))
     .default(0),
   vatRate: z.number().finite().min(0).max(100).default(0),
-  paymentMethod: z.enum(['CASH', 'DIGITAL', 'PENDING', 'FONEPAY']),
+  paymentMethod: z.enum(['CASH', 'DIGITAL', 'PENDING', 'FONEPAY', 'ESEWA']),
+  manualVerification: z.object({
+    verificationMethod: z.literal('MANUAL'), confirmed: z.literal(true),
+    transactionReference: z.string().trim().min(1).max(120),
+  }).strict().optional(),
   paidAmount: z.number().finite().min(0).max(999999999)
     .refine((value) => Number.isSafeInteger(Math.round(value * 100)))
     .optional(),
@@ -49,6 +54,12 @@ const saleInput = z.object({
     unitPrices: z.record(z.string(), z.number().finite().nonnegative()),
   }).strict().optional(),
 }).strict().superRefine((sale, context) => {
+  if (sale.manualVerification && (!['FONEPAY', 'ESEWA'].includes(sale.paymentMethod) || !sale.idempotencyKey || !sale.quote || sale.offlineSale)) {
+    context.addIssue({ code: 'custom', path: ['manualVerification'], message: 'Manual Fonepay requires a cashier checkout with an idempotency key and exact quote.' });
+  }
+  if (sale.paymentMethod === 'ESEWA' && !sale.manualVerification) {
+    context.addIssue({code: 'custom', path: ['manualVerification'], message: 'Confirm payment received before creating an eSewa bill.'});
+  }
   if (sale.paymentMethod === 'PENDING' &&
       (!sale.customerName || !sale.customerPhone)) {
     context.addIssue({
@@ -552,13 +563,13 @@ export function createAdminBillingRouter(
           return sum;
         }, 0);
       const digitalSales = paymentCollections
-        .filter((payment) => ['DIGITAL','FONEPAY'].includes(payment.method))
+        .filter((payment) => ['DIGITAL','FONEPAY','ESEWA'].includes(payment.method))
         .reduce((sum, payment) => sum + Number(payment.amount), 0) +
         sales
           .filter((sale) =>
             sale.paymentCollections.length === 0 &&
             sale.paymentStatus === 'COMPLETED' &&
-            ['DIGITAL','FONEPAY'].includes(sale.paymentMethod),
+            ['DIGITAL','FONEPAY','ESEWA'].includes(sale.paymentMethod),
           )
           .reduce((sum, sale) => sum + Number(sale.total), 0) +
         exchanges.reduce((sum, exchange) => {
@@ -990,8 +1001,18 @@ export function createAdminBillingRouter(
     const cashierId = authenticatedAdminId(res);
     if (!cashierId) return res.status(401).json({ error: 'Authentication is required.' });
     const parsed = saleInput.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: 'Check the bill items and payment details.' });
-    const fonepayCheckout = parsed.data.paymentMethod === 'FONEPAY';
+    if (!parsed.success) return res.status(400).json({
+      error: 'Check the bill items and payment details.',
+      details: parsed.error.issues.map(issue => ({ field: issue.path.join('.'), message: issue.message })),
+    });
+    const manualFonepay = ['FONEPAY', 'ESEWA'].includes(parsed.data.paymentMethod) && !!parsed.data.manualVerification;
+    // eSewa is a DIGITAL payment subtype; preserve its provider in audit metadata.
+    const storedPaymentMethod = parsed.data.paymentMethod === 'ESEWA' ? 'DIGITAL' : parsed.data.paymentMethod;
+    if (manualFonepay && !['ADMIN', 'BILLING_STAFF'].includes(authenticatedRole(res) ?? '')) {
+      return res.status(403).json({ error: 'Only a cashier or administrator can manually verify a Fonepay payment.' });
+    }
+    const confirmedAt = new Date();
+    const fonepayCheckout = parsed.data.paymentMethod === 'FONEPAY' && !manualFonepay;
     if (fonepayCheckout) {
       if (!parsed.data.idempotencyKey || !parsed.data.quote || parsed.data.offlineSale || (parsed.data.paidAmount ?? 0) !== 0) {
         return res.status(400).json({ error: 'Fonepay requires an online, idempotent checkout without a client payment claim.' });
@@ -1017,8 +1038,11 @@ export function createAdminBillingRouter(
       : `POS-${Date.now()}-${randomUUID().slice(0, 8).toUpperCase()}`;
     const offlineReplayMatches = (existing: {
       total: Prisma.Decimal; discount: Prisma.Decimal; vatRate: Prisma.Decimal;
+      paymentMethod?: string;
+      paymentCollections?: Array<{ method: string; note: string | null }>;
       items: Array<{ productId: string | null; quantity: number; weightGrams: number | null; unitPrice: Prisma.Decimal }>;
-    }) => !(offline || fonepayCheckout) || (
+    }) => !(offline || fonepayCheckout || manualFonepay) || (
+      (!manualFonepay || (existing.paymentMethod === storedPaymentMethod && existing.paymentCollections?.some(payment => payment.method === storedPaymentMethod && manualPaymentProvider(payment.note) === parsed.data.paymentMethod && manualFonepayReference(payment.note) === parsed.data.manualVerification!.transactionReference))) &&
       roundMoney(Number(existing.total)) === roundMoney((offline?.expectedTotal ?? parsed.data.quote!.expectedTotal)) &&
       roundMoney(Number(existing.discount)) === roundMoney(parsed.data.discount) &&
       roundMoney(Number(existing.vatRate)) === roundMoney(parsed.data.vatRate) &&
@@ -1044,7 +1068,7 @@ export function createAdminBillingRouter(
               throw new Error('POS_IDEMPOTENCY_KEY_REUSED');
             }
             if (!offlineReplayMatches(existing)) {
-              throw new Error('POS_OFFLINE_PRICE_CONFLICT');
+              throw new Error(manualFonepay ? 'POS_MANUAL_FONEPAY_CONFLICT' : 'POS_OFFLINE_PRICE_CONFLICT');
             }
             replayed = true;
             return existing;
@@ -1151,11 +1175,11 @@ export function createAdminBillingRouter(
             (parsed.data.paidAmount ?? 0) > total) {
           throw new Error('POS_PAID_AMOUNT_EXCEEDS_TOTAL');
         }
-        if (fonepayCheckout && total <= 0) throw new Error('POS_FONEPAY_EMPTY_TOTAL');
+        if ((fonepayCheckout || manualFonepay) && total <= 0) throw new Error('POS_FONEPAY_EMPTY_TOTAL');
         const isPending = paidAmount < total;
         const collectionMethod = parsed.data.paymentMethod === 'PENDING'
           ? parsed.data.paidNowMethod
-          : parsed.data.paymentMethod;
+          : storedPaymentMethod;
         // Imported cash belongs to an explicitly closed import shift, never
         // silently to the currently open till. No physical cash count is claimed.
         const shift = offline
@@ -1193,6 +1217,7 @@ export function createAdminBillingRouter(
                     recordedById: cashierId,
                     amount: paidAmount,
                     method: collectionMethod,
+                    ...(manualFonepay ? { note: manualFonepayNote(parsed.data.manualVerification!.transactionReference, cashierId, total, confirmedAt, parsed.data.paymentMethod), createdAt: confirmedAt } : {}),
                     ...(offline ? { createdAt: new Date(offline.occurredAt) } : {}),
                   },
                 },
@@ -1229,7 +1254,7 @@ export function createAdminBillingRouter(
         }
         return sale;
       });
-      return res.status(replayed ? 200 : 201).json({ sale: serializeSale(sale) });
+      return res.status(replayed ? 200 : 201).json({ sale: { ...serializeSale(sale), ...(manualFonepay ? { autoPrintAllowed: !replayed } : {}) } });
     } catch (error) {
       if (
         parsed.data.idempotencyKey &&
@@ -1247,9 +1272,9 @@ export function createAdminBillingRouter(
           });
           if (existing?.shift.cashierId === cashierId) {
             if (!offlineReplayMatches(existing)) {
-              return res.status(409).json({ error: 'The server bill differs from this offline snapshot. Review the original record; nothing was overwritten.' });
+              return res.status(409).json({ error: manualFonepay ? 'This payment reference or bill differs from the saved Fonepay checkout. Review the original bill.' : 'The server bill differs from this offline snapshot. Review the original record; nothing was overwritten.' });
             }
-            return res.status(200).json({ sale: serializeSale(existing) });
+            return res.status(200).json({ sale: { ...serializeSale(existing), ...(manualFonepay ? { autoPrintAllowed: false } : {}) } });
           }
         } catch (lookupError) {
           return sendAdminError(lookupError, res);
@@ -1269,6 +1294,8 @@ export function createAdminBillingRouter(
           POS_CUSTOMER_UNAVAILABLE: 'The selected customer is no longer available.',
           POS_QUOTE_CHANGED: 'Prices or totals changed. Refresh the products and review the bill before collecting payment. No sale was saved.',
           POS_OFFLINE_PRICE_CONFLICT: 'Offline bill prices differ from the current catalogue. Review this conflict; the original bill has not been changed or imported.',
+          POS_MANUAL_FONEPAY_CONFLICT: 'This payment reference or bill differs from the saved Fonepay checkout. Review the original bill; no duplicate was created.',
+          POS_FONEPAY_EMPTY_TOTAL: 'Fonepay requires a payable amount greater than NPR 0.00.',
           POS_PAID_AMOUNT_EXCEEDS_TOTAL: 'The received amount exceeds the bill total.',
         };
         if (clientErrors[error.message]) {
@@ -1877,19 +1904,33 @@ export function createAdminBillingRouter(
     }
   });
 
-  router.get('/exchanges', async (_req, res) => {
+  router.get('/exchanges', async (req, res) => {
     const cashierId = authenticatedAdminId(res);
     if (!cashierId) {
       return res.status(401).json({ error: 'Authentication is required.' });
     }
     try {
+      const query = z.object({search: z.string().trim().max(160).optional(),
+        day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()}).safeParse(req.query);
+      if (!query.success) return res.status(400).json({error: 'Choose a valid exchange search or date.'});
+      const search = query.data.search;
+      const range = query.data.day ? getLocalDayRangeForKey(query.data.day) : undefined;
       const isBillingStaff = authenticatedRole(res) === 'BILLING_STAFF';
       const exchanges = await prisma.posExchange.findMany({
-        where: isBillingStaff ? { cashierId } : undefined,
+        where: {
+          ...(isBillingStaff ? {cashierId} : {}),
+          ...(range ? {requestedAt: {gte: range.start, lt: range.end}} : {}),
+          ...(search ? {sale: {OR: [
+            {receiptNumber: {contains: search, mode: 'insensitive' as const}},
+            {invoiceNumber: {contains: search, mode: 'insensitive' as const}},
+            {customerName: {contains: search, mode: 'insensitive' as const}},
+            {customerPhone: {contains: search}},
+          ]}} : {}),
+        },
         orderBy: { requestedAt: 'desc' },
         take: 100,
         include: {
-          sale: { select: { receiptNumber: true } },
+          sale: { select: { receiptNumber: true, invoiceNumber: true, customerName: true, customerPhone: true } },
           cashier: { select: { name: true } },
           items: true,
         },
@@ -1899,6 +1940,9 @@ export function createAdminBillingRouter(
           id: exchange.id,
           saleId: exchange.saleId,
           receiptNumber: exchange.sale.receiptNumber,
+          invoiceNumber: exchange.sale.invoiceNumber,
+          customerName: exchange.sale.customerName,
+          customerPhone: exchange.sale.customerPhone,
           cashier: exchange.cashier.name,
           returnedCredit: Number(exchange.returnedCredit),
           replacementTotal: Number(exchange.replacementTotal),
