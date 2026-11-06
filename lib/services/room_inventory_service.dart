@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../models/room_inventory.dart';
+import '../models/stock_summary.dart';
 import 'admin_api_service.dart';
 import 'offline_pos_store.dart';
 import 'api_service.dart';
@@ -70,6 +71,21 @@ class RoomInventoryService {
           final count = normalized.available;
           snapshot.totals.putIfAbsent(
               product['id'] as String, () => (total: count, available: count));
+          final fields = pending['fields'];
+          if (fields is Map && fields['initialRoomAllocations'] is List) {
+            final factor = pending['kind'] != 'wholesale' &&
+                    StockSummary.isWeight(normalized.unitLabel)
+                ? 1000
+                : 1;
+            snapshot.stocks[normalized.id] = {
+              for (final row in fields['initialRoomAllocations'] as List)
+                if (row is Map &&
+                    row['roomId'] is String &&
+                    row['quantity'] is num)
+                  row['roomId'] as String:
+                      ((row['quantity'] as num) * factor).round(),
+            };
+          }
           if (!snapshot.products.any((p) => p.id == product['id'])) {
             snapshot.products.add(normalized);
           }

@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { sendAdminError } from '../middleware/auth.js';
 import { InventoryAdjustmentError, InventoryService } from '../services/inventory.js';
-import { consumeRoomStock, lockRoomProduct, RoomInventoryError } from '../services/room-inventory.js';
+import { consumeRoomStock, lockRoomProduct, RoomInventoryError, initialRoomAllocationsInput, allocateOpeningRoomStock } from '../services/room-inventory.js';
 import { runTransactionWithRetry } from '../services/transaction-retry.js';
 import { createAdminBillingRouter } from './admin-billing.js';
 import {
@@ -170,6 +170,7 @@ const createProductInput = z.object({
   categoryId: productFields.categoryId,
   price: productFields.price,
   initialBatch: initialBatchInput.optional(),
+  initialRoomAllocations: initialRoomAllocationsInput.optional(),
 }).strict();
 const expiryQuery = z.object({
   search: z.string().trim().max(200).optional(),
@@ -347,6 +348,7 @@ const wholesaleItemFields = {
   isActive: z.boolean(),
 };
 const createWholesaleItemInput = z.object(wholesaleItemFields).partial().extend({
+  initialRoomAllocations: initialRoomAllocationsInput.optional(),
   sku: wholesaleItemFields.sku,
   name: wholesaleItemFields.name,
   slug: wholesaleItemFields.slug,
@@ -2715,10 +2717,11 @@ export function createAdminRouter(
     if (req.file && !imageUpload) return;
     try {
       const id = randomUUID();
-      const item = await prisma.wholesaleItem.create({
+      const { initialRoomAllocations, ...fields } = parsed.data;
+      const createItem = (tx: Prisma.TransactionClient | PrismaClient) => tx.wholesaleItem.create({
         data: {
           id,
-          ...parsed.data,
+          ...fields,
           ...(imageUpload
             ? {
                 imageData: imageUpload.originalData,
@@ -2731,8 +2734,14 @@ export function createAdminRouter(
         },
         select: wholesaleItemSelect,
       });
+      const item = initialRoomAllocations ? await runTransactionWithRetry(prisma, async (tx) => {
+        const created = await createItem(tx);
+        await allocateOpeningRoomStock(tx, `wholesale-${id}`, created.stock, initialRoomAllocations, res.locals.authenticatedUserId);
+        return created;
+      }) : await createItem(prisma);
       return res.status(201).json({ wholesaleItem: wholesaleItemResponse(item) });
     } catch (error) {
+      if (error instanceof RoomInventoryError) return res.status(409).json({ error: error.message });
       if (handleKnownError(error, res)) return;
       sendAdminError(error, res);
     }
@@ -2974,7 +2983,7 @@ export function createAdminRouter(
     }
     const parsed = createProductInput.safeParse(body);
     if (!parsed.success) return invalidInput(res, parsed.error);
-    const { stock = 0, initialBatch, ...data } = parsed.data;
+    const { stock = 0, initialBatch, initialRoomAllocations, ...data } = parsed.data;
     if (data.price <= 0) return res.status(400).json({ error: 'Price must be greater than zero' });
     const salePriceError = validateProductSalePrice(data.price, data.originalPrice);
     if (salePriceError) return res.status(400).json({ error: salePriceError });
@@ -3047,12 +3056,13 @@ export function createAdminRouter(
             adminId,
           );
         }
+        await allocateOpeningRoomStock(tx, created.id, initialQuantity, initialRoomAllocations, adminId, created.unitLabel);
         return tx.product.findUnique({ where: { id: created.id }, select: productSelect });
       });
       if (!product) return res.status(500).json({ error: 'Unable to load the created product' });
       return res.status(201).json({ product: productResponse(product) });
     } catch (error) {
-      if (error instanceof InventoryAdjustmentError) {
+      if (error instanceof InventoryAdjustmentError || error instanceof RoomInventoryError) {
         return res.status(409).json({ error: error.message });
       }
       if (handleKnownError(error, res)) return;

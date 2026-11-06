@@ -1753,5 +1753,20 @@
   "{0} stock update(s) waiting to sync. Only quantities and room selections are shared; bill and customer details stay on this computer.": "{0} मौज्दात विवरण पठाउन बाँकी छन्। सामानको परिमाण र कोठा मात्र साझा हुन्छन्; बिल र ग्राहकको विवरण यही कम्प्युटरमा रहन्छ।",
   "SALE": "बिक्री",
   "ORDER": "अनलाइन अर्डर",
-  "ADJUSTMENT": "मौज्दात सच्याइएको"
+  "ADJUSTMENT": "मौज्दात सच्याइएको",
+  "Starting stock by room": "सुरुको मौज्दात कोठाअनुसार",
+  "Split the starting stock between rooms. Use the same stock units as above.": "सुरुको मौज्दात कोठाहरूमा बाँड्नुहोस्। माथिको मौज्दातकै एकाइ प्रयोग गर्नुहोस्।",
+  "Room name / number": "कोठाको नाम / नम्बर",
+  "Quantity in this room": "यस कोठामा राख्ने परिमाण",
+  "Remove room allocation": "यस कोठाको बाँडफाँट हटाउनुहोस्",
+  "Add another room": "अर्को कोठामा पनि राख्नुहोस्",
+  "Refresh rooms": "कोठाको सूची फेरि ल्याउनुहोस्",
+  "Choose each room once using its name or number.": "नाम वा नम्बरबाट हरेक कोठा एक पटक मात्र छान्नुहोस्।",
+  "Enter valid room quantities in the same unit as starting stock.": "सुरुको मौज्दातकै एकाइमा कोठाको सही परिमाण लेख्नुहोस्।",
+  "Room quantities must match the starting stock exactly.": "सबै कोठाको जम्मा परिमाण सुरुको मौज्दातसँग बराबर हुनुपर्छ।",
+  "Room quantities must match the starting stock exactly. Choose each room once.": "सबै कोठाको जम्मा परिमाण सुरुको मौज्दातसँग बराबर हुनुपर्छ। हरेक कोठा एक पटक मात्र छान्नुहोस्।",
+  "Choose active rooms. Refresh the room list before saving.": "प्रयोगमा रहेका कोठा छान्नुहोस्। सुरक्षित गर्नुअघि कोठाको सूची फेरि ल्याउनुहोस्।",
+  "Wait for the room list to load.": "कोठाको सूची आउन्जेल पर्खनुहोस्।",
+  "Unable to load rooms. Retry or open Inventory to add a room.": "कोठाको सूची आएन। फेरि प्रयास गर्नुहोस् वा कोठा थप्न इन्भेन्टरी खोल्नुहोस्।",
+  "OPENING": "सुरुको मौज्दात"
 }

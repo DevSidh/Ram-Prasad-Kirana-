@@ -1,4 +1,5 @@
 import '../../widgets/billing_localized_widgets.dart';
+import '../../widgets/initial_room_allocation_field.dart';
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -486,6 +487,7 @@ class _WholesaleItemForm extends StatefulWidget {
 }
 
 class _WholesaleItemFormState extends State<_WholesaleItemForm> {
+  final _roomAllocationKey = GlobalKey<InitialRoomAllocationFieldState>();
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _name;
   late final TextEditingController _sku;
@@ -571,7 +573,12 @@ class _WholesaleItemFormState extends State<_WholesaleItemForm> {
   }
 
   Future<void> _save() async {
+    if (_saving) return;
     if (!_formKey.currentState!.validate()) return;
+    if (widget.item == null &&
+        !(_roomAllocationKey.currentState?.validate() ?? false)) {
+      return;
+    }
     setState(() {
       _saving = true;
       _error = null;
@@ -605,6 +612,9 @@ class _WholesaleItemFormState extends State<_WholesaleItemForm> {
           _description.text.trim().isEmpty ? null : _description.text.trim(),
       'origin': _origin.text.trim().isEmpty ? null : _origin.text.trim(),
       'imageUrl': _removeImage ? null : widget.item?.imageUrl,
+      if (widget.item == null &&
+          _roomAllocationKey.currentState?.allocations != null)
+        'initialRoomAllocations': _roomAllocationKey.currentState!.allocations,
     };
     try {
       if (widget.item == null) {
@@ -744,6 +754,12 @@ class _WholesaleItemFormState extends State<_WholesaleItemForm> {
                     ),
                   ],
                 ),
+                if (widget.item == null)
+                  InitialRoomAllocationField(
+                      key: _roomAllocationKey,
+                      api: widget.api,
+                      stock: _stock,
+                      enabled: !_saving),
                 const SizedBox(height: 10),
                 Row(
                   children: [

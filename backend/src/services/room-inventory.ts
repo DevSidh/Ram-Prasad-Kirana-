@@ -1,4 +1,42 @@
 import { Prisma } from '@prisma/client';
+import { z } from 'zod';
+import { inventoryQuantityForUnit } from './product-validation.js';
+
+export const initialRoomAllocationsInput = z.array(z.object({
+  roomId: z.string().trim().min(1).max(100),
+  quantity: z.number().finite().positive().max(1000000),
+}).strict()).min(1).max(100);
+
+/** Opening stock and its locations commit together; no extra stock is created. */
+export async function allocateOpeningRoomStock(
+  tx: Prisma.TransactionClient, productId: string, total: number,
+  allocations: z.infer<typeof initialRoomAllocationsInput> | undefined,
+  actorId?: string, unitLabel?: string | null,
+): Promise<void> {
+  if (!allocations) return; // Existing clients retain Unassigned opening stock.
+  const factor = unitLabel != null && /^\s*\d+(?:\.\d+)?\s*(?:kg|g)\s*$/i.test(unitLabel) ? 1000 : 1;
+  if (allocations.some((row) => Math.abs(row.quantity * factor - Math.round(row.quantity * factor)) > 0.000001)) {
+    throw new RoomInventoryError('Enter valid room quantities in the same unit as starting stock.');
+  }
+  const rows = allocations.map((row) => ({ ...row,
+    quantity: unitLabel == null ? row.quantity : inventoryQuantityForUnit(row.quantity, unitLabel),
+  }));
+  if (new Set(rows.map((row) => row.roomId)).size !== rows.length ||
+      rows.some((row) => !Number.isSafeInteger(row.quantity) || row.quantity <= 0) ||
+      rows.reduce((sum, row) => sum + row.quantity, 0) !== total) {
+    throw new RoomInventoryError('Room quantities must match the starting stock exactly. Choose each room once.');
+  }
+  if (await tx.inventoryRoom.count({ where: { id: { in: rows.map((row) => row.roomId) }, active: true } }) !== rows.length) {
+    throw new RoomInventoryError('Choose active rooms. Refresh the room list before saving.');
+  }
+  for (const row of rows) {
+    await tx.inventoryRoomStock.create({ data: { productId, ...row } });
+    await tx.inventoryRoomMovement.create({ data: {
+      productId, fromRoomId: null, toRoomId: row.roomId, quantity: row.quantity,
+      reason: 'OPENING', referenceId: `opening:${productId}`, actorId: actorId ?? null,
+    } });
+  }
+}
 
 export type RoomPick = { productId: string; roomId: string | null; quantity: number };
 export class RoomInventoryError extends Error {}

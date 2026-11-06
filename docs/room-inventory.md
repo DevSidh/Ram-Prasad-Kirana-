@@ -68,6 +68,16 @@ The Windows executable requires its complete Release directory (DLLs and data), 
 
 The separate wholesale catalog follows the application's existing checkout capabilities. Room tracking does not convert wholesale-only records into retail Product rows or change existing sale-item foreign keys.
 
+## Opening stock locations
+
+New retail products, drink-menu products and wholesale items now include **Starting stock by room**. For positive starting stock, select an active room by its name/number and enter the quantity. Use **Add another room** to split the same product across rooms. The sum must equal starting stock; loose retail weights use kilograms (up to three decimals), while sealed/wholesale goods use whole stock units. **Add room** creates a room without leaving the product form. Zero-stock products need no allocation until stock is received.
+
+The backend writes opening stock and all room allocations in one transaction. Duplicate rooms, inactive/missing rooms and mismatched totals are rejected. Existing clients that do not send allocations retain Unassigned opening stock. No additional migration is needed. Deploy the updated backend before using the updated product forms.
+
+Room names and numbers remain editable at **Inventory → Manage rooms → Edit room**. The stable room ID preserves stock placements and bill references when a room is renamed or renumbered. For existing products, use **Inventory → Place / move stock** to distribute stock across rooms without creating duplicate products or increasing total stock.
+
+Queued offline products retain opening-room allocations. Cached room stock includes those placements while awaiting upload, and the same allocations are sent when the product synchronizes. Creating or renumbering rooms requires a server connection; cached active rooms can be selected while offline, with their current status revalidated during upload.
+
 ## Recovering the Render P3018 / CockroachDB 57000 room migration failure
 
 CockroachDB can lock a newly created table before the next index or foreign-key DDL runs. If `20261201000000_inventory_rooms` failed with this schema-lock error, the deploy command now runs a targeted recovery through [deploy-migrations.mjs](../backend/scripts/deploy-migrations.mjs).

@@ -1,4 +1,5 @@
 import '../../widgets/billing_localized_widgets.dart';
+import '../../widgets/initial_room_allocation_field.dart';
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -434,6 +435,7 @@ class _ProductFormDialog extends StatefulWidget {
 }
 
 class _ProductFormDialogState extends State<_ProductFormDialog> {
+  final _roomAllocationKey = GlobalKey<InitialRoomAllocationFieldState>();
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
   late final TextEditingController _brandController;
@@ -575,6 +577,10 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
   Future<void> _save() async {
     if (_saving) return;
     if (!_formKey.currentState!.validate()) return;
+    if (widget.product == null &&
+        !(_roomAllocationKey.currentState?.validate() ?? false)) {
+      return;
+    }
     final stock = double.parse(_stockController.text.trim());
     if (widget.product == null &&
         stock > 0 &&
@@ -633,6 +639,9 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
       'isVendingDrink': _isVendingDrink,
       'vendingSection': _isVendingDrink ? _vendingSection : null,
       if (widget.vendingOnly) 'isBestSeller': _isBestSeller,
+      if (widget.product == null &&
+          _roomAllocationKey.currentState?.allocations != null)
+        'initialRoomAllocations': _roomAllocationKey.currentState!.allocations,
     };
     if (widget.product == null && stock > 0) {
       data['initialBatch'] = {
@@ -1487,6 +1496,13 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                   ],
                 ),
                 const SizedBox(height: 11),
+                if (widget.product == null)
+                  InitialRoomAllocationField(
+                      key: _roomAllocationKey,
+                      api: widget.api,
+                      stock: _stockController,
+                      enabled: !_saving,
+                      wholeUnits: _unitType != 'weight'),
                 BillingTextFormField(
                   controller: _originalPriceController,
                   keyboardType:
