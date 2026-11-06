@@ -31,8 +31,70 @@ class ProductIdentity extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(
             child: BillingText(name,
-                style: style, maxLines: 2, overflow: TextOverflow.ellipsis)),
+                style: style,
+                maxLines: size <= 40 ? 1 : 2,
+                overflow: TextOverflow.ellipsis)),
       ]);
+}
+
+/// Stable product rows for invoice/refund details. On narrow windows the amount
+/// sits below the name instead of squeezing it into a vertical column.
+class ProductDetailRow extends StatelessWidget {
+  const ProductDetailRow(
+      {super.key,
+      required this.name,
+      required this.subtitle,
+      required this.amount,
+      this.productId,
+      this.sku,
+      this.imageUrl,
+      this.photoName,
+      this.store = const OfflinePosStore()});
+  final String name, subtitle, amount;
+  final String? productId, sku, imageUrl, photoName;
+  final OfflinePosStore store;
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: LayoutBuilder(builder: (context, constraints) {
+          final stacked = constraints.maxWidth < 480 ||
+              MediaQuery.textScalerOf(context).scale(18) > 25;
+          final price = BillingText(amount,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600));
+          return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            CatalogProductThumbnail(
+                productId: productId,
+                sku: sku,
+                imageUrl: imageUrl,
+                name: photoName ?? name,
+                store: store,
+                size: 48),
+            const SizedBox(width: 12),
+            Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  BillingText(name,
+                      maxLines: 3, overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 3),
+                  BillingText(subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall),
+                  if (stacked) ...[const SizedBox(height: 5), price],
+                ])),
+            if (!stacked) ...[
+              const SizedBox(width: 16),
+              ConstrainedBox(
+                  constraints:
+                      BoxConstraints(maxWidth: constraints.maxWidth * .28),
+                  child: price),
+            ],
+          ]);
+        }),
+      );
 }
 
 /// Old bill snapshots keep their original names. Resolve their picture by stable

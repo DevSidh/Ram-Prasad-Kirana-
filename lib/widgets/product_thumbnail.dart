@@ -73,93 +73,94 @@ class _ProductThumbnailState extends State<ProductThumbnail> {
   Widget build(BuildContext context) {
     final imageWidth = widget.width ?? widget.size;
     final imageHeight = widget.height ?? widget.size;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final pixelRatio = MediaQuery.devicePixelRatioOf(context);
-        final availableWidth = imageWidth.isFinite
-            ? imageWidth
-            : constraints.maxWidth.isFinite
-                ? constraints.maxWidth
-                : widget.size;
-        final photoWidth =
-            availableWidth * widget.imageWidthFactor.clamp(0.1, 1.0).toDouble();
-        final cacheWidth = _cacheDimension(
-          photoWidth,
-          constraints.maxWidth,
-          pixelRatio,
-        );
-        final cacheHeight = _cacheDimension(
-          imageHeight,
-          constraints.maxHeight,
-          pixelRatio,
-        );
-        final url = optimizedProductImageUrl(
-          widget.imageUrl,
-          targetWidth: widget.imageTargetWidth ?? cacheWidth,
-        );
-        final fallback = Container(
-          width: photoWidth,
-          height: imageHeight,
-          color: widget.backgroundColor == Colors.transparent
-              ? AppConstants.primaryLight
-              : widget.backgroundColor,
-          alignment: Alignment.center,
-          child: Icon(
-            widget.fallbackIcon,
-            color: AppConstants.primary,
-            size: widget.size >= 80 ? 46 : 26,
-          ),
-        );
-        final thumbnail = ColoredBox(
-          color: widget.backgroundColor,
-          child: Center(
-            child: SizedBox(
-              width: photoWidth,
-              height: imageHeight,
-              child: url.isEmpty
-                  ? fallback
-                  : CachedNetworkImage(
-                      key: ValueKey('$url-$_retryCount'),
-                      imageUrl: url,
-                      imageRenderMethodForWeb: kIsWeb
-                          ? ImageRenderMethodForWeb.HttpGet
-                          : ImageRenderMethodForWeb.HtmlImage,
-                      width: photoWidth,
-                      height: imageHeight,
-                      memCacheWidth: cacheWidth,
-                      memCacheHeight: cacheHeight,
-                      fit: widget.fit,
-                      fadeInDuration: Duration.zero,
-                      fadeOutDuration: Duration.zero,
-                      placeholder: (_, __) => fallback,
-                      errorWidget: (_, failedUrl, error) {
-                        FlutterError.reportError(
-                          FlutterErrorDetails(
-                            exception: error,
-                            library: 'product image',
-                            context: ErrorDescription(
-                              'while loading a remote product thumbnail',
-                            ),
-                          ),
-                        );
-                        _retryAfterFailure(failedUrl);
-                        return fallback;
-                      },
-                    ),
+    // The thumbnail's outer box must own its size. Center expands in loose
+    // ListTile/Row constraints, even when its image child is only 48 px wide.
+    // Without this box it can consume the entire row and squeeze text to one
+    // character per line (and an enormous row height).
+    return SizedBox(
+      width: imageWidth,
+      height: imageHeight,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+          final availableWidth = imageWidth.isFinite
+              ? imageWidth
+              : constraints.maxWidth.isFinite
+                  ? constraints.maxWidth
+                  : widget.size;
+          final photoWidth = availableWidth *
+              widget.imageWidthFactor.clamp(0.1, 1.0).toDouble();
+          final cacheWidth = _cacheDimension(
+            photoWidth,
+            constraints.maxWidth,
+            pixelRatio,
+          );
+          final cacheHeight = _cacheDimension(
+            imageHeight,
+            constraints.maxHeight,
+            pixelRatio,
+          );
+          final url = optimizedProductImageUrl(
+            widget.imageUrl,
+            targetWidth: widget.imageTargetWidth ?? cacheWidth,
+          );
+          final fallback = Container(
+            width: photoWidth,
+            height: imageHeight,
+            color: widget.backgroundColor == Colors.transparent
+                ? AppConstants.primaryLight
+                : widget.backgroundColor,
+            alignment: Alignment.center,
+            child: Icon(
+              widget.fallbackIcon,
+              color: AppConstants.primary,
+              size: widget.size >= 80 ? 46 : 26,
             ),
-          ),
-        );
+          );
+          final thumbnail = ColoredBox(
+            color: widget.backgroundColor,
+            child: Center(
+              child: SizedBox(
+                width: photoWidth,
+                height: imageHeight,
+                child: url.isEmpty
+                    ? fallback
+                    : CachedNetworkImage(
+                        key: ValueKey('$url-$_retryCount'),
+                        imageUrl: url,
+                        imageRenderMethodForWeb: kIsWeb
+                            ? ImageRenderMethodForWeb.HttpGet
+                            : ImageRenderMethodForWeb.HtmlImage,
+                        width: photoWidth,
+                        height: imageHeight,
+                        memCacheWidth: cacheWidth,
+                        memCacheHeight: cacheHeight,
+                        fit: widget.fit,
+                        fadeInDuration: Duration.zero,
+                        fadeOutDuration: Duration.zero,
+                        placeholder: (_, __) => fallback,
+                        errorWidget: (_, failedUrl, error) {
+                          // Missing/offline photographs are recoverable. Keep the
+                          // row stable and show its placeholder, not a page error.
+                          _retryAfterFailure(failedUrl);
+                          return fallback;
+                        },
+                      ),
+              ),
+            ),
+          );
 
-        // A zero-radius ClipRRect still emits a clipping layer. Many product
-        // cards already provide their own rounded image clipping, so avoid
-        // stacking a redundant rectangular clip around each thumbnail.
-        return widget.borderRadius == BorderRadius.zero
-            ? thumbnail
-            : ClipRRect(
-                borderRadius: widget.borderRadius,
-                child: thumbnail,
-              );
-      },
+          // A zero-radius ClipRRect still emits a clipping layer. Many product
+          // cards already provide their own rounded image clipping, so avoid
+          // stacking a redundant rectangular clip around each thumbnail.
+          return widget.borderRadius == BorderRadius.zero
+              ? thumbnail
+              : ClipRRect(
+                  borderRadius: widget.borderRadius,
+                  child: thumbnail,
+                );
+        },
+      ),
     );
   }
 

@@ -616,7 +616,7 @@ class _AdminShellState extends State<AdminShell> {
         'Sales Reports' => 'Reports',
         'New Bill / POS' => 'Create New Invoice',
         'Bill History / Invoices' => 'Invoice Management',
-        'Payments & Refunds' => 'Receipt Management',
+        'Payments & Refunds' => 'Refund Management',
         _ => title,
       };
 
@@ -1000,7 +1000,7 @@ class _AdminShellState extends State<AdminShell> {
   String _invoisoNavigationTitle(String title) => switch (title) {
         'New Bill / POS' => 'New Invoice',
         'Bill History / Invoices' => 'Invoices',
-        'Payments & Refunds' => 'Receipts',
+        'Payments & Refunds' => 'Refunds',
         'Sales Reports' => 'Reports',
         _ => title,
       };

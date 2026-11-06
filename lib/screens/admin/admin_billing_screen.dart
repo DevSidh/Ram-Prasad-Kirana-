@@ -2450,20 +2450,15 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         ),
         children: [
           for (final item in exchange.items)
-            ListTile(
-              dense: true,
-              leading: CatalogProductThumbnail(
-                  name: item.productName, store: widget.offlineStore),
-              title: BillingText(
-                '${item.type == 'RETURN' ? 'Return' : 'Replacement'}: '
-                '${item.productName}',
-              ),
-              subtitle: BillingText(
-                item.weightGrams == null
-                    ? 'Qty ${item.quantity}'
-                    : '${(item.weightGrams! / 1000).toStringAsFixed(3)} kg',
-              ),
-              trailing: BillingText(_money(item.lineTotal)),
+            ProductDetailRow(
+              photoName: item.productName,
+              store: widget.offlineStore,
+              name:
+                  '${item.type == 'RETURN' ? 'Return' : 'Replacement'}: ${item.productName}',
+              subtitle: item.weightGrams == null
+                  ? 'Qty ${item.quantity}'
+                  : '${(item.weightGrams! / 1000).toStringAsFixed(3)} kg',
+              amount: _money(item.lineTotal),
             ),
         ],
       ),
@@ -2649,19 +2644,15 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                 ),
                 children: [
                   for (final item in sale.items)
-                    ListTile(
-                      dense: true,
-                      leading: CatalogProductThumbnail(
-                          productId: item.productId,
-                          sku: item.sku,
-                          store: widget.offlineStore),
-                      title: BillingText(item.productName),
-                      subtitle: BillingText(
-                        item.weightGrams == null
-                            ? 'Qty ${item.quantity}'
-                            : '${item.weightGrams} g',
-                      ),
-                      trailing: BillingText(_money(item.lineTotal)),
+                    ProductDetailRow(
+                      productId: item.productId,
+                      sku: item.sku,
+                      store: widget.offlineStore,
+                      name: item.productName,
+                      subtitle: item.weightGrams == null
+                          ? 'Qty ${item.quantity}'
+                          : '${item.weightGrams} g',
+                      amount: _money(item.lineTotal),
                     ),
                   if (sale.paymentCollections.isNotEmpty)
                     const Divider(height: 1),
@@ -2861,19 +2852,15 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
             ),
           ),
           for (final item in sale.items)
-            ListTile(
-              dense: true,
-              leading: CatalogProductThumbnail(
-                  productId: item.productId,
-                  sku: item.sku,
-                  store: widget.offlineStore),
-              title: BillingText(item.productName),
-              subtitle: BillingText(
-                item.weightGrams == null
-                    ? 'Qty ${item.quantity} · ${item.sku}'
-                    : '${(item.weightGrams! / 1000).toStringAsFixed(3)} kg · ${item.sku}',
-              ),
-              trailing: BillingText(_money(item.lineTotal)),
+            ProductDetailRow(
+              productId: item.productId,
+              sku: item.sku,
+              store: widget.offlineStore,
+              name: item.productName,
+              subtitle: item.weightGrams == null
+                  ? 'Qty ${item.quantity} · ${item.sku}'
+                  : '${(item.weightGrams! / 1000).toStringAsFixed(3)} kg · ${item.sku}',
+              amount: _money(item.lineTotal),
             ),
           if (sale.refundedAmount > 0)
             ListTile(
