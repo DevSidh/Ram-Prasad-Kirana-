@@ -67,3 +67,19 @@ Final local checks on 2026-11-06:
 The Windows executable requires its complete Release directory (DLLs and data), not the executable by itself. No GitHub release, website deployment, production migration or new ZIP was published as part of this change.
 
 The separate wholesale catalog follows the application's existing checkout capabilities. Room tracking does not convert wholesale-only records into retail Product rows or change existing sale-item foreign keys.
+
+## Recovering the Render P3018 / CockroachDB 57000 room migration failure
+
+CockroachDB can lock a newly created table before the next index or foreign-key DDL runs. If `20261201000000_inventory_rooms` failed with this schema-lock error, the deploy command now runs a targeted recovery through [deploy-migrations.mjs](../backend/scripts/deploy-migrations.mjs).
+
+Recovery checks the recorded failure and the existing column types, nullability, defaults, primary keys, validated quantity/FK constraints, and index keys. It completes only missing tables/indexes with idempotent DDL, keeps the parent room table unlocked while adding the room-stock foreign key, and restores schema locks even after an error. Only after verification and relocking does it call Prisma `migrate resolve --applied`. It never drops room tables, deletes room/stock records, edits Prisma's history directly, or changes the original migration file/checksum.
+
+Push the backend changes and use **Render → Manual Deploy → Deploy latest commit**. The existing start command remains `npm start`; its prestart reaches the updated `prisma:migrate:deploy` script. Successful recovery logs `Recovered 20261201000000_inventory_rooms; room data preserved and schema locks restored.` and then continues normal migrations/startup. If the room migration first hits this lock during deployment, the wrapper performs the same recovery and retries deploy once. Unrelated migration failures are not automatically marked applied.
+
+For an operator running from the backend directory, the dedicated repair command is `node scripts/recover-failed-room-migration.mjs`; the normal deploy command is `npm run prisma:migrate:deploy`. These commands change the configured database schema and should only be run against the intended database. Do not reset the production database or mark this migration applied without completing its schema first.
+
+The recovery was checked against isolated fixtures for all ten partial SQL states, repeat runs, incompatible definitions, interruption/retry and relock failures. Syntax checks and the backend build passed. No live database repair was executed from this workspace.
+
+A read-only schema inspection also confirmed the reported partial state: `InventoryRoom` has the expected columns/defaults and primary key, but its unique room-number index is missing. The complete backend test suite passed with the recovery regression checks included.
+
+References: [CockroachDB schema locking](https://www.cockroachlabs.com/docs/v26.2/changefeed-best-practices#lock-the-schema-on-changefeed-watched-tables), [Prisma migration hotfix reconciliation](https://www.prisma.io/docs/orm/prisma-migrate/workflows/patching-and-hotfixing).
