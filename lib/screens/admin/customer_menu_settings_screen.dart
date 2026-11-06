@@ -1,3 +1,4 @@
+import '../../widgets/billing_localized_widgets.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -38,6 +39,7 @@ class _CustomerMenuSettingsScreenState
   Map<String, bool> _features = CustomerMenuFeatures.defaults.toJson();
   bool _loading = true;
   bool _saving = false;
+  bool _loaded = false;
   String? _error;
 
   @override
@@ -47,6 +49,7 @@ class _CustomerMenuSettingsScreenState
   }
 
   Future<void> _load() async {
+    if (_saving) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -56,6 +59,7 @@ class _CustomerMenuSettingsScreenState
       if (!mounted) return;
       setState(() {
         _features = CustomerMenuFeatures.fromJson(result).toJson();
+        _loaded = true;
         _loading = false;
       });
     } catch (error) {
@@ -68,6 +72,7 @@ class _CustomerMenuSettingsScreenState
   }
 
   Future<void> _save() async {
+    if (_saving || _loading || !_loaded) return;
     setState(() {
       _saving = true;
       _error = null;
@@ -80,7 +85,7 @@ class _CustomerMenuSettingsScreenState
         _saving = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Customer menu controls saved.')),
+        const SnackBar(content: BillingText('Customer menu controls saved.')),
       );
     } catch (error) {
       if (!mounted) return;
@@ -95,38 +100,43 @@ class _CustomerMenuSettingsScreenState
   Widget build(BuildContext context) {
     if (_loading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Customer menu controls')),
+        appBar: AppBar(title: const BillingText('Customer menu controls')),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Customer menu controls'),
+        title: const BillingText('Customer menu controls',
+            maxLines: 2, overflow: TextOverflow.ellipsis),
         actions: [
-          TextButton(
-            onPressed: _saving ? null : _save,
-            child: _saving
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Save'),
-          ),
+          if (MediaQuery.sizeOf(context).width >= 600)
+            TextButton(
+              onPressed: _saving || !_loaded ? null : _save,
+              child: _saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const BillingText('Save'),
+            ),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: [
-          const Text(
+          const BillingText(
             'Choose which options are available in every customer profile menu. Turning an item off hides its entry; it does not delete the customer’s data.',
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
             MaterialBanner(
-              content: Text(_error!),
+              forceActionsBelow: true,
+              content: BillingText(_error!),
               actions: [
-                TextButton(onPressed: _load, child: const Text('Retry')),
+                TextButton(
+                    onPressed: _saving ? null : _load,
+                    child: const BillingText('Retry')),
               ],
             ),
           ],
@@ -136,15 +146,24 @@ class _CustomerMenuSettingsScreenState
               children: [
                 for (final key in CustomerMenuFeatures.keys)
                   SwitchListTile(
-                    title: Text(_labels[key] ?? key),
+                    title: BillingText(_labels[key] ?? key),
                     value: _features[key] ?? true,
-                    onChanged: _saving
+                    onChanged: _saving || !_loaded
                         ? null
                         : (value) => setState(() => _features[key] = value),
                   ),
               ],
             ),
           ),
+          if (MediaQuery.sizeOf(context).width < 600) ...[
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: _saving || !_loaded ? null : _save,
+              child: _saving
+                  ? const CircularProgressIndicator()
+                  : const BillingText('Save'),
+            ),
+          ],
         ],
       ),
     );

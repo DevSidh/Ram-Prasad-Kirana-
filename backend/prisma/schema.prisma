@@ -523,6 +523,56 @@ model PosShift {
   @@index([openedAt])
 }
 
+// Room quantities are in the same base units as stock (grams for loose goods).
+// Product keys also support wholesale-<id>; existing product tables are unchanged.
+model InventoryRoom {
+  id        String @id @default(cuid())
+  name      String
+  number    String @unique
+  active    Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  stocks    InventoryRoomStock[]
+}
+
+model InventoryRoomStock {
+  roomId    String
+  productId String
+  quantity  Int @default(0)
+  room      InventoryRoom @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  @@id([roomId, productId])
+  @@index([productId])
+}
+
+model InventoryRoomMovement {
+  id          String @id @default(cuid())
+  requestId   String? @unique
+  productId   String
+  fromRoomId  String?
+  toRoomId    String?
+  quantity    Int
+  reason      String
+  referenceId String?
+  actorId     String?
+  createdAt   DateTime @default(now())
+  @@index([referenceId])
+  @@index([productId, createdAt])
+}
+
+model InventoryRoomCheckout {
+  saleId String @id
+  picks Json
+}
+
+// Only stock quantities/references, never local customers, prices or bill data.
+model InventoryLocalStockReceipt {
+  id String @id
+  ownerId String
+  items Json
+  roomPicks Json
+  createdAt DateTime @default(now())
+}
+
 model PosSale {
   id             String           @id @default(cuid())
   receiptNumber  String           @unique

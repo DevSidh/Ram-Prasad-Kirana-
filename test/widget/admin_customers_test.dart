@@ -88,6 +88,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Asha Sharma'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Remove customer'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Remove customer'));
     await tester.pumpAndSettle();
     expect(find.textContaining('item lines, payments'), findsOneWidget);

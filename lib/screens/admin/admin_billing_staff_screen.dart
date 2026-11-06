@@ -1,3 +1,4 @@
+import '../../widgets/billing_localized_widgets.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/pos_models.dart';
@@ -21,6 +22,7 @@ class _AdminBillingStaffScreenState extends State<AdminBillingStaffScreen> {
   final _searchController = TextEditingController();
   List<BillingStaffAccount> _staff = const [];
   bool _loading = true;
+  int _loadRequest = 0;
   String? _error;
   String? _workingUserId;
 
@@ -37,6 +39,7 @@ class _AdminBillingStaffScreenState extends State<AdminBillingStaffScreen> {
   }
 
   Future<void> _loadStaff() async {
+    final request = ++_loadRequest;
     setState(() {
       _loading = true;
       _error = null;
@@ -45,13 +48,13 @@ class _AdminBillingStaffScreenState extends State<AdminBillingStaffScreen> {
       final staff = await _adminApi.getBillingStaff(
         query: _searchController.text.trim(),
       );
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _staff = staff;
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _error = error.toString().replaceFirst('Exception: ', '');
         _loading = false;
@@ -65,9 +68,9 @@ class _AdminBillingStaffScreenState extends State<AdminBillingStaffScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(
+        title: BillingText(
             promoting ? 'Grant billing access?' : 'Remove billing access?'),
-        content: Text(
+        content: BillingText(
           promoting
               ? '${account.name} will be able to use the billing counter.'
               : '${account.name} will lose billing-counter access and return to a customer account.',
@@ -75,11 +78,11 @@ class _AdminBillingStaffScreenState extends State<AdminBillingStaffScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: const BillingText('Cancel'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text(promoting ? 'Grant access' : 'Remove access'),
+            child: BillingText(promoting ? 'Grant access' : 'Remove access'),
           ),
         ],
       ),
@@ -109,7 +112,7 @@ class _AdminBillingStaffScreenState extends State<AdminBillingStaffScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Billing staff access'),
+        title: const BillingText('Billing staff access'),
       ),
       body: AdminGradientBackground(
         child: Center(
@@ -117,10 +120,9 @@ class _AdminBillingStaffScreenState extends State<AdminBillingStaffScreen> {
             constraints: const BoxConstraints(maxWidth: 900),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(8, 24, 30, 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+              child: ListView(
                 children: [
-                  const Text(
+                  const BillingText(
                     'Only active, verified accounts can be granted billing access. '
                     'Changes revoke the account’s current session.',
                   ),
@@ -131,7 +133,7 @@ class _AdminBillingStaffScreenState extends State<AdminBillingStaffScreen> {
                         child: TextField(
                           controller: _searchController,
                           onSubmitted: (_) => _loadStaff(),
-                          decoration: const InputDecoration(
+                          decoration: const BillingInputDecoration(
                             labelText: 'Search verified users by name or email',
                             prefixIcon: Icon(Icons.search_rounded),
                           ),
@@ -141,7 +143,7 @@ class _AdminBillingStaffScreenState extends State<AdminBillingStaffScreen> {
                       FilledButton.icon(
                         onPressed: _loading ? null : _loadStaff,
                         icon: const Icon(Icons.search_rounded),
-                        label: const Text('Search'),
+                        label: const BillingText('Search'),
                       ),
                     ],
                   ),
@@ -154,77 +156,75 @@ class _AdminBillingStaffScreenState extends State<AdminBillingStaffScreen> {
                       icon: Icons.error_outline_rounded,
                       trailing: TextButton(
                         onPressed: _loading ? null : _loadStaff,
-                        child: const Text('Retry'),
+                        child: const BillingText('Retry'),
                       ),
                     ),
                   ],
                   const SizedBox(height: 12),
-                  Expanded(
-                    child: _loading
-                        ? const Center(child: CircularProgressIndicator())
-                        : _staff.isEmpty
-                            ? const Center(
-                                child: Text('No matching verified accounts.'),
-                              )
-                            : ListView.separated(
-                                itemCount: _staff.length,
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(height: 10),
-                                itemBuilder: (context, index) {
-                                  final account = _staff[index];
-                                  final isBillingStaff =
-                                      account.role == 'BILLING_STAFF';
-                                  final canPromote =
-                                      account.isActive && account.emailVerified;
-                                  final working = _workingUserId == account.id;
-                                  return Card(
-                                    margin: EdgeInsets.zero,
-                                    child: ListTile(
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 5,
-                                      ),
-                                      leading: CircleAvatar(
-                                        backgroundColor:
-                                            AppColors.thumbnailBlue,
-                                        foregroundColor: AppColors.primary,
-                                        child: Icon(
-                                          isBillingStaff
-                                              ? Icons.point_of_sale_rounded
-                                              : Icons.person_outline_rounded,
-                                        ),
-                                      ),
-                                      title: Text(account.name),
-                                      subtitle: Text(
-                                        '${account.email} · '
-                                        '${account.isActive ? 'Active' : 'Inactive'}',
-                                      ),
-                                      trailing: FilledButton(
-                                        onPressed: working ||
-                                                (!isBillingStaff && !canPromote)
-                                            ? null
-                                            : () => _changeRole(account),
-                                        child: working
-                                            ? const SizedBox(
-                                                width: 18,
-                                                height: 18,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                ),
-                                              )
-                                            : Text(
-                                                isBillingStaff
-                                                    ? 'Remove access'
-                                                    : 'Grant access',
-                                              ),
+                  _loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _staff.isEmpty
+                          ? const Center(
+                              child:
+                                  BillingText('No matching verified accounts.'),
+                            )
+                          : ListView.separated(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: _staff.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 10),
+                              itemBuilder: (context, index) {
+                                final account = _staff[index];
+                                final isBillingStaff =
+                                    account.role == 'BILLING_STAFF';
+                                final canPromote =
+                                    account.isActive && account.emailVerified;
+                                final working = _workingUserId == account.id;
+                                return Card(
+                                  margin: EdgeInsets.zero,
+                                  child: ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 5,
+                                    ),
+                                    leading: CircleAvatar(
+                                      backgroundColor: AppColors.thumbnailBlue,
+                                      foregroundColor: AppColors.primary,
+                                      child: Icon(
+                                        isBillingStaff
+                                            ? Icons.point_of_sale_rounded
+                                            : Icons.person_outline_rounded,
                                       ),
                                     ),
-                                  );
-                                },
-                              ),
-                  ),
+                                    title: BillingText(account.name),
+                                    subtitle: BillingText(
+                                      '${account.email} · '
+                                      '${account.isActive ? 'Active' : 'Inactive'}',
+                                    ),
+                                    trailing: FilledButton(
+                                      onPressed: working ||
+                                              (!isBillingStaff && !canPromote)
+                                          ? null
+                                          : () => _changeRole(account),
+                                      child: working
+                                          ? const SizedBox(
+                                              width: 18,
+                                              height: 18,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            )
+                                          : BillingText(
+                                              isBillingStaff
+                                                  ? 'Remove access'
+                                                  : 'Grant access',
+                                            ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
                 ],
               ),
             ),

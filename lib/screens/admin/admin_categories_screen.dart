@@ -1,3 +1,4 @@
+import '../../widgets/billing_localized_widgets.dart';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -25,6 +26,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
   List<AdminCategory> _categories = [];
   String? _error;
   bool _loading = true;
+  int _loadRequest = 0;
 
   @override
   void initState() {
@@ -33,19 +35,21 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = ++_loadRequest;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final categories = await _adminApi.getCategories();
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _categories = categories;
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _error = _cleanError(error);
         _loading = false;
@@ -65,28 +69,28 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Deactivate category?'),
-        content: Text(
+        title: const BillingText('Deactivate category?'),
+        content: BillingText(
           '“${category.name}” will no longer be available to customers. Existing products will not be deleted.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: const BillingText('Cancel'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Deactivate'),
+            child: const BillingText('Deactivate'),
           ),
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted) return;
     try {
       await _adminApi.updateCategory(category.id, {'isActive': false});
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${category.name} deactivated')),
+        SnackBar(content: BillingText('${category.name} deactivated')),
       );
       _load();
     } catch (error) {
@@ -97,7 +101,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
 
   void _showError(String message) {
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+        .showSnackBar(SnackBar(content: BillingText(message)));
   }
 
   @override
@@ -117,7 +121,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
           Row(
             children: [
               Expanded(
-                child: Text(
+                child: BillingText(
                   'Categories are shared with your store catalog.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
@@ -125,7 +129,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
               FilledButton.icon(
                 onPressed: () => _editCategory(),
                 icon: const Icon(Icons.add, size: 18),
-                label: const Text('Add'),
+                label: const BillingText('Add'),
               ),
             ],
           ),
@@ -266,7 +270,8 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.category == null ? 'Add category' : 'Edit category'),
+      title: BillingText(
+          widget.category == null ? 'Add category' : 'Edit category'),
       content: SizedBox(
         width: 420,
         child: Form(
@@ -275,11 +280,12 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextFormField(
+                BillingTextFormField(
                   controller: _nameController,
                   autofocus: true,
                   textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(labelText: 'Category name'),
+                  decoration:
+                      const BillingInputDecoration(labelText: 'Category name'),
                   onChanged: (value) {
                     if (!_slugEdited) _slugController.text = _slugify(value);
                   },
@@ -288,20 +294,21 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
                       : null,
                 ),
                 const SizedBox(height: 12),
-                TextFormField(
+                BillingTextFormField(
                   controller: _slugController,
-                  decoration: const InputDecoration(labelText: 'URL slug'),
+                  decoration:
+                      const BillingInputDecoration(labelText: 'URL slug'),
                   onChanged: (_) => _slugEdited = true,
                   validator: (value) => value == null || _slugify(value).isEmpty
                       ? 'Enter a valid slug'
                       : null,
                 ),
                 const SizedBox(height: 12),
-                TextFormField(
+                BillingTextFormField(
                   controller: _descriptionController,
                   minLines: 2,
                   maxLines: 3,
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                       labelText: 'Description (optional)'),
                 ),
                 const SizedBox(height: 14),
@@ -325,7 +332,7 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
                                 ),
                               )
                             : const Icon(Icons.upload_outlined),
-                        label: Text(
+                        label: BillingText(
                           _uploadingImage ? 'Uploading image…' : 'Upload image',
                         ),
                       ),
@@ -333,10 +340,10 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
                   ],
                 ),
                 const SizedBox(height: 10),
-                TextFormField(
+                BillingTextFormField(
                   controller: _imageUrlController,
                   keyboardType: TextInputType.url,
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'Image URL (optional)',
                     helperText: 'Upload an image or paste a URL.',
                   ),
@@ -356,7 +363,7 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
           onPressed: _saving || _uploadingImage
               ? null
               : () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
+          child: const BillingText('Cancel'),
         ),
         FilledButton(
           onPressed: _saving || _uploadingImage ? null : _save,
@@ -364,7 +371,7 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
               ? const SizedBox.square(
                   dimension: 17,
                   child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('Save category'),
+              : const BillingText('Save category'),
         ),
       ],
     );
@@ -424,7 +431,7 @@ class _CategoryCard extends StatelessWidget {
                 Row(
                   children: [
                     Flexible(
-                      child: Text(
+                      child: BillingText(
                         category.name,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.titleMedium,
@@ -435,7 +442,7 @@ class _CategoryCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 3),
-                Text(
+                BillingText(
                   category.slug,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -443,7 +450,7 @@ class _CategoryCard extends StatelessWidget {
                 ),
                 if (category.description?.isNotEmpty == true) ...[
                   const SizedBox(height: 3),
-                  Text(
+                  BillingText(
                     category.description!,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -453,17 +460,17 @@ class _CategoryCard extends StatelessWidget {
               ],
             ),
           ),
-          PopupMenuButton<String>(
+          BillingPopupMenuButton<String>(
             tooltip: 'Category actions',
             onSelected: (action) {
               if (action == 'edit') onEdit();
               if (action == 'deactivate') onDeactivate?.call();
             },
             itemBuilder: (_) => [
-              const PopupMenuItem(value: 'edit', child: Text('Edit')),
+              const PopupMenuItem(value: 'edit', child: BillingText('Edit')),
               if (onDeactivate != null)
                 const PopupMenuItem(
-                    value: 'deactivate', child: Text('Deactivate')),
+                    value: 'deactivate', child: BillingText('Deactivate')),
             ],
           ),
         ],
@@ -507,17 +514,17 @@ class _EmptyCategories extends StatelessWidget {
           children: [
             Icon(Icons.category_outlined, size: 34, color: AppColors.muted),
             const SizedBox(height: 10),
-            const Text('No categories yet',
+            const BillingText('No categories yet',
                 style: TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 5),
-            Text('Create your first category to group store products.',
+            BillingText('Create your first category to group store products.',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 14),
             FilledButton.icon(
               onPressed: onAdd,
               icon: const Icon(Icons.add),
-              label: const Text('Create category'),
+              label: const BillingText('Create category'),
             ),
           ],
         ),
@@ -552,7 +559,7 @@ class _ErrorBanner extends StatelessWidget {
           color: AppColors.errorPill,
           borderRadius: BorderRadius.circular(AppRadii.row),
         ),
-        child: Text(
+        child: BillingText(
           message,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: AppColors.errorText,

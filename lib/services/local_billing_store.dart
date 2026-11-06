@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:uuid/uuid.dart';
+import 'inventory_changes.dart';
 
 /// Durable financial snapshots. An explicit computer-only bill is never queued.
 /// The directory override is used by isolated persistence/restore tests.
@@ -115,6 +116,7 @@ class LocalBillingStore {
     await temp.rename(file.path);
     // Includes sale, collection and sync changes from every store instance.
     _displayRevision++;
+    InventoryChanges.notify();
     _displayStock.clear();
     _displayLoads.clear();
   }
@@ -155,6 +157,8 @@ class LocalBillingStore {
           final previous = await readJson(file);
           if (previous['idempotencyKey'] != requestId ||
               previous['total'] != record['total'] ||
+              jsonEncode(previous['roomPicks']) !=
+                  jsonEncode(record['roomPicks']) ||
               jsonEncode(previous['items']) != jsonEncode(record['items'])) {
             throw StateError(
                 'This bill reference is already committed with different contents.');
@@ -259,6 +263,7 @@ class LocalBillingStore {
     for (final entry in await records()) {
       if (entry.record['trackLocalStock'] != true ||
           entry.record['syncState'] == 'synced' ||
+          entry.record['roomStockSyncedAt'] != null ||
           entry.record['status'] == 'CANCELLED') {
         continue;
       }
@@ -272,6 +277,19 @@ class LocalBillingStore {
     }
     return result;
   }
+
+  Future<void> setRoomStockSyncResult(File file,
+          {String? error, bool synced = false}) =>
+      _locked(() async {
+        final record = await readJson(file);
+        await writeJson(file, {
+          ...record,
+          'roomStockSyncError': error,
+          'roomStockSyncState': synced ? 'synced' : 'conflict',
+          if (synced)
+            'roomStockSyncedAt': DateTime.now().toUtc().toIso8601String()
+        });
+      });
 
   /// Full local-record export, excluding lock/temp/recovery files. Never tokens.
   Future<File> createBackup(File target) => _locked(() async {

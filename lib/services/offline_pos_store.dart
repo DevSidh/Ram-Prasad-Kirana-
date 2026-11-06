@@ -5,7 +5,9 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/pos_models.dart';
+import '../models/stock_summary.dart';
 import 'local_billing_store.dart';
+import 'inventory_changes.dart';
 
 /// Persistent local POS catalog used by the Windows billing screen when the
 /// server cannot be reached. The server remains the source of truth online.
@@ -54,7 +56,10 @@ class OfflinePosStore {
     }
   }
 
-  static void invalidateFullRefresh() => _refreshedAt.clear();
+  static void invalidateFullRefresh() {
+    _refreshedAt.clear();
+    InventoryChanges.notify();
+  }
 
   Future<File> _catalogFile() async {
     final directory =
@@ -310,10 +315,20 @@ class OfflinePosStore {
       if (decoded['products'] is! List) {
         return const [];
       }
-      final products = (decoded['products'] as List)
+      var products = (decoded['products'] as List)
           .whereType<Map<String, dynamic>>()
           .map(PosProduct.fromJson)
           .toList(growable: false);
+      final pending = await readPendingProducts();
+      final normalized = {
+        for (final entry in pending)
+          if (entry['posProduct'] is Map<String, dynamic>)
+            entry['localId'] as String: pendingProductSnapshot(entry)
+      };
+      if (normalized.isNotEmpty) {
+        products =
+            products.map((p) => normalized[p.id] ?? p).toList(growable: false);
+      }
       // Recovery copies must remain observable; never cache a broken primary.
       if (decoded['_recoveredFromBackup'] != true && products.length <= 20000) {
         if (_catalogs.length >= 4) _catalogs.remove(_catalogs.keys.first);
@@ -339,7 +354,7 @@ class OfflinePosStore {
       for (final entry in pending)
         if (entry['posProduct'] is Map<String, dynamic>)
           (entry['posProduct'] as Map<String, dynamic>)['id'] as String:
-              PosProduct.fromJson(entry['posProduct'] as Map<String, dynamic>),
+              pendingProductSnapshot(entry),
     };
     await const LocalBillingStore().writeJson(file, {
       'savedAt': DateTime.now().toUtc().toIso8601String(),
@@ -434,7 +449,10 @@ class OfflinePosStore {
       barcode: fields['barcode'] as String?,
       price: (fields['price'] as num?)?.toDouble() ?? 0,
       unitLabel: fields['unitLabel']?.toString() ?? '1 pc',
-      available: stock.ceil(),
+      available: kind != 'wholesale' &&
+              StockSummary.isWeight(fields['unitLabel']?.toString() ?? '')
+          ? (stock * 1000).round()
+          : stock.ceil(),
       imageUrl: fields['imageUrl'] as String?,
     );
     entries.add({
@@ -456,6 +474,19 @@ class OfflinePosStore {
         .where((entry) => entry['localId'] != localId)
         .toList(growable: false);
     await savePendingProducts(entries);
+  }
+
+  /// Pending retail stock uses the same gram-based representation as the API.
+  /// This also repairs cached pre-room catalog entries without changing bills.
+  static PosProduct pendingProductSnapshot(Map<String, dynamic> entry) {
+    final json = Map<String, dynamic>.from(entry['posProduct'] as Map);
+    final stock = entry['stock'];
+    if (stock is num &&
+        entry['kind'] != 'wholesale' &&
+        StockSummary.isWeight(json['unitLabel']?.toString() ?? '')) {
+      json['available'] = (stock * 1000).round();
+    }
+    return PosProduct.fromJson(json);
   }
 
   Future<void> setPendingProductError(String localId, String message) async {

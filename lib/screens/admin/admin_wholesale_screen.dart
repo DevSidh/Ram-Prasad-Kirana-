@@ -1,3 +1,4 @@
+import '../../widgets/billing_localized_widgets.dart';
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -13,18 +14,25 @@ import '../../services/offline_pos_store.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/product_thumbnail.dart';
 import '../../widgets/store_animation.dart';
+import '../../widgets/stock_summary_panel.dart';
+import '../../services/inventory_changes.dart';
 
 class AdminWholesaleScreen extends StatefulWidget {
   final ApiService api;
+  final OfflinePosStore offlineStore;
 
-  const AdminWholesaleScreen({super.key, required this.api});
+  const AdminWholesaleScreen(
+      {super.key,
+      required this.api,
+      this.offlineStore = const OfflinePosStore()});
 
   @override
   State<AdminWholesaleScreen> createState() => _AdminWholesaleScreenState();
 }
 
 class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
-  late final AdminApiService _adminApi = AdminApiService(widget.api);
+  late final AdminApiService _adminApi =
+      AdminApiService(widget.api, offlineStore: widget.offlineStore);
   final _searchController = TextEditingController();
   AdminWholesaleItemPage? _page;
   String? _error;
@@ -33,22 +41,43 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
   int _loadRequest = 0;
   Timer? _searchTimer;
   Timer? _offlineSyncTimer;
+  Timer? _inventoryTimer;
+  bool _visible = false;
 
   @override
   void initState() {
     super.initState();
     _load();
+    InventoryChanges.revision.addListener(_inventoryChanged);
     _offlineSyncTimer = Timer.periodic(const Duration(seconds: 45), (_) {
-      unawaited(_retryPendingProducts());
+      if (_visible && !_loading) unawaited(_load(page: _pageNumber));
     });
   }
 
   @override
   void dispose() {
+    InventoryChanges.revision.removeListener(_inventoryChanged);
+    _inventoryTimer?.cancel();
     _searchTimer?.cancel();
     _offlineSyncTimer?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final visible = TickerMode.valuesOf(context).enabled;
+    if (visible && !_visible && !_loading) unawaited(_load(page: _pageNumber));
+    _visible = visible;
+  }
+
+  void _inventoryChanged() {
+    if (!mounted || !_visible || _loading) return;
+    _inventoryTimer?.cancel();
+    _inventoryTimer = Timer(const Duration(milliseconds: 350), () {
+      if (mounted) _load(page: _pageNumber);
+    });
   }
 
   Future<void> _load({int page = 1}) async {
@@ -63,7 +92,7 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
         page: page,
         search: _searchController.text,
       );
-      await const OfflinePosStore().mergeCatalog(
+      await widget.offlineStore.mergeCatalog(
         result.items
             .where((item) => item.isActive)
             .map((item) => PosProduct(
@@ -78,14 +107,30 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
                 ))
             .toList(growable: false),
       );
-      final pending = await const OfflinePosStore().readPendingProducts();
+      final pending = await widget.offlineStore.readPendingProducts();
+      final projected = await widget.offlineStore.projectLocalStock([
+        for (final item in result.items)
+          PosProduct(
+              id: 'wholesale-${item.id}',
+              name: item.name,
+              sku: item.sku,
+              barcode: null,
+              price: item.price,
+              unitLabel: item.unitLabel,
+              available: item.stock),
+      ], freshStock: true);
+      final available = {for (final item in projected) item.id: item.available};
       final conflictCount = pending
           .where((entry) =>
               entry['kind'] == 'wholesale' && entry['syncError'] is String)
           .length;
       if (!mounted || request != _loadRequest) return;
       setState(() {
-        _page = result;
+        _page = AdminWholesaleItemPage(pagination: result.pagination, items: [
+          for (final item in result.items)
+            item.withAvailableStock(
+                available['wholesale-${item.id}'] ?? item.stock)
+        ]);
         _pageNumber = page;
         _error = conflictCount == 0
             ? null
@@ -94,7 +139,8 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
       });
     } catch (error) {
       if (!mounted || request != _loadRequest) return;
-      final cachedCategories = await const OfflinePosStore().readCategories();
+      final cachedCategories = await widget.offlineStore.readCategories();
+      if (!mounted || request != _loadRequest) return;
       if (cachedCategories.isNotEmpty) {
         setState(() {
           _page = const AdminWholesaleItemPage(
@@ -115,14 +161,6 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
     }
   }
 
-  Future<void> _retryPendingProducts() async {
-    if (!mounted || _loading) return;
-    final pending = await const OfflinePosStore().readPendingProducts();
-    if (pending.any((entry) => entry['kind'] == 'wholesale')) {
-      await _load(page: _pageNumber);
-    }
-  }
-
   void _onSearchChanged(String value) {
     _searchTimer?.cancel();
     _searchTimer = Timer(const Duration(milliseconds: 300), () {
@@ -135,7 +173,7 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
     try {
       categories = await _adminApi.getCategories();
     } catch (_) {
-      categories = (await const OfflinePosStore().readCategories())
+      categories = (await widget.offlineStore.readCategories())
           .map(AdminCategory.fromJson)
           .toList(growable: false);
     }
@@ -144,8 +182,8 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
     if (activeCategories.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content:
-              Text('Create an active category before adding wholesale items.'),
+          content: BillingText(
+              'Create an active category before adding wholesale items.'),
         ),
       );
       return;
@@ -166,19 +204,19 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Pause wholesale item?'),
-          content: Text(
+          title: const BillingText('Pause wholesale item?'),
+          content: BillingText(
             '${item.name} will be hidden from the customer wholesale catalog. '
             'Its inventory and order history will be kept.',
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Keep item'),
+              child: const BillingText('Keep item'),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Pause item'),
+              child: const BillingText('Pause item'),
             ),
           ],
         ),
@@ -190,7 +228,7 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
+          content: BillingText(
             isActive
                 ? '${item.name} is available to wholesale customers.'
                 : '${item.name} is paused.',
@@ -201,7 +239,7 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_cleanError(error))),
+        SnackBar(content: BillingText(_cleanError(error))),
       );
     }
   }
@@ -220,6 +258,10 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
         children: [
+          StockSummaryPanel(
+              api: widget.api,
+              wholesale: true,
+              offlineStore: widget.offlineStore),
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
@@ -229,17 +271,17 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                BillingText(
                   'Wholesale inventory',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: AppColors.surface,
+                        color: Colors.white,
                       ),
                 ),
                 const SizedBox(height: 5),
-                Text(
+                BillingText(
                   'Separate items, prices and stock for bulk orders.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppColors.pageEnd,
+                        color: Colors.white,
                       ),
                 ),
               ],
@@ -257,10 +299,10 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
                   _searchTimer?.cancel();
                   _load(page: 1);
                 },
-                decoration: InputDecoration(
+                decoration: BillingInputDecoration(
                   hintText: 'Find a wholesale item',
                   prefixIcon: const Icon(Icons.search_rounded),
-                  suffixIcon: IconButton(
+                  suffixIcon: BillingIconButton(
                     tooltip: _searchController.text.isEmpty
                         ? 'Search'
                         : 'Clear search',
@@ -284,7 +326,7 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
               final add = FilledButton.icon(
                 onPressed: () => _editItem(),
                 icon: const Icon(Icons.add_rounded),
-                label: const Text('Add wholesale item'),
+                label: const BillingText('Add wholesale item'),
               );
               return compact
                   ? Column(
@@ -302,7 +344,7 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
           ),
           if (_page != null) ...[
             const SizedBox(height: 12),
-            Text(
+            BillingText(
               '${_page!.pagination.total} separate wholesale items',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     fontWeight: FontWeight.w600,
@@ -386,21 +428,21 @@ class _WholesaleItemCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                BillingText(
                   item.name,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 3),
-                Text(
+                BillingText(
                   '${item.sku} · ${item.categoryName}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 5),
-                Text(
+                BillingText(
                   'Rs. ${item.price.toStringAsFixed(2)} / ${item.unitLabel} · '
                   'Min ${item.minimumQuantity} · Stock ${item.stock}',
                   maxLines: 2,
@@ -413,7 +455,7 @@ class _WholesaleItemCard extends StatelessWidget {
               ],
             ),
           ),
-          IconButton(
+          BillingIconButton(
             tooltip: 'Edit wholesale item',
             onPressed: onEdit,
             icon: const Icon(Icons.edit_outlined),
@@ -591,7 +633,7 @@ class _WholesaleItemFormState extends State<_WholesaleItemForm> {
         }
         return;
       }
-      await const OfflinePosStore().queueWholesaleItem(fields);
+      await widget.api.offlineStore.queueWholesaleItem(fields);
       if (mounted) Navigator.pop(context, true);
     } on ApiTimeoutException {
       if (widget.item != null) {
@@ -604,7 +646,7 @@ class _WholesaleItemFormState extends State<_WholesaleItemForm> {
         }
         return;
       }
-      await const OfflinePosStore().queueWholesaleItem(fields);
+      await widget.api.offlineStore.queueWholesaleItem(fields);
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
       if (!mounted) return;
@@ -618,7 +660,7 @@ class _WholesaleItemFormState extends State<_WholesaleItemForm> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(
+      title: BillingText(
           widget.item == null ? 'Add wholesale item' : 'Edit wholesale item'),
       content: SizedBox(
         width: 480,
@@ -628,30 +670,33 @@ class _WholesaleItemFormState extends State<_WholesaleItemForm> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextFormField(
+                BillingTextFormField(
                   controller: _name,
                   autofocus: true,
-                  decoration: const InputDecoration(labelText: 'Item name'),
+                  decoration:
+                      const BillingInputDecoration(labelText: 'Item name'),
                   validator: (value) => value == null || value.trim().isEmpty
                       ? 'Enter an item name'
                       : null,
                 ),
                 const SizedBox(height: 10),
-                TextFormField(
+                BillingTextFormField(
                   controller: _sku,
                   textCapitalization: TextCapitalization.characters,
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'Wholesale SKU (optional)',
                   ),
                 ),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<String>(
+                  isExpanded: true,
                   initialValue: _categoryId,
-                  decoration: const InputDecoration(labelText: 'Category'),
+                  decoration:
+                      const BillingInputDecoration(labelText: 'Category'),
                   items: _activeCategories
                       .map((category) => DropdownMenuItem(
                             value: category.id,
-                            child: Text(category.name),
+                            child: BillingText(category.name),
                           ))
                       .toList(),
                   onChanged: _saving
@@ -661,10 +706,10 @@ class _WholesaleItemFormState extends State<_WholesaleItemForm> {
                       value == null ? 'Choose a category' : null,
                 ),
                 const SizedBox(height: 10),
-                TextFormField(
+                BillingTextFormField(
                   controller: _brand,
-                  decoration:
-                      const InputDecoration(labelText: 'Brand (optional)'),
+                  decoration: const BillingInputDecoration(
+                      labelText: 'Brand (optional)'),
                 ),
                 const SizedBox(height: 10),
                 Row(
@@ -716,9 +761,10 @@ class _WholesaleItemFormState extends State<_WholesaleItemForm> {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: TextFormField(
+                      child: BillingTextFormField(
                         controller: _unit,
-                        decoration: const InputDecoration(labelText: 'Unit'),
+                        decoration:
+                            const BillingInputDecoration(labelText: 'Unit'),
                         validator: (value) =>
                             value == null || value.trim().isEmpty
                                 ? 'Enter a unit'
@@ -731,7 +777,7 @@ class _WholesaleItemFormState extends State<_WholesaleItemForm> {
                 OutlinedButton.icon(
                   onPressed: _saving ? null : _pickImage,
                   icon: const Icon(Icons.image_outlined),
-                  label: Text(_imageName ??
+                  label: BillingText(_imageName ??
                       (widget.item?.imageUrl != null && !_removeImage
                           ? 'Replace item image'
                           : 'Choose item image')),
@@ -748,28 +794,28 @@ class _WholesaleItemFormState extends State<_WholesaleItemForm> {
                                 _removeImage = true;
                               }),
                       icon: const Icon(Icons.delete_outline_rounded),
-                      label: const Text('Remove image'),
+                      label: const BillingText('Remove image'),
                     ),
                   ),
                 const SizedBox(height: 10),
-                TextFormField(
+                BillingTextFormField(
                   controller: _description,
                   minLines: 2,
                   maxLines: 4,
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'Description (optional)',
                   ),
                 ),
                 const SizedBox(height: 10),
-                TextFormField(
+                BillingTextFormField(
                   controller: _origin,
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'Origin (optional)',
                   ),
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
-                  Text(
+                  BillingText(
                     _error!,
                     style: TextStyle(color: AppColors.errorText),
                   ),
@@ -782,7 +828,7 @@ class _WholesaleItemFormState extends State<_WholesaleItemForm> {
       actions: [
         TextButton(
           onPressed: _saving ? null : () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
+          child: const BillingText('Cancel'),
         ),
         FilledButton(
           onPressed: _saving ? null : _save,
@@ -792,7 +838,7 @@ class _WholesaleItemFormState extends State<_WholesaleItemForm> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('Save item'),
+              : const BillingText('Save item'),
         ),
       ],
     );
@@ -804,10 +850,10 @@ class _WholesaleItemFormState extends State<_WholesaleItemForm> {
     bool decimal = false,
     String? Function(String?)? validator,
   }) {
-    return TextFormField(
+    return BillingTextFormField(
       controller: controller,
       keyboardType: TextInputType.numberWithOptions(decimal: decimal),
-      decoration: InputDecoration(labelText: label),
+      decoration: BillingInputDecoration(labelText: label),
       validator: validator,
     );
   }
@@ -829,13 +875,13 @@ class _WholesalePagination extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        IconButton(
+        BillingIconButton(
           onPressed:
               pagination.page > 1 ? () => onPage(pagination.page - 1) : null,
           icon: const Icon(Icons.chevron_left_rounded),
         ),
-        Text('${pagination.page} / $pageCount'),
-        IconButton(
+        BillingText('${pagination.page} / $pageCount'),
+        BillingIconButton(
           onPressed: pagination.page < pageCount
               ? () => onPage(pagination.page + 1)
               : null,
@@ -876,8 +922,9 @@ class _InlineWholesaleError extends StatelessWidget {
           Icons.cloud_off_outlined,
           color: AppColors.errorText,
         ),
-        title: Text(message, style: Theme.of(context).textTheme.bodySmall),
-        trailing: IconButton(
+        title:
+            BillingText(message, style: Theme.of(context).textTheme.bodySmall),
+        trailing: BillingIconButton(
           tooltip: 'Retry',
           onPressed: onRetry,
           icon: const Icon(Icons.refresh_rounded),
@@ -899,12 +946,12 @@ class _WholesaleEmptyState extends StatelessWidget {
               color: AppColors.muted,
             ),
             const SizedBox(height: 10),
-            const Text(
+            const BillingText(
               'No wholesale items yet',
               style: TextStyle(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 4),
-            Text(
+            BillingText(
               'Add a separate wholesale item to make it available to bulk customers.',
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.muted),

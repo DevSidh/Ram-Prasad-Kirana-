@@ -1,3 +1,4 @@
+import '../../widgets/billing_localized_widgets.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -120,10 +121,10 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
     final shouldSend = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(_recipientMode == 'all'
+        title: BillingText(_recipientMode == 'all'
             ? 'Send to all active accounts?'
             : 'Send to selected customer?'),
-        content: Text(
+        content: BillingText(
           _recipientMode == 'all'
               ? 'This announcement will appear in every active account. Push notifications are sent when device tokens are available.'
               : 'This announcement will be saved for the selected customer. Push notifications are sent when a device token is available.',
@@ -131,12 +132,12 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Review'),
+            child: const BillingText('Review'),
           ),
           FilledButton.icon(
             onPressed: () => Navigator.pop(dialogContext, true),
             icon: const Icon(Icons.send_rounded),
-            label: const Text('Send announcement'),
+            label: const BillingText('Send announcement'),
           ),
         ],
       ),
@@ -180,7 +181,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
       children: [
-        Text(
+        BillingText(
           'Send a promotion or update to all active accounts or one selected customer. Customers see Faststore as the notification title; your announcement title appears in the message.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
@@ -197,18 +198,19 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: _recipientMode,
-                    decoration: const InputDecoration(
+                    decoration: const BillingInputDecoration(
                       labelText: 'Recipients',
                     ),
                     items: const [
                       DropdownMenuItem(
                         value: 'all',
-                        child: Text('All active accounts'),
+                        child: BillingText('All active accounts'),
                       ),
                       DropdownMenuItem(
                         value: 'customer',
-                        child: Text('One customer'),
+                        child: BillingText('One customer'),
                       ),
                     ],
                     onChanged: _sending
@@ -260,7 +262,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                                     : _customerResults.isEmpty
                                         ? const Padding(
                                             padding: EdgeInsets.all(16),
-                                            child: Text(
+                                            child: BillingText(
                                               'No active customer found. Check the ID, name, phone or email.',
                                             ),
                                           )
@@ -273,8 +275,9 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                                                   _customerResults[index];
                                               return ListTile(
                                                 dense: true,
-                                                title: Text(customer.name),
-                                                subtitle: Text(
+                                                title:
+                                                    BillingText(customer.name),
+                                                subtitle: BillingText(
                                                   '${customer.profileId} · ${customer.email}',
                                                   maxLines: 1,
                                                   overflow:
@@ -306,7 +309,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                           controller: _customerSearchController,
                           textInputAction: TextInputAction.search,
                           onChanged: _onCustomerSearchChanged,
-                          decoration: InputDecoration(
+                          decoration: BillingInputDecoration(
                             labelText: 'Find a customer',
                             hintText:
                                 'Search by customer ID, name, phone or email',
@@ -330,7 +333,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                     if (_selectedCustomerId != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
-                        child: Text(
+                        child: BillingText(
                           'Customer selected: ${_customerResults.firstWhere((customer) => customer.id == _selectedCustomerId).name}',
                           style: Theme.of(context)
                               .textTheme
@@ -344,18 +347,18 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                     if (_selectedCustomerId == null)
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
-                        child: Text(
+                        child: BillingText(
                           'Search by profile ID (for example USR-000042), name, phone, or email.',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),
                   ],
                   const SizedBox(height: 12),
-                  TextFormField(
+                  BillingTextFormField(
                     controller: _titleController,
                     maxLength: 120,
                     textCapitalization: TextCapitalization.sentences,
-                    decoration: const InputDecoration(
+                    decoration: const BillingInputDecoration(
                       labelText: 'Announcement title',
                       hintText: 'For example, Fresh stock has arrived',
                       prefixIcon: Icon(Icons.campaign_outlined),
@@ -370,13 +373,13 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                     },
                   ),
                   const SizedBox(height: 10),
-                  TextFormField(
+                  BillingTextFormField(
                     controller: _bodyController,
                     maxLength: 1000,
                     minLines: 4,
                     maxLines: 8,
                     textCapitalization: TextCapitalization.sentences,
-                    decoration: const InputDecoration(
+                    decoration: const BillingInputDecoration(
                       labelText: 'Message',
                       hintText: 'Write the announcement customers will see.',
                       alignLabelWithHint: true,
@@ -391,11 +394,11 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                     },
                   ),
                   const SizedBox(height: 10),
-                  TextFormField(
+                  BillingTextFormField(
                     controller: _couponCodeController,
                     maxLength: 40,
                     textCapitalization: TextCapitalization.characters,
-                    decoration: const InputDecoration(
+                    decoration: const BillingInputDecoration(
                       labelText: 'Coupon code (optional)',
                       hintText:
                           'Attach a current coupon for customers to claim',
@@ -437,7 +440,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.send_rounded),
-                    label: Text(
+                    label: BillingText(
                       _sending
                           ? 'Sending…'
                           : _recipientMode == 'all'

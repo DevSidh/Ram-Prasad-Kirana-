@@ -926,6 +926,20 @@
 			"isBackground": false,
 			"problemMatcher": [],
 			"group": "build"
+		},
+		{
+			"label": "Preview isolated admin audit",
+			"type": "shell",
+			"command": "rtk flutter run -d windows -t tool/admin_audit_preview.dart",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Preview isolated admin audit in browser",
+			"type": "shell",
+			"command": "rtk flutter run -d web-server --web-hostname 127.0.0.1 --web-port 7358 -t tool/admin_audit_preview.dart",
+			"isBackground": true,
+			"problemMatcher": []
 		}
 	]
 }

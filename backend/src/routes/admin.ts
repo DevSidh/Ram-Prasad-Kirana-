@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { sendAdminError } from '../middleware/auth.js';
 import { InventoryAdjustmentError, InventoryService } from '../services/inventory.js';
+import { consumeRoomStock, lockRoomProduct, RoomInventoryError } from '../services/room-inventory.js';
 import { runTransactionWithRetry } from '../services/transaction-retry.js';
 import { createAdminBillingRouter } from './admin-billing.js';
 import {
@@ -1887,7 +1888,10 @@ export function createAdminRouter(
 
       const customer = await prisma.user.update({
         where: { id },
-        data: parsed.data,
+        data: {
+          ...parsed.data,
+          ...(parsed.data.isActive === false ? { tokenVersion: { increment: 1 } } : {}),
+        },
         select: {
           id: true,
           userNumber: true,
@@ -1898,8 +1902,9 @@ export function createAdminRouter(
           isActive: true,
         },
       });
+      const { userNumber, ...publicCustomer } = customer;
       return res.json({
-        customer: { ...customer, profileId: formatUserDisplayId(customer.userNumber) },
+        customer: { ...publicCustomer, profileId: formatUserDisplayId(userNumber) },
       });
     } catch (error) {
       sendAdminError(error, res);
@@ -2201,7 +2206,9 @@ export function createAdminRouter(
         where: { id },
         data: {
           isActive: parsed.data.isActive,
-          ...(!parsed.data.isActive ? { isAvailable: false } : {}),
+          ...(!parsed.data.isActive
+            ? { isAvailable: false, tokenVersion: { increment: 1 } }
+            : {}),
         },
         select: { id: true, isActive: true, isAvailable: true },
       });
@@ -2745,7 +2752,7 @@ export function createAdminRouter(
     );
     if (req.file && !imageUpload) return;
     try {
-      const item = await prisma.wholesaleItem.update({
+      const updateItem = (tx: Prisma.TransactionClient | PrismaClient) => tx.wholesaleItem.update({
         where: { id },
         data: {
           ...parsed.data,
@@ -2768,8 +2775,16 @@ export function createAdminRouter(
         },
         select: wholesaleItemSelect,
       });
+      const item = parsed.data.stock == null ? await updateItem(prisma) : await runTransactionWithRetry(prisma, async (tx) => {
+        const key = `wholesale-${id}`;
+        const before = await lockRoomProduct(tx, key);
+        const result = await updateItem(tx);
+        if (parsed.data.stock! < before) await consumeRoomStock(tx, key, before - parsed.data.stock!, before, `adjust:${id}:${Date.now()}`, res.locals.authenticatedUserId, undefined, 'ADJUSTMENT');
+        return result;
+      });
       return res.json({ wholesaleItem: wholesaleItemResponse(item) });
     } catch (error) {
+      if (error instanceof RoomInventoryError) return res.status(409).json({ error: error.message });
       if (handleKnownError(error, res)) return;
       sendAdminError(error, res);
     }

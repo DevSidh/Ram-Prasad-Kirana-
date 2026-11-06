@@ -1,3 +1,4 @@
+import '../../widgets/billing_localized_widgets.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/constants.dart';
@@ -87,14 +88,25 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final server = _adminApi
         .getDashboard(day: day)
         .then<Object>((value) => value, onError: (Object error) => error);
-    final local = await Future.wait<dynamic>([
-      day == null
-          ? offlineStore.readOfflineSalesTotal()
-          : offlineStore.readOfflineSalesTotalForDay(day),
-      offlineStore.readDashboardSnapshot(),
-    ]);
-    final offlineSales = local[0] as double;
-    final snapshot = local[1] as Map<String, dynamic>?;
+    double offlineSales = 0;
+    Map<String, dynamic>? snapshot;
+    String? localError;
+    try {
+      offlineSales = day == null
+          ? await offlineStore.readOfflineSalesTotal()
+          : await offlineStore.readOfflineSalesTotalForDay(day);
+    } catch (_) {
+      localError =
+          'Local bill totals could not be loaded. Check local storage and retry.';
+    }
+    try {
+      snapshot = await offlineStore.readDashboardSnapshot();
+      if (snapshot != null) AdminDashboard.fromJson(snapshot);
+    } catch (_) {
+      snapshot = null;
+      localError ??=
+          'The saved dashboard could not be read. Live totals are still available.';
+    }
     final cachedSnapshot = snapshot?['filterDay'] == day ? snapshot : null;
     if (!mounted || request != _requestId) return;
     if (mounted) {
@@ -114,7 +126,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       setState(() {
         _dashboard = result;
         _offlineSalesTotal = offlineSales;
-        _error = null;
+        _error = localError;
         _loading = false;
       });
       try {
@@ -130,9 +142,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       if (!mounted || request != _requestId) return;
       setState(() {
         _dashboard ??= AdminDashboard.fromJson(const {});
-        _error = cachedSnapshot == null
+        final serverError = cachedSnapshot == null
             ? 'Offline mode: online sales are unavailable until this computer reconnects. Offline bills are still included below.'
             : 'Showing the last saved online totals. Reconnect to refresh them.';
+        _error = [serverError, if (localError != null) localError].join('\n');
         _loading = false;
       });
     }
@@ -161,7 +174,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               OutlinedButton.icon(
                   onPressed: _chooseDay,
                   icon: const Icon(Icons.filter_alt_outlined),
-                  label: Text(_dayKey ?? 'All dates')),
+                  label: BillingText(_dayKey ?? 'All dates')),
               if (_filterDay != null)
                 TextButton(
                     onPressed: () {
@@ -171,9 +184,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       });
                       _load();
                     },
-                    child: const Text('Clear date filter')),
-              const Text('Date applies to sales and orders'),
-              IconButton(
+                    child: const BillingText('Clear date filter')),
+              const BillingText('Date applies to sales and orders'),
+              BillingIconButton(
                 tooltip: 'Refresh dashboard',
                 onPressed: _load,
                 icon: const Icon(Icons.refresh_rounded),
@@ -275,7 +288,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ),
               TextButton(
                 onPressed: widget.onOrdersRequested,
-                child: const Text('View all'),
+                child: const BillingText('View all'),
               ),
             ],
           ),
@@ -332,7 +345,7 @@ class _MetricGrid extends StatelessWidget {
             crossAxisCount: columns,
             crossAxisSpacing: 10,
             mainAxisSpacing: 10,
-            mainAxisExtent: 104,
+            mainAxisExtent: 170,
           ),
           itemBuilder: (context, index) {
             final item = items[index];
@@ -401,7 +414,7 @@ class _RecentOrderTile extends StatelessWidget {
         leading: const Icon(Icons.receipt_long_outlined, size: 21),
         tint: AppColors.thumbnailBlue,
         onTap: onTap,
-        trailing: total == null ? null : Text(_money(total)),
+        trailing: total == null ? null : BillingText(_money(total)),
       ),
     );
   }
@@ -415,11 +428,14 @@ class _SectionHeading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Wrap(
+      spacing: 16,
+      runSpacing: 8,
+      alignment: WrapAlignment.spaceBetween,
       children: [
-        Expanded(child: AppSectionLabel(title)),
+        AppSectionLabel(title),
         if (trailing.isNotEmpty)
-          Text(
+          BillingText(
             trailing,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   letterSpacing: 0.72,
@@ -457,7 +473,8 @@ class _InlineError extends StatelessWidget {
             borderRadius: BorderRadius.circular(AppRadii.input)),
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Text(message, style: TextStyle(color: AppColors.warningText)),
+          child: BillingText(message,
+              style: TextStyle(color: AppColors.warningText)),
         ),
       );
 }
@@ -504,9 +521,10 @@ class _EmptyPanel extends StatelessWidget {
           children: [
             Icon(icon, size: 28, color: AppColors.muted),
             const SizedBox(height: 9),
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+            BillingText(title,
+                style: const TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
-            Text(
+            BillingText(
               message,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodySmall,

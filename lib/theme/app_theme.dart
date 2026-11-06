@@ -34,6 +34,7 @@ abstract final class AppTheme {
             onError: AppColors.surface,
           );
     final textTheme = AppText.theme.apply(
+      fontFamily: 'FastStoreDevanagari',
       bodyColor: AppColors.primary,
       displayColor: AppColors.primary,
     );
@@ -44,6 +45,8 @@ abstract final class AppTheme {
 
     return ThemeData(
       useMaterial3: true,
+      visualDensity: VisualDensity.standard,
+      materialTapTargetSize: MaterialTapTargetSize.padded,
       brightness: isDark ? Brightness.dark : Brightness.light,
       colorScheme: scheme,
       scaffoldBackgroundColor: Colors.transparent,
@@ -86,7 +89,7 @@ abstract final class AppTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          minimumSize: const Size(0, 40),
+          minimumSize: const Size(0, 56),
           padding: const EdgeInsets.symmetric(horizontal: 18),
           backgroundColor: AppColors.action,
           foregroundColor: AppColors.onAction,
@@ -99,7 +102,7 @@ abstract final class AppTheme {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          minimumSize: const Size(0, 40),
+          minimumSize: const Size(0, 56),
           padding: const EdgeInsets.symmetric(horizontal: 18),
           backgroundColor: AppColors.surface,
           foregroundColor: AppColors.primary,
@@ -110,6 +113,7 @@ abstract final class AppTheme {
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
+          minimumSize: const Size(0, 54),
           foregroundColor: AppColors.primary,
           textStyle: textTheme.labelLarge,
           shape: pillShape,
@@ -119,16 +123,16 @@ abstract final class AppTheme {
         style: IconButton.styleFrom(
           foregroundColor: AppColors.primary,
           backgroundColor: AppColors.surface,
-          minimumSize: const Size(40, 40),
+          minimumSize: const Size(56, 56),
           shape: pillShape,
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.surface,
-        isDense: true,
+        isDense: false,
         contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
         hintStyle: textTheme.bodyMedium?.copyWith(color: AppColors.muted),
         border: OutlineInputBorder(
           borderRadius: inputRadius,
@@ -158,7 +162,7 @@ abstract final class AppTheme {
                 : AppColors.outline),
         trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
         trackOutlineWidth: WidgetStateProperty.all(0),
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        materialTapTargetSize: MaterialTapTargetSize.padded,
       ),
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.surface,

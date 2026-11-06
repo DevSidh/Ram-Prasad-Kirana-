@@ -1,3 +1,5 @@
+import '../../widgets/billing_localized_widgets.dart';
+import '../../models/stock_summary.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -14,6 +16,9 @@ import 'package:uuid/uuid.dart';
 import '../../core/constants.dart';
 import '../../core/nepal_phone.dart';
 import '../../models/pos_models.dart';
+import '../../models/room_inventory.dart';
+import '../../services/room_inventory_service.dart';
+import '../../widgets/room_pick_dialog.dart';
 import '../../models/manual_fonepay_verification.dart';
 import '../../widgets/static_fonepay_payment_dialog.dart';
 import '../../widgets/offline_customer_dialog.dart';
@@ -68,10 +73,6 @@ enum AdminBillingSection {
   printer,
   notifications,
 }
-
-bool _isWeightUnitLabel(String label) =>
-    RegExp(r'^\s*\d+(?:\.\d+)?\s*(?:kg|g)\s*$', caseSensitive: false)
-        .hasMatch(label);
 
 double _roundBillMoney(double value) => (value * 100).round() / 100;
 
@@ -177,6 +178,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       _localBillingSync = LocalBillingSync(
         api: widget.api,
         store: widget.offlineStore.billingStore,
+        catalogStore: widget.offlineStore,
         ownerId: context.read<AuthProvider>().currentUser?.id ?? '',
         onSynced: _load,
       )..start();
@@ -242,7 +244,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
+          content: BillingText(
             'Could not load receipt paper settings: '
             '${error.toString().replaceFirst('Exception: ', '')}',
           ),
@@ -260,7 +262,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
+          content: BillingText(
             'Could not save paper width: '
             '${error.toString().replaceFirst('Exception: ', '')}',
           ),
@@ -438,12 +440,12 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       ? TextButton.icon(
           onPressed: _signInAgain,
           icon: const Icon(Icons.login_rounded),
-          label: const Text('Sign in again'),
+          label: const BillingText('Sign in again'),
         )
       : TextButton.icon(
           onPressed: _loading ? null : _load,
           icon: const Icon(Icons.refresh_rounded),
-          label: const Text('Retry'),
+          label: const BillingText('Retry'),
         );
 
   Future<void> _newBill(
@@ -518,7 +520,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
+          content: BillingText(
             'Bill ${completedSale.receiptNumber} completed.$printMessage',
           ),
         ),
@@ -606,14 +608,15 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       );
       if (showMessage && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Pending cash Excel file saved to $path')),
+          SnackBar(
+              content: BillingText('Pending cash Excel file saved to $path')),
         );
       }
     } catch (error) {
       if (showMessage && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
+            content: BillingText(
               'Could not update pending cash Excel file: ${error.toString().replaceFirst('Exception: ', '')}',
             ),
           ),
@@ -689,7 +692,8 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       if (!mounted) return null;
       if (product == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No product matched that barcode.')),
+          const SnackBar(
+              content: BillingText('No product matched that barcode.')),
         );
       }
       return product;
@@ -697,7 +701,8 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       if (!mounted) return null;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(error.toString().replaceFirst('Exception: ', ''))),
+            content:
+                BillingText(error.toString().replaceFirst('Exception: ', ''))),
       );
       return null;
     }
@@ -709,7 +714,8 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(type == 'CASH_IN' ? 'Add cash to register' : 'Remove cash'),
+        title: BillingText(
+            type == 'CASH_IN' ? 'Add cash to register' : 'Remove cash'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -717,23 +723,24 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               controller: amountController,
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Amount'),
+              decoration: const BillingInputDecoration(labelText: 'Amount'),
             ),
             TextField(
               controller: noteController,
               maxLength: 240,
-              decoration: const InputDecoration(labelText: 'Reason / note'),
+              decoration:
+                  const BillingInputDecoration(labelText: 'Reason / note'),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
+            child: const BillingText('Cancel'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Record'),
+            child: const BillingText('Record'),
           ),
         ],
       ),
@@ -779,33 +786,34 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text('Refund ${sale.receiptNumber}'),
+          title: BillingText('Refund ${sale.receiptNumber}'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
+              BillingText(
                   'Received funds available for refund: ${_money(refundable)}'),
               TextField(
                 controller: amountController,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'Refund amount'),
+                decoration:
+                    const BillingInputDecoration(labelText: 'Refund amount'),
               ),
               TextField(
                 controller: reasonController,
                 maxLength: 500,
-                decoration: const InputDecoration(labelText: 'Reason'),
+                decoration: const BillingInputDecoration(labelText: 'Reason'),
               ),
               if (sale.refundedAmount == 0 && refundable >= sale.total)
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
                   value: restock,
-                  title: const Text('Restore all bill items to stock'),
+                  title: const BillingText('Restore all bill items to stock'),
                   onChanged: (value) =>
                       setDialogState(() => restock = value ?? false),
                 ),
               if (validationError != null)
-                Text(validationError!,
+                BillingText(validationError!,
                     style:
                         TextStyle(color: Theme.of(context).colorScheme.error)),
             ],
@@ -813,7 +821,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
+              child: const BillingText('Cancel'),
             ),
             FilledButton(
               onPressed: () {
@@ -835,7 +843,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                   restock: restock,
                 ));
               },
-              child: const Text('Submit request'),
+              child: const BillingText('Submit request'),
             ),
           ],
         ),
@@ -893,14 +901,14 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           final replacementTotal = replacement == null
               ? 0.0
               : replacement.price *
-                  (_isWeightUnitLabel(replacement.unitLabel)
+                  (StockSummary.isLooseWeight(replacement)
                       ? replacementQuantity / 1000
                       : replacementQuantity);
           final difference = replacementTotal - returnedCredit;
           final replacementIsWeighted =
-              replacement != null && _isWeightUnitLabel(replacement.unitLabel);
+              replacement != null && StockSummary.isLooseWeight(replacement);
           return AlertDialog(
-            title: Text('Exchange ${sale.receiptNumber}'),
+            title: BillingText('Exchange ${sale.receiptNumber}'),
             content: SizedBox(
               width: 560,
               child: SingleChildScrollView(
@@ -909,14 +917,15 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     DropdownButtonFormField<PosSaleItem>(
+                      isExpanded: true,
                       initialValue: returnedItem,
-                      decoration:
-                          const InputDecoration(labelText: 'Item to return'),
+                      decoration: const BillingInputDecoration(
+                          labelText: 'Item to return'),
                       items: sale.items
                           .map(
                             (item) => DropdownMenuItem(
                               value: item,
-                              child: Text(
+                              child: BillingText(
                                 '${item.productName} · ${item.sku}',
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -936,7 +945,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                     TextField(
                       controller: returnedQuantityController,
                       keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
+                      decoration: BillingInputDecoration(
                         labelText: weightedReturn
                             ? 'Return weight (grams)'
                             : 'Return quantity',
@@ -949,12 +958,12 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                     const SizedBox(height: 16),
                     TextField(
                       controller: searchController,
-                      decoration: InputDecoration(
+                      decoration: BillingInputDecoration(
                         labelText: 'Replacement product (optional)',
                         prefixIcon: const Icon(Icons.search_rounded),
                         suffixIcon: replacementProduct == null
                             ? null
-                            : IconButton(
+                            : BillingIconButton(
                                 tooltip: 'Clear replacement',
                                 onPressed: () => setDialogState(() {
                                   replacementProduct = null;
@@ -1002,7 +1011,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                     if (replacementSearchError.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 6),
-                        child: Text(
+                        child: BillingText(
                           replacementSearchError,
                           style: TextStyle(
                             color: Theme.of(context).colorScheme.error,
@@ -1019,8 +1028,8 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                             final product = matches[index];
                             return ListTile(
                               dense: true,
-                              title: Text(product.name),
-                              subtitle: Text(
+                              title: BillingText(product.name),
+                              subtitle: BillingText(
                                 '${product.sku} · ${_money(product.price)} · '
                                 '${product.available} available',
                               ),
@@ -1031,8 +1040,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                                         searchController.text = product.name;
                                         matches = [];
                                         replacementQuantityController.text =
-                                            _isWeightUnitLabel(
-                                                    product.unitLabel)
+                                            StockSummary.isLooseWeight(product)
                                                 ? '1000'
                                                 : '1';
                                       }),
@@ -1045,7 +1053,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                       TextField(
                         controller: replacementQuantityController,
                         keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
+                        decoration: BillingInputDecoration(
                           labelText: replacementIsWeighted
                               ? 'Replacement weight (grams)'
                               : 'Replacement quantity',
@@ -1063,10 +1071,10 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                       onChanged: (value) => setDialogState(
                         () => restockReturnedItems = value ?? false,
                       ),
-                      title: const Text('Return item to sellable stock'),
+                      title: const BillingText('Return item to sellable stock'),
                     ),
                     const SizedBox(height: 8),
-                    Text(
+                    BillingText(
                       difference > 0
                           ? 'Customer pays ${_money(difference)} extra.'
                           : difference < 0
@@ -1077,18 +1085,19 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                     if (difference > 0) ...[
                       const SizedBox(height: 10),
                       DropdownButtonFormField<String>(
+                        isExpanded: true,
                         initialValue: paymentMethod,
-                        decoration: const InputDecoration(
+                        decoration: const BillingInputDecoration(
                           labelText: 'Additional payment method',
                         ),
                         items: const [
                           DropdownMenuItem(
                             value: 'CASH',
-                            child: Text('Cash'),
+                            child: BillingText('Cash'),
                           ),
                           DropdownMenuItem(
                             value: 'DIGITAL',
-                            child: Text('Digital'),
+                            child: BillingText('Digital'),
                           ),
                         ],
                         onChanged: (value) {
@@ -1105,7 +1114,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('Cancel'),
+                child: const BillingText('Cancel'),
               ),
               FilledButton(
                 onPressed: returnedQuantity <= 0 ||
@@ -1129,7 +1138,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                                 difference > 0 ? paymentMethod : null,
                           ),
                         ),
-                child: const Text('Process exchange'),
+                child: const BillingText('Process exchange'),
               ),
             ],
           );
@@ -1145,7 +1154,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     final weightedReturn = selectedReturn.weightGrams != null;
     final selectedReplacement = draft.replacementProduct;
     final replacementWeighted = selectedReplacement != null &&
-        _isWeightUnitLabel(selectedReplacement.unitLabel);
+        StockSummary.isLooseWeight(selectedReplacement);
     setState(() => _working = true);
     try {
       final exchange = await _adminApi.createPosExchange(
@@ -1211,7 +1220,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
 
   void _showMessage(String message) {
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+        .showSnackBar(SnackBar(content: BillingText(message)));
   }
 
   Future<void> _selectHistoryDay() async {
@@ -1290,18 +1299,18 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(_error!, textAlign: TextAlign.center),
+              BillingText(_error!, textAlign: TextAlign.center),
               const SizedBox(height: 12),
               _sessionExpired
                   ? FilledButton.icon(
                       onPressed: _signInAgain,
                       icon: const Icon(Icons.login_rounded),
-                      label: const Text('Sign in again'),
+                      label: const BillingText('Sign in again'),
                     )
                   : FilledButton.icon(
                       onPressed: _loading ? null : _load,
                       icon: const Icon(Icons.refresh),
-                      label: const Text('Retry'),
+                      label: const BillingText('Retry'),
                     ),
             ],
           ),
@@ -1330,7 +1339,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               const SizedBox(height: 16),
               if (_error != null)
                 MaterialBanner(
-                  content: Text(_error!),
+                  content: BillingText(_error!),
                   actions: [_loadErrorAction()],
                 ),
               Container(
@@ -1370,7 +1379,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                   FilledButton.icon(
                     onPressed: _working ? null : () => _newBill(),
                     icon: const Icon(Icons.add_shopping_cart_rounded),
-                    label: const Text('New bill'),
+                    label: const BillingText('New bill'),
                   ),
                   OutlinedButton.icon(
                     onPressed: _working ||
@@ -1383,12 +1392,12 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                             }
                           },
                     icon: const Icon(Icons.qr_code_scanner_rounded),
-                    label: const Text('Scan barcode'),
+                    label: const BillingText('Scan barcode'),
                   ),
                   OutlinedButton.icon(
                     onPressed: _showDailyReport,
                     icon: const Icon(Icons.analytics_outlined),
-                    label: const Text('Daily report'),
+                    label: const BillingText('Daily report'),
                   ),
                   if (!widget.isBillingStaff && !_isWindowsOperatorMode)
                     OutlinedButton.icon(
@@ -1399,7 +1408,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                         ),
                       ),
                       icon: const Icon(Icons.manage_accounts_outlined),
-                      label: const Text('Billing staff'),
+                      label: const BillingText('Billing staff'),
                     ),
                 ],
               ),
@@ -1416,20 +1425,20 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                   FilledButton.icon(
                     onPressed: _working ? null : () => _newBill(),
                     icon: const Icon(Icons.add_rounded),
-                    label: const Text('New bill'),
+                    label: const BillingText('New bill'),
                   ),
                   OutlinedButton.icon(
                     onPressed: _working ? null : _exportSalesCsv,
                     icon: const Icon(Icons.download_outlined),
-                    label: const Text('Export CSV'),
+                    label: const BillingText('Export CSV'),
                   ),
                   OutlinedButton.icon(
                     onPressed: _selectHistoryDay,
                     icon: const Icon(Icons.calendar_today_outlined),
-                    label: Text(_billHistoryDayKey ?? 'All days'),
+                    label: BillingText(_billHistoryDayKey ?? 'All days'),
                   ),
                   if (_billHistoryDay != null)
-                    IconButton(
+                    BillingIconButton(
                       tooltip: 'Clear date filter',
                       onPressed: () {
                         setState(() {
@@ -1449,20 +1458,20 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      Text(
+                      BillingText(
                         '${((_salesPage - 1) * _salesPageSize) + 1}–'
                         '${(_salesPage * _salesPageSize).clamp(0, _salesTotal)}'
                         ' of $_salesTotal bills',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
-                      IconButton(
+                      BillingIconButton(
                         tooltip: 'Previous bills page',
                         onPressed: _loading || _salesPage <= 1
                             ? null
                             : () => _load(salesPage: _salesPage - 1),
                         icon: const Icon(Icons.chevron_left_rounded),
                       ),
-                      IconButton(
+                      BillingIconButton(
                         tooltip: 'Next bills page',
                         onPressed: _loading ||
                                 _salesPage >=
@@ -1477,7 +1486,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               if (_visibleSales.isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Text('No invoices found.'),
+                  child: BillingText('No invoices found.'),
                 )
               else
                 ..._visibleSales.map(_saleTile),
@@ -1498,10 +1507,10 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                       OutlinedButton.icon(
                         onPressed: _selectReportDay,
                         icon: const Icon(Icons.calendar_today_outlined),
-                        label: Text(_reportDayKey ?? 'Today'),
+                        label: BillingText(_reportDayKey ?? 'Today'),
                       ),
                       if (_reportDay != null)
-                        IconButton(
+                        BillingIconButton(
                           tooltip: 'Show today’s report',
                           onPressed: () {
                             setState(() => _reportDay = null);
@@ -1536,7 +1545,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                 key: _sectionKeys[AdminBillingSection.printer],
                 child: _printerSettings(overview),
               ),
-              Text(
+              BillingText(
                 'Connected · synced ${TimeOfDay.fromDateTime(DateTime.now()).format(context)}',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.labelSmall,
@@ -1567,7 +1576,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         LocalBillingStatusPanel(sync: _localBillingSync!),
       if (_error != null)
         MaterialBanner(
-          content: Text(_error!),
+          content: BillingText(_error!),
           actions: [_loadErrorAction()],
         ),
       if (_offlineOverview &&
@@ -1577,7 +1586,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
             AdminBillingSection.cashRegister
           ].contains(_activeSection)) ...[
         const SizedBox(height: 12),
-        const Text(
+        const BillingText(
             'Server reports are unavailable. The figures below include only saved local bills.'),
         _metric(
             'Local recorded sales',
@@ -1589,7 +1598,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         FilledButton.icon(
             onPressed: () => _newBill(),
             icon: const Icon(Icons.add),
-            label: const Text('New bill')),
+            label: const BillingText('New bill')),
         _buildInvoiceManagementToolbar(),
         ..._visibleSales.map(_saleTile),
       ] else
@@ -1653,7 +1662,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           if (_visibleSales.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
-              child: Text('No invoices found.'),
+              child: BillingText('No invoices found.'),
             )
           else
             ..._visibleSales.take(5).map(_saleTile),
@@ -1672,7 +1681,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               FilledButton.icon(
                 onPressed: _working ? null : () => _newBill(),
                 icon: const Icon(Icons.add_rounded),
-                label: const Text('New bill'),
+                label: const BillingText('New bill'),
               ),
             ],
           ),
@@ -1681,7 +1690,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           if (_visibleSales.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
-              child: Text('No invoices found.'),
+              child: BillingText('No invoices found.'),
             )
           else
             ..._visibleSales.map(_saleTile),
@@ -1722,10 +1731,10 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               OutlinedButton.icon(
                 onPressed: _selectReportDay,
                 icon: const Icon(Icons.calendar_today_outlined),
-                label: Text(_reportDayKey ?? 'Today'),
+                label: BillingText(_reportDayKey ?? 'Today'),
               ),
               if (_reportDay != null)
-                IconButton(
+                BillingIconButton(
                   tooltip: 'Show today’s report',
                   onPressed: () {
                     setState(() => _reportDay = null);
@@ -1753,19 +1762,19 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               FilledButton.icon(
                 onPressed: _working ? null : () => _newBill(),
                 icon: const Icon(Icons.add_shopping_cart_rounded),
-                label: const Text('New bill'),
+                label: const BillingText('New bill'),
               ),
               OutlinedButton.icon(
                 onPressed: _working
                     ? null
                     : () => activateSection(AdminBillingSection.barcodeScanner),
                 icon: const Icon(Icons.qr_code_scanner_rounded),
-                label: const Text('Barcode scanner'),
+                label: const BillingText('Barcode scanner'),
               ),
               OutlinedButton.icon(
                 onPressed: _showDailyReport,
                 icon: const Icon(Icons.analytics_outlined),
-                label: const Text('Daily report'),
+                label: const BillingText('Daily report'),
               ),
             ],
           ),
@@ -1779,7 +1788,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         children: [
           _sectionHeading('Barcode scanner'),
           const SizedBox(height: 8),
-          Text(
+          BillingText(
             'Scan a product with a USB or Bluetooth barcode scanner, or type its barcode or SKU.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -1792,7 +1801,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                   autofocus: true,
                   textInputAction: TextInputAction.search,
                   onSubmitted: (_) => _searchWindowsBarcode(),
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'Scan or enter barcode / SKU',
                     prefixIcon: Icon(Icons.qr_code_scanner_rounded),
                   ),
@@ -1802,14 +1811,14 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               FilledButton.icon(
                 onPressed: _working ? null : _searchWindowsBarcode,
                 icon: const Icon(Icons.search_rounded),
-                label: const Text('Find product'),
+                label: const BillingText('Find product'),
               ),
             ],
           ),
           if (_barcodeMatches.isEmpty)
             const Padding(
               padding: EdgeInsets.only(top: 18),
-              child: Text('Scanned products will appear here.'),
+              child: BillingText('Scanned products will appear here.'),
             )
           else ...[
             const SizedBox(height: 16),
@@ -1821,7 +1830,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                 trailing: FilledButton(
                   onPressed:
                       _working ? null : () => _newBill(scannedProduct: product),
-                  child: const Text('Add to bill'),
+                  child: const BillingText('Add to bill'),
                 ),
               ),
           ],
@@ -1861,20 +1870,20 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            Text(
+            BillingText(
               '${((_salesPage - 1) * _salesPageSize) + 1}–'
               '${(_salesPage * _salesPageSize).clamp(0, _salesTotal)}'
               ' of $_salesTotal bills',
               style: Theme.of(context).textTheme.bodySmall,
             ),
-            IconButton(
+            BillingIconButton(
               tooltip: 'Previous bills page',
               onPressed: _loading || _salesPage <= 1
                   ? null
                   : () => _load(salesPage: _salesPage - 1),
               icon: const Icon(Icons.chevron_left_rounded),
             ),
-            IconButton(
+            BillingIconButton(
               tooltip: 'Next bills page',
               onPressed: _loading ||
                       _salesPage >= (_salesTotal / _salesPageSize).ceil()
@@ -1891,13 +1900,13 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     return Row(
       children: [
         Expanded(
-          child: Text(
+          child: BillingText(
             '${overview.cashierName ?? 'Admin'} · '
             '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ),
-        IconButton(
+        BillingIconButton(
           tooltip: 'Refresh billing',
           onPressed: _working ? null : _load,
           icon: const Icon(Icons.refresh_rounded),
@@ -1921,11 +1930,11 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                BillingText(
                   'Cash register',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
-                Text(
+                BillingText(
                   'Record cash added to or taken from the drawer.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
@@ -1934,11 +1943,11 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           ),
           OutlinedButton(
             onPressed: _working ? null : () => _cashMovement('CASH_IN'),
-            child: const Text('Cash in'),
+            child: const BillingText('Cash in'),
           ),
           OutlinedButton(
             onPressed: _working ? null : () => _cashMovement('CASH_OUT'),
-            child: const Text('Cash out'),
+            child: const BillingText('Cash out'),
           ),
         ],
       ),
@@ -2028,7 +2037,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-              title: Text(customer.name),
+              title: BillingText(customer.name),
               content: SizedBox(
                   width: 650,
                   child: SingleChildScrollView(
@@ -2042,13 +2051,13 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                         for (final address in customer.addresses)
                           SelectableText(address['address']?.toString() ?? ''),
                         const SizedBox(height: 16),
-                        const Text('Customer bills',
+                        const BillingText('Customer bills',
                             style: TextStyle(fontWeight: FontWeight.bold)),
                         FutureBuilder<({List<PosSale> bills, String? warning})>(
                             future: history,
                             builder: (_, snapshot) {
                               if (snapshot.hasError) {
-                                return Text(
+                                return BillingText(
                                     'Could not load bills: ${snapshot.error}');
                               }
                               if (!snapshot.hasData) {
@@ -2061,9 +2070,9 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     if (data.warning != null)
-                                      Text(data.warning!),
+                                      BillingText(data.warning!),
                                     if (data.bills.isEmpty)
-                                      const Text(
+                                      const BillingText(
                                           'No bills saved for this customer yet.'),
                                     ...data.bills.map(_saleTile),
                                   ]);
@@ -2072,7 +2081,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               actions: [
                 TextButton(
                     onPressed: () => Navigator.pop(dialogContext),
-                    child: const Text('Close'))
+                    child: const BillingText('Close'))
               ],
             ));
   }
@@ -2119,10 +2128,10 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
             child: FilledButton.icon(
                 onPressed: _addOfflineCustomer,
                 icon: const Icon(Icons.person_add_alt_1),
-                label: const Text('New customer'))),
+                label: const BillingText('New customer'))),
         TextField(
           controller: _customerSearch,
-          decoration: const InputDecoration(
+          decoration: const BillingInputDecoration(
             labelText: 'Search billing customers by name or phone',
             prefixIcon: Icon(Icons.search_rounded),
           ),
@@ -2131,7 +2140,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         if (visibleCustomers.isEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 10),
-            child: Text(
+            child: BillingText(
               contacts.isEmpty
                   ? 'Customer details captured during checkout will appear here.'
                   : 'No billing customers match that search.',
@@ -2148,12 +2157,12 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               contentPadding: EdgeInsets.zero,
               leading:
                   const CircleAvatar(child: Icon(Icons.person_outline_rounded)),
-              title: Text(name.isNotEmpty ? name : 'Customer'),
-              subtitle: Text(
+              title: BillingText(name.isNotEmpty ? name : 'Customer'),
+              subtitle: BillingText(
                 '${phone.isNotEmpty ? phone : 'No phone saved'} · '
                 '${customer.orderCount} bill${customer.orderCount == 1 ? '' : 's'}',
               ),
-              trailing: Text(_money(totalSpend)),
+              trailing: BillingText(_money(totalSpend)),
             );
           }),
       ],
@@ -2189,7 +2198,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           if (messages.isEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: Text(
+              child: BillingText(
                 'You are all caught up.',
                 style: TextStyle(color: _muted),
               ),
@@ -2199,7 +2208,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               (message) => ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.notifications_active_outlined),
-                title: Text(message),
+                title: BillingText(message),
               ),
             ),
         ],
@@ -2287,7 +2296,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         const SizedBox(height: 8),
         TextField(
             controller: _returnsSearch,
-            decoration: const InputDecoration(
+            decoration: const BillingInputDecoration(
                 prefixIcon: Icon(Icons.search),
                 labelText: 'Search customer name, phone or bill number'),
             onChanged: (_) {
@@ -2300,7 +2309,8 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         Wrap(spacing: 8, children: [
           OutlinedButton.icon(
               icon: const Icon(Icons.date_range),
-              label: Text(_returnsDay == null ? 'All dates' : _returnsDayKey!),
+              label: BillingText(
+                  _returnsDay == null ? 'All dates' : _returnsDayKey!),
               onPressed: () async {
                 final selected = await showDatePicker(
                     context: context,
@@ -2319,26 +2329,26 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                   setState(() => _returnsDay = null);
                   unawaited(_loadReturns());
                 },
-                child: const Text('Clear filters')),
-          IconButton(
+                child: const BillingText('Clear filters')),
+          BillingIconButton(
               tooltip: 'Refresh returns',
               onPressed: _returnsLoading ? null : _loadReturns,
               icon: const Icon(Icons.refresh)),
         ]),
         if (_returnsLoading) const LinearProgressIndicator(),
         if (_returnsError != null)
-          Text(_returnsError!, style: TextStyle(color: _muted)),
+          BillingText(_returnsError!, style: TextStyle(color: _muted)),
         if (_exchangeError != null)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: MaterialBanner(
-              content: Text(
+              content: BillingText(
                 'Exchange services are unavailable on the connected backend. '
                 'Update the backend and apply the pending POS exchange migration '
                 'before using exchanges. $_exchangeError',
               ),
               actions: [
-                TextButton(onPressed: _load, child: const Text('Retry')),
+                TextButton(onPressed: _load, child: const BillingText('Retry')),
               ],
             ),
           ),
@@ -2349,7 +2359,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         if (eligibleSales.isEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: Text(
+            child: BillingText(
               'Completed bills eligible for a return or exchange will appear here.',
               style: TextStyle(color: _muted),
             ),
@@ -2359,12 +2369,12 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
             (sale) => ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.swap_horiz_rounded),
-              title: Text(sale.invoiceNumber ?? sale.receiptNumber),
-              subtitle: Text(
+              title: BillingText(sale.invoiceNumber ?? sale.receiptNumber),
+              subtitle: BillingText(
                   '${sale.customerName ?? 'Walk-in'} · ${sale.customerPhone ?? ''}\nOriginal bill ${_money(sale.total)}'),
               trailing: OutlinedButton(
                 onPressed: _working ? null : () => _openExchange(sale),
-                child: const Text('Start exchange'),
+                child: const BillingText('Start exchange'),
               ),
             ),
           ),
@@ -2381,21 +2391,21 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     return Card(
       child: ListTile(
         leading: const Icon(Icons.pending_actions_rounded),
-        title: Text('${exchange.receiptNumber} · refund review'),
-        subtitle: Text(
+        title: BillingText('${exchange.receiptNumber} · refund review'),
+        subtitle: BillingText(
           'Refund ${_money(-exchange.difference)} · '
           '${exchange.items.where((item) => item.type == 'RETURN').length} returned item(s)',
         ),
         trailing: Wrap(
           children: [
-            IconButton(
+            BillingIconButton(
               tooltip: 'Reject exchange refund',
               onPressed: _working
                   ? null
                   : () => _resolveExchange(exchange, approve: false),
               icon: const Icon(Icons.close_rounded),
             ),
-            IconButton(
+            BillingIconButton(
               tooltip: 'Approve refund',
               onPressed: _working
                   ? null
@@ -2423,8 +2433,8 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               ? Icons.pending_actions_rounded
               : Icons.swap_horiz_rounded,
         ),
-        title: Text('${exchange.receiptNumber} · $amountLabel'),
-        subtitle: Text(
+        title: BillingText('${exchange.receiptNumber} · $amountLabel'),
+        subtitle: BillingText(
           '${exchange.status.replaceAll('_', ' ')} · '
           '${_dateTime(exchange.requestedAt)}',
         ),
@@ -2432,16 +2442,16 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           for (final item in exchange.items)
             ListTile(
               dense: true,
-              title: Text(
+              title: BillingText(
                 '${item.type == 'RETURN' ? 'Return' : 'Replacement'}: '
                 '${item.productName}',
               ),
-              subtitle: Text(
+              subtitle: BillingText(
                 item.weightGrams == null
                     ? 'Qty ${item.quantity}'
                     : '${(item.weightGrams! / 1000).toStringAsFixed(3)} kg',
               ),
-              trailing: Text(_money(item.lineTotal)),
+              trailing: BillingText(_money(item.lineTotal)),
             ),
         ],
       ),
@@ -2457,8 +2467,8 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       refundMethod = await showDialog<String>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('Approve exchange refund'),
-          content: Text(
+          title: const BillingText('Approve exchange refund'),
+          content: BillingText(
             'Approve ${_money(-exchange.difference)} for '
             '${exchange.receiptNumber}? The returned and replacement stock '
             'will be adjusted only after approval.',
@@ -2466,15 +2476,15 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
+              child: const BillingText('Cancel'),
             ),
             OutlinedButton(
               onPressed: () => Navigator.pop(dialogContext, 'CASH'),
-              child: const Text('Refund cash'),
+              child: const BillingText('Refund cash'),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(dialogContext, 'DIGITAL'),
-              child: const Text('Refund digital'),
+              child: const BillingText('Refund digital'),
             ),
           ],
         ),
@@ -2484,19 +2494,19 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('Reject exchange refund'),
-          content: Text(
+          title: const BillingText('Reject exchange refund'),
+          content: BillingText(
             'Reject the refund difference for ${exchange.receiptNumber}? '
             'The exchange will not change inventory.',
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
+              child: const BillingText('Cancel'),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Reject request'),
+              child: const BillingText('Reject request'),
             ),
           ],
         ),
@@ -2531,19 +2541,20 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                     ? null
                     : () => _syncPendingCashExport(showMessage: true),
                 icon: const Icon(Icons.table_view_outlined),
-                label: const Text('Save Excel'),
+                label: const BillingText('Save Excel'),
               ),
             if (page != null)
               Chip(
                 avatar: const Icon(Icons.account_balance_wallet_outlined),
-                label: Text(
+                label: BillingText(
                   '${page.total + _localPendingSales.length} bill${(page.total + _localPendingSales.length) == 1 ? '' : 's'}',
                 ),
               )
             else if (_localPendingSales.isNotEmpty)
               Chip(
                 avatar: const Icon(Icons.account_balance_wallet_outlined),
-                label: Text('${_localPendingSales.length} local bill(s)'),
+                label:
+                    BillingText('${_localPendingSales.length} local bill(s)'),
               ),
           ],
         ),
@@ -2559,11 +2570,11 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                 controller: _pendingPaymentSearchController,
                 textInputAction: TextInputAction.search,
                 onSubmitted: (_) => _load(pendingPage: 1),
-                decoration: InputDecoration(
+                decoration: BillingInputDecoration(
                   isDense: true,
                   prefixIcon: const Icon(Icons.search_rounded),
                   hintText: 'Search customer, phone or POS code',
-                  suffixIcon: IconButton(
+                  suffixIcon: BillingIconButton(
                     tooltip: 'Search pending payments',
                     onPressed: () => _load(pendingPage: 1),
                     icon: const Icon(Icons.arrow_forward_rounded),
@@ -2574,12 +2585,12 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
             OutlinedButton.icon(
               onPressed: _loading ? null : _selectPendingPaymentDay,
               icon: const Icon(Icons.calendar_month_outlined),
-              label: Text(_pendingPaymentDayKey.isEmpty
+              label: BillingText(_pendingPaymentDayKey.isEmpty
                   ? 'All dates'
                   : _pendingPaymentDayKey),
             ),
             if (_pendingPaymentDayKey.isNotEmpty)
-              IconButton(
+              BillingIconButton(
                 tooltip: 'Clear payment date filter',
                 onPressed: () {
                   setState(() => _pendingPaymentDayKey = '');
@@ -2592,7 +2603,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         if (pending.isEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: Text(
+            child: BillingText(
               'No customer balances are waiting for collection.',
               style: TextStyle(color: _muted),
             ),
@@ -2608,12 +2619,12 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                 leading: const CircleAvatar(
                   child: Icon(Icons.pending_actions_outlined),
                 ),
-                title: Text(
+                title: BillingText(
                   sale.customerName?.trim().isNotEmpty == true
                       ? sale.customerName!
                       : 'Customer',
                 ),
-                subtitle: Text(
+                subtitle: BillingText(
                   '${sale.customerPhone ?? 'No phone'} · ${sale.receiptNumber} · '
                   'Bill ${_money(sale.total)} · Paid ${_money(paid)} · '
                   'Due ${_money(outstanding)}',
@@ -2622,19 +2633,19 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                   onPressed: _working || outstanding <= 0
                       ? null
                       : () => _markPaid(sale),
-                  child: const Text('Record payment'),
+                  child: const BillingText('Record payment'),
                 ),
                 children: [
                   for (final item in sale.items)
                     ListTile(
                       dense: true,
-                      title: Text(item.productName),
-                      subtitle: Text(
+                      title: BillingText(item.productName),
+                      subtitle: BillingText(
                         item.weightGrams == null
                             ? 'Qty ${item.quantity}'
                             : '${item.weightGrams} g',
                       ),
-                      trailing: Text(_money(item.lineTotal)),
+                      trailing: BillingText(_money(item.lineTotal)),
                     ),
                   if (sale.paymentCollections.isNotEmpty)
                     const Divider(height: 1),
@@ -2646,11 +2657,11 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                             ? Icons.phone_android_rounded
                             : Icons.payments_outlined,
                       ),
-                      title: Text(
+                      title: BillingText(
                         '${_money(payment.amount)} · '
                         '${_paymentLabel(payment.method)}',
                       ),
-                      subtitle: Text(
+                      subtitle: BillingText(
                         '${_dateTime(payment.createdAt)}'
                         '${payment.note?.isNotEmpty == true ? ' · ${_paymentNoteLabel(payment.note!)}' : ''}',
                       ),
@@ -2667,14 +2678,14 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                 onPressed: _working || page.page <= 1
                     ? null
                     : () => _load(pendingPage: page.page - 1),
-                child: const Text('Previous'),
+                child: const BillingText('Previous'),
               ),
-              Text('Page ${page.page} of ${page.pageCount}'),
+              BillingText('Page ${page.page} of ${page.pageCount}'),
               TextButton(
                 onPressed: _working || page.page >= page.pageCount
                     ? null
                     : () => _load(pendingPage: page.page + 1),
-                child: const Text('Next'),
+                child: const BillingText('Next'),
               ),
             ],
           ),
@@ -2692,7 +2703,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           children: [
             const Icon(Icons.print_outlined),
             const SizedBox(width: 10),
-            const Expanded(child: Text('Receipt paper width')),
+            const Expanded(child: BillingText('Receipt paper width')),
             DropdownButton<int>(
               value: _paperWidthMm,
               onChanged: _working
@@ -2701,8 +2712,8 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                       if (value != null) unawaited(_setPaperWidth(value));
                     },
               items: const [
-                DropdownMenuItem(value: 58, child: Text('58 mm')),
-                DropdownMenuItem(value: 80, child: Text('80 mm')),
+                DropdownMenuItem(value: 58, child: BillingText('58 mm')),
+                DropdownMenuItem(value: 80, child: BillingText('80 mm')),
               ],
             ),
           ],
@@ -2718,7 +2729,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         _sectionHeading(
           'Held bills',
           actions: [
-            Text(
+            BillingText(
               '${_heldSales.length} waiting',
               style: Theme.of(context).textTheme.bodySmall,
             ),
@@ -2727,7 +2738,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         if (_heldSales.isEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: Text(
+            child: BillingText(
               'Bills you put on hold will be available here.',
               style: TextStyle(color: _muted),
             ),
@@ -2737,13 +2748,13 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
             (held) => ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.pause_circle_outline_rounded),
-              title: Text(held.customerName?.isNotEmpty == true
+              title: BillingText(held.customerName?.isNotEmpty == true
                   ? held.customerName!
                   : 'Held bill'),
-              subtitle: Text('${held.items.length} item lines'),
+              subtitle: BillingText('${held.items.length} item lines'),
               trailing: Wrap(
                 children: [
-                  IconButton(
+                  BillingIconButton(
                     tooltip: 'Discard held bill',
                     onPressed: () => _perform(
                       () => _adminApi.deletePosHeldSale(held.id),
@@ -2752,7 +2763,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                   ),
                   FilledButton.tonal(
                     onPressed: () => _newBill(heldSale: held),
-                    child: const Text('Resume'),
+                    child: const BillingText('Resume'),
                   ),
                 ],
               ),
@@ -2771,22 +2782,22 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           child: Icon(
               isLocal ? Icons.computer_outlined : Icons.receipt_long_outlined),
         ),
-        title: Text(sale.invoiceNumber ?? sale.receiptNumber),
-        subtitle: Text(
+        title: BillingText(sale.invoiceNumber ?? sale.receiptNumber),
+        subtitle: BillingText(
           '${_money(sale.total)} · ${sale.paymentStatus == 'PENDING' ? 'Due ${_money(sale.outstandingAmount ?? sale.total)}' : _paymentLabel(sale.paymentMethod)} · ${_dateTime(sale.createdAt)}',
         ),
         trailing: isLocal
-            ? const Chip(label: Text('Local'))
+            ? const Chip(label: BillingText('Local'))
             : sale.paymentStatus == 'PENDING'
                 ? Wrap(
                     children: [
-                      IconButton(
+                      BillingIconButton(
                         tooltip: 'Record received payment',
                         onPressed: () => _markPaid(sale),
                         icon: const Icon(Icons.payments_outlined),
                       ),
                       if (!widget.isBillingStaff && (sale.paidAmount ?? 0) <= 0)
-                        IconButton(
+                        BillingIconButton(
                           tooltip: 'Cancel unpaid bill',
                           onPressed: () => _cancelSale(sale),
                           icon: const Icon(Icons.cancel_outlined),
@@ -2794,10 +2805,10 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                     ],
                   )
                 : sale.status == 'REFUNDED'
-                    ? const Chip(label: Text('Refunded'))
+                    ? const Chip(label: BillingText('Refunded'))
                     : widget.isBillingStaff
                         ? const SizedBox.shrink()
-                        : IconButton(
+                        : BillingIconButton(
                             tooltip: 'Request refund',
                             onPressed: sale.status == 'CANCELLED'
                                 ? null
@@ -2807,8 +2818,8 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         children: [
           ListTile(
             dense: true,
-            title: const Text('Customer'),
-            subtitle: Text(
+            title: const BillingText('Customer'),
+            subtitle: BillingText(
               (sale.customerName?.trim().isNotEmpty ?? false) ||
                       (sale.customerPhone?.trim().isNotEmpty ?? false)
                   ? [sale.customerName, sale.customerPhone]
@@ -2819,13 +2830,13 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           ),
           ListTile(
             dense: true,
-            title: const Text('Invoice totals'),
-            subtitle: Text(
+            title: const BillingText('Invoice totals'),
+            subtitle: BillingText(
               'Subtotal ${_money(sale.subtotal)}  ·  '
               'Discount ${_money(sale.discount)}  ·  '
               'VAT ${_money(sale.vatAmount)} (${sale.vatRate.toStringAsFixed(2)}%)',
             ),
-            trailing: Text(
+            trailing: BillingText(
               'Total ${_money(sale.total)}',
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
@@ -2833,33 +2844,33 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           for (final item in sale.items)
             ListTile(
               dense: true,
-              title: Text(item.productName),
-              subtitle: Text(
+              title: BillingText(item.productName),
+              subtitle: BillingText(
                 item.weightGrams == null
                     ? 'Qty ${item.quantity} · ${item.sku}'
                     : '${(item.weightGrams! / 1000).toStringAsFixed(3)} kg · ${item.sku}',
               ),
-              trailing: Text(_money(item.lineTotal)),
+              trailing: BillingText(_money(item.lineTotal)),
             ),
           if (sale.refundedAmount > 0)
             ListTile(
               dense: true,
-              title: const Text('Refunded'),
-              trailing: Text(_money(sale.refundedAmount)),
+              title: const BillingText('Refunded'),
+              trailing: BillingText(_money(sale.refundedAmount)),
             ),
           for (final payment in sale.paymentCollections)
             ListTile(
               dense: true,
-              title: Text(
+              title: BillingText(
                 '${_money(payment.amount)} · ${_paymentLabel(payment.method)}',
               ),
-              subtitle: Text(_dateTime(payment.createdAt)),
+              subtitle: BillingText(_dateTime(payment.createdAt)),
             ),
           if (sale.paymentStatus == 'PENDING' && sale.status == 'COMPLETED')
             Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Tooltip(
+                child: BillingTooltip(
                     message: isLocal
                         ? 'Fonepay requires a server-saved bill. This computer-only bill will not be uploaded.'
                         : 'Generate an official merchant QR for the saved payable balance',
@@ -2875,7 +2886,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                               if (mounted) await _load();
                             },
                       icon: const Icon(Icons.qr_code_2),
-                      label: const Text('Pay with Fonepay'),
+                      label: const BillingText('Pay with Fonepay'),
                     ))),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
@@ -2884,7 +2895,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               child: OutlinedButton.icon(
                 onPressed: _working ? null : () => _printOrShareInvoice(sale),
                 icon: const Icon(Icons.picture_as_pdf_outlined),
-                label: const Text('Print or share invoice PDF'),
+                label: const BillingText('Print or share invoice PDF'),
               ),
             ),
           ),
@@ -2892,7 +2903,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
             ListTile(
               dense: true,
               leading: const Icon(Icons.folder_outlined),
-              title: const Text('Local invoice file'),
+              title: const BillingText('Local invoice file'),
               subtitle: SelectableText(sale.localPath!),
             ),
         ],
@@ -2915,11 +2926,11 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                 onChanged: (value) =>
                     setState(() => _billHistorySearch = value),
                 onSubmitted: (_) => _searchBillHistory(),
-                decoration: InputDecoration(
+                decoration: BillingInputDecoration(
                   prefixIcon: const Icon(Icons.search_rounded),
                   hintText: 'Search POS code, customer or phone',
                   isDense: true,
-                  suffixIcon: IconButton(
+                  suffixIcon: BillingIconButton(
                     tooltip: 'Search invoices',
                     onPressed: _searchBillHistory,
                     icon: const Icon(Icons.arrow_forward_rounded),
@@ -2930,19 +2941,19 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
             OutlinedButton.icon(
               onPressed: _selectHistoryDay,
               icon: const Icon(Icons.calendar_month_outlined),
-              label: Text(_billHistoryDayKey ?? 'All dates'),
+              label: BillingText(_billHistoryDayKey ?? 'All dates'),
             ),
             OutlinedButton.icon(
               onPressed: _loading ? null : _load,
               icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Refresh'),
+              label: const BillingText('Refresh'),
             ),
-            Text('Total: $_salesTotal',
+            BillingText('Total: $_salesTotal',
                 style: Theme.of(context).textTheme.bodySmall),
             OutlinedButton.icon(
               onPressed: _working ? null : _recoverFonepayCheckout,
               icon: const Icon(Icons.qr_code_2),
-              label: const Text('Pending Fonepay checkouts'),
+              label: const BillingText('Pending Fonepay checkouts'),
             ),
           ],
         ),
@@ -2956,17 +2967,17 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       final selected = await showDialog<PosSale>(
           context: context,
           builder: (context) => SimpleDialog(
-              title: const Text('Pending Fonepay checkouts'),
+              title: const BillingText('Pending Fonepay checkouts'),
               children: drafts.isEmpty
                   ? [
                       const Padding(
                           padding: EdgeInsets.all(16),
-                          child: Text('No pending checkouts.'))
+                          child: BillingText('No pending checkouts.'))
                     ]
                   : drafts
                       .map((sale) => SimpleDialogOption(
                             onPressed: () => Navigator.pop(context, sale),
-                            child: Text(
+                            child: BillingText(
                                 '${sale.receiptNumber}\n${sale.customerName ?? 'Customer'} · ${_money(sale.total)}'),
                           ))
                       .toList()));
@@ -3009,7 +3020,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
+          content: BillingText(
             'Could not prepare this invoice: '
             '${error.toString().replaceFirst('Exception: ', '')}',
           ),
@@ -3089,13 +3100,15 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       );
       if (!mounted || savedUri == null) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Exported ${sales.length} bills to $fileName')),
+        SnackBar(
+            content:
+                BillingText('Exported ${sales.length} bills to $fileName')),
       );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
+          content: BillingText(
             'Could not export bill history: '
             '${error.toString().replaceFirst('Exception: ', '')}',
           ),
@@ -3138,7 +3151,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           child: _insightCard(
             'Top-selling products',
             overview.topProducts.isEmpty
-                ? const [Text('No sales recorded today.')]
+                ? const [BillingText('No sales recorded today.')]
                 : overview.topProducts
                     .map((item) => _insightLine(item.name, '× ${item.sold}'))
                     .toList(),
@@ -3149,7 +3162,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           child: _insightCard(
             'Low-stock alerts',
             overview.lowStock.isEmpty
-                ? const [Text('No low-stock products.')]
+                ? const [BillingText('No low-stock products.')]
                 : overview.lowStock
                     .take(6)
                     .map((item) => _insightLine(
@@ -3174,7 +3187,8 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+          BillingText(title,
+              style: const TextStyle(fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
           ...children,
         ],
@@ -3187,10 +3201,12 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         child: Row(
           children: [
             Expanded(
-              child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+              child: BillingText(label,
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
             const SizedBox(width: 6),
-            Text(value, style: const TextStyle(fontWeight: FontWeight.w700)),
+            BillingText(value,
+                style: const TextStyle(fontWeight: FontWeight.w700)),
           ],
         ),
       );
@@ -3205,7 +3221,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           'Refund requests',
           actions: [
             if (requested.isNotEmpty)
-              Chip(label: Text('${requested.length} pending')),
+              Chip(label: BillingText('${requested.length} pending')),
           ],
         ),
         const SizedBox(height: 10),
@@ -3220,11 +3236,11 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                 controller: _refundSearchController,
                 textInputAction: TextInputAction.search,
                 onSubmitted: (_) => _load(),
-                decoration: InputDecoration(
+                decoration: BillingInputDecoration(
                   isDense: true,
                   prefixIcon: const Icon(Icons.search_rounded),
                   hintText: 'Search invoice, customer, phone or reason',
-                  suffixIcon: IconButton(
+                  suffixIcon: BillingIconButton(
                     tooltip: 'Search refunds',
                     onPressed: _load,
                     icon: const Icon(Icons.arrow_forward_rounded),
@@ -3235,10 +3251,11 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
             OutlinedButton.icon(
               onPressed: _loading ? null : _selectRefundDay,
               icon: const Icon(Icons.calendar_month_outlined),
-              label: Text(_refundDayKey.isEmpty ? 'All dates' : _refundDayKey),
+              label: BillingText(
+                  _refundDayKey.isEmpty ? 'All dates' : _refundDayKey),
             ),
             if (_refundDayKey.isNotEmpty)
-              IconButton(
+              BillingIconButton(
                 tooltip: 'Clear refund date filter',
                 onPressed: () {
                   setState(() => _refundDayKey = '');
@@ -3251,7 +3268,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         if (requested.isEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: Text(
+            child: BillingText(
               'No refund requests need review.',
               style: TextStyle(color: _muted),
             ),
@@ -3260,9 +3277,9 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           ...requested.map(
             (refund) => Card(
               child: ListTile(
-                title:
-                    Text('${refund.receiptNumber} · ${_money(refund.amount)}'),
-                subtitle: Text([
+                title: BillingText(
+                    '${refund.receiptNumber} · ${_money(refund.amount)}'),
+                subtitle: BillingText([
                   if (refund.customerName?.trim().isNotEmpty == true)
                     refund.customerName!.trim(),
                   if (refund.customerPhone?.trim().isNotEmpty == true)
@@ -3272,14 +3289,14 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                 ].join(' · ')),
                 trailing: Wrap(
                   children: [
-                    IconButton(
+                    BillingIconButton(
                       tooltip: 'Reject refund',
                       onPressed: _working
                           ? null
                           : () => _resolveRefund(refund, approve: false),
                       icon: const Icon(Icons.close_rounded),
                     ),
-                    IconButton(
+                    BillingIconButton(
                       tooltip: 'Approve refund',
                       onPressed: _working
                           ? null
@@ -3314,13 +3331,13 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text('Receive payment · ${sale.receiptNumber}'),
+          title: BillingText('Receive payment · ${sale.receiptNumber}'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Align(
                 alignment: Alignment.centerLeft,
-                child: Text(
+                child: BillingText(
                   'Remaining balance ${_money(remaining)}',
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
@@ -3331,20 +3348,22 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                 autofocus: true,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
+                decoration: const BillingInputDecoration(
                   labelText: 'Amount received',
                   prefixText: 'Rs ',
                 ),
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
+                isExpanded: true,
                 initialValue: paymentMethod,
-                decoration: const InputDecoration(labelText: 'Received by'),
+                decoration:
+                    const BillingInputDecoration(labelText: 'Received by'),
                 items: const [
-                  DropdownMenuItem(value: 'CASH', child: Text('Cash')),
+                  DropdownMenuItem(value: 'CASH', child: BillingText('Cash')),
                   DropdownMenuItem(
                     value: 'DIGITAL',
-                    child: Text('Bank transfer (manual record)'),
+                    child: BillingText('Bank transfer (manual record)'),
                   ),
                 ],
                 onChanged: (value) {
@@ -3357,14 +3376,14 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               TextField(
                 controller: noteController,
                 maxLength: 240,
-                decoration: const InputDecoration(
+                decoration: const BillingInputDecoration(
                   labelText: 'Note (optional)',
                 ),
               ),
               if (validationError != null)
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: Text(
+                  child: BillingText(
                     validationError!,
                     style: Theme.of(context)
                         .textTheme
@@ -3377,7 +3396,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
+              child: const BillingText('Cancel'),
             ),
             FilledButton(
               onPressed: () {
@@ -3400,7 +3419,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                       : noteController.text.trim(),
                 ));
               },
-              child: const Text('Save payment'),
+              child: const BillingText('Save payment'),
             ),
           ],
         ),
@@ -3553,18 +3572,18 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Cancel unpaid bill?'),
-        content: Text(
+        title: const BillingText('Cancel unpaid bill?'),
+        content: BillingText(
           'Cancel ${sale.receiptNumber} and return its items to available stock?',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Keep bill'),
+            child: const BillingText('Keep bill'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Cancel bill'),
+            child: const BillingText('Cancel bill'),
           ),
         ],
       ),
@@ -3579,7 +3598,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Billing report · ${overview.day}'),
+        title: BillingText('Billing report · ${overview.day}'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -3597,7 +3616,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         actions: [
           FilledButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Done'),
+            child: const BillingText('Done'),
           ),
         ],
       ),
@@ -3647,7 +3666,7 @@ class _PosProductQuantityDialogState extends State<_PosProductQuantityDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: Text('Add ${widget.product.name}'),
+        title: BillingText('Add ${widget.product.name}'),
         content: TextField(
           controller: _quantityController,
           autofocus: true,
@@ -3655,7 +3674,7 @@ class _PosProductQuantityDialogState extends State<_PosProductQuantityDialog> {
           inputFormatters: [
             FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
           ],
-          decoration: InputDecoration(
+          decoration: BillingInputDecoration(
             labelText: widget.isWeightProduct ? 'Weight in grams' : 'Quantity',
             suffixText: widget.isWeightProduct ? 'g' : null,
           ),
@@ -3664,11 +3683,11 @@ class _PosProductQuantityDialogState extends State<_PosProductQuantityDialog> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: const BillingText('Cancel'),
           ),
           FilledButton(
             onPressed: () => _submit(context),
-            child: const Text('Add to bill'),
+            child: const BillingText('Add to bill'),
           ),
         ],
       );
@@ -3687,6 +3706,7 @@ class PosBillDialog extends StatefulWidget {
     this.printSale,
     this.heldSale,
     this.scannedProduct,
+    this.loadLocalCustomers,
   });
 
   final AdminApiService api;
@@ -3699,19 +3719,23 @@ class PosBillDialog extends StatefulWidget {
   final Future<bool> Function(PosSale)? printSale;
   final OfflinePosStore offlineStore;
   final bool refreshCatalogOnOpen;
+  final Future<List<AdminCustomer>> Function()? loadLocalCustomers;
 
   @override
   State<PosBillDialog> createState() => _PosBillDialogState();
 }
 
 class _PosBillDialogState extends State<PosBillDialog> {
+  List<RoomPick>? _roomPicks;
+  String? _roomSelectionFingerprint;
+  bool _roomSelectionNeedsRefresh = false;
   OfflinePosStore get _offlinePosStore => widget.offlineStore;
   final _barcodeQueue = OrderedWorkQueue();
   final _additionQueue = OrderedWorkQueue();
   final String _idempotencyKey = const Uuid().v4();
   Future<List<AdminCustomer>>? _localBillingCustomers;
   Future<List<AdminCustomer>> _readLocalBillingCustomers() =>
-      _localBillingCustomers ??=
+      _localBillingCustomers ??= widget.loadLocalCustomers?.call() ??
           BillingCustomerService.readLocal(widget.offlineStore);
   final _search = TextEditingController();
   final _customerName = TextEditingController();
@@ -3925,7 +3949,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
             });
           }
           return AlertDialog(
-            title: const Text('Select customer'),
+            title: const BillingText('Select customer'),
             content: SizedBox(
               width: 540,
               height: 440,
@@ -3933,7 +3957,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                 children: [
                   TextField(
                     controller: searchController,
-                    decoration: const InputDecoration(
+                    decoration: const BillingInputDecoration(
                       prefixIcon: Icon(Icons.search_rounded),
                       hintText: 'Search name or phone',
                     ),
@@ -3944,10 +3968,11 @@ class _PosBillDialogState extends State<PosBillDialog> {
                     child: loading
                         ? const Center(child: CircularProgressIndicator())
                         : loadError != null
-                            ? Center(child: Text(loadError!))
+                            ? Center(child: BillingText(loadError!))
                             : customers.isEmpty
                                 ? const Center(
-                                    child: Text('No saved customers found.'),
+                                    child: BillingText(
+                                        'No saved customers found.'),
                                   )
                                 : ListView.builder(
                                     itemCount: customers.length,
@@ -3956,8 +3981,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
                                       return ListTile(
                                         leading:
                                             const Icon(Icons.person_outline),
-                                        title: Text(customer.name),
-                                        subtitle: Text(
+                                        title: BillingText(customer.name),
+                                        subtitle: BillingText(
                                           customer.id
                                                   .startsWith('local-customer-')
                                               ? '${customer.phone} · Saved on this computer'
@@ -3977,7 +4002,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('Cancel'),
+                child: const BillingText('Cancel'),
               ),
             ],
           );
@@ -3994,8 +4019,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
   }
 
   bool _isWeightProduct(PosProduct product) =>
-      RegExp(r'^\s*\d+(?:\.\d+)?\s*(?:kg|g)\s*$', caseSensitive: false)
-          .hasMatch(product.unitLabel);
+      StockSummary.isLooseWeight(product);
 
   double get _subtotal => _cart.fold<double>(
         0,
@@ -4118,6 +4142,18 @@ class _PosBillDialogState extends State<PosBillDialog> {
       ownerId: widget.operatorId,
       queueForSync: queueForSync,
       validate: () async {
+        if (_roomPicks != null) {
+          final snapshot =
+              await RoomInventoryService(widget.api, _offlinePosStore)
+                  .load(offline: true);
+          snapshot.validatePicks(_roomPicks!, {
+            for (final line in _cart)
+              line.product.id: _cart
+                  .where((item) => item.product.id == line.product.id)
+                  .fold<int>(0,
+                      (sum, item) => sum + (item.weightGrams ?? item.quantity))
+          });
+        }
         final available = {
           for (final product
               in await _offlinePosStore.readCatalog(freshStock: true))
@@ -4136,6 +4172,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
         }
       },
       uploadPayload: {
+        if (_roomPicks != null)
+          'roomPicks': _roomPicks!.map((pick) => pick.toJson()).toList(),
         'idempotencyKey': _idempotencyKey,
         'items': _requestItems(),
         'discount': discount,
@@ -4158,6 +4196,10 @@ class _PosBillDialogState extends State<PosBillDialog> {
         },
       },
       record: {
+        if (_roomPicks != null)
+          'roomPicks': _roomPicks!.map((pick) => pick.toJson()).toList(),
+        if (_roomPicks != null && !queueForSync)
+          'roomStockSyncState': 'pending',
         'invoiceNumber': invoiceNumber,
         'date': now.toIso8601String(),
         'customerName': sale.customerName,
@@ -4697,6 +4739,33 @@ class _PosBillDialogState extends State<PosBillDialog> {
       _error = null;
     });
     try {
+      final required = <String, int>{};
+      final products = <String, PosProduct>{};
+      for (final line in _cart) {
+        required[line.product.id] = (required[line.product.id] ?? 0) +
+            (line.weightGrams ?? line.quantity);
+        products[line.product.id] = line.product;
+      }
+      final fingerprint = jsonEncode(_requestItems());
+      if (_roomPicks == null || _roomSelectionFingerprint != fingerprint) {
+        final snapshot =
+            await RoomInventoryService(widget.api, _offlinePosStore)
+                .load(productIds: required.keys.toList());
+        if (!mounted) return;
+        final picks = await showDialog<List<RoomPick>>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => RoomPickDialog(
+                snapshot: snapshot,
+                products: products.values.toList(),
+                requiredQuantities: required));
+        if (picks == null) {
+          if (mounted) setState(() => _saving = false);
+          return;
+        }
+        _roomPicks = picks;
+        _roomSelectionFingerprint = fingerprint;
+      }
       if (payingFonepay) {
         await _payWithFonepay(discount, vatRate);
         return;
@@ -4704,6 +4773,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
       final sale = _saveOnThisComputer
           ? await _createLocalSale(discount: discount, vatRate: vatRate)
           : await widget.api.createPosSale(
+              roomPicks: _roomPicks?.map((pick) => pick.toJson()).toList(),
               idempotencyKey: _idempotencyKey,
               items: _requestItems(),
               discount: discount,
@@ -4778,6 +4848,9 @@ class _PosBillDialogState extends State<PosBillDialog> {
     } catch (error) {
       if (mounted) {
         setState(() {
+          if (error is ApiResponseException && error.statusCode == 409) {
+            _roomPicks = null;
+          }
           _error = error.toString().replaceFirst('Exception: ', '');
           _saving = false;
         });
@@ -4804,6 +4877,10 @@ class _PosBillDialogState extends State<PosBillDialog> {
               paymentMethod: _paymentMethod,
               providerName: _paymentMethod == 'ESEWA' ? 'eSewa' : 'Fonepay',
               onVerified: (verification) async {
+                if (_roomSelectionNeedsRefresh) {
+                  throw StateError(
+                      'Close payment and choose source rooms again before retrying.');
+                }
                 if (_saveOnThisComputer) {
                   return _createLocalSale(
                       discount: discount,
@@ -4811,6 +4888,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
                       manualVerification: verification);
                 }
                 return widget.api.createPosSale(
+                    roomPicks:
+                        _roomPicks?.map((pick) => pick.toJson()).toList(),
                     idempotencyKey: _idempotencyKey,
                     items: _requestItems(),
                     discount: discount,
@@ -4832,7 +4911,12 @@ class _PosBillDialogState extends State<PosBillDialog> {
                     unitPrices: {
                       for (final line in _cart)
                         line.product.id: line.product.price
-                    });
+                    }).onError<ApiResponseException>((error, stack) {
+                  if (error.statusCode == 409) {
+                    _roomSelectionNeedsRefresh = true;
+                  }
+                  Error.throwWithStackTrace(error, stack);
+                });
               },
               onPrint: widget.printSale ??
                   (sale) async {
@@ -4847,6 +4931,11 @@ class _PosBillDialogState extends State<PosBillDialog> {
     if (!mounted) return;
     if (completion != null) {
       Navigator.pop(context, completion.withAutoPrintAllowed(false));
+    }
+    if (_roomSelectionNeedsRefresh) {
+      _roomPicks = null;
+      _roomSelectionFingerprint = null;
+      _roomSelectionNeedsRefresh = false;
     }
     if (mounted) setState(() => _saving = false);
   }
@@ -4914,7 +5003,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
               ),
-              child: const Text(
+              child: const BillingText(
                 'Saved catalogue · showing last-synced prices and estimated stock. Online checkout verifies them before saving.',
                 style: TextStyle(fontSize: 12),
               ),
@@ -4940,7 +5029,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                 Icon(Icons.person_outline_rounded,
                     size: 17, color: AppColors.muted),
                 const SizedBox(width: 8),
-                Text(
+                BillingText(
                   'CUSTOMER DETAILS',
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                         color: AppColors.primary,
@@ -4953,7 +5042,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
             Row(
               children: [
                 Expanded(
-                  child: Text(
+                  child: BillingText(
                     _selectedCustomer == null
                         ? 'Use a saved customer or enter a temporary name and phone.'
                         : '${_selectedCustomer!.id.startsWith('local-customer-') ? 'Saved on this computer' : 'Registered customer'} · ${_selectedCustomer!.phone}',
@@ -4965,7 +5054,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                 OutlinedButton.icon(
                   onPressed: _saving ? null : _selectRegisteredCustomer,
                   icon: const Icon(Icons.people_alt_outlined, size: 16),
-                  label: const Text('Select existing'),
+                  label: const BillingText('Select existing'),
                 ),
               ],
             ),
@@ -4977,7 +5066,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                     controller: _customerName,
                     enabled: !_saving,
                     onChanged: (_) => _customerDetailsChanged(byName: true),
-                    decoration: const InputDecoration(
+                    decoration: const BillingInputDecoration(
                       hintText: 'Temporary customer name',
                       isDense: true,
                     ),
@@ -4991,7 +5080,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                     keyboardType: TextInputType.phone,
                     inputFormatters: nepalPhoneInputFormatters,
                     onChanged: (_) => _customerDetailsChanged(byName: false),
-                    decoration: const InputDecoration(
+                    decoration: const BillingInputDecoration(
                       hintText: 'Temporary customer phone',
                       isDense: true,
                     ),
@@ -5014,7 +5103,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
           children: [
             Row(
               children: [
-                Text(
+                BillingText(
                   'ITEMS',
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                         color: AppColors.primary,
@@ -5031,7 +5120,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                   ),
                   child: ValueListenableBuilder<int>(
                     valueListenable: _cartTotals,
-                    builder: (_, __, ___) => Text(
+                    builder: (_, __, ___) => BillingText(
                       '${_cart.fold<int>(0, (sum, line) => sum + (line.weightGrams == null ? line.quantity : 1))} items',
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                             color: AppColors.muted,
@@ -5041,7 +5130,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                   ),
                 ),
                 const Spacer(),
-                Text(
+                BillingText(
                   'F2 to search',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
@@ -5059,10 +5148,10 @@ class _PosBillDialogState extends State<PosBillDialog> {
                             Icon(Icons.shopping_cart_outlined,
                                 size: 38, color: AppColors.outline),
                             const SizedBox(height: 8),
-                            Text('No items added yet',
+                            BillingText('No items added yet',
                                 style: Theme.of(context).textTheme.bodyMedium),
                             const SizedBox(height: 3),
-                            Text(
+                            BillingText(
                               'Your bill stays visible while you search products.',
                               style: Theme.of(context).textTheme.bodySmall,
                               textAlign: TextAlign.center,
@@ -5076,7 +5165,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
             const Divider(height: 12),
             Row(
               children: [
-                Text(
+                BillingText(
                   'PRODUCTS',
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                         color: AppColors.primary,
@@ -5084,7 +5173,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                       ),
                 ),
                 const SizedBox(width: 8),
-                Text('${_matches.length} found',
+                BillingText('${_matches.length} found',
                     style: Theme.of(context).textTheme.bodySmall),
                 const Spacer(),
                 if (_searching)
@@ -5104,7 +5193,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
               children: [
                 Expanded(child: _buildSearchField(isDesktop: true)),
                 const SizedBox(width: 8),
-                IconButton.outlined(
+                BillingIconButton.outlined(
                   tooltip: 'Scan barcode',
                   onPressed: _saving ? null : _scan,
                   icon: const Icon(Icons.qr_code_scanner_rounded),
@@ -5125,7 +5214,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(
+                      child: BillingText(
                         'BILL DETAILS',
                         style: Theme.of(context).textTheme.labelLarge?.copyWith(
                               color: AppColors.primary,
@@ -5145,16 +5234,19 @@ class _PosBillDialogState extends State<PosBillDialog> {
                 _billDetailRow('Bill number', 'Assigned on completion'),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
+                  isExpanded: true,
                   initialValue: _paymentMethod,
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'Payment method',
                     isDense: true,
                   ),
                   items: const [
-                    DropdownMenuItem(value: 'CASH', child: Text('Cash')),
-                    DropdownMenuItem(value: 'ESEWA', child: Text('eSewa / QR')),
+                    DropdownMenuItem(value: 'CASH', child: BillingText('Cash')),
                     DropdownMenuItem(
-                        value: 'PENDING', child: Text('Pending balance')),
+                        value: 'ESEWA', child: BillingText('eSewa / QR')),
+                    DropdownMenuItem(
+                        value: 'PENDING',
+                        child: BillingText('Pending balance')),
                   ],
                   onChanged: _saving
                       ? null
@@ -5167,8 +5259,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
                   SwitchListTile.adaptive(
                     contentPadding: EdgeInsets.zero,
                     value: _saveOnThisComputer,
-                    title: const Text('Save on this computer only'),
-                    subtitle: const Text(
+                    title: const BillingText('Save on this computer only'),
+                    subtitle: const BillingText(
                       'Bill, invoice and customer details stay in C:/Ramprasad store/bills/.',
                     ),
                     onChanged: _saving
@@ -5202,12 +5294,12 @@ class _PosBillDialogState extends State<PosBillDialog> {
                               size: 17, color: AppColors.action),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: Text(
+                            child: BillingText(
                               'Discount & adjustments',
                               style: Theme.of(context)
                                   .textTheme
                                   .labelLarge
-                                  ?.copyWith(color: AppColors.action),
+                                  ?.copyWith(color: AppColors.actionText),
                             ),
                           ),
                         ],
@@ -5216,8 +5308,10 @@ class _PosBillDialogState extends State<PosBillDialog> {
                     const SizedBox(height: 10),
                     SegmentedButton<bool>(
                       segments: const [
-                        ButtonSegment(value: false, label: Text('Amount')),
-                        ButtonSegment(value: true, label: Text('Percentage')),
+                        ButtonSegment(
+                            value: false, label: BillingText('Amount')),
+                        ButtonSegment(
+                            value: true, label: BillingText('Percentage')),
                       ],
                       selected: {_discountIsPercent},
                       onSelectionChanged: (value) => setState(() {
@@ -5230,7 +5324,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                       keyboardType:
                           const TextInputType.numberWithOptions(decimal: true),
                       onChanged: (_) => setState(() {}),
-                      decoration: InputDecoration(
+                      decoration: BillingInputDecoration(
                         labelText: _discountIsPercent
                             ? 'Discount percentage (%)'
                             : 'Discount amount',
@@ -5243,7 +5337,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                       keyboardType:
                           const TextInputType.numberWithOptions(decimal: true),
                       onChanged: (_) => setState(() {}),
-                      decoration: const InputDecoration(
+                      decoration: const BillingInputDecoration(
                         labelText: 'VAT (%)',
                         hintText: '0',
                         isDense: true,
@@ -5269,12 +5363,12 @@ class _PosBillDialogState extends State<PosBillDialog> {
                     Row(
                       children: [
                         Expanded(
-                          child: Text(
+                          child: BillingText(
                             'TOTAL',
                             style: Theme.of(context).textTheme.titleMedium,
                           ),
                         ),
-                        Text(
+                        BillingText(
                           _money(_total),
                           style:
                               Theme.of(context).textTheme.titleLarge?.copyWith(
@@ -5290,7 +5384,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                         OutlinedButton.icon(
                           onPressed: _saving ? null : _hold,
                           icon: const Icon(Icons.pause_circle_outline),
-                          label: const Text('Hold'),
+                          label: const BillingText('Hold'),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -5304,7 +5398,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                                         strokeWidth: 2),
                                   )
                                 : const Icon(Icons.save_outlined),
-                            label: Text(
+                            label: BillingText(
                                 ['FONEPAY', 'ESEWA'].contains(_paymentMethod)
                                     ? 'Pay'
                                     : _saveOnThisComputer
@@ -5326,11 +5420,12 @@ class _PosBillDialogState extends State<PosBillDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: Text(label, style: Theme.of(context).textTheme.bodySmall),
+            child: BillingText(label,
+                style: Theme.of(context).textTheme.bodySmall),
           ),
           const SizedBox(width: 8),
           Flexible(
-            child: Text(
+            child: BillingText(
               value,
               textAlign: TextAlign.right,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -5345,9 +5440,9 @@ class _PosBillDialogState extends State<PosBillDialog> {
   Widget _billAmountRow(String label, double amount) => Row(
         children: [
           Expanded(
-              child:
-                  Text(label, style: Theme.of(context).textTheme.bodyMedium)),
-          Text(
+              child: BillingText(label,
+                  style: Theme.of(context).textTheme.bodyMedium)),
+          BillingText(
             _money(amount),
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: AppColors.primary,
@@ -5395,7 +5490,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
         child: Row(
           children: [
             Expanded(
-              child: Text(
+              child: BillingText(
                 widget.heldSale == null
                     ? 'Create New Invoice'
                     : 'Resume Held Bill',
@@ -5408,20 +5503,20 @@ class _PosBillDialogState extends State<PosBillDialog> {
               ),
             ),
             const SizedBox(width: 10),
-            Text(
+            BillingText(
               _todayDateLabel(),
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: Colors.white,
                   ),
             ),
             const Spacer(),
-            Text(
+            BillingText(
               'Bill number: assigned on save',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Colors.white,
                   ),
             ),
-            IconButton(
+            BillingIconButton(
               tooltip: 'Close',
               onPressed: _saving ? null : () => Navigator.pop(context),
               style: IconButton.styleFrom(
@@ -5439,17 +5534,17 @@ class _PosBillDialogState extends State<PosBillDialog> {
       child: Row(
         children: [
           Expanded(
-            child: Text(
+            child: BillingText(
               widget.heldSale == null ? 'New bill' : 'Resume held bill',
               style: Theme.of(context).textTheme.headlineMedium,
             ),
           ),
           if (defaultTargetPlatform == TargetPlatform.windows)
-            Text(
+            BillingText(
               'F2 Search · F8 Complete',
               style: Theme.of(context).textTheme.bodySmall,
             ),
-          IconButton(
+          BillingIconButton(
             tooltip: 'Close',
             onPressed: _saving ? null : () => Navigator.pop(context),
             icon: const Icon(Icons.close),
@@ -5466,14 +5561,14 @@ class _PosBillDialogState extends State<PosBillDialog> {
       autofocus: isDesktop,
       onChanged: _onSearchChanged,
       onSubmitted: _submitBarcode,
-      decoration: InputDecoration(
+      decoration: BillingInputDecoration(
         labelText: isDesktop
             ? 'Scan barcode or search product / SKU'
             : 'Search product, SKU or barcode',
         prefixIcon: const Icon(Icons.search_rounded),
         suffixIcon: isDesktop
             ? null
-            : IconButton(
+            : BillingIconButton(
                 tooltip: 'Scan barcode',
                 onPressed: _scan,
                 icon: const Icon(Icons.qr_code_scanner_rounded),
@@ -5498,7 +5593,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                 color: AppColors.errorText, size: 18),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
+              child: BillingText(
                 _error!,
                 style: TextStyle(color: AppColors.errorText),
               ),
@@ -5513,7 +5608,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
     if (_searching) return const Center(child: CircularProgressIndicator());
     if (_matches.isEmpty) {
       return Center(
-        child: Text(
+        child: BillingText(
           _search.text.isEmpty
               ? 'Search or scan to add products.'
               : 'No matching products.',
@@ -5529,8 +5624,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
           child: AppRowCard(
             key: ValueKey(product.id),
             title: product.name,
-            subtitle: '${product.sku} · ${_money(product.price)} · '
-                '${product.available} ${product.unitLabel}',
+            subtitle:
+                '${_money(product.price)}\nAvailable: ${StockSummary.availableLabel(product)}',
             leading: product.imageUrl?.isNotEmpty == true
                 ? ProductThumbnail(
                     imageUrl: product.imageUrl!,
@@ -5540,17 +5635,17 @@ class _PosBillDialogState extends State<PosBillDialog> {
                     backgroundColor: AppColors.thumbnailGreen,
                     borderRadius: BorderRadius.circular(AppRadii.thumbnail),
                   )
-                : Text(
+                : BillingText(
                     product.name.isEmpty ? '?' : product.name.substring(0, 1),
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
             tint: AppColors.thumbnailGreen,
-            trailing: IconButton(
-              tooltip: 'Add ${product.name}',
+            trailing: FilledButton.icon(
               onPressed: _saving || product.available <= 0
                   ? null
                   : () => _addProduct(product),
               icon: const Icon(Icons.add_circle_outline),
+              label: const BillingText('Add'),
             ),
           ),
         );
@@ -5564,7 +5659,9 @@ class _PosBillDialogState extends State<PosBillDialog> {
       );
 
   Widget _buildCartList() {
-    if (_cart.isEmpty) return const Center(child: Text('Bill is empty.'));
+    if (_cart.isEmpty) {
+      return const Center(child: BillingText('Bill is empty.'));
+    }
     return ListView.builder(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       itemCount: _cart.length,
@@ -5588,7 +5685,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                       ? Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(
+                            BillingIconButton(
                               tooltip: 'Decrease quantity',
                               visualDensity: VisualDensity.compact,
                               onPressed: _saving
@@ -5607,7 +5704,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                             ),
                             SizedBox(
                               width: 76,
-                              child: TextFormField(
+                              child: BillingTextFormField(
                                 key: ObjectKey(line),
                                 controller: line.quantityController,
                                 enabled: !_saving,
@@ -5616,7 +5713,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                                 inputFormatters: [
                                   FilteringTextInputFormatter.digitsOnly,
                                 ],
-                                decoration: const InputDecoration(
+                                decoration: const BillingInputDecoration(
                                   labelText: 'Qty',
                                   isDense: true,
                                   contentPadding: EdgeInsets.symmetric(
@@ -5631,7 +5728,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                                 },
                               ),
                             ),
-                            IconButton(
+                            BillingIconButton(
                               tooltip: 'Increase quantity',
                               visualDensity: VisualDensity.compact,
                               onPressed: _saving
@@ -5644,7 +5741,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                             ),
                           ],
                         )
-                      : Text('${line.weightGrams} g');
+                      : BillingText('${line.weightGrams} g');
 
                   final amountAndRemove = Row(
                     mainAxisSize: MainAxisSize.min,
@@ -5652,9 +5749,9 @@ class _PosBillDialogState extends State<PosBillDialog> {
                       Flexible(
                           child: FittedBox(
                         fit: BoxFit.scaleDown,
-                        child: Text(_money(total)),
+                        child: BillingText(_money(total)),
                       )),
-                      IconButton(
+                      BillingIconButton(
                         tooltip: 'Remove item',
                         onPressed: _saving
                             ? null
@@ -5674,13 +5771,13 @@ class _PosBillDialogState extends State<PosBillDialog> {
                       children: [
                         ListTile(
                           contentPadding: EdgeInsets.zero,
-                          title: Text(line.product.name),
-                          subtitle: Text(line.product.sku),
+                          title: BillingText(line.product.name),
+                          subtitle: BillingText(line.product.sku),
                           trailing: amountAndRemove,
                         ),
                         Row(
                           children: [
-                            const Text('Quantity'),
+                            const BillingText('Quantity'),
                             const Spacer(),
                             quantityControls,
                           ],
@@ -5696,9 +5793,9 @@ class _PosBillDialogState extends State<PosBillDialog> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(line.product.name,
+                            BillingText(line.product.name,
                                 maxLines: 1, overflow: TextOverflow.ellipsis),
-                            Text(line.product.sku,
+                            BillingText(line.product.sku,
                                 style: Theme.of(context).textTheme.bodySmall),
                           ],
                         ),
@@ -5728,7 +5825,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                 child: TextField(
                   controller: _customerName,
                   onChanged: (_) => _customerDetailsChanged(byName: true),
-                  decoration: InputDecoration(
+                  decoration: BillingInputDecoration(
                     labelText: _paymentMethod == 'PENDING'
                         ? 'Customer name *'
                         : 'Customer (optional)',
@@ -5743,7 +5840,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                   keyboardType: TextInputType.phone,
                   inputFormatters: nepalPhoneInputFormatters,
                   onChanged: (_) => _customerDetailsChanged(byName: false),
-                  decoration: InputDecoration(
+                  decoration: BillingInputDecoration(
                     labelText: _paymentMethod == 'PENDING'
                         ? 'Customer phone *'
                         : 'Customer phone',
@@ -5763,7 +5860,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
                     onChanged: (_) => setState(() {}),
-                    decoration: const InputDecoration(
+                    decoration: const BillingInputDecoration(
                       labelText: 'Paying now',
                       prefixText: 'Rs. ',
                       isDense: true,
@@ -5773,13 +5870,15 @@ class _PosBillDialogState extends State<PosBillDialog> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: _paidNowMethod,
-                    decoration: const InputDecoration(
+                    decoration: const BillingInputDecoration(
                       labelText: 'Received by',
                       isDense: true,
                     ),
                     items: const [
-                      DropdownMenuItem(value: 'CASH', child: Text('Cash')),
+                      DropdownMenuItem(
+                          value: 'CASH', child: BillingText('Cash')),
                     ],
                     onChanged: (value) => setState(() {
                       _paidNowMethod = value ?? 'CASH';
@@ -5791,7 +5890,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
             const SizedBox(height: 6),
             Align(
               alignment: Alignment.centerRight,
-              child: Text(
+              child: BillingText(
                 'Remaining in pending cash: ${_money((_total - (double.tryParse(_paidNow.text.trim()) ?? 0)).clamp(0, _total).toDouble())}',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w600,
@@ -5802,8 +5901,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
           const SizedBox(height: 8),
           SegmentedButton<bool>(
             segments: const [
-              ButtonSegment(value: false, label: Text('Amount')),
-              ButtonSegment(value: true, label: Text('Percentage')),
+              ButtonSegment(value: false, label: BillingText('Amount')),
+              ButtonSegment(value: true, label: BillingText('Percentage')),
             ],
             selected: {_discountIsPercent},
             onSelectionChanged: (value) => setState(() {
@@ -5819,7 +5918,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
                   onChanged: (_) => setState(() {}),
-                  decoration: InputDecoration(
+                  decoration: BillingInputDecoration(
                     labelText: _discountIsPercent
                         ? 'Discount percentage (%)'
                         : 'Discount amount',
@@ -5830,18 +5929,20 @@ class _PosBillDialogState extends State<PosBillDialog> {
               const SizedBox(width: 8),
               Expanded(
                 child: DropdownButtonFormField<String>(
+                  isExpanded: true,
                   initialValue: _paymentMethod,
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'Payment',
                     isDense: true,
                   ),
                   items: const [
-                    DropdownMenuItem(value: 'CASH', child: Text('Cash')),
+                    DropdownMenuItem(value: 'CASH', child: BillingText('Cash')),
                     DropdownMenuItem(
                       value: 'ESEWA',
-                      child: Text('eSewa / QR'),
+                      child: BillingText('eSewa / QR'),
                     ),
-                    DropdownMenuItem(value: 'PENDING', child: Text('Pending')),
+                    DropdownMenuItem(
+                        value: 'PENDING', child: BillingText('Pending')),
                   ],
                   onChanged: _saving
                       ? null
@@ -5857,8 +5958,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Subtotal ${_money(_subtotal)}'),
-              Text(
+              BillingText('Subtotal ${_money(_subtotal)}'),
+              BillingText(
                 'Total ${_money(_total)}',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
@@ -5870,7 +5971,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
               OutlinedButton.icon(
                 onPressed: _saving ? null : _hold,
                 icon: const Icon(Icons.pause_circle_outline),
-                label: const Text('Hold'),
+                label: const BillingText('Hold'),
               ),
               const Spacer(),
               FilledButton.icon(
@@ -5882,7 +5983,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.check_circle_outline),
-                label: Text(['FONEPAY', 'ESEWA'].contains(_paymentMethod)
+                label: BillingText(['FONEPAY', 'ESEWA'].contains(_paymentMethod)
                     ? 'Pay'
                     : 'Create bill'),
               ),

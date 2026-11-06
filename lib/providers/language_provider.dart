@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../core/billing_strings.dart';
 
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
@@ -308,15 +309,17 @@ class AppLanguageProvider extends ChangeNotifier {
   int _revision = 0;
 
   AppLanguageProvider() {
+    BillingStrings.languageCode = 'en';
     unawaited(_loadSavedLanguage());
   }
 
   String get languageCode => _languageCode;
 
   String translate(String text) =>
-      _languageCode == 'ne' ? (_nepali[text] ?? text) : text;
+      _languageCode == 'ne' ? (_nepali[text] ?? BillingStrings.tr(text)) : text;
 
   Future<void> setLanguage(String languageCode) async {
+    await BillingStrings.load();
     if (languageCode != 'en' && languageCode != 'ne') {
       throw ArgumentError.value(languageCode, 'languageCode');
     }
@@ -324,6 +327,7 @@ class AppLanguageProvider extends ChangeNotifier {
 
     final revision = ++_revision;
     _languageCode = languageCode;
+    BillingStrings.languageCode = languageCode;
     notifyListeners();
 
     final preferences = await SharedPreferences.getInstance();
@@ -334,15 +338,18 @@ class AppLanguageProvider extends ChangeNotifier {
 
   Future<void> _loadSavedLanguage() async {
     try {
+      await BillingStrings.load();
       final revision = _revision;
       final preferences = await SharedPreferences.getInstance();
       if (revision != _revision) return;
       final saved = preferences.getString(_preferenceKey);
       if (saved == 'en') {
         _languageCode = 'en';
+        BillingStrings.languageCode = 'en';
         notifyListeners();
       } else if (saved == 'ne') {
         _languageCode = 'ne';
+        BillingStrings.languageCode = 'ne';
         notifyListeners();
       }
     } catch (error, stackTrace) {

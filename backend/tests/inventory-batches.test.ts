@@ -63,6 +63,7 @@ async function run(): Promise<void> {
   const reservedTransactions: Array<Record<string, unknown>> = [];
   const reservedQueries: string[] = [];
   const reservedTx = {
+    inventoryRoomStock: { findMany: async () => [] },
     $queryRaw: async <T>(query: Prisma.Sql): Promise<T> => {
       reservedQueries.push(query.sql);
       if (query.sql.includes('FROM "InventoryBatch"')) {
@@ -121,6 +122,7 @@ async function run(): Promise<void> {
   const inventoryTransactions: Array<Record<string, unknown>> = [];
   const optimizedQueries: string[] = [];
   const optimizedTx = {
+    inventoryRoomStock: { findMany: async () => [] },
     $queryRaw: async <T>(query: Prisma.Sql): Promise<T> => {
       optimizedQueries.push(query.sql);
       if (query.sql.includes('FROM "InventoryBatch"')) {

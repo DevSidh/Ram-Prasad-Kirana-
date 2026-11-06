@@ -1,3 +1,4 @@
+import '../../widgets/billing_localized_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -88,7 +89,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   Widget build(BuildContext context) {
     context.watch<ThemeProvider?>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Reset password')),
+      appBar: AppBar(title: const BillingText('Reset password')),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -102,7 +103,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
+                          BillingText(
                             _codeRequested
                                 ? 'Choose a new password'
                                 : 'Reset your password',
@@ -113,7 +114,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                             ),
                           ),
                           const SizedBox(height: 8),
-                          Text(
+                          BillingText(
                             _codeRequested
                                 ? 'Enter the six-digit code sent to your email. The code expires in 10 minutes.'
                                 : 'We’ll email a one-time verification code to your registered address.',
@@ -123,11 +124,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                             ),
                           ),
                           const SizedBox(height: 24),
-                          TextFormField(
+                          BillingTextFormField(
                             controller: _emailController,
                             enabled: !_codeRequested,
                             keyboardType: TextInputType.emailAddress,
-                            decoration: const InputDecoration(
+                            decoration: const BillingInputDecoration(
                               labelText: 'Email address',
                               prefixIcon: Icon(Icons.mail_outline),
                             ),
@@ -142,11 +143,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           ),
                           if (_codeRequested) ...[
                             const SizedBox(height: 14),
-                            TextFormField(
+                            BillingTextFormField(
                               controller: _codeController,
                               keyboardType: TextInputType.number,
                               textInputAction: TextInputAction.next,
-                              decoration: const InputDecoration(
+                              decoration: const BillingInputDecoration(
                                 labelText: 'Six-digit code',
                                 prefixIcon: Icon(Icons.verified_user_outlined),
                               ),
@@ -156,13 +157,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                                   : 'Enter the six-digit code',
                             ),
                             const SizedBox(height: 14),
-                            TextFormField(
+                            BillingTextFormField(
                               controller: _passwordController,
                               obscureText: _obscurePassword,
-                              decoration: InputDecoration(
+                              decoration: BillingInputDecoration(
                                 labelText: 'New password',
                                 prefixIcon: const Icon(Icons.lock_outline),
-                                suffixIcon: IconButton(
+                                suffixIcon: BillingIconButton(
                                   onPressed: () => setState(
                                     () => _obscurePassword = !_obscurePassword,
                                   ),
@@ -176,10 +177,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                                   : 'Use at least 8 characters',
                             ),
                             const SizedBox(height: 14),
-                            TextFormField(
+                            BillingTextFormField(
                               controller: _confirmPasswordController,
                               obscureText: true,
-                              decoration: const InputDecoration(
+                              decoration: const BillingInputDecoration(
                                 labelText: 'Confirm new password',
                                 prefixIcon: Icon(Icons.lock_reset_outlined),
                               ),
@@ -197,13 +198,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                                           _codeRequested = false;
                                           _error = null;
                                         }),
-                                child: const Text('Use a different email'),
+                                child:
+                                    const BillingText('Use a different email'),
                               ),
                             ),
                           ],
                           if (_error != null) ...[
                             const SizedBox(height: 8),
-                            Text(
+                            BillingText(
                               _error!,
                               style: const TextStyle(
                                 color: Color(0xFFB42318),
@@ -223,7 +225,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                             Center(
                               child: TextButton(
                                 onPressed: _loading ? null : _requestCode,
-                                child: const Text('Send a new code'),
+                                child: const BillingText('Send a new code'),
                               ),
                             ),
                         ],
@@ -250,12 +252,12 @@ class _ResetComplete extends StatelessWidget {
         const Icon(Icons.check_circle_outline,
             color: AppConstants.primary, size: 64),
         const SizedBox(height: 16),
-        const Text(
+        const BillingText(
           'Password changed',
           style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 8),
-        Text(
+        BillingText(
           'Your new password is ready. Sign in with it to continue.',
           textAlign: TextAlign.center,
           style: TextStyle(color: AppConstants.textMuted),

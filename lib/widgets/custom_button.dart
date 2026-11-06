@@ -1,3 +1,4 @@
+import 'billing_localized_widgets.dart';
 import 'package:flutter/material.dart';
 import '../core/constants.dart';
 
@@ -23,7 +24,7 @@ class CustomButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
-      height: 50,
+      height: 60,
       child: ElevatedButton(
         onPressed: isLoading ? null : onPressed,
         style: ElevatedButton.styleFrom(
@@ -47,7 +48,7 @@ class CustomButton extends StatelessWidget {
                     const SizedBox(width: 8),
                   ],
                   Flexible(
-                    child: Text(
+                    child: BillingText(
                       text,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,

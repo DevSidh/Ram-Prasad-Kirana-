@@ -539,6 +539,8 @@ class AdminProduct {
   }
 
   AdminProduct copyWith({
+    int? stock,
+    double? weightStockKg,
     String? sku,
     bool? isFeatured,
     bool? isVendingDrink,
@@ -570,8 +572,8 @@ class AdminProduct {
       wholesalePrice: wholesalePrice,
       wholesaleMinimumQuantity: wholesaleMinimumQuantity,
       lowStockThreshold: lowStockThreshold,
-      stock: stock,
-      weightStockKg: weightStockKg,
+      stock: stock ?? this.stock,
+      weightStockKg: weightStockKg ?? this.weightStockKg,
       isActive: isActive,
       isFeatured: isFeatured ?? this.isFeatured,
       isVendingDrink: isVendingDrink ?? this.isVendingDrink,
@@ -685,6 +687,22 @@ class AdminPendingDeliveryCash {
 }
 
 class AdminWholesaleItem {
+  AdminWholesaleItem withAvailableStock(int available) => AdminWholesaleItem(
+      id: id,
+      name: name,
+      sku: sku,
+      slug: slug,
+      categoryId: categoryId,
+      categoryName: categoryName,
+      brand: brand,
+      price: price,
+      stock: available,
+      minimumQuantity: minimumQuantity,
+      description: description,
+      origin: origin,
+      imageUrl: imageUrl,
+      unitLabel: unitLabel,
+      isActive: isActive);
   final String id;
   final String name;
   final String sku;

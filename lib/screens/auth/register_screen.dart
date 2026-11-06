@@ -1,3 +1,4 @@
+import '../../widgets/billing_localized_widgets.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -81,7 +82,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(error.toString().replaceFirst('Exception: ', ''))),
+            content:
+                BillingText(error.toString().replaceFirst('Exception: ', ''))),
       );
     }
   }
@@ -95,7 +97,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       appBar: AppBar(
         backgroundColor: AppConstants.backgroundLight,
         surfaceTintColor: Colors.transparent,
-        title: const Text('Create Account'),
+        title: const BillingText('Create Account'),
       ),
       body: SafeArea(
         child: AuthSurface(
@@ -104,7 +106,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                BillingText(
                   'Join Ram Prasad General Store',
                   style: TextStyle(
                       fontSize: 22,
@@ -112,7 +114,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       color: AppConstants.textDark),
                 ),
                 const SizedBox(height: 6),
-                Text(
+                BillingText(
                   'Fresh groceries and daily essentials for your neighborhood.',
                   style: TextStyle(color: AppConstants.textMuted, fontSize: 13),
                 ),
@@ -133,7 +135,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       TextButton.icon(
                         onPressed: _selectProfileImage,
                         icon: const Icon(Icons.add_a_photo_outlined),
-                        label: Text(
+                        label: BillingText(
                           _profileImageBytes == null
                               ? 'Add profile photo (optional)'
                               : 'Change profile photo',
@@ -143,19 +145,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                TextFormField(
+                BillingTextFormField(
                   controller: _nameController,
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                       labelText: 'Full Name',
                       prefixIcon: Icon(Icons.person_outline)),
                   validator: (val) =>
                       val == null || val.isEmpty ? 'Required' : null,
                 ),
                 const SizedBox(height: 14),
-                TextFormField(
+                BillingTextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                       labelText: 'Email Address',
                       prefixIcon: Icon(Icons.email_outlined)),
                   validator: (val) => val == null || !val.contains('@')
@@ -163,12 +165,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       : null,
                 ),
                 const SizedBox(height: 14),
-                TextFormField(
+                BillingTextFormField(
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
                   maxLength: 10,
                   inputFormatters: nepalPhoneInputFormatters,
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'Phone Number',
                     prefixIcon: Icon(Icons.phone_outlined),
                     prefixText: '+977 ',
@@ -178,13 +180,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   validator: validateNepalPhone,
                 ),
                 const SizedBox(height: 14),
-                TextFormField(
+                BillingTextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
-                  decoration: InputDecoration(
+                  decoration: BillingInputDecoration(
                     labelText: 'Password',
                     prefixIcon: const Icon(Icons.lock_outline),
-                    suffixIcon: IconButton(
+                    suffixIcon: BillingIconButton(
                       icon: Icon(_obscurePassword
                           ? Icons.visibility_off
                           : Icons.visibility),
@@ -197,10 +199,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       : null,
                 ),
                 const SizedBox(height: 14),
-                TextFormField(
+                BillingTextFormField(
                   controller: _confirmPasswordController,
                   obscureText: _obscurePassword,
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'Confirm Password',
                     prefixIcon: Icon(Icons.lock_outline),
                   ),
@@ -219,7 +221,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
                 if (authProvider.errorMessage != null) ...[
                   const SizedBox(height: 12),
-                  Text(
+                  BillingText(
                     authProvider.errorMessage!,
                     key: const Key('registration-error'),
                     style: TextStyle(

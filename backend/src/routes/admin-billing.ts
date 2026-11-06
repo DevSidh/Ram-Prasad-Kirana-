@@ -16,6 +16,8 @@ import { serializeSale } from '../services/pos-sale-serializer.js';
 import { configuredFonepayGateway, FonepayError, type FonepayGateway } from '../services/fonepay-gateway.js';
 import { createFonepayRouter } from './admin-fonepay.js';
 import { manualFonepayNote, manualFonepayReference, manualPaymentProvider } from '../services/manual-fonepay.js';
+import { createRoomInventoryRouter } from './admin-rooms.js';
+import { RoomInventoryError } from '../services/room-inventory.js';
 
 const saleItemsInput = z.array(z.object({
   productId: z.string().trim().min(1).max(100),
@@ -25,6 +27,7 @@ const saleItemsInput = z.array(z.object({
 
 const saleInput = z.object({
   items: saleItemsInput,
+  roomPicks: z.array(z.object({ productId: z.string().min(1).max(100), roomId: z.string().min(1).max(100).nullable(), quantity: z.number().int().positive().max(2147483647) }).strict()).min(1).max(500).optional(),
   idempotencyKey: z.string().uuid().optional(),
   discount: z.number().finite().min(0).max(999999999)
     .refine((value) => Number.isSafeInteger(Math.round(value * 100)))
@@ -192,6 +195,7 @@ export function createAdminBillingRouter(
   const adminOnly: RequestHandler = requireAdmin ?? ((_req, res) => {
     res.status(403).json({ error: 'Administrator access required.' });
   });
+  router.use('/rooms', createRoomInventoryRouter(prisma, adminOnly));
 
   router.post('/scanner-sessions', adminOnly, async (req, res) => {
     const ownerId = authenticatedAdminId(res);
@@ -1070,6 +1074,11 @@ export function createAdminBillingRouter(
             if (!offlineReplayMatches(existing)) {
               throw new Error(manualFonepay ? 'POS_MANUAL_FONEPAY_CONFLICT' : 'POS_OFFLINE_PRICE_CONFLICT');
             }
+            if (parsed.data.roomPicks) {
+              const plan = await tx.inventoryRoomCheckout.findUnique({ where: { saleId: existing.id } });
+              const canonical = (picks: unknown) => JSON.stringify((picks as Array<{productId: string; roomId: string | null; quantity: number}>).map(p => [p.productId, p.roomId, p.quantity]).sort());
+              if (!plan || canonical(plan.picks) !== canonical(parsed.data.roomPicks)) throw new RoomInventoryError('This bill is already saved with different source rooms. Review the original bill.');
+            }
             replayed = true;
             return existing;
           }
@@ -1236,6 +1245,10 @@ export function createAdminBillingRouter(
           },
           include: { items: true, paymentCollections: true },
         });
+        if (parsed.data.roomPicks) {
+          if (parsed.data.roomPicks.some((pick) => !stockTotals.has(pick.productId))) throw new RoomInventoryError('Room selections contain a product outside this bill.');
+          await tx.inventoryRoomCheckout.create({ data: { saleId: sale.id, picks: parsed.data.roomPicks } });
+        }
         if (!fonepayCheckout) await inventoryService.consumeStockForPosSale(
           tx,
           [...stockTotals].map(([productId, quantity]) => ({
@@ -1244,6 +1257,7 @@ export function createAdminBillingRouter(
           })),
           sale.id,
           cashierId,
+          parsed.data.roomPicks,
         );
         if (!fonepayCheckout && parsed.data.heldSaleId) {
           await tx.posHeldSale.deleteMany({
@@ -1302,7 +1316,7 @@ export function createAdminBillingRouter(
           return res.status(409).json({ error: clientErrors[error.message] });
         }
       }
-      if (error instanceof InventoryAdjustmentError) {
+      if (error instanceof InventoryAdjustmentError || error instanceof RoomInventoryError) {
         return res.status(409).json({ error: error.message });
       }
       sendAdminError(error, res);

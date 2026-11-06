@@ -1,3 +1,4 @@
+import '../../widgets/billing_localized_widgets.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -113,7 +114,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
       (_) => false,
     );
     if (profileImageError != null) {
-      messenger.showSnackBar(SnackBar(content: Text(profileImageError)));
+      messenger.showSnackBar(SnackBar(content: BillingText(profileImageError)));
     }
   }
 
@@ -121,7 +122,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Verify your email')),
+      appBar: AppBar(title: const BillingText('Verify your email')),
       body: SafeArea(
         child: AuthSurface(
           child: Form(
@@ -129,7 +130,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                BillingText(
                   'One last step',
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurface,
@@ -138,7 +139,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text(
+                BillingText(
                   _codeSent
                       ? 'Enter the six-digit code we sent to your email. It expires in 10 minutes.'
                       : 'We’ll send a six-digit code to your email address. You can request another if it expires.',
@@ -148,12 +149,12 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                   ),
                 ),
                 const SizedBox(height: 22),
-                TextFormField(
+                BillingTextFormField(
                   controller: _emailController,
                   enabled: !_sendingCode && !_codeSent,
                   keyboardType: TextInputType.emailAddress,
                   autofillHints: const [AutofillHints.email],
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'Email address',
                     prefixIcon: Icon(Icons.mail_outline),
                   ),
@@ -166,12 +167,12 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                 ),
                 if (_codeSent) ...[
                   const SizedBox(height: 14),
-                  TextFormField(
+                  BillingTextFormField(
                     controller: _codeController,
                     keyboardType: TextInputType.number,
                     autofillHints: const [AutofillHints.oneTimeCode],
                     textInputAction: TextInputAction.done,
-                    decoration: const InputDecoration(
+                    decoration: const BillingInputDecoration(
                       labelText: 'Six-digit code',
                       prefixIcon: Icon(Icons.verified_user_outlined),
                     ),
@@ -184,7 +185,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                 ],
                 if (_error != null) ...[
                   const SizedBox(height: 12),
-                  Text(
+                  BillingText(
                     _error!,
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.error,
@@ -202,7 +203,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                             : _sendCode,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Text(
+                      child: BillingText(
                         _sendingCode
                             ? 'Sending code…'
                             : auth.isLoading
@@ -220,7 +221,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                     child: TextButton(
                       onPressed:
                           _sendingCode || auth.isLoading ? null : _sendCode,
-                      child: const Text('Send a new code'),
+                      child: const BillingText('Send a new code'),
                     ),
                   ),
                 ],

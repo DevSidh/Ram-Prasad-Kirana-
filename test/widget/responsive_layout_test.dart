@@ -95,7 +95,7 @@ class _ResponsiveApiService extends ApiService {
     if (endpoint == '/admin/billing/refunds') return {'refunds': []};
     if (endpoint == '/admin/billing/exchanges') return {'exchanges': []};
     if (endpoint == '/admin/coupons') return {'coupons': []};
-    if (endpoint == '/admin/products' && queryParams?['stock'] == 'restock') {
+    if (endpoint == '/admin/products') {
       return {
         'products': [
           {
@@ -525,17 +525,35 @@ void main() {
     expect(find.byType(NavigationRail), findsNothing);
     expect(find.byIcon(Icons.menu), findsOneWidget);
 
+    apiService.requiresSignIn.value = true;
+    await tester.pump();
+    expect(find.text('Your session has expired. Sign in again to continue.'),
+        findsOneWidget);
+    expect(tester.takeException(), isNull);
+    apiService.requiresSignIn.value = false;
+    await tester.pump();
+
     await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Store setup & management'), 220,
+        scrollable: find
+            .descendant(
+                of: find.byType(Drawer), matching: find.byType(Scrollable))
+            .first);
     await tester.tap(find.text('Store setup & management'));
     await tester.pumpAndSettle();
     final productSkusTile = find.descendant(
       of: find.byType(Drawer),
       matching: find.text('Product SKUs'),
     );
+    await tester.scrollUntilVisible(productSkusTile, 220,
+        scrollable: find
+            .descendant(
+                of: find.byType(Drawer), matching: find.byType(Scrollable))
+            .first);
     expect(productSkusTile, findsOneWidget);
-
     await tester.ensureVisible(productSkusTile);
+    await tester.pumpAndSettle();
     await tester.tap(productSkusTile);
     await tester.pumpAndSettle();
     expect(find.text('Product SKUs'), findsOneWidget);
@@ -545,7 +563,12 @@ void main() {
       of: find.byType(Drawer),
       matching: find.text('Product SKUs'),
     );
-    await tester.ensureVisible(productSkusTileAgain);
+    await tester.scrollUntilVisible(productSkusTileAgain, 220,
+        scrollable: find
+            .descendant(
+                of: find.byType(Drawer), matching: find.byType(Scrollable))
+            .first);
+    await tester.pumpAndSettle();
     await tester.tap(productSkusTileAgain);
     await tester.pumpAndSettle();
     expect(find.text('Product SKUs'), findsOneWidget);
@@ -579,6 +602,12 @@ void main() {
     expect(find.text('Dashboard'), findsWidgets);
     expect(find.text('New Bill / POS'), findsOneWidget);
     expect(find.text('Essential'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Returns & Exchanges'), 200,
+        scrollable: find
+            .descendant(
+                of: find.byKey(const Key('admin-navigation-list')),
+                matching: find.byType(Scrollable))
+            .first);
     expect(find.text('Returns & Exchanges'), findsOneWidget);
     expect(find.text('STORE STAFF'), findsWidgets);
     expect(find.text('Products'), findsNothing);
@@ -611,6 +640,16 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+
+    apiService.requiresSignIn.value = true;
+    await tester.pumpAndSettle();
+    expect(find.text('Your session has expired. Sign in again to continue.'),
+        findsOneWidget);
+    expect(find.text('Sign in again'), findsWidgets);
+    apiService.requiresSignIn.value = false;
+    await tester.pumpAndSettle();
+    expect(find.text('Your session has expired. Sign in again to continue.'),
+        findsNothing);
 
     final billingToolsGroup = find.text('Billing management');
     final navigation = find.byKey(const ValueKey('admin-navigation-list'));
@@ -797,7 +836,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('Active products at or below their low-stock threshold.'),
+      find.text(
+          'Add stock directly. No supplier bill or invoice number is required.'),
       findsOneWidget,
     );
     expect(find.text('Rice'), findsOneWidget);
@@ -831,7 +871,9 @@ void main() {
       apiService.restockRequest!['expiresAt'] as String,
     );
     expect(expiresAt.isAfter(manufacturedAt), isTrue);
-    expect(find.text('Nothing to replenish'), findsOneWidget);
+    expect(find.text('Rice'), findsOneWidget);
+    expect(apiService.restockRequest!.containsKey('invoiceNumber'), isFalse);
+    expect(apiService.restockRequest!.containsKey('supplierId'), isFalse);
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.text('Receipt history'));

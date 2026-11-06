@@ -1,3 +1,4 @@
+import 'billing_localized_widgets.dart';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -93,9 +94,9 @@ class _LocalBillingStatusPanelState extends State<LocalBillingStatusPanel> {
               leading: Icon(sync.online == true
                   ? Icons.cloud_done_outlined
                   : Icons.cloud_off_outlined),
-              title: Text(
+              title: BillingText(
                   '${sync.online == true ? 'Server reachable' : sync.online == false ? 'Offline' : 'Connection not verified'} · ${sync.pending} upload(s) · ${sync.conflicts.length} conflict(s)'),
-              subtitle: Text(
+              subtitle: BillingText(
                   'Last server check: ${sync.lastSync?.toLocal().toString().split('.').first ?? 'Not yet'}'),
               children: [
                 Padding(
@@ -103,21 +104,27 @@ class _LocalBillingStatusPanelState extends State<LocalBillingStatusPanel> {
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
+                        BillingText(
                             '${sync.localOnly} computer-only bill(s). These are not uploaded. Cached stock is an estimate; online orders can change central availability.'),
+                        if (sync.stockPending > 0)
+                          BillingText(
+                              '${sync.stockPending} stock update(s) waiting to sync. Only quantities and room selections are shared; bill and customer details stay on this computer.'),
                         if (sync.error != null)
-                          Text(sync.error!,
+                          BillingText(sync.error!,
                               style: TextStyle(
                                   color: Theme.of(context).colorScheme.error)),
                         if (sync.backupError != null)
-                          Text('Automatic backup: ${sync.backupError}'),
+                          BillingText('Automatic backup: ${sync.backupError}'),
                         for (final conflict in sync.conflicts)
                           ListTile(
                             dense: true,
                             leading: const Icon(Icons.sync_problem_outlined),
-                            title: Text(conflict['invoiceNumber']?.toString() ??
-                                'Local bill'),
-                            subtitle: Text(conflict['syncError']?.toString() ??
+                            title: BillingText(
+                                conflict['invoiceNumber']?.toString() ??
+                                    'Local bill'),
+                            subtitle: BillingText(conflict['syncError']
+                                    ?.toString() ??
+                                conflict['roomStockSyncError']?.toString() ??
                                 'Review required'),
                           ),
                         Wrap(spacing: 8, runSpacing: 8, children: [
@@ -125,7 +132,7 @@ class _LocalBillingStatusPanelState extends State<LocalBillingStatusPanel> {
                             onPressed:
                                 sync.running ? null : () => sync.synchronize(),
                             icon: const Icon(Icons.sync),
-                            label: const Text('Sync pending bills'),
+                            label: const BillingText('Sync pending bills'),
                           ),
                           if (sync.conflicts.isNotEmpty)
                             OutlinedButton.icon(
@@ -134,23 +141,25 @@ class _LocalBillingStatusPanelState extends State<LocalBillingStatusPanel> {
                                   : () =>
                                       sync.synchronize(retryConflicts: true),
                               icon: const Icon(Icons.refresh),
-                              label: const Text('Retry reviewed conflicts'),
+                              label:
+                                  const BillingText('Retry reviewed conflicts'),
                             ),
                           OutlinedButton.icon(
                               onPressed: _busy ? null : _backup,
                               icon: const Icon(Icons.backup_outlined),
-                              label: const Text('Export local backup')),
+                              label: const BillingText('Export local backup')),
                           OutlinedButton.icon(
                               onPressed: _busy ? null : _restoreCopy,
                               icon: const Icon(Icons.restore),
-                              label: const Text('Verify / restore a copy')),
+                              label:
+                                  const BillingText('Verify / restore a copy')),
                         ]),
                         if (sync.running || _busy)
                           const LinearProgressIndicator(),
                         if (_message != null)
                           Padding(
                               padding: const EdgeInsets.only(top: 8),
-                              child: Text(_message!)),
+                              child: BillingText(_message!)),
                       ]),
                 ),
               ],

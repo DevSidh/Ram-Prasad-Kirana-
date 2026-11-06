@@ -99,6 +99,10 @@ class _DeliveryBoardApi extends ApiService {
 void main() {
   testWidgets('admin assigns a prepared order from the delivery board',
       (tester) async {
+    tester.view.physicalSize = const Size(1280, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     final api = _DeliveryBoardApi();
     SharedPreferences.setMockInitialValues({});
     final auth = AuthProvider(apiService: api);
@@ -117,6 +121,8 @@ void main() {
     expect(find.textContaining('FH-501'), findsOneWidget);
     expect(find.textContaining('ORDERED '), findsOneWidget);
     await tester.tap(find.textContaining('FH-501'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Assign rider'));
     await tester.pumpAndSettle();
     expect(find.text('Call at the gate.'), findsOneWidget);
     expect(find.textContaining('9811111111'), findsOneWidget);

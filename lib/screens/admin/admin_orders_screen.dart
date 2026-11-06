@@ -1,3 +1,5 @@
+import '../../widgets/billing_localized_widgets.dart';
+import '../../core/billing_strings.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -48,6 +50,7 @@ class AdminOrdersScreenState extends State<AdminOrdersScreen>
   String? _deliveryError;
   String? _savingId;
   bool _loading = true;
+  int _loadRequest = 0;
   final Map<String, String> _optimisticStatuses = {};
   Timer? _orderPollTimer;
   bool _hasPollBaseline = false;
@@ -245,7 +248,7 @@ class AdminOrdersScreenState extends State<AdminOrdersScreen>
     final order = newOrders.first;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
+        content: BillingText(
           newOrders.length == 1
               ? 'New order received: ${order.orderNumber}'
               : '${newOrders.length} new orders received. Latest: ${order.orderNumber}',
@@ -280,6 +283,7 @@ class AdminOrdersScreenState extends State<AdminOrdersScreen>
   }
 
   Future<void> _load({bool forceArchive = false}) async {
+    final request = ++_loadRequest;
     setState(() {
       _loading = true;
       _error = null;
@@ -305,7 +309,7 @@ class AdminOrdersScreenState extends State<AdminOrdersScreen>
               'Delivery assignments could not load: ${error.toString().replaceFirst('Exception: ', '')}';
         }),
       ]);
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _page = result;
         _deliveryPeople = people;
@@ -316,7 +320,7 @@ class AdminOrdersScreenState extends State<AdminOrdersScreen>
       });
       unawaited(_syncOnlineOrderArchive(force: forceArchive));
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _error = error.toString().replaceFirst('Exception: ', '');
         _loading = false;
@@ -335,7 +339,8 @@ class AdminOrdersScreenState extends State<AdminOrdersScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text('${order.orderNumber} assigned to ${person.name}.')),
+            content: BillingText(
+                '${order.orderNumber} assigned to ${person.name}.')),
       );
       await _load(forceArchive: true);
     } catch (error) {
@@ -372,19 +377,19 @@ class AdminOrdersScreenState extends State<AdminOrdersScreen>
       final confirm = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Cancel this order?'),
-          content: Text(
+          title: const BillingText('Cancel this order?'),
+          content: BillingText(
             'Available stock will be restored for ${order.orderNumber}. '
             'If the customer already paid online, handle the refund separately.',
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Keep order'),
+              child: const BillingText('Keep order'),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Cancel order'),
+              child: const BillingText('Cancel order'),
             ),
           ],
         ),
@@ -401,7 +406,7 @@ class AdminOrdersScreenState extends State<AdminOrdersScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
+          content: BillingText(
             '${order.orderNumber}: ${_statusLabel(nextStatus)}',
           ),
         ),
@@ -445,7 +450,7 @@ class AdminOrdersScreenState extends State<AdminOrdersScreen>
     );
     if (!scheduledAt.isAfter(DateTime.now())) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Choose a future delivery time.')),
+        const SnackBar(content: BillingText('Choose a future delivery time.')),
       );
       return;
     }
@@ -465,7 +470,7 @@ class AdminOrdersScreenState extends State<AdminOrdersScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
+          content: BillingText(
             scheduledAt == null
                 ? 'Delivery time cleared for ${order.orderNumber}.'
                 : 'Delivery time saved for ${order.orderNumber}.',
@@ -512,7 +517,7 @@ class AdminOrdersScreenState extends State<AdminOrdersScreen>
       child: ListView(
         padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
         children: [
-          Text(
+          BillingText(
             'Review customer details and update delivery status. Cancelling preserves order, payment, and fulfillment history.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -524,10 +529,10 @@ class AdminOrdersScreenState extends State<AdminOrdersScreen>
               _pageNumber = 1;
               _load();
             },
-            decoration: InputDecoration(
+            decoration: BillingInputDecoration(
               hintText: 'Search order, customer or phone',
               prefixIcon: const Icon(Icons.search_rounded),
-              suffixIcon: IconButton(
+              suffixIcon: BillingIconButton(
                 tooltip: 'Search orders',
                 onPressed: () {
                   _pageNumber = 1;
@@ -574,10 +579,12 @@ class AdminOrdersScreenState extends State<AdminOrdersScreen>
               OutlinedButton.icon(
                 onPressed: _loading ? null : _selectDay,
                 icon: const Icon(Icons.calendar_month_rounded, size: 18),
-                label: Text(
+                label: BillingText(
                   _selectedDay == null
                       ? 'Filter by day'
-                      : DateFormat('EEE, d MMM yyyy').format(_selectedDay!),
+                      : DateFormat(
+                              'EEE, d MMM yyyy', BillingStrings.languageCode)
+                          .format(_selectedDay!),
                 ),
               ),
               if (_selectedDay != null)
@@ -589,7 +596,7 @@ class AdminOrdersScreenState extends State<AdminOrdersScreen>
                           _pageNumber = 1;
                           _load();
                         },
-                  child: const Text('Clear day'),
+                  child: const BillingText('Clear day'),
                 ),
             ],
           ),
@@ -648,7 +655,7 @@ class AdminOrdersScreenState extends State<AdminOrdersScreen>
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                IconButton(
+                BillingIconButton(
                   tooltip: 'Previous page',
                   onPressed: _pageNumber <= 1
                       ? null
@@ -658,11 +665,11 @@ class AdminOrdersScreenState extends State<AdminOrdersScreen>
                         },
                   icon: const Icon(Icons.chevron_left_rounded),
                 ),
-                Text(
+                BillingText(
                   'Page ${pagination.page} of '
                   '${(pagination.total / pagination.pageSize).ceil()}',
                 ),
-                IconButton(
+                BillingIconButton(
                   tooltip: 'Next page',
                   onPressed:
                       _pageNumber * pagination.pageSize >= pagination.total
@@ -728,13 +735,13 @@ class _AdminOrderCard extends StatelessWidget {
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
         childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-        title: Text(
+        title: BillingText(
           order.orderNumber,
           style: Theme.of(context).textTheme.titleMedium,
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 5),
-          child: Text(
+          child: BillingText(
             '${order.customerName} · ${order.customerPhone}\n'
             'ORDERED ${formatOrderPlacedAt(order.createdAt)}\n'
             '${statusLabel.toUpperCase()} · ${order.paymentMethod} '
@@ -773,14 +780,14 @@ class _AdminOrderCard extends StatelessWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(
+                    child: BillingText(
                       '${item.name}${item.isWholesale ? ' · wholesale' : ''}'
                       ' × ${item.quantity}',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  Text('Rs. ${item.total.toStringAsFixed(0)}'),
+                  BillingText('Rs. ${item.total.toStringAsFixed(0)}'),
                 ],
               ),
             ),
@@ -802,7 +809,7 @@ class _AdminOrderCard extends StatelessWidget {
             label: 'Estimated delivery',
             value: order.scheduledDeliveryAt == null
                 ? 'Not set'
-                : DateFormat('EEE, d MMM · h:mm a')
+                : DateFormat('EEE, d MMM · h:mm a', BillingStrings.languageCode)
                     .format(order.scheduledDeliveryAt!.toLocal()),
           ),
           if (canChangeDeliveryTime)
@@ -815,7 +822,7 @@ class _AdminOrderCard extends StatelessWidget {
                   OutlinedButton.icon(
                     onPressed: isSaving ? null : onSetDeliveryTime,
                     icon: const Icon(Icons.schedule_rounded, size: 18),
-                    label: Text(
+                    label: BillingText(
                       order.scheduledDeliveryAt == null
                           ? 'Set delivery time'
                           : 'Change time',
@@ -824,7 +831,7 @@ class _AdminOrderCard extends StatelessWidget {
                   if (order.scheduledDeliveryAt != null)
                     TextButton(
                       onPressed: isSaving ? null : onClearDeliveryTime,
-                      child: const Text('Clear'),
+                      child: const BillingText('Clear'),
                     ),
                 ],
               ),
@@ -844,7 +851,7 @@ class _AdminOrderCard extends StatelessWidget {
               ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: const EdgeInsets.only(bottom: 8),
-                title: Text(
+                title: BillingText(
                   'Delivery history',
                   style: Theme.of(context).textTheme.labelLarge,
                 ),
@@ -858,11 +865,11 @@ class _AdminOrderCard extends StatelessWidget {
                         size: 8,
                         color: AppColors.primary,
                       ),
-                      title: Text(
+                      title: BillingText(
                         entry['status']?.toString().replaceAll('_', ' ') ?? '',
                         style: Theme.of(context).textTheme.labelMedium,
                       ),
-                      subtitle: Text(
+                      subtitle: BillingText(
                         [
                           entry['note']?.toString(),
                           entry['createdAt']?.toString(),
@@ -879,14 +886,14 @@ class _AdminOrderCard extends StatelessWidget {
               const SizedBox(height: 8),
               Align(
                 alignment: Alignment.centerRight,
-                child: PopupMenuButton<AdminDeliveryPerson>(
+                child: BillingPopupMenuButton<AdminDeliveryPerson>(
                   enabled: !isSaving && deliveryPeople.isNotEmpty,
                   onSelected: onDeliveryPersonSelected,
                   itemBuilder: (context) => deliveryPeople
                       .map(
                         (person) => PopupMenuItem(
                           value: person,
-                          child: Text(
+                          child: BillingText(
                             '${person.name} · ${person.activeDeliveries} active',
                           ),
                         ),
@@ -906,7 +913,7 @@ class _AdminOrderCard extends StatelessWidget {
                       children: [
                         const Icon(Icons.local_shipping_outlined, size: 18),
                         const SizedBox(width: 7),
-                        Text(
+                        BillingText(
                           order.deliveryPersonName == null
                               ? (deliveryPeople.isEmpty
                                   ? 'No staff on duty'
@@ -924,14 +931,14 @@ class _AdminOrderCard extends StatelessWidget {
             const SizedBox(height: 12),
             Align(
               alignment: Alignment.centerRight,
-              child: PopupMenuButton<String>(
+              child: BillingPopupMenuButton<String>(
                 enabled: !isSaving,
                 onSelected: onStatusSelected,
                 itemBuilder: (context) => statusOptions
                     .map(
                       (status) => PopupMenuItem(
                         value: status,
-                        child: Text(statusLabelFor(status)),
+                        child: BillingText(statusLabelFor(status)),
                       ),
                     )
                     .toList(),
@@ -947,7 +954,7 @@ class _AdminOrderCard extends StatelessWidget {
                     children: [
                       Icon(Icons.sync_rounded, size: 18),
                       SizedBox(width: 7),
-                      Text('Update order status'),
+                      BillingText('Update order status'),
                     ],
                   ),
                 ),
@@ -975,13 +982,13 @@ class _DetailLine extends StatelessWidget {
         children: [
           SizedBox(
             width: 92,
-            child: Text(
+            child: BillingText(
               label,
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
           Expanded(
-            child: Text(
+            child: BillingText(
               value,
               style: Theme.of(context).textTheme.bodySmall,
             ),
@@ -1008,7 +1015,7 @@ class _StatusFilterChip extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(right: 7),
       child: ChoiceChip(
-        label: Text(label),
+        label: BillingText(label),
         selected: selected,
         onSelected: (_) => onTap(),
       ),
@@ -1029,7 +1036,7 @@ class _OrderNotice extends StatelessWidget {
         color: AppColors.warningPill,
         borderRadius: BorderRadius.circular(AppRadii.row),
       ),
-      child: Text(
+      child: BillingText(
         message,
         style: TextStyle(color: AppColors.warningText),
       ),
@@ -1048,10 +1055,10 @@ class _EmptyOrders extends StatelessWidget {
         children: [
           Icon(Icons.receipt_long_outlined, size: 42, color: AppColors.primary),
           const SizedBox(height: 12),
-          const Text('No orders found',
+          const BillingText('No orders found',
               style: TextStyle(fontWeight: FontWeight.w800)),
           const SizedBox(height: 4),
-          Text(
+          BillingText(
             'New customer orders will appear here.',
             style: TextStyle(color: AppColors.muted),
           ),

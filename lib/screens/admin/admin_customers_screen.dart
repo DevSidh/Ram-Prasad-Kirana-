@@ -1,3 +1,4 @@
+import '../../widgets/billing_localized_widgets.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/nepal_phone.dart';
@@ -27,6 +28,7 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
   bool _loadingRemovalHistory = false;
   bool _removalHistoryLoaded = false;
   int _pageNumber = 1;
+  int _loadRequest = 0;
 
   @override
   void initState() {
@@ -41,6 +43,7 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
   }
 
   Future<void> _load() async {
+    final request = ++_loadRequest;
     setState(() {
       _loading = true;
       _error = null;
@@ -51,13 +54,13 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
         search: _searchController.text,
         includeInactive: true,
       );
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _page = page;
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _error = error.toString().replaceFirst('Exception: ', '');
         _loading = false;
@@ -98,24 +101,25 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text('Edit ${customer.profileId}'),
+          title: BillingText('Edit ${customer.profileId}'),
           content: Form(
             key: formKey,
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  TextFormField(
+                  BillingTextFormField(
                     controller: nameController,
-                    decoration: const InputDecoration(labelText: 'Name'),
+                    decoration: const BillingInputDecoration(labelText: 'Name'),
                     validator: (value) => value?.trim().isNotEmpty == true
                         ? null
                         : 'Enter a name.',
                   ),
-                  TextFormField(
+                  BillingTextFormField(
                     controller: emailController,
                     keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(labelText: 'Email'),
+                    decoration:
+                        const BillingInputDecoration(labelText: 'Email'),
                     validator: (value) {
                       final email = value?.trim() ?? '';
                       return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
@@ -124,17 +128,18 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
                           : 'Enter a valid email address.';
                     },
                   ),
-                  TextFormField(
+                  BillingTextFormField(
                     controller: phoneController,
                     keyboardType: TextInputType.phone,
                     inputFormatters: nepalPhoneInputFormatters,
-                    decoration: const InputDecoration(labelText: 'Phone'),
+                    decoration:
+                        const BillingInputDecoration(labelText: 'Phone'),
                     validator: (value) =>
                         validateNepalPhone(value, optional: true),
                   ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Customer account active'),
+                    title: const BillingText('Customer account active'),
                     value: isActive,
                     onChanged: (value) =>
                         setDialogState(() => isActive = value),
@@ -146,7 +151,7 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
+              child: const BillingText('Cancel'),
             ),
             FilledButton(
               onPressed: () {
@@ -160,7 +165,7 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
                   'isActive': isActive,
                 });
               },
-              child: const Text('Save changes'),
+              child: const BillingText('Save changes'),
             ),
           ],
         ),
@@ -175,7 +180,7 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
       await _adminApi.updateCustomer(customer.id, update);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Customer details updated.')),
+        const SnackBar(content: BillingText('Customer details updated.')),
       );
       await _load();
     } catch (error) {
@@ -202,21 +207,21 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
         var phrase = '';
         return StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
-            title: const Text('Remove customer?'),
+            title: const BillingText('Remove customer?'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                BillingText(
                   'This anonymizes ${customer.name} and releases their email and phone for a new account. Orders, item lines, payments, and fulfillment history will be preserved.',
                 ),
                 const SizedBox(height: 12),
-                const Text('Type REMOVE USER to continue.'),
+                const BillingText('Type REMOVE USER to continue.'),
                 const SizedBox(height: 8),
                 TextField(
                   key: const ValueKey('remove-customer-confirmation'),
                   textCapitalization: TextCapitalization.characters,
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'Confirmation phrase',
                   ),
                   onChanged: (value) => setDialogState(() => phrase = value),
@@ -227,7 +232,7 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
                     onPressed: phrase == 'REMOVE USER'
                         ? () => Navigator.pop(dialogContext, phrase)
                         : null,
-                    child: const Text('Remove customer'),
+                    child: const BillingText('Remove customer'),
                   ),
                 ),
               ],
@@ -235,7 +240,7 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('Cancel'),
+                child: const BillingText('Cancel'),
               ),
             ],
           ),
@@ -268,7 +273,8 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Customer removed; historical orders were preserved.'),
+          content: BillingText(
+              'Customer removed; historical orders were preserved.'),
         ),
       );
       _removalHistoryLoaded = false;
@@ -292,7 +298,7 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
         children: [
-          Text(
+          BillingText(
             'Customer contact details, saved addresses and recent orders.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -301,9 +307,9 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
             child: ExpansionTile(
               key: const ValueKey('customer-removal-history'),
               tilePadding: const EdgeInsets.symmetric(horizontal: 14),
-              title: const Text('Customer removal history'),
-              subtitle:
-                  const Text('Review removed profile IDs and audit details'),
+              title: const BillingText('Customer removal history'),
+              subtitle: const BillingText(
+                  'Review removed profile IDs and audit details'),
               onExpansionChanged: (expanded) {
                 if (expanded && !_removalHistoryLoaded) {
                   _loadRemovalHistory();
@@ -317,8 +323,8 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
                   )
                 else if (_removalHistoryError != null)
                   ListTile(
-                    title: Text(_removalHistoryError!),
-                    trailing: IconButton(
+                    title: BillingText(_removalHistoryError!),
+                    trailing: BillingIconButton(
                       tooltip: 'Retry removal history',
                       onPressed: _loadRemovalHistory,
                       icon: const Icon(Icons.refresh),
@@ -326,7 +332,7 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
                   )
                 else if (_removalHistory.isEmpty)
                   const ListTile(
-                    title: Text('No customers have been removed.'),
+                    title: BillingText('No customers have been removed.'),
                   )
                 else
                   ..._removalHistory.map((record) {
@@ -335,8 +341,8 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
                         TimeOfDay.fromDateTime(removedAt).format(context);
                     return ListTile(
                       leading: const Icon(Icons.person_remove_alt_1_outlined),
-                      title: Text('Profile ${record.profileId}'),
-                      subtitle: Text(
+                      title: BillingText('Profile ${record.profileId}'),
+                      subtitle: BillingText(
                         'Removed ${MaterialLocalizations.of(context).formatMediumDate(removedAt)} at $time by ${record.removedByName} (${record.removedByProfileId})',
                       ),
                     );
@@ -349,7 +355,7 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
             child: TextButton.icon(
               onPressed: _openCustomerMenuSettings,
               icon: const Icon(Icons.tune_rounded),
-              label: const Text('Customer menu controls'),
+              label: const BillingText('Customer menu controls'),
             ),
           ),
           const SizedBox(height: 14),
@@ -360,10 +366,10 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
               _pageNumber = 1;
               _load();
             },
-            decoration: InputDecoration(
+            decoration: BillingInputDecoration(
               hintText: 'Search name, phone, email or order ID',
               prefixIcon: const Icon(Icons.search_rounded),
-              suffixIcon: IconButton(
+              suffixIcon: BillingIconButton(
                 tooltip: 'Search customers',
                 onPressed: () {
                   _pageNumber = 1;
@@ -397,7 +403,7 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                IconButton(
+                BillingIconButton(
                   tooltip: 'Previous page',
                   onPressed: _pageNumber <= 1
                       ? null
@@ -407,11 +413,11 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
                         },
                   icon: const Icon(Icons.chevron_left_rounded),
                 ),
-                Text(
+                BillingText(
                   'Page ${pagination.page} of '
                   '${(pagination.total / pagination.pageSize).ceil()}',
                 ),
-                IconButton(
+                BillingIconButton(
                   tooltip: 'Next page',
                   onPressed:
                       _pageNumber * pagination.pageSize >= pagination.total
@@ -453,7 +459,7 @@ class _CustomerCard extends StatelessWidget {
         childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
         leading: CircleAvatar(
           backgroundColor: AppColors.thumbnailGreen,
-          child: Text(
+          child: BillingText(
             customer.name.isEmpty ? '?' : customer.name[0].toUpperCase(),
             style: TextStyle(
               color: AppColors.primary,
@@ -461,11 +467,11 @@ class _CustomerCard extends StatelessWidget {
             ),
           ),
         ),
-        title: Text(
+        title: BillingText(
           customer.name,
           style: Theme.of(context).textTheme.titleMedium,
         ),
-        subtitle: Text(
+        subtitle: BillingText(
           [
             if (customer.profileId.isNotEmpty) customer.profileId,
             customer.phone,
@@ -499,14 +505,14 @@ class _CustomerCard extends StatelessWidget {
             ),
           if (customer.addresses.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Text(
+            BillingText(
               'Saved addresses',
               style: Theme.of(context).textTheme.labelLarge,
             ),
             for (final address in customer.addresses)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
-                child: Text(
+                child: BillingText(
                   [
                     address['label']?.toString(),
                     address['addressLine1']?.toString(),
@@ -524,7 +530,7 @@ class _CustomerCard extends StatelessWidget {
           ],
           if (customer.recentOrders.isNotEmpty) ...[
             const SizedBox(height: 12),
-            Text(
+            BillingText(
               'Recent orders',
               style: Theme.of(context).textTheme.labelLarge,
             ),
@@ -534,14 +540,14 @@ class _CustomerCard extends StatelessWidget {
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text(
+                      child: BillingText(
                         '${order['orderNumber']} · ${order['status']}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ),
-                    Text(
+                    BillingText(
                       'Rs. ${_number(order['total']).toStringAsFixed(0)}',
                       style: Theme.of(context).textTheme.labelMedium,
                     ),
@@ -557,12 +563,12 @@ class _CustomerCard extends StatelessWidget {
               OutlinedButton.icon(
                 onPressed: onEdit,
                 icon: const Icon(Icons.edit_outlined),
-                label: const Text('Edit customer'),
+                label: const BillingText('Edit customer'),
               ),
               OutlinedButton.icon(
                 onPressed: onRemove,
                 icon: const Icon(Icons.person_remove_outlined),
-                label: const Text('Remove customer'),
+                label: const BillingText('Remove customer'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Theme.of(context).colorScheme.error,
                 ),
@@ -601,14 +607,14 @@ class _CustomerField extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Text(
+            child: BillingText(
               label,
               style: TextStyle(
                 color: AppColors.muted,
               ),
             ),
           ),
-          Text(value, style: Theme.of(context).textTheme.bodySmall),
+          BillingText(value, style: Theme.of(context).textTheme.bodySmall),
         ],
       ),
     );
@@ -628,7 +634,7 @@ class _CustomerNotice extends StatelessWidget {
         color: AppColors.errorPill,
         borderRadius: BorderRadius.circular(AppRadii.row),
       ),
-      child: Text(
+      child: BillingText(
         message,
         style: TextStyle(color: AppColors.errorText),
       ),
@@ -648,10 +654,10 @@ class _EmptyCustomers extends StatelessWidget {
           Icon(Icons.people_outline_rounded,
               size: 42, color: AppColors.primary),
           const SizedBox(height: 12),
-          const Text('No customers found',
+          const BillingText('No customers found',
               style: TextStyle(fontWeight: FontWeight.w800)),
           const SizedBox(height: 4),
-          Text(
+          BillingText(
             'Registered customers will appear here.',
             style: Theme.of(context).textTheme.bodySmall,
           ),

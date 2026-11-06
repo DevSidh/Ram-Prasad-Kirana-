@@ -43,8 +43,10 @@ abstract final class AppColors {
       : successBanner;
   static Color get action =>
       isWindowsAdminTheme ? const Color(0xFF5D91F8) : success;
-  static Color get onAction =>
-      isWindowsAdminTheme ? const Color(0xFF071A38) : accent;
+  static Color get actionText => isWindowsAdminDarkTheme
+      ? const Color(0xFFB4CEFF)
+      : const Color(0xFF173F80);
+  static Color get onAction => const Color(0xFF071A28);
   static Color get pageStart => isWindowsAdminTheme
       ? (isWindowsAdminDarkTheme
           ? const Color(0xFF111111)
@@ -111,7 +113,7 @@ abstract final class AppColors {
   static Color get muted => isWindowsAdminTheme
       ? (isWindowsAdminDarkTheme
           ? const Color(0xFF9B9B9B)
-          : const Color(0xFF777A80))
+          : const Color(0xFF505760))
       : (isWindowsAdminDarkTheme
           ? const Color(0xFFA3A3A3)
           : const Color(0xFF55645F));

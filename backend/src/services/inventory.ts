@@ -1,5 +1,6 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import { getLocalDayRange } from './local-day.js';
+import { consumeRoomStock, type RoomPick } from './room-inventory.js';
 
 export class InventoryAdjustmentError extends Error {}
 
@@ -241,6 +242,7 @@ export class InventoryService {
     }
 
     await this.adjustBatchStock(tx, productId, adjustment, referenceId);
+    if (adjustment < 0) await consumeRoomStock(tx, productId, -adjustment, current.totalStock, referenceId, undefined, undefined, 'ADJUSTMENT');
     await tx.inventoryTransaction.create({
       data: {
         inventory: { connect: { productId } },
@@ -391,6 +393,11 @@ export class InventoryService {
       );
     }
 
+    for (const row of inventoryUpdates) {
+      const quantity = quantities.get(row.productId)!;
+      await consumeRoomStock(tx, row.productId, quantity, row.totalStock + quantity, orderId, undefined, undefined, 'ORDER');
+    }
+
     await tx.inventoryTransaction.createMany({
       data: inventoryUpdates.map((inventory) => ({
         inventoryId: inventory.id,
@@ -460,7 +467,10 @@ export class InventoryService {
     items: { productId: string; quantity: number }[],
     saleId: string,
     performedById: string,
+    roomPicks?: RoomPick[],
   ): Promise<void> {
+    const savedPlan = roomPicks == null ? await tx.inventoryRoomCheckout.findUnique({ where: { saleId } }) : null;
+    const picks = roomPicks ?? (savedPlan?.picks as RoomPick[] | undefined);
     for (const item of items) {
       if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) {
         throw new InventoryAdjustmentError('Sale quantity must be a positive integer.');
@@ -486,6 +496,7 @@ export class InventoryService {
       if (!current) {
         throw new InventoryAdjustmentError('Inventory changed while completing the POS sale.');
       }
+      await consumeRoomStock(tx, item.productId, item.quantity, current.totalStock + item.quantity, saleId, performedById, picks);
       await tx.inventoryTransaction.create({
         data: {
           inventory: { connect: { productId: item.productId } },
@@ -707,6 +718,7 @@ export class InventoryService {
         where: { productId: item.productId },
         select: { totalStock: true, reservedStock: true },
       });
+      if (current && item.quantity < 0) await consumeRoomStock(tx, item.productId, -item.quantity, current.totalStock - item.quantity, referenceId, undefined, undefined, 'ADJUSTMENT');
       await tx.inventoryTransaction.create({
         data: {
           inventory: { connect: { productId: item.productId } },

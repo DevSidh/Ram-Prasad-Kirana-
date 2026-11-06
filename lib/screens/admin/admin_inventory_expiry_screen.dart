@@ -1,3 +1,4 @@
+import '../../widgets/billing_localized_widgets.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -114,13 +115,13 @@ class _AdminInventoryExpiryScreenState
   Widget build(BuildContext context) {
     if (_loading && _result == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Near to Expiry')),
+        appBar: AppBar(title: const BillingText('Near to Expiry')),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
     if (_error != null && _result == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Near to Expiry')),
+        appBar: AppBar(title: const BillingText('Near to Expiry')),
         body: StorePageError(
           title: 'Expiry inventory unavailable',
           message: _error!,
@@ -134,9 +135,9 @@ class _AdminInventoryExpiryScreenState
     final pageCount = (result.total / result.pageSize).ceil();
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Near to Expiry'),
+        title: const BillingText('Near to Expiry'),
         actions: [
-          IconButton(
+          BillingIconButton(
             tooltip: 'Refresh expiry inventory',
             onPressed: _loading ? null : _load,
             icon: const Icon(Icons.refresh_rounded),
@@ -150,14 +151,14 @@ class _AdminInventoryExpiryScreenState
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(8, 24, 30, 28),
             children: [
-              Text(
+              BillingText(
                 'Review dated stock and prioritize batches with the earliest expiry.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 16),
               TextField(
                 controller: _search,
-                decoration: const InputDecoration(
+                decoration: const BillingInputDecoration(
                   hintText: 'Search product, SKU, barcode or batch',
                   prefixIcon: Icon(Icons.search_rounded),
                 ),
@@ -204,21 +205,22 @@ class _AdminInventoryExpiryScreenState
                     child: DropdownButtonFormField<String>(
                       initialValue: _status,
                       isExpanded: true,
-                      decoration: const InputDecoration(
+                      decoration: const BillingInputDecoration(
                         labelText: 'Show batches',
                         contentPadding:
                             EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       ),
                       items: const [
                         DropdownMenuItem(
-                            value: 'all', child: Text('All dated')),
+                            value: 'all', child: BillingText('All dated')),
                         DropdownMenuItem(
                           value: 'expiring',
-                          child: Text('Expiring soon'),
+                          child: BillingText('Expiring soon'),
                         ),
-                        DropdownMenuItem(value: 'today', child: Text('Today')),
                         DropdownMenuItem(
-                            value: 'expired', child: Text('Expired')),
+                            value: 'today', child: BillingText('Today')),
+                        DropdownMenuItem(
+                            value: 'expired', child: BillingText('Expired')),
                       ],
                       onChanged: _loading
                           ? null
@@ -234,7 +236,7 @@ class _AdminInventoryExpiryScreenState
                     child: DropdownButtonFormField<int>(
                       initialValue: _warningDays,
                       isExpanded: true,
-                      decoration: const InputDecoration(
+                      decoration: const BillingInputDecoration(
                         labelText: 'Warning window',
                         contentPadding:
                             EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -243,7 +245,7 @@ class _AdminInventoryExpiryScreenState
                           .map(
                             (days) => DropdownMenuItem(
                               value: days,
-                              child: Text('$days days'),
+                              child: BillingText('$days days'),
                             ),
                           )
                           .toList(growable: false),
@@ -257,7 +259,7 @@ class _AdminInventoryExpiryScreenState
                     ),
                   ),
                   FilterChip(
-                    label: const Text('Low stock only'),
+                    label: const BillingText('Low stock only'),
                     selected: _lowStockOnly,
                     onSelected: _loading
                         ? null
@@ -268,7 +270,7 @@ class _AdminInventoryExpiryScreenState
                     child: DropdownButtonFormField<String>(
                       initialValue: _categoryId ?? '',
                       isExpanded: true,
-                      decoration: const InputDecoration(
+                      decoration: const BillingInputDecoration(
                         labelText: 'Category',
                         contentPadding:
                             EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -276,12 +278,12 @@ class _AdminInventoryExpiryScreenState
                       items: [
                         const DropdownMenuItem(
                           value: '',
-                          child: Text('All categories'),
+                          child: BillingText('All categories'),
                         ),
                         ..._categories.map(
                           (category) => DropdownMenuItem(
                             value: category.id,
-                            child: Text(
+                            child: BillingText(
                               category.name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -300,7 +302,7 @@ class _AdminInventoryExpiryScreenState
               ),
               if (_categoryError != null) ...[
                 const SizedBox(height: 8),
-                Text(
+                BillingText(
                   'Category filters unavailable: $_categoryError',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.error,
@@ -335,15 +337,15 @@ class _AdminInventoryExpiryScreenState
                           ? null
                           : () => _load(page: _page - 1),
                       icon: const Icon(Icons.chevron_left_rounded),
-                      label: const Text('Previous'),
+                      label: const BillingText('Previous'),
                     ),
-                    Text('Page $_page of $pageCount'),
+                    BillingText('Page $_page of $pageCount'),
                     TextButton.icon(
                       onPressed: _loading || _page >= pageCount
                           ? null
                           : () => _load(page: _page + 1),
                       icon: const Icon(Icons.chevron_right_rounded),
-                      label: const Text('Next'),
+                      label: const BillingText('Next'),
                       iconAlignment: IconAlignment.end,
                     ),
                   ],
@@ -373,7 +375,7 @@ class _ExpirySummary extends StatelessWidget {
   Widget build(BuildContext context) {
     return Chip(
       avatar: Icon(icon, size: 18, color: color),
-      label: Text('$count $label'),
+      label: BillingText('$count $label'),
       side: BorderSide(color: color.withValues(alpha: 0.35)),
       backgroundColor: color.withValues(alpha: 0.08),
     );
@@ -393,26 +395,27 @@ class _ExpiryBatchCard extends StatelessWidget {
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(batch.productName),
+        title: BillingText(batch.productName),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Batch ID: ${batch.id}'),
-            Text('SKU: ${batch.sku}'),
-            Text('Barcode: ${batch.barcode ?? 'Not recorded'}'),
-            Text('Lot number: ${batch.lotNumber ?? 'Not recorded'}'),
-            Text('Category: ${batch.categoryName}'),
-            Text('Manufacture date: ${displayDate(batch.manufacturedAt)}'),
-            Text('Expiry date: ${displayDate(batch.expiresAt)}'),
-            Text(
+            BillingText('Batch ID: ${batch.id}'),
+            BillingText('SKU: ${batch.sku}'),
+            BillingText('Barcode: ${batch.barcode ?? 'Not recorded'}'),
+            BillingText('Lot number: ${batch.lotNumber ?? 'Not recorded'}'),
+            BillingText('Category: ${batch.categoryName}'),
+            BillingText(
+                'Manufacture date: ${displayDate(batch.manufacturedAt)}'),
+            BillingText('Expiry date: ${displayDate(batch.expiresAt)}'),
+            BillingText(
               'Received: ${_formatQuantity(batch.receivedQuantity)} ${batch.unitLabel}',
             ),
-            Text(
+            BillingText(
               'Remaining: ${_formatQuantity(batch.remainingQuantity)} ${batch.unitLabel}',
             ),
-            Text('Status: ${batch.expiryStatus.replaceAll('_', ' ')}'),
-            Text(
+            BillingText('Status: ${batch.expiryStatus.replaceAll('_', ' ')}'),
+            BillingText(
               'Date verification: ${batch.datesVerified ? 'Verified' : 'Not verified'}',
             ),
           ],
@@ -420,7 +423,7 @@ class _ExpiryBatchCard extends StatelessWidget {
         actions: [
           FilledButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+            child: const BillingText('Close'),
           ),
         ],
       ),
@@ -478,26 +481,26 @@ class _ExpiryBatchCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    BillingText(
                       batch.productName,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: 3),
-                    Text(
+                    BillingText(
                       '${batch.sku} · $quantity ${weightStock ? 'kg' : 'units'} remaining',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     if (batch.lotNumber != null &&
                         batch.lotNumber!.trim().isNotEmpty) ...[
                       const SizedBox(height: 3),
-                      Text(
+                      BillingText(
                         'Lot ${batch.lotNumber}',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
                     if (manufacturedDate != null || expiryDate != null) ...[
                       const SizedBox(height: 3),
-                      Text(
+                      BillingText(
                         [
                           if (manufacturedDate != null) 'MFG $manufacturedDate',
                           if (expiryDate != null) 'EXP $expiryDate',
@@ -517,7 +520,7 @@ class _ExpiryBatchCard extends StatelessWidget {
                     ),
                     if (batch.barcode != null && batch.barcode!.isNotEmpty) ...[
                       const SizedBox(height: 4),
-                      Text(
+                      BillingText(
                         'Barcode ${batch.barcode}',
                         style: Theme.of(context).textTheme.labelSmall,
                       ),
@@ -551,12 +554,12 @@ class _ExpiryEmptyState extends StatelessWidget {
             color: AppColors.muted,
           ),
           const SizedBox(height: 10),
-          const Text(
+          const BillingText(
             'No batches match these filters.',
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 4),
-          Text(
+          BillingText(
             'New receipts with verified dates will appear here.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall,

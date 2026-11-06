@@ -1,9 +1,10 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:async';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
 
 import '../core/constants.dart';
+import 'inventory_changes.dart';
 
 class ApiService {
   static const Duration _defaultRequestTimeout = Duration(seconds: 60);
@@ -16,6 +17,7 @@ class ApiService {
   String? _authToken;
   int _sessionRevision = 0;
   int get sessionRevision => _sessionRevision;
+  final ValueNotifier<bool> requiresSignIn = ValueNotifier(false);
 
   ApiService({
     String? baseUrl,
@@ -30,11 +32,13 @@ class ApiService {
   void setAuthToken(String token) {
     if (token != _authToken) _sessionRevision++;
     _authToken = token;
+    requiresSignIn.value = false;
   }
 
   void clearAuthToken() {
     if (_authToken != null) _sessionRevision++;
     _authToken = null;
+    requiresSignIn.value = false;
   }
 
   String _authorizationValue() {
@@ -234,7 +238,20 @@ class ApiService {
   }
 
   dynamic _processResponse(http.Response response) {
+    final sentAuthorization = response.request?.headers['Authorization'] ??
+        response.request?.headers['authorization'];
+    if (response.statusCode == 401 &&
+        _authToken != null &&
+        sentAuthorization == _authorizationValue()) {
+      requiresSignIn.value = true;
+    }
     if (response.statusCode >= 200 && response.statusCode < 300) {
+      if (response.request?.method != null &&
+          response.request!.method != 'GET' &&
+          (response.request!.url.path.contains('/admin/') ||
+              response.request!.url.path.contains('/orders'))) {
+        InventoryChanges.notify();
+      }
       if (response.body.isEmpty) {
         return null;
       }

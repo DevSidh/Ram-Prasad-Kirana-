@@ -8,6 +8,7 @@ import '../core/constants.dart';
 import '../models/pos_models.dart';
 import '../models/fonepay_payment_request.dart';
 import 'invoice_pdf_builder.dart';
+import 'readable_bill_pdf.dart';
 
 class PosReceiptService {
   static Future<Uint8List> createInvoicePdf(PosSale sale,
@@ -337,6 +338,35 @@ class PosReceiptService {
     FonepayPaymentRequest? fonepay,
   }) async {
     _validateFonepay(sale, fonepay);
+    if (ReadableBillPdf.needsShaping(
+        [sale.customerName, ...sale.items.map((item) => item.productName)])) {
+      return ReadableBillPdf.create(
+          number: sale.receiptNumber,
+          date: sale.createdAt,
+          customerName: sale.customerName,
+          customerPhone: sale.customerPhone,
+          items: [
+            for (final item in sale.items)
+              (
+                item: item.productName,
+                quantity: item.weightGrams == null
+                    ? '${item.quantity}'
+                    : '${item.weightGrams} g',
+                amount: item.lineTotal
+              )
+          ],
+          subtotal: sale.subtotal,
+          discount: sale.discount,
+          vat: sale.vatAmount,
+          total: sale.total,
+          method: sale.paymentMethod,
+          status: sale.paymentStatus,
+          paid: sale.paidAmount ??
+              (sale.paymentStatus == 'COMPLETED' ? sale.total : 0),
+          due: sale.outstandingAmount,
+          paperWidthMm: paperWidthMm,
+          paymentInstructions: fonepay == null ? null : _fonepayQr(fonepay));
+    }
     final baseFormat = pageFormat(sale, paperWidthMm: paperWidthMm);
     final format = fonepay == null
         ? baseFormat

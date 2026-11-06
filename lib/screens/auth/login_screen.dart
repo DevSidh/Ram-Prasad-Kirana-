@@ -1,9 +1,11 @@
+import '../../widgets/billing_localized_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/secure_login_service.dart';
 import '../../core/constants.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/language_provider.dart';
+import '../../widgets/billing_language_switch.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/shown_today_store.dart';
 import '../../services/customer_location_consent.dart';
@@ -78,7 +80,8 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       setState(() => _checkingSavedLogin = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not check secure sign-in: $error')),
+        SnackBar(
+            content: BillingText('Could not check secure sign-in: $error')),
       );
     }
   }
@@ -111,7 +114,8 @@ class _LoginScreenState extends State<LoginScreen> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('This account does not have access to this sign-in.'),
+            content: BillingText(
+                'This account does not have access to this sign-in.'),
           ),
         );
         return;
@@ -155,7 +159,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(authProvider.errorMessage!)),
+        SnackBar(content: BillingText(authProvider.errorMessage!)),
       );
     }
   }
@@ -171,8 +175,8 @@ class _LoginScreenState extends State<LoginScreen> {
     final shouldSave = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Save sign-in on this device?'),
-        content: Text(
+        title: const BillingText('Save sign-in on this device?'),
+        content: BillingText(
           biometricAvailable
               ? 'Your sign-in details will be stored in this device’s secure keychain. '
                   'You can use biometrics the next time you sign in.'
@@ -181,11 +185,11 @@ class _LoginScreenState extends State<LoginScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Not now'),
+            child: const BillingText('Not now'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Save securely'),
+            child: const BillingText('Save securely'),
           ),
         ],
       ),
@@ -196,7 +200,8 @@ class _LoginScreenState extends State<LoginScreen> {
       } catch (error) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not remember this choice: $error')),
+          SnackBar(
+              content: BillingText('Could not remember this choice: $error')),
         );
       }
       return;
@@ -211,7 +216,8 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save sign-in securely: $error')),
+        SnackBar(
+            content: BillingText('Could not save sign-in securely: $error')),
       );
     }
   }
@@ -223,7 +229,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Secure sign-in failed: $error')),
+        SnackBar(content: BillingText('Secure sign-in failed: $error')),
       );
     }
   }
@@ -240,7 +246,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Saved sign-in failed: $error')),
+        SnackBar(content: BillingText('Saved sign-in failed: $error')),
       );
     }
   }
@@ -256,7 +262,8 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not remove saved sign-in: $error')),
+        SnackBar(
+            content: BillingText('Could not remove saved sign-in: $error')),
       );
     }
   }
@@ -269,7 +276,9 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save appearance preference: $error')),
+        SnackBar(
+            content:
+                BillingText('Could not save appearance preference: $error')),
       );
     }
   }
@@ -292,13 +301,16 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const BillingLanguageSwitch(),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+                  child: Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: 10,
+                    runSpacing: 10,
                     children: [
                       if (!compactThemeControl) ...[
-                        Text(
+                        BillingText(
                           'APPEARANCE',
                           style: TextStyle(
                             color: AppConstants.textMuted,
@@ -325,7 +337,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       color: AppConstants.primary, size: 30),
                 ),
                 const SizedBox(height: 24),
-                Text(
+                BillingText(
                   widget.isAdminLogin
                       ? 'Admin sign in'
                       : widget.isBillingLogin
@@ -340,7 +352,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text(
+                BillingText(
                   widget.isAdminLogin
                       ? 'Sign in with your store administrator account.'
                       : widget.isBillingLogin
@@ -356,13 +368,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 32),
 
                 // Email
-                TextFormField(
+                BillingTextFormField(
                   controller: _emailController,
                   keyboardType:
                       widget.isAdminLogin || widget.isWindowsStaffLogin
                           ? TextInputType.text
                           : TextInputType.emailAddress,
-                  decoration: InputDecoration(
+                  decoration: BillingInputDecoration(
                     labelText: widget.isAdminLogin
                         ? 'Admin username or email'
                         : widget.isBillingLogin
@@ -389,13 +401,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 16),
 
                 // Password
-                TextFormField(
+                BillingTextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
-                  decoration: InputDecoration(
+                  decoration: BillingInputDecoration(
                     labelText: 'Password',
                     prefixIcon: const Icon(Icons.lock_outline),
-                    suffixIcon: IconButton(
+                    suffixIcon: BillingIconButton(
                       tooltip: context.tr(
                         _obscurePassword ? 'Show password' : 'Hide password',
                       ),
@@ -427,7 +439,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             builder: (_) => const ForgotPasswordScreen()),
                       );
                     },
-                    child: const Text(
+                    child: const BillingText(
                       'Forgot Password?',
                       style: TextStyle(
                           color: AppConstants.primary,
@@ -451,7 +463,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                       ),
-                      child: const Text('Verify email address'),
+                      child: const BillingText('Verify email address'),
                     ),
                   ),
                 const SizedBox(height: 20),
@@ -477,16 +489,17 @@ class _LoginScreenState extends State<LoginScreen> {
                           builder: (_) => const RegisterScreen(),
                         ),
                       ),
-                      child: const Text('Create account'),
+                      child: const BillingText('Create account'),
                     ),
                   ),
                   const SizedBox(height: 2),
                   Row(
                     children: [
                       const Expanded(child: Divider()),
-                      Padding(
+                      Flexible(
+                          child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Text(
+                        child: BillingText(
                           'STORE STAFF',
                           style: TextStyle(
                             color: AppConstants.textMuted,
@@ -495,7 +508,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             letterSpacing: 1.1,
                           ),
                         ),
-                      ),
+                      )),
                       const Expanded(child: Divider()),
                     ],
                   ),
@@ -511,7 +524,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       icon: const Icon(Icons.admin_panel_settings_outlined),
-                      label: const Text('Admin login'),
+                      label: const BillingText('Admin login'),
                     ),
                   ),
                 ],
@@ -522,7 +535,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       onPressed:
                           authProvider.isLoading ? null : _signInWithBiometrics,
                       icon: const Icon(Icons.fingerprint),
-                      label: const Text('Sign in with biometrics'),
+                      label: const BillingText('Sign in with biometrics'),
                       style: OutlinedButton.styleFrom(
                         minimumSize: const Size.fromHeight(48),
                       ),
@@ -534,14 +547,14 @@ class _LoginScreenState extends State<LoginScreen> {
                           ? null
                           : _signInWithSavedPassword,
                       icon: const Icon(Icons.key_outlined),
-                      label: const Text('Continue with saved sign-in'),
+                      label: const BillingText('Continue with saved sign-in'),
                       style: OutlinedButton.styleFrom(
                         minimumSize: const Size.fromHeight(48),
                       ),
                     ),
                   TextButton(
                     onPressed: _forgetSavedLogin,
-                    child: const Text('Forget saved sign-in'),
+                    child: const BillingText('Forget saved sign-in'),
                   ),
                 ],
                 if (widget.isAdminLogin) const SizedBox(height: 16),
@@ -556,7 +569,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         (route) => false,
                       ),
-                      child: const Text('Back to customer sign in'),
+                      child: const BillingText('Back to customer sign in'),
                     ),
                   ),
               ],
@@ -581,12 +594,12 @@ class _LoginScreenState extends State<LoginScreen> {
             ButtonSegment<bool>(
               value: false,
               icon: const Icon(Icons.light_mode_outlined, size: 15),
-              label: compact ? null : const Text('Light'),
+              label: compact ? null : const BillingText('Light'),
             ),
             ButtonSegment<bool>(
               value: true,
               icon: const Icon(Icons.dark_mode_outlined, size: 15),
-              label: compact ? null : const Text('Dark'),
+              label: compact ? null : const BillingText('Dark'),
             ),
           ],
           selected: {isDark},

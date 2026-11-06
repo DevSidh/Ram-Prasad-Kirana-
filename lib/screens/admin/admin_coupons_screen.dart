@@ -1,3 +1,4 @@
+import '../../widgets/billing_localized_widgets.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -23,6 +24,7 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
   late final AdminApiService _adminApi = AdminApiService(widget.api);
   List<AdminCoupon> _coupons = [];
   bool _loading = true;
+  int _loadRequest = 0;
   String? _error;
 
   @override
@@ -32,19 +34,21 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = ++_loadRequest;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final coupons = await _adminApi.getCoupons();
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _coupons = coupons;
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _error = error.toString().replaceFirst('Exception: ', '');
         _loading = false;
@@ -61,7 +65,7 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
     setState(() => _coupons = [coupon, ..._coupons]);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
+        content: BillingText(
           '${coupon.code} is saved as a draft. Add it to an announcement to share it.',
         ),
       ),
@@ -76,7 +80,9 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
     if (coupon == null || !mounted) return;
     setState(() => _coupons = [coupon, ..._coupons]);
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${coupon.code} sent to the selected customer.')),
+      SnackBar(
+          content:
+              BillingText('${coupon.code} sent to the selected customer.')),
     );
   }
 
@@ -92,7 +98,7 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
           .toList();
     });
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${updated.code} updated.')),
+      SnackBar(content: BillingText('${updated.code} updated.')),
     );
   }
 
@@ -107,7 +113,7 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
+          content: BillingText(
             isActive ? '${coupon.code} activated.' : '${coupon.code} paused.',
           ),
         ),
@@ -116,7 +122,8 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(error.toString().replaceFirst('Exception: ', ''))),
+            content:
+                BillingText(error.toString().replaceFirst('Exception: ', ''))),
       );
     }
   }
@@ -139,7 +146,7 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(target == null
+          content: BillingText(target == null
               ? 'Promotion banner coupon cleared.'
               : '${target.code} selected for the promotion banner.'),
         ),
@@ -148,7 +155,7 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
+          content: BillingText(
             'Could not update banner coupon: '
             '${error.toString().replaceFirst('Exception: ', '')}',
           ),
@@ -161,18 +168,18 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('Remove ${coupon.code}?'),
-        content: const Text(
+        title: BillingText('Remove ${coupon.code}?'),
+        content: const BillingText(
           'This coupon will no longer be available at checkout. Existing order history will be preserved.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Keep coupon'),
+            child: const BillingText('Keep coupon'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Remove coupon'),
+            child: const BillingText('Remove coupon'),
           ),
         ],
       ),
@@ -187,14 +194,14 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
       await _adminApi.removeCoupon(coupon.id);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${coupon.code} was removed.')),
+        SnackBar(content: BillingText('${coupon.code} was removed.')),
       );
     } catch (error) {
       if (!mounted) return;
       setState(() => _coupons = previousCoupons);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
+          content: BillingText(
             'Could not remove ${coupon.code}: ${error.toString().replaceFirst('Exception: ', '')}',
           ),
         ),
@@ -211,14 +218,14 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
     final details = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        BillingText(
           coupon.code,
           style: Theme.of(context).textTheme.titleMedium,
         ),
         if (coupon.productId != null || coupon.assignedUserId != null)
           Padding(
             padding: const EdgeInsets.only(top: 3),
-            child: Text(
+            child: BillingText(
               'Product-specific · assigned to one customer',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: AppColors.warningText,
@@ -226,12 +233,12 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
             ),
           ),
         const SizedBox(height: 3),
-        Text(
+        BillingText(
           '${_discountLabel(coupon)} · Min. ${AppConstants.currencySymbol}${coupon.minOrderAmount.toStringAsFixed(0)}',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 3),
-        Text(
+        BillingText(
           coupon.usageLimit == null
               ? '${coupon.usedCount} uses'
               : '${coupon.usedCount}/${coupon.usageLimit} uses',
@@ -255,14 +262,14 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
           ],
         ),
         const SizedBox(height: 3),
-        Text(
+        BillingText(
           coupon.perUserLimit == null
               ? 'Unlimited uses per customer'
               : '${coupon.perUserLimit} use${coupon.perUserLimit == 1 ? '' : 's'} per customer',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         if (coupon.expiresAt != null)
-          Text(
+          BillingText(
             'Expires ${MaterialLocalizations.of(context).formatMediumDate(coupon.expiresAt!.toLocal())} at ${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(coupon.expiresAt!.toLocal()))}',
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -276,12 +283,12 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
           value: coupon.isActive,
           onChanged: (value) => _setActive(coupon, value),
         ),
-        IconButton(
+        BillingIconButton(
           tooltip: 'Edit ${coupon.code}',
           onPressed: () => _editCoupon(coupon),
           icon: const Icon(Icons.edit_outlined),
         ),
-        IconButton(
+        BillingIconButton(
           tooltip: 'Remove ${coupon.code}',
           onPressed: () => _removeCoupon(coupon),
           icon: Icon(Icons.delete_outline, color: AppColors.errorText),
@@ -359,6 +366,14 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
         onRetry: _load,
       );
     }
+    final bannerCoupons = _coupons
+        .where((coupon) =>
+            coupon.productId == null &&
+            coupon.assignedUserId == null &&
+            coupon.isActive)
+        .toList(growable: false);
+    final featured = bannerCoupons.where((coupon) => coupon.isBannerFeatured);
+    final bannerId = featured.isEmpty ? null : featured.first.id;
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
@@ -367,17 +382,23 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
           if (!_loading && _error == null && _coupons.isNotEmpty)
             AppSurface(
               padding: const EdgeInsets.all(14),
-              child: Row(
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   Icon(Icons.campaign_outlined, color: AppColors.primary),
                   const SizedBox(width: 10),
-                  Expanded(
+                  SizedBox(
+                    width: MediaQuery.sizeOf(context).width < 600
+                        ? double.infinity
+                        : 300,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Promotion banner coupon',
+                        BillingText('Promotion banner coupon',
                             style: Theme.of(context).textTheme.titleSmall),
-                        Text(
+                        BillingText(
                           'Choose which promotion code is featured on the store banner.',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
@@ -388,28 +409,22 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
                   SizedBox(
                     width: 230,
                     child: DropdownButtonFormField<String?>(
-                      initialValue: _coupons
-                              .any((coupon) => coupon.isBannerFeatured)
-                          ? _coupons
-                              .firstWhere((coupon) => coupon.isBannerFeatured)
-                              .id
-                          : null,
-                      decoration: const InputDecoration(
+                      key: ValueKey('banner-${bannerId ?? 'none'}'),
+                      isExpanded: true,
+                      initialValue: bannerId,
+                      decoration: const BillingInputDecoration(
                         labelText: 'Banner coupon',
                         isDense: true,
                       ),
                       items: [
                         const DropdownMenuItem<String?>(
                           value: null,
-                          child: Text('No coupon'),
+                          child: BillingText('No coupon'),
                         ),
-                        for (final coupon in _coupons.where(
-                          (coupon) =>
-                              coupon.productId == null && coupon.isActive,
-                        ))
+                        for (final coupon in bannerCoupons)
                           DropdownMenuItem<String?>(
                             value: coupon.id,
-                            child: Text(coupon.code),
+                            child: BillingText(coupon.code),
                           ),
                       ],
                       onChanged: (id) => _setBannerCoupon(id == null
@@ -427,7 +442,7 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
                             if (coupon.isEmpty) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                  content: Text(
+                                  content: BillingText(
                                     'DIWALI50 is not in Promotions yet. Add or activate it first.',
                                   ),
                                 ),
@@ -437,7 +452,7 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
                             if (!coupon.first.isActive) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                  content: Text(
+                                  content: BillingText(
                                     'Activate DIWALI50 before featuring it on the banner.',
                                   ),
                                 ),
@@ -447,7 +462,7 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
                             unawaited(_setBannerCoupon(coupon.first));
                           },
                     icon: const Icon(Icons.auto_awesome_outlined, size: 17),
-                    label: const Text('Feature DIWALI50'),
+                    label: const BillingText('Feature DIWALI50'),
                   ),
                 ],
               ),
@@ -456,19 +471,19 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
             const SizedBox(height: 12),
           LayoutBuilder(
             builder: (context, constraints) {
-              final heading = Text(
+              final heading = BillingText(
                 'New store-wide codes stay as drafts until you attach them to an announcement. Product discounts go to one customer.',
                 style: Theme.of(context).textTheme.bodySmall,
               );
               final addButton = FilledButton.icon(
                 onPressed: _createCoupon,
                 icon: const Icon(Icons.add_rounded, size: 18),
-                label: const Text('Add code'),
+                label: const BillingText('Add code'),
               );
               final productCouponButton = OutlinedButton.icon(
                 onPressed: _issueProductCoupon,
                 icon: const Icon(Icons.card_giftcard_outlined, size: 18),
-                label: const Text('Give product coupon'),
+                label: const BillingText('Give product coupon'),
               );
               if (constraints.maxWidth < 390) {
                 return Column(
@@ -499,7 +514,7 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
-            Text(_error!, style: TextStyle(color: AppColors.errorText)),
+            BillingText(_error!, style: TextStyle(color: AppColors.errorText)),
           ],
           const SizedBox(height: 16),
           if (_coupons.isEmpty)
@@ -510,12 +525,12 @@ class _AdminCouponsScreenState extends State<AdminCouponsScreen> {
                   Icon(Icons.local_offer_outlined,
                       color: AppColors.muted, size: 36),
                   const SizedBox(height: 10),
-                  Text(
+                  BillingText(
                     'No promotions yet',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 4),
-                  Text(
+                  BillingText(
                     'Create a discount code for your customers.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
@@ -668,7 +683,7 @@ class _ProductCouponDialogState extends State<_ProductCouponDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Give a product coupon'),
+      title: const BillingText('Give a product coupon'),
       content: SizedBox(
         width: 480,
         child: SingleChildScrollView(
@@ -678,14 +693,14 @@ class _ProductCouponDialogState extends State<_ProductCouponDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
+                const BillingText(
                   'The code will only work for the selected customer and product. It can be used once and expires in 30 days.',
                 ),
                 const SizedBox(height: 14),
                 TextField(
                   controller: _customerController,
                   enabled: !_saving,
-                  decoration: InputDecoration(
+                  decoration: BillingInputDecoration(
                     labelText: 'Find customer by profile ID or email',
                     suffixIcon: _loadingCustomers
                         ? const Padding(
@@ -715,12 +730,12 @@ class _ProductCouponDialogState extends State<_ProductCouponDialog> {
                         final customer = _customerResults[index];
                         return ListTile(
                           dense: true,
-                          title: Text(
+                          title: BillingText(
                             customer.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          subtitle: Text(
+                          subtitle: BillingText(
                             '${customer.profileId} · ${customer.email}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -738,7 +753,7 @@ class _ProductCouponDialogState extends State<_ProductCouponDialog> {
                 if (_selectedCustomer != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
-                    child: Text(
+                    child: BillingText(
                       'Selected: ${_selectedCustomer!.profileId}',
                       style: TextStyle(color: AppColors.primary),
                     ),
@@ -747,12 +762,13 @@ class _ProductCouponDialogState extends State<_ProductCouponDialog> {
                 DropdownButtonFormField<AdminProduct>(
                   initialValue: _selectedProduct,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Product'),
+                  decoration:
+                      const BillingInputDecoration(labelText: 'Product'),
                   items: _products
                       .map(
                         (product) => DropdownMenuItem(
                           value: product,
-                          child: Text(
+                          child: BillingText(
                             '${product.name} · ${AppConstants.currencySymbol}${product.price.toStringAsFixed(0)}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -774,19 +790,21 @@ class _ProductCouponDialogState extends State<_ProductCouponDialog> {
                 else if (_products.isEmpty)
                   const Padding(
                     padding: EdgeInsets.only(top: 8),
-                    child: Text('No in-stock products are available.'),
+                    child: BillingText('No in-stock products are available.'),
                   ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
+                  isExpanded: true,
                   initialValue: _discountType,
-                  decoration: const InputDecoration(labelText: 'Discount type'),
+                  decoration:
+                      const BillingInputDecoration(labelText: 'Discount type'),
                   items: const [
                     DropdownMenuItem(
                       value: 'PERCENTAGE',
-                      child: Text('Percentage'),
+                      child: BillingText('Percentage'),
                     ),
                     DropdownMenuItem(
-                        value: 'FIXED', child: Text('Fixed amount')),
+                        value: 'FIXED', child: BillingText('Fixed amount')),
                   ],
                   onChanged: _saving
                       ? null
@@ -796,12 +814,12 @@ class _ProductCouponDialogState extends State<_ProductCouponDialog> {
                         },
                 ),
                 const SizedBox(height: 12),
-                TextFormField(
+                BillingTextFormField(
                   controller: _discountController,
                   enabled: !_saving,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  decoration: InputDecoration(
+                  decoration: BillingInputDecoration(
                     labelText: _discountType == 'PERCENTAGE'
                         ? 'Discount percentage'
                         : 'Discount amount',
@@ -825,7 +843,7 @@ class _ProductCouponDialogState extends State<_ProductCouponDialog> {
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
-                  Text(
+                  BillingText(
                     _error!,
                     style:
                         TextStyle(color: Theme.of(context).colorScheme.error),
@@ -839,7 +857,7 @@ class _ProductCouponDialogState extends State<_ProductCouponDialog> {
       actions: [
         TextButton(
           onPressed: _saving ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: const BillingText('Cancel'),
         ),
         FilledButton(
           onPressed:
@@ -850,7 +868,7 @@ class _ProductCouponDialogState extends State<_ProductCouponDialog> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('Send coupon'),
+              : const BillingText('Send coupon'),
         ),
       ],
     );
@@ -988,8 +1006,8 @@ class _AdminCouponFormDialogState extends State<AdminCouponFormDialog> {
   Widget build(BuildContext context) {
     final isPercentage = _discountType == 'PERCENTAGE';
     return AlertDialog(
-      title:
-          Text(widget.coupon == null ? 'Create promotion' : 'Edit promotion'),
+      title: BillingText(
+          widget.coupon == null ? 'Create promotion' : 'Edit promotion'),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
         child: Form(
@@ -998,10 +1016,10 @@ class _AdminCouponFormDialogState extends State<AdminCouponFormDialog> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextFormField(
+                BillingTextFormField(
                   controller: _code,
                   textCapitalization: TextCapitalization.characters,
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'Coupon code',
                     hintText: 'e.g. SAVE10',
                   ),
@@ -1020,7 +1038,7 @@ class _AdminCouponFormDialogState extends State<AdminCouponFormDialog> {
                 const SizedBox(height: 8),
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: Text(
+                  child: BillingText(
                     'Coupon names and start dates are not stored by this system yet. Expiration date and time are supported.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
@@ -1029,14 +1047,15 @@ class _AdminCouponFormDialogState extends State<AdminCouponFormDialog> {
                 DropdownButtonFormField<String>(
                   initialValue: _discountType,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Discount type'),
+                  decoration:
+                      const BillingInputDecoration(labelText: 'Discount type'),
                   items: const [
                     DropdownMenuItem(
                       value: 'PERCENTAGE',
-                      child: Text('Percentage'),
+                      child: BillingText('Percentage'),
                     ),
                     DropdownMenuItem(
-                        value: 'FIXED', child: Text('Fixed amount')),
+                        value: 'FIXED', child: BillingText('Fixed amount')),
                   ],
                   onChanged: _saving
                       ? null
@@ -1047,11 +1066,11 @@ class _AdminCouponFormDialogState extends State<AdminCouponFormDialog> {
                         },
                 ),
                 const SizedBox(height: 12),
-                TextFormField(
+                BillingTextFormField(
                   controller: _discount,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  decoration: InputDecoration(
+                  decoration: BillingInputDecoration(
                     labelText:
                         isPercentage ? 'Discount percent' : 'Discount amount',
                     suffixText:
@@ -1067,22 +1086,22 @@ class _AdminCouponFormDialogState extends State<AdminCouponFormDialog> {
                   },
                 ),
                 const SizedBox(height: 12),
-                TextFormField(
+                BillingTextFormField(
                   controller: _minimum,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'Minimum eligible subtotal (retail items)',
                   ),
                   validator: (value) => _positiveAmount(value, allowZero: true),
                 ),
                 if (isPercentage) ...[
                   const SizedBox(height: 12),
-                  TextFormField(
+                  BillingTextFormField(
                     controller: _maximum,
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(
+                    decoration: const BillingInputDecoration(
                       labelText: 'Maximum discount (optional)',
                     ),
                     validator: (value) => value?.trim().isEmpty == true
@@ -1091,10 +1110,10 @@ class _AdminCouponFormDialogState extends State<AdminCouponFormDialog> {
                   ),
                 ],
                 const SizedBox(height: 12),
-                TextFormField(
+                BillingTextFormField(
                   controller: _usageLimit,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'Total uses (optional)',
                     helperText: 'Leave empty for unlimited redemptions.',
                   ),
@@ -1111,10 +1130,10 @@ class _AdminCouponFormDialogState extends State<AdminCouponFormDialog> {
                   },
                 ),
                 const SizedBox(height: 12),
-                TextFormField(
+                BillingTextFormField(
                   controller: _perUserLimit,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'Uses per customer (optional)',
                     helperText:
                         'Limit redemptions per signed-in customer account.',
@@ -1133,7 +1152,7 @@ class _AdminCouponFormDialogState extends State<AdminCouponFormDialog> {
                   child: OutlinedButton.icon(
                     onPressed: _saving ? null : _chooseExpiry,
                     icon: const Icon(Icons.event_outlined),
-                    label: Text(
+                    label: BillingText(
                       _expiresAt == null
                           ? 'No expiry date/time'
                           : 'Expires ${MaterialLocalizations.of(context).formatMediumDate(_expiresAt!)} at ${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(_expiresAt!))}',
@@ -1147,7 +1166,7 @@ class _AdminCouponFormDialogState extends State<AdminCouponFormDialog> {
                       onPressed: _saving
                           ? null
                           : () => setState(() => _expiresAt = null),
-                      child: const Text('Remove expiry'),
+                      child: const BillingText('Remove expiry'),
                     ),
                   ),
                 if (_error != null)
@@ -1155,7 +1174,7 @@ class _AdminCouponFormDialogState extends State<AdminCouponFormDialog> {
                     alignment: Alignment.centerLeft,
                     child: Padding(
                       padding: const EdgeInsets.only(top: 8),
-                      child: Text(
+                      child: BillingText(
                         _error!,
                         style: TextStyle(color: AppColors.errorText),
                       ),
@@ -1174,7 +1193,7 @@ class _AdminCouponFormDialogState extends State<AdminCouponFormDialog> {
           children: [
             TextButton(
               onPressed: _saving ? null : () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: const BillingText('Cancel'),
             ),
             FilledButton(
               onPressed: _saving ? null : _save,
@@ -1184,7 +1203,7 @@ class _AdminCouponFormDialogState extends State<AdminCouponFormDialog> {
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : Text(
+                  : BillingText(
                       widget.coupon == null ? 'Create code' : 'Save changes'),
             ),
           ],

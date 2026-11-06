@@ -1,3 +1,4 @@
+import 'billing_localized_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../models/manual_fonepay_verification.dart';
@@ -158,14 +159,14 @@ class _StaticFonepayPaymentDialogState
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('CHECKOUT · PAYMENT REVIEW',
+                BillingText('CHECKOUT · PAYMENT REVIEW',
                     style: theme.textTheme.labelSmall?.copyWith(
                         color: colors.onSurfaceVariant, letterSpacing: 1.2)),
                 const SizedBox(height: 12),
-                Text('Pay with ${widget.providerName}'),
+                BillingText('Pay with ${widget.providerName}'),
               ],
             )),
-            IconButton(
+            BillingIconButton(
                 tooltip: 'Close payment dialog',
                 onPressed: _busy ? null : _close,
                 icon: const Icon(Icons.close))
@@ -176,8 +177,8 @@ class _StaticFonepayPaymentDialogState
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
                 const Align(
                     alignment: Alignment.centerLeft,
-                    child:
-                        Text('Scan the QR and enter the exact bill amount.')),
+                    child: BillingText(
+                        'Scan the QR and enter the exact bill amount.')),
                 const SizedBox(height: 24),
                 Wrap(
                     alignment: WrapAlignment.spaceBetween,
@@ -185,7 +186,7 @@ class _StaticFonepayPaymentDialogState
                     spacing: 20,
                     runSpacing: 12,
                     children: [
-                      Text('Total payable · NPR',
+                      BillingText('Total payable · NPR',
                           style: theme.textTheme.titleSmall),
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -195,7 +196,7 @@ class _StaticFonepayPaymentDialogState
                           border: Border.all(color: colors.outlineVariant),
                           color: colors.surfaceContainerHighest,
                         ),
-                        child: Text(widget.amount.toStringAsFixed(2),
+                        child: BillingText(widget.amount.toStringAsFixed(2),
                             style: theme.textTheme.titleLarge
                                 ?.copyWith(fontWeight: FontWeight.bold)),
                       ),
@@ -205,15 +206,16 @@ class _StaticFonepayPaymentDialogState
                 const SizedBox(height: 12),
                 if (paid) ...[
                   const Icon(Icons.check_circle, color: Colors.green, size: 72),
-                  const Text('Payment received - confirmed by cashier'),
-                  Text('Bill ${_sale!.invoiceNumber ?? _sale!.receiptNumber}',
+                  const BillingText('Payment received - confirmed by cashier'),
+                  BillingText(
+                      'Bill ${_sale!.invoiceNumber ?? _sale!.receiptNumber}',
                       textAlign: TextAlign.center),
-                  Text(_printed
+                  BillingText(_printed
                       ? 'Bill sent to printer.'
                       : 'The paid bill is saved. You can reprint it without charging again.'),
                 ] else ...[
                   if (_qrError != null)
-                    Text(_qrError!,
+                    BillingText(_qrError!,
                         style: TextStyle(
                             color: Theme.of(context).colorScheme.error))
                   else if (!_qrReady)
@@ -227,7 +229,7 @@ class _StaticFonepayPaymentDialogState
                             borderRadius: BorderRadius.circular(16)),
                         child:
                             Column(mainAxisSize: MainAxisSize.min, children: [
-                          Text('Ram Prasad General Store',
+                          BillingText('Ram Prasad General Store',
                               textAlign: TextAlign.center,
                               style: theme.textTheme.titleMedium?.copyWith(
                                   color: Colors.black87,
@@ -242,16 +244,17 @@ class _StaticFonepayPaymentDialogState
                               semanticLabel:
                                   'Business static ${widget.providerName} QR'),
                           const SizedBox(height: 12),
-                          Text('${widget.providerName} · Scan to pay',
+                          BillingText('${widget.providerName} · Scan to pay',
                               style: theme.textTheme.labelMedium
                                   ?.copyWith(color: Colors.black54)),
                         ])),
                   const SizedBox(height: 12),
-                  Text(
+                  BillingText(
                       'Scan using ${widget.providerName} and enter the exact amount.',
                       textAlign: TextAlign.center),
                   const SizedBox(height: 8),
-                  const Text('Waiting for cashier to confirm payment received.',
+                  const BillingText(
+                      'Waiting for cashier to confirm payment received.',
                       textAlign: TextAlign.center),
                   const SizedBox(height: 12),
                   Container(
@@ -260,14 +263,14 @@ class _StaticFonepayPaymentDialogState
                     decoration: BoxDecoration(
                         color: colors.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(14)),
-                    child: const Text(
+                    child: const BillingText(
                         'Tick the box below to confirm you received the displayed amount. No automatic payment check is performed.'),
                   ),
                   const SizedBox(height: 10),
                   CheckboxListTile(
                       contentPadding: EdgeInsets.zero,
                       controlAffinity: ListTileControlAffinity.leading,
-                      title: const Text(
+                      title: const BillingText(
                           'I received the full payment of this bill.'),
                       value: _checked,
                       onChanged: _busy
@@ -275,14 +278,14 @@ class _StaticFonepayPaymentDialogState
                           : (value) =>
                               setState(() => _checked = value ?? false)),
                   if (widget.cashierId.isEmpty)
-                    Text(
+                    BillingText(
                         'Sign in with a cashier account to confirm this payment.',
                         style: TextStyle(color: colors.error)),
                 ],
                 if (_error != null)
                   Padding(
                       padding: const EdgeInsets.only(top: 12),
-                      child: Text(_error!,
+                      child: BillingText(_error!,
                           style: TextStyle(
                               color: Theme.of(context).colorScheme.error))),
                 if (_busy)
@@ -293,12 +296,12 @@ class _StaticFonepayPaymentDialogState
           actions: [
             TextButton(
                 onPressed: _busy ? null : _close,
-                child: Text(paid ? 'Done' : 'Cancel / Back')),
+                child: BillingText(paid ? 'Done' : 'Cancel / Back')),
             if (paid)
               FilledButton.icon(
                   onPressed: _busy ? null : _reprint,
                   icon: const Icon(Icons.print),
-                  label: const Text('Reprint Bill'))
+                  label: const BillingText('Reprint Bill'))
             else
               SizedBox(
                   width: double.infinity,
@@ -309,7 +312,7 @@ class _StaticFonepayPaymentDialogState
                               widget.cashierId.isEmpty
                           ? null
                           : _confirm,
-                      child: Text(
+                      child: BillingText(
                           _busy
                               ? 'Saving bill…'
                               : 'Payment Verified — Create & Print Bill',

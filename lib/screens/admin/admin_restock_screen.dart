@@ -1,3 +1,5 @@
+import '../../widgets/billing_localized_widgets.dart';
+import '../../core/billing_strings.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -15,6 +17,12 @@ import '../../widgets/store_animation.dart';
 import 'admin_inventory_expiry_screen.dart';
 import 'admin_supplier_bills_screen.dart';
 
+Future<AdminProduct?> showAddStockDialog(
+        BuildContext context, AdminApiService api, AdminProduct product) =>
+    showDialog<AdminProduct>(
+        context: context,
+        builder: (_) => _RestockDialog(api: api, product: product));
+
 class AdminRestockScreen extends StatefulWidget {
   final ApiService api;
 
@@ -28,6 +36,7 @@ class _AdminRestockScreenState extends State<AdminRestockScreen> {
   late final AdminApiService _adminApi = AdminApiService(widget.api);
   List<AdminProduct> _products = [];
   bool _loading = true;
+  int _loadRequest = 0;
   String? _error;
 
   @override
@@ -37,22 +46,23 @@ class _AdminRestockScreenState extends State<AdminRestockScreen> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = ++_loadRequest;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final products = await _adminApi.getAllProducts(
-        stock: 'restock',
         sort: 'stock_asc',
       );
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _products = products;
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _error = error.toString().replaceFirst('Exception: ', '');
         _loading = false;
@@ -72,11 +82,10 @@ class _AdminRestockScreenState extends State<AdminRestockScreen> {
     setState(() {
       _products = _products
           .map((item) => item.id == updatedProduct.id ? updatedProduct : item)
-          .where((item) => item.availableStock <= item.lowStockThreshold)
           .toList();
     });
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${product.name} stock updated.')),
+      SnackBar(content: BillingText('${product.name} stock updated.')),
     );
   }
 
@@ -127,8 +136,8 @@ class _AdminRestockScreenState extends State<AdminRestockScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
         children: [
-          Text(
-            'Active products at or below their low-stock threshold.',
+          BillingText(
+            'Add stock directly. No supplier bill or invoice number is required.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 16),
@@ -139,7 +148,8 @@ class _AdminRestockScreenState extends State<AdminRestockScreen> {
               runSpacing: 8,
               children: [
                 _QueueCount(
-                  label: '${_products.length} to replenish',
+                  label:
+                      '${_products.where((product) => product.availableStock <= product.lowStockThreshold).length} to replenish',
                   icon: Icons.inventory_2_outlined,
                   color: AppColors.primary,
                 ),
@@ -160,23 +170,23 @@ class _AdminRestockScreenState extends State<AdminRestockScreen> {
               FilledButton.icon(
                 onPressed: _openSupplierBills,
                 icon: const Icon(Icons.receipt_long_outlined),
-                label: const Text('Supplier bills'),
+                label: const BillingText('Supplier bills (optional)'),
               ),
               TextButton.icon(
                 onPressed: _openExpiry,
                 icon: const Icon(Icons.event_busy_outlined),
-                label: const Text('Near to Expiry'),
+                label: const BillingText('Near to Expiry'),
               ),
               TextButton.icon(
                 onPressed: _openHistory,
                 icon: const Icon(Icons.history_rounded),
-                label: const Text('Receipt history'),
+                label: const BillingText('Receipt history'),
               ),
             ],
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
-            Text(_error!, style: TextStyle(color: AppColors.errorText)),
+            BillingText(_error!, style: TextStyle(color: AppColors.errorText)),
           ],
           if (_loading) ...[
             const SizedBox(height: 12),
@@ -320,8 +330,8 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
       );
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Export failed: $error')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: BillingText('Export failed: $error')));
       }
     }
   }
@@ -330,13 +340,13 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
   Widget build(BuildContext context) {
     if (_loading && _history == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Receipt history')),
+        appBar: AppBar(title: const BillingText('Receipt history')),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
     if (_error != null && _history == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Receipt history')),
+        appBar: AppBar(title: const BillingText('Receipt history')),
         body: StorePageError(
           title: 'Receipt history unavailable',
           message: _error!,
@@ -350,14 +360,14 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
     final pageCount =
         (history.pagination.total / history.pagination.pageSize).ceil();
     return Scaffold(
-      appBar: AppBar(title: const Text('Receipt history')),
+      appBar: AppBar(title: const BillingText('Receipt history')),
       body: RefreshIndicator(
         onRefresh: () => _load(page: _page),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
           children: [
-            Text(
+            BillingText(
               'Recorded product stock movements. Receipt history remains the default filter.',
               style: TextStyle(color: AppColors.muted),
             ),
@@ -372,10 +382,10 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
                     child: TextField(
                       controller: _search,
                       onSubmitted: (_) => _load(),
-                      decoration: InputDecoration(
+                      decoration: BillingInputDecoration(
                         labelText: 'Product, SKU, reference, staff or reason',
                         prefixIcon: const Icon(Icons.search),
-                        suffixIcon: IconButton(
+                        suffixIcon: BillingIconButton(
                             onPressed: _loading ? null : () => _load(),
                             icon: const Icon(Icons.arrow_forward)),
                       ),
@@ -385,22 +395,26 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
                     child: DropdownButtonFormField<String>(
                       initialValue: _movementType,
                       isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'Movement'),
+                      decoration:
+                          const BillingInputDecoration(labelText: 'Movement'),
                       items: const [
                         DropdownMenuItem(
-                            value: 'RESTOCKED', child: Text('Stock receipts')),
+                            value: 'RESTOCKED',
+                            child: BillingText('Stock receipts')),
                         DropdownMenuItem(
-                            value: 'ALL', child: Text('All movements')),
+                            value: 'ALL', child: BillingText('All movements')),
                         DropdownMenuItem(
                             value: 'PURCHASED',
-                            child: Text('Sales deductions')),
+                            child: BillingText('Sales deductions')),
                         DropdownMenuItem(
-                            value: 'RESERVED', child: Text('Reservations')),
+                            value: 'RESERVED',
+                            child: BillingText('Reservations')),
                         DropdownMenuItem(
-                            value: 'RELEASED', child: Text('Released stock')),
+                            value: 'RELEASED',
+                            child: BillingText('Released stock')),
                         DropdownMenuItem(
                             value: 'ADJUSTED',
-                            child: Text('Adjustments / returns')),
+                            child: BillingText('Adjustments / returns')),
                       ],
                       onChanged: _loading
                           ? null
@@ -413,14 +427,16 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
                 OutlinedButton.icon(
                     onPressed: _loading ? null : _exportPage,
                     icon: const Icon(Icons.download_outlined),
-                    label: const Text('Export this page')),
+                    label: const BillingText('Export this page')),
                 OutlinedButton.icon(
                   onPressed: _loading ? null : _selectDay,
                   icon: const Icon(Icons.calendar_month_rounded, size: 18),
-                  label: Text(
+                  label: BillingText(
                     _selectedDay == null
                         ? 'Filter by day'
-                        : DateFormat('EEE, d MMM yyyy').format(_selectedDay!),
+                        : DateFormat(
+                                'EEE, d MMM yyyy', BillingStrings.languageCode)
+                            .format(_selectedDay!),
                   ),
                 ),
                 if (_selectedDay != null)
@@ -431,13 +447,14 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
                             setState(() => _selectedDay = null);
                             _load();
                           },
-                    child: const Text('Clear day'),
+                    child: const BillingText('Clear day'),
                   ),
               ],
             ),
             if (_error != null) ...[
               const SizedBox(height: 10),
-              Text(_error!, style: TextStyle(color: AppColors.errorText)),
+              BillingText(_error!,
+                  style: TextStyle(color: AppColors.errorText)),
             ],
             if (_loading) ...[
               const SizedBox(height: 12),
@@ -458,14 +475,14 @@ class _AdminRestockHistoryScreenState extends State<AdminRestockHistoryScreen> {
                     onPressed: _page > 1 && !_loading
                         ? () => _load(page: _page - 1)
                         : null,
-                    child: const Text('Previous'),
+                    child: const BillingText('Previous'),
                   ),
-                  Text('Page $_page of $pageCount'),
+                  BillingText('Page $_page of $pageCount'),
                   TextButton(
                     onPressed: _page < pageCount && !_loading
                         ? () => _load(page: _page + 1)
                         : null,
-                    child: const Text('Next'),
+                    child: const BillingText('Next'),
                   ),
                 ],
               ),
@@ -503,14 +520,14 @@ class _RestockReceiptCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          BillingText(
             receipt.productName,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 3),
-          Text(
+          BillingText(
             '${receipt.productSku} · $date · $time',
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -519,21 +536,21 @@ class _RestockReceiptCard extends StatelessWidget {
             spacing: 12,
             runSpacing: 5,
             children: [
-              Text(
+              BillingText(
                 _receiptQuantityLabel(receipt),
                 style: TextStyle(
                   color: AppColors.primary,
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              Text(
+              BillingText(
                 '${_formatQuantity(receipt.balanceAfter)} available after movement',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
           ),
           const SizedBox(height: 7),
-          Text(
+          BillingText(
             receipt.staffName == null
                 ? 'Staff account unavailable for this receipt'
                 : 'Recorded by ${receipt.staffName}',
@@ -544,13 +561,14 @@ class _RestockReceiptCard extends StatelessWidget {
           ),
           if (receipt.notes?.isNotEmpty == true) ...[
             const SizedBox(height: 4),
-            Text(
+            BillingText(
               receipt.notes!,
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
           if (receipt.referenceId?.isNotEmpty == true)
-            SelectableText('Reference: ${receipt.referenceId}',
+            SelectableText(
+                BillingStrings.tr('Reference: ${receipt.referenceId}'),
                 style: Theme.of(context).textTheme.bodySmall),
         ],
       ),
@@ -589,7 +607,7 @@ class _RestockHistoryEmptyState extends StatelessWidget {
         children: [
           Icon(Icons.history_rounded, size: 40, color: AppColors.muted),
           const SizedBox(height: 10),
-          Text(
+          BillingText(
             'No stock receipts yet',
             style: Theme.of(context).textTheme.titleMedium,
           ),
@@ -652,7 +670,7 @@ class _RestockProductCard extends StatelessWidget {
         trailing: FilledButton.icon(
           onPressed: onRestock,
           icon: const Icon(Icons.add_box_outlined, size: 18),
-          label: const Text('Restock'),
+          label: const BillingText('Restock'),
         ),
       ),
     );
@@ -674,7 +692,7 @@ class _RestockEmptyState extends StatelessWidget {
             color: AppColors.primary,
           ),
           const SizedBox(height: 12),
-          Text(
+          BillingText(
             'Nothing to replenish',
             style: TextStyle(
               color: AppColors.primary,
@@ -682,7 +700,7 @@ class _RestockEmptyState extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          Text(
+          BillingText(
             'Products needing stock will appear here.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall,
@@ -806,9 +824,9 @@ class _RestockDialogState extends State<_RestockDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Record restock'),
+      title: const BillingText('Record restock'),
       content: SizedBox(
-        width: 360,
+        width: 540,
         child: Form(
           key: _formKey,
           child: SingleChildScrollView(
@@ -816,20 +834,22 @@ class _RestockDialogState extends State<_RestockDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(widget.product.name),
+                const BillingText(
+                    'No supplier bill or invoice number is required.'),
+                BillingText(widget.product.name),
                 const SizedBox(height: 4),
-                Text(
+                BillingText(
                   'Current available stock: ${widget.product.availableStockLabel}',
                   style: TextStyle(color: AppColors.muted),
                 ),
                 const SizedBox(height: 12),
-                TextFormField(
+                BillingTextFormField(
                   controller: _quantityController,
                   enabled: !_saving,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'Quantity received',
                     helperText: 'This amount will be added to current stock.',
                   ),
@@ -845,10 +865,10 @@ class _RestockDialogState extends State<_RestockDialog> {
                   },
                 ),
                 const SizedBox(height: 8),
-                TextFormField(
+                BillingTextFormField(
                   controller: _lotNumberController,
                   enabled: !_saving,
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'Batch / lot number (optional)',
                   ),
                 ),
@@ -865,14 +885,14 @@ class _RestockDialogState extends State<_RestockDialog> {
                   builder: (field) => ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.factory_outlined),
-                    title: Text(
+                    title: BillingText(
                       _manufacturedAt == null
                           ? 'Manufacture date (MFG)'
                           : 'MFG · ${_formatDate(_manufacturedAt!)}',
                     ),
                     subtitle: field.errorText == null
                         ? null
-                        : Text(
+                        : BillingText(
                             field.errorText!,
                             style: TextStyle(
                               color: Theme.of(context).colorScheme.error,
@@ -901,7 +921,7 @@ class _RestockDialogState extends State<_RestockDialog> {
                   builder: (field) => ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.event_busy_outlined),
-                    title: Text(
+                    title: BillingText(
                       _noExpiry
                           ? 'No expiry date confirmed'
                           : _expiresAt == null
@@ -910,7 +930,7 @@ class _RestockDialogState extends State<_RestockDialog> {
                     ),
                     subtitle: field.errorText == null
                         ? null
-                        : Text(
+                        : BillingText(
                             field.errorText!,
                             style: TextStyle(
                               color: Theme.of(context).colorScheme.error,
@@ -929,7 +949,7 @@ class _RestockDialogState extends State<_RestockDialog> {
                 ),
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('This product does not expire'),
+                  title: const BillingText('This product does not expire'),
                   value: _noExpiry,
                   onChanged: _saving
                       ? null
@@ -938,17 +958,17 @@ class _RestockDialogState extends State<_RestockDialog> {
                             if (_noExpiry) _expiresAt = null;
                           }),
                 ),
-                TextFormField(
+                BillingTextFormField(
                   controller: _notesController,
                   enabled: !_saving,
                   maxLength: 500,
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'Receipt notes (optional)',
                   ),
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 8),
-                  Text(
+                  BillingText(
                     _error!,
                     style: TextStyle(color: AppColors.errorText),
                   ),
@@ -961,7 +981,7 @@ class _RestockDialogState extends State<_RestockDialog> {
       actions: [
         TextButton(
           onPressed: _saving ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: const BillingText('Cancel'),
         ),
         FilledButton(
           onPressed: _saving ? null : _save,
@@ -971,7 +991,7 @@ class _RestockDialogState extends State<_RestockDialog> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('Add to stock'),
+              : const BillingText('Add to stock'),
         ),
       ],
     );

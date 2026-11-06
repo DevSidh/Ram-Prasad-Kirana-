@@ -1,3 +1,4 @@
+import '../../widgets/billing_localized_widgets.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -25,6 +26,7 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
   List<AdminStreakClaim> _claims = const [];
   List<AdminCoupon> _coupons = const [];
   bool _loading = true;
+  int _loadRequest = 0;
   bool _saving = false;
   String? _error;
 
@@ -35,6 +37,8 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
   }
 
   Future<void> _load() async {
+    if (!mounted || _saving) return;
+    final request = ++_loadRequest;
     setState(() {
       _loading = true;
       _error = null;
@@ -42,7 +46,7 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
     try {
       final result = await _adminApi.getStreakRewards();
       final coupons = await _adminApi.getCoupons();
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _rewards = result.rewards;
         _claims = result.claims;
@@ -50,7 +54,7 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _error = error.toString().replaceFirst('Exception: ', '');
         _loading = false;
@@ -91,11 +95,13 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
     setState(() => _coupons = [coupon, ..._coupons]);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-          content: Text('${coupon.code} is ready to use for a milestone.')),
+          content:
+              BillingText('${coupon.code} is ready to use for a milestone.')),
     );
   }
 
   Future<void> _save() async {
+    if (_saving || _loading) return;
     if (_rewards.any((reward) => reward.couponId == null)) {
       setState(() {
         _error = 'Select an active coupon for each streak milestone.';
@@ -114,7 +120,7 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
         _saving = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Buying streak rewards saved.')),
+        const SnackBar(content: BillingText('Buying streak rewards saved.')),
       );
     } catch (error) {
       if (!mounted) return;
@@ -149,7 +155,7 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
               variant: AppStatusVariant.error,
               trailing: TextButton(
                 onPressed: _load,
-                child: const Text('Retry'),
+                child: const BillingText('Retry'),
               ),
             ),
           ),
@@ -165,12 +171,12 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
               TextButton.icon(
                 onPressed: _saving ? null : () => _editReward(),
                 icon: const Icon(Icons.add),
-                label: const Text('Add day'),
+                label: const BillingText('Add day'),
               ),
               TextButton.icon(
                 onPressed: _saving ? null : _createCoupon,
                 icon: const Icon(Icons.local_offer_outlined),
-                label: const Text('Add coupon'),
+                label: const BillingText('Add coupon'),
               ),
               FilledButton(
                 onPressed: _saving ? null : _save,
@@ -180,7 +186,7 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('Save'),
+                    : const BillingText('Save'),
               ),
             ],
           ),
@@ -193,7 +199,7 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
                 const SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(8, 8, 30, 8),
-                    child: Text(
+                    child: BillingText(
                       'No milestones yet. Add a day and describe what the customer can claim.',
                     ),
                   ),
@@ -210,7 +216,7 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
                         subtitle: reward.couponCode == null
                             ? 'No coupon selected. Edit this milestone to choose a coupon gift.'
                             : 'Gift coupon ${reward.couponCode}',
-                        leading: Text(
+                        leading: BillingText(
                           '${reward.day}',
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
@@ -218,13 +224,13 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(
+                            BillingIconButton(
                               tooltip: 'Edit day ${reward.day}',
                               onPressed:
                                   _saving ? null : () => _editReward(reward),
                               icon: const Icon(Icons.edit_outlined),
                             ),
-                            IconButton(
+                            BillingIconButton(
                               tooltip: 'Remove day ${reward.day}',
                               onPressed: _saving
                                   ? null
@@ -254,7 +260,7 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
                 const SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(8, 0, 30, 24),
-                    child: Text('No rewards have been claimed yet.'),
+                    child: BillingText('No rewards have been claimed yet.'),
                   ),
                 )
               else
@@ -270,7 +276,7 @@ class _AdminStreakScreenState extends State<AdminStreakScreen> {
                             'Day ${claim.day} · ${claim.title} · ${claim.description}',
                         leading: const Icon(Icons.card_giftcard_rounded),
                         tint: AppColors.thumbnailGreen,
-                        trailing: Text(
+                        trailing: BillingText(
                           MaterialLocalizations.of(context).formatShortDate(
                             DateTime.parse(claim.claimedAt).toLocal(),
                           ),
@@ -358,8 +364,8 @@ class _StreakRewardDialogState extends State<_StreakRewardDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title:
-          Text(widget.existing == null ? 'Add streak reward' : 'Edit reward'),
+      title: BillingText(
+          widget.existing == null ? 'Add streak reward' : 'Edit reward'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -367,7 +373,7 @@ class _StreakRewardDialogState extends State<_StreakRewardDialog> {
             TextField(
               controller: _dayController,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Streak day'),
+              decoration: const BillingInputDecoration(labelText: 'Streak day'),
             ),
             DropdownButtonFormField<String>(
               initialValue: widget.coupons.any(
@@ -375,12 +381,13 @@ class _StreakRewardDialogState extends State<_StreakRewardDialog> {
               )
                   ? _couponId
                   : null,
-              decoration: const InputDecoration(labelText: 'Coupon gift'),
+              decoration:
+                  const BillingInputDecoration(labelText: 'Coupon gift'),
               items: widget.coupons
                   .map(
                     (coupon) => DropdownMenuItem(
                       value: coupon.id,
-                      child: Text(coupon.code),
+                      child: BillingText(coupon.code),
                     ),
                   )
                   .toList(growable: false),
@@ -389,7 +396,7 @@ class _StreakRewardDialogState extends State<_StreakRewardDialog> {
             if (_error != null)
               Align(
                 alignment: Alignment.centerLeft,
-                child: Text(
+                child: BillingText(
                   _error!,
                   style: TextStyle(color: AppColors.errorText),
                 ),
@@ -400,9 +407,9 @@ class _StreakRewardDialogState extends State<_StreakRewardDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: const BillingText('Cancel'),
         ),
-        FilledButton(onPressed: _save, child: const Text('Save reward')),
+        FilledButton(onPressed: _save, child: const BillingText('Save reward')),
       ],
     );
   }

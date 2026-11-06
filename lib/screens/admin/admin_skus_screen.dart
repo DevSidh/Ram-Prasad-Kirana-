@@ -1,3 +1,4 @@
+import '../../widgets/billing_localized_widgets.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/admin_models.dart';
@@ -21,6 +22,7 @@ class _AdminSkusScreenState extends State<AdminSkusScreen> {
   List<AdminProduct> _products = [];
   Map<String, TextEditingController> _skuControllers = {};
   bool _loading = true;
+  int _loadRequest = 0;
   String? _error;
   String? _savingId;
   String _searchQuery = '';
@@ -32,13 +34,15 @@ class _AdminSkusScreenState extends State<AdminSkusScreen> {
   }
 
   Future<void> _load() async {
+    if (_savingId != null) return;
+    final request = ++_loadRequest;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final products = await _adminApi.getAllProducts();
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       for (final controller in _skuControllers.values) {
         controller.dispose();
       }
@@ -51,7 +55,7 @@ class _AdminSkusScreenState extends State<AdminSkusScreen> {
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _error = _cleanError(error);
         _loading = false;
@@ -60,18 +64,19 @@ class _AdminSkusScreenState extends State<AdminSkusScreen> {
   }
 
   Future<void> _saveSku(AdminProduct product) async {
+    if (_loading || _savingId != null) return;
     final controller = _skuControllers[product.id];
     if (controller == null) return;
     final sku = controller.text.trim();
     if (sku.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('SKU cannot be empty.')),
+        const SnackBar(content: BillingText('SKU cannot be empty.')),
       );
       return;
     }
     if (sku == product.sku) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('This SKU is already up to date.')),
+        const SnackBar(content: BillingText('This SKU is already up to date.')),
       );
       return;
     }
@@ -88,13 +93,13 @@ class _AdminSkusScreenState extends State<AdminSkusScreen> {
         _savingId = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('SKU saved for ${product.name}.')),
+        SnackBar(content: BillingText('SKU saved for ${product.name}.')),
       );
     } catch (error) {
       if (!mounted) return;
       setState(() => _savingId = null);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_cleanError(error))),
+        SnackBar(content: BillingText(_cleanError(error))),
       );
     }
   }
@@ -130,22 +135,22 @@ class _AdminSkusScreenState extends State<AdminSkusScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
         children: [
-          Text(
+          BillingText(
             'Product SKU manager',
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 8),
-          Text(
+          BillingText(
             '${_products.length} products • store SKUs are unique internal stock codes.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 12),
           TextField(
             onChanged: (value) => setState(() => _searchQuery = value),
-            decoration: InputDecoration(
+            decoration: BillingInputDecoration(
               hintText: 'Find a product or category',
               prefixIcon: const Icon(Icons.search_rounded),
-              suffixIcon: IconButton(
+              suffixIcon: BillingIconButton(
                 tooltip: 'Refresh products',
                 onPressed: _loading ? null : _load,
                 icon: const Icon(Icons.refresh_rounded),
@@ -170,7 +175,8 @@ class _AdminSkusScreenState extends State<AdminSkusScreen> {
           else if (products.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 36),
-              child: Center(child: Text('No products match your search.')),
+              child:
+                  Center(child: BillingText('No products match your search.')),
             )
           else
             ...products.map(
@@ -225,34 +231,29 @@ class _SkuProductTile extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    enabled: !isDisabled,
-                    maxLength: 80,
-                    textCapitalization: TextCapitalization.none,
-                    decoration: const InputDecoration(
-                      labelText: 'SKU',
-                      counterText: '',
-                      isDense: true,
-                    ),
+                TextField(
+                  controller: controller,
+                  enabled: !isDisabled,
+                  maxLength: 80,
+                  textCapitalization: TextCapitalization.none,
+                  decoration: const BillingInputDecoration(
+                    labelText: 'SKU',
+                    counterText: '',
+                    isDense: true,
                   ),
                 ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  height: 40,
-                  child: FilledButton(
-                    onPressed: isDisabled ? null : onSave,
-                    child: isSaving
-                        ? const SizedBox.square(
-                            dimension: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Save'),
-                  ),
+                const SizedBox(height: 8),
+                FilledButton(
+                  onPressed: isDisabled ? null : onSave,
+                  child: isSaving
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const BillingText('Save'),
                 ),
               ],
             ),
@@ -292,12 +293,12 @@ class _SkuEmpty extends StatelessWidget {
         children: [
           Icon(Icons.qr_code_2_rounded, size: 42, color: AppColors.muted),
           const SizedBox(height: 12),
-          const Text(
+          const BillingText(
             'No products to update',
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 5),
-          Text(
+          BillingText(
             'Add products in the Products section to manage their SKUs.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall,

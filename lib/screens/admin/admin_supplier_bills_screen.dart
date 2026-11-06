@@ -1,3 +1,5 @@
+import '../../widgets/billing_localized_widgets.dart';
+import '../../core/billing_strings.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -35,6 +37,7 @@ class _AdminSupplierBillsScreenState extends State<AdminSupplierBillsScreen> {
   String? _error;
   bool _loading = true;
   int _currentPage = 1;
+  int _loadRequest = 0;
 
   @override
   void initState() {
@@ -50,6 +53,7 @@ class _AdminSupplierBillsScreenState extends State<AdminSupplierBillsScreen> {
   }
 
   Future<void> _load({int page = 1}) async {
+    final request = ++_loadRequest;
     setState(() {
       _loading = true;
       _error = null;
@@ -60,14 +64,14 @@ class _AdminSupplierBillsScreenState extends State<AdminSupplierBillsScreen> {
         search: _searchController.text,
         day: _selectedDay,
       );
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _page = result;
         _currentPage = page;
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _error = _cleanError(error);
         _loading = false;
@@ -106,7 +110,7 @@ class _AdminSupplierBillsScreenState extends State<AdminSupplierBillsScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text(
+        content: BillingText(
           'Supplier bill, inventory and photo synced for all admin devices.',
         ),
       ),
@@ -121,14 +125,18 @@ class _AdminSupplierBillsScreenState extends State<AdminSupplierBillsScreen> {
         : (_page!.total / _page!.pageSize).ceil().clamp(1, 100000);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Supplier bills'),
+        title: const BillingText('Supplier bills'),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: FilledButton.icon(
               onPressed: _recordBill,
               icon: const Icon(Icons.add_rounded),
-              label: const Text('Record supplier bill'),
+              label: MediaQuery.sizeOf(context).width < 600
+                  ? const BillingTooltip(
+                      message: 'Record supplier bill',
+                      child: Icon(Icons.receipt_long_outlined))
+                  : const BillingText('Record supplier bill'),
             ),
           ),
         ],
@@ -156,10 +164,10 @@ class _AdminSupplierBillsScreenState extends State<AdminSupplierBillsScreen> {
                     _searchTimer?.cancel();
                     _load(page: 1);
                   },
-                  decoration: InputDecoration(
+                  decoration: BillingInputDecoration(
                     hintText: 'Search supplier, invoice or delivery person',
                     prefixIcon: const Icon(Icons.search_rounded),
-                    suffixIcon: IconButton(
+                    suffixIcon: BillingIconButton(
                       tooltip: _searchController.text.isEmpty
                           ? 'Search'
                           : 'Clear search',
@@ -176,10 +184,11 @@ class _AdminSupplierBillsScreenState extends State<AdminSupplierBillsScreen> {
                 final dateFilter = OutlinedButton.icon(
                   onPressed: _selectDay,
                   icon: const Icon(Icons.calendar_month_outlined),
-                  label: Text(
+                  label: BillingText(
                     _selectedDay == null
                         ? 'All dates'
-                        : DateFormat('d MMM yyyy').format(_selectedDay!),
+                        : DateFormat('d MMM yyyy', BillingStrings.languageCode)
+                            .format(_selectedDay!),
                   ),
                 );
                 if (constraints.maxWidth < 580) {
@@ -209,7 +218,7 @@ class _AdminSupplierBillsScreenState extends State<AdminSupplierBillsScreen> {
                 icon: Icons.error_outline_rounded,
                 trailing: TextButton(
                   onPressed: _loading ? null : () => _load(page: _currentPage),
-                  child: const Text('Retry'),
+                  child: const BillingText('Retry'),
                 ),
               ),
             ],
@@ -219,7 +228,7 @@ class _AdminSupplierBillsScreenState extends State<AdminSupplierBillsScreen> {
             ],
             if (_page != null) ...[
               const SizedBox(height: 12),
-              Text(
+              BillingText(
                 '${_page!.total} supplier ${_page!.total == 1 ? 'bill' : 'bills'}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
@@ -246,14 +255,14 @@ class _AdminSupplierBillsScreenState extends State<AdminSupplierBillsScreen> {
                     onPressed: _loading || _currentPage <= 1
                         ? null
                         : () => _load(page: _currentPage - 1),
-                    child: const Text('Previous'),
+                    child: const BillingText('Previous'),
                   ),
-                  Text('Page $_currentPage of $pageCount'),
+                  BillingText('Page $_currentPage of $pageCount'),
                   TextButton(
                     onPressed: _loading || _currentPage >= pageCount
                         ? null
                         : () => _load(page: _currentPage + 1),
-                    child: const Text('Next'),
+                    child: const BillingText('Next'),
                   ),
                 ],
               ),
@@ -286,7 +295,7 @@ class _SupplierBillCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: Text(
+                  child: BillingText(
                     bill.supplierName,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
@@ -317,20 +326,20 @@ class _SupplierBillCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 4),
-            Text(
+            BillingText(
               'Invoice ${bill.invoiceNumber} · $invoiceDate · Entered $createdDate',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             if (bill.deliveryPerson?.isNotEmpty == true) ...[
               const SizedBox(height: 4),
-              Text(
+              BillingText(
                 'Delivered by ${bill.deliveryPerson}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
             if (bill.supplierPhone?.isNotEmpty == true) ...[
               const SizedBox(height: 2),
-              Text(
+              BillingText(
                 'Supplier phone ${bill.supplierPhone}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
@@ -342,14 +351,14 @@ class _SupplierBillCard extends StatelessWidget {
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text(
+                      child: BillingText(
                         '${item.name} · ${item.sku}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ),
-                    Text(
+                    BillingText(
                       '${_quantity(item.quantity)} × ${_money(item.unitCost)}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
@@ -358,7 +367,7 @@ class _SupplierBillCard extends StatelessWidget {
               ),
             if (bill.notes?.isNotEmpty == true) ...[
               const SizedBox(height: 4),
-              Text(
+              BillingText(
                 bill.notes!,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
@@ -366,8 +375,8 @@ class _SupplierBillCard extends StatelessWidget {
             const Divider(height: 18),
             Row(
               children: [
-                const Expanded(child: Text('Bill total')),
-                Text(
+                const Expanded(child: BillingText('Bill total')),
+                BillingText(
                   _money(bill.totalCost),
                   style: Theme.of(context)
                       .textTheme
@@ -403,7 +412,7 @@ class _BillPhotoButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
+    return BillingIconButton(
       tooltip: 'View supplier bill photo',
       onPressed: () async {
         try {
@@ -425,7 +434,7 @@ class _BillPhotoButton extends StatelessWidget {
         } catch (error) {
           if (!context.mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(_cleanError(error))),
+            SnackBar(content: BillingText(_cleanError(error))),
           );
         }
       },
@@ -453,12 +462,12 @@ class _SupplierBillsEmptyState extends StatelessWidget {
           children: [
             Icon(Icons.receipt_long_outlined, size: 42, color: AppColors.muted),
             const SizedBox(height: 12),
-            Text(
+            BillingText(
               'No supplier bills recorded yet.',
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 5),
-            Text(
+            BillingText(
               'Record an offline supplier invoice to add received stock.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
@@ -812,7 +821,7 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
     return AlertDialog(
-      title: const Text('Record supplier bill'),
+      title: const BillingText('Record supplier bill'),
       content: SizedBox(
         width: width >= 1050 ? 940 : width * 0.9,
         height: MediaQuery.sizeOf(context).height * 0.88,
@@ -827,10 +836,10 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
                 children: [
                   SizedBox(
                     width: 320,
-                    child: TextFormField(
+                    child: BillingTextFormField(
                       controller: _supplierName,
                       enabled: !_saving,
-                      decoration: const InputDecoration(
+                      decoration: const BillingInputDecoration(
                         labelText: 'Supplier / dealer name *',
                       ),
                       validator: (value) =>
@@ -841,12 +850,12 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
                   ),
                   SizedBox(
                     width: 190,
-                    child: TextFormField(
+                    child: BillingTextFormField(
                       controller: _supplierPhone,
                       enabled: !_saving,
                       keyboardType: TextInputType.phone,
                       inputFormatters: nepalPhoneInputFormatters,
-                      decoration: const InputDecoration(
+                      decoration: const BillingInputDecoration(
                         labelText: 'Supplier phone',
                       ),
                       validator: (value) =>
@@ -855,10 +864,10 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
                   ),
                   SizedBox(
                     width: 230,
-                    child: TextFormField(
+                    child: BillingTextFormField(
                       controller: _invoiceNumber,
                       enabled: !_saving,
-                      decoration: const InputDecoration(
+                      decoration: const BillingInputDecoration(
                         labelText: 'Invoice number *',
                       ),
                       validator: (value) =>
@@ -870,26 +879,26 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
                   OutlinedButton.icon(
                     onPressed: _saving ? null : _selectInvoiceDate,
                     icon: const Icon(Icons.calendar_month_outlined),
-                    label: Text(
-                      'Invoice date · ${DateFormat('d MMM yyyy').format(_invoiceDate)}',
+                    label: BillingText(
+                      'Invoice date · ${DateFormat('d MMM yyyy', BillingStrings.languageCode).format(_invoiceDate)}',
                     ),
                   ),
                   SizedBox(
                     width: 260,
-                    child: TextFormField(
+                    child: BillingTextFormField(
                       controller: _deliveryPerson,
                       enabled: !_saving,
-                      decoration: const InputDecoration(
+                      decoration: const BillingInputDecoration(
                         labelText: 'Delivery person name',
                       ),
                     ),
                   ),
                   SizedBox(
                     width: 320,
-                    child: TextFormField(
+                    child: BillingTextFormField(
                       controller: _notes,
                       enabled: !_saving,
-                      decoration: const InputDecoration(
+                      decoration: const BillingInputDecoration(
                         labelText: 'Notes',
                       ),
                     ),
@@ -908,7 +917,7 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
                       final supplier = _savedSuppliers[index];
                       return ActionChip(
                         avatar: const Icon(Icons.history_rounded, size: 16),
-                        label: Text(
+                        label: BillingText(
                           (supplier['phone'] ?? '').isEmpty
                               ? supplier['name'] ?? ''
                               : '${supplier['name']} · ${supplier['phone']}',
@@ -933,12 +942,12 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
                     OutlinedButton.icon(
                       onPressed: _saving ? null : _captureBillPhoto,
                       icon: const Icon(Icons.camera_alt_outlined),
-                      label: const Text('Take bill photo'),
+                      label: const BillingText('Take bill photo'),
                     ),
                   OutlinedButton.icon(
                     onPressed: _saving ? null : _pickBillPhoto,
                     icon: const Icon(Icons.photo_library_outlined),
-                    label: Text(_photoName == null
+                    label: BillingText(_photoName == null
                         ? 'Choose photo *'
                         : 'Photo · $_photoName'),
                   ),
@@ -967,7 +976,7 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
                     _searchProducts(value.trim());
                   }
                 },
-                decoration: const InputDecoration(
+                decoration: const BillingInputDecoration(
                   hintText: 'Add products by name, brand or SKU',
                   prefixIcon: Icon(Icons.search_rounded),
                 ),
@@ -984,9 +993,10 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
                       final alreadyAdded = _lines.containsKey(product.id);
                       return ListTile(
                         dense: true,
-                        title: Text(product.name),
-                        subtitle: Text('${product.sku} · ${product.unitLabel}'),
-                        trailing: IconButton(
+                        title: BillingText(product.name),
+                        subtitle: BillingText(
+                            '${product.sku} · ${product.unitLabel}'),
+                        trailing: BillingIconButton(
                           tooltip: alreadyAdded ? 'Already added' : 'Add item',
                           onPressed: _saving || alreadyAdded
                               ? null
@@ -1005,7 +1015,7 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
               Expanded(
                 child: _lines.isEmpty
                     ? Center(
-                        child: Text(
+                        child: BillingText(
                           'Search and add the products from this invoice.',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
@@ -1030,14 +1040,14 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
               const SizedBox(height: 6),
               Align(
                 alignment: Alignment.centerRight,
-                child: Text(
+                child: BillingText(
                   'Bill total  ${_money(_totalCost)}',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 8),
-                Text(
+                BillingText(
                   _error!,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: AppColors.errorText,
@@ -1051,7 +1061,7 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
       actions: [
         TextButton(
           onPressed: _saving ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: const BillingText('Cancel'),
         ),
         FilledButton.icon(
           onPressed: _saving ? null : _save,
@@ -1062,7 +1072,7 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.inventory_2_outlined),
-          label: const Text('Save bill & add stock'),
+          label: const BillingText('Save bill & add stock'),
         ),
       ],
     );
@@ -1120,14 +1130,14 @@ class _SupplierBillLineEditor extends StatelessWidget {
               Row(
                 children: [
                   Expanded(
-                    child: Text(
+                    child: BillingText(
                       '${line.product.name} · ${line.product.unitLabel}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall,
                     ),
                   ),
-                  IconButton(
+                  BillingIconButton(
                     tooltip: 'Remove product',
                     onPressed: enabled ? onRemove : null,
                     icon: const Icon(Icons.delete_outline_rounded),
@@ -1144,7 +1154,7 @@ class _SupplierBillLineEditor extends StatelessWidget {
                         decimal: true,
                       ),
                       onChanged: (_) => onChanged(),
-                      decoration: const InputDecoration(
+                      decoration: const BillingInputDecoration(
                         labelText: 'Received quantity',
                         isDense: true,
                       ),
@@ -1159,7 +1169,7 @@ class _SupplierBillLineEditor extends StatelessWidget {
                         decimal: true,
                       ),
                       onChanged: (_) => onChanged(),
-                      decoration: const InputDecoration(
+                      decoration: const BillingInputDecoration(
                         labelText: 'Cost per unit (Rs)',
                         isDense: true,
                       ),

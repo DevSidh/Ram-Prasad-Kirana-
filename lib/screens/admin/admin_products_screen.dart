@@ -1,3 +1,4 @@
+import '../../widgets/billing_localized_widgets.dart';
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -19,15 +20,22 @@ import '../../services/offline_pos_store.dart';
 import '../../theme/admin_widgets.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/store_animation.dart';
+import '../../widgets/stock_summary_panel.dart';
+import '../../models/stock_summary.dart';
+import '../../services/inventory_changes.dart';
+import '../../widgets/readable_product_card.dart';
+import 'admin_restock_screen.dart';
 
 class AdminProductsScreen extends StatefulWidget {
   final ApiService api;
   final bool vendingOnly;
+  final OfflinePosStore offlineStore;
 
   const AdminProductsScreen({
     super.key,
     required this.api,
     this.vendingOnly = false,
+    this.offlineStore = const OfflinePosStore(),
   });
 
   @override
@@ -35,16 +43,19 @@ class AdminProductsScreen extends StatefulWidget {
 }
 
 class _AdminProductsScreenState extends State<AdminProductsScreen> {
-  late final AdminApiService _adminApi = AdminApiService(widget.api);
+  late final AdminApiService _adminApi =
+      AdminApiService(widget.api, offlineStore: widget.offlineStore);
   final _searchController = TextEditingController();
   List<AdminCategory> _categories = [];
   AdminProductPage? _productPage;
   String? _error;
   bool _loading = true;
+  bool _tableView = false;
   int _page = 1;
   int _loadRequest = 0;
   Timer? _searchTimer;
   Timer? _offlineSyncTimer;
+  Timer? _inventoryTimer;
   bool _observedTabVisibility = false;
   bool _wasTabVisible = true;
 
@@ -52,17 +63,28 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
   void initState() {
     super.initState();
     _load();
+    InventoryChanges.revision.addListener(_inventoryChanged);
     _offlineSyncTimer = Timer.periodic(const Duration(seconds: 45), (_) {
-      unawaited(_retryPendingProducts());
+      if (_wasTabVisible && !_loading) unawaited(_load(page: _page));
     });
   }
 
   @override
   void dispose() {
+    InventoryChanges.revision.removeListener(_inventoryChanged);
+    _inventoryTimer?.cancel();
     _searchTimer?.cancel();
     _offlineSyncTimer?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _inventoryChanged() {
+    if (!mounted || !_wasTabVisible || _loading) return;
+    _inventoryTimer?.cancel();
+    _inventoryTimer = Timer(const Duration(milliseconds: 350), () {
+      if (mounted) _load(page: _page);
+    });
   }
 
   @override
@@ -93,7 +115,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
         ),
       ]);
       final loadedProducts = (results[1] as AdminProductPage).products;
-      await const OfflinePosStore().mergeCatalog(
+      await widget.offlineStore.mergeCatalog(
         loadedProducts
             .where((product) => product.isActive)
             .map((product) => PosProduct(
@@ -108,14 +130,39 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                 ))
             .toList(growable: false),
       );
-      final pendingProducts =
-          await const OfflinePosStore().readPendingProducts();
+      final pendingProducts = await widget.offlineStore.readPendingProducts();
+      final projected = await widget.offlineStore.projectLocalStock([
+        for (final product in loadedProducts)
+          PosProduct(
+              id: product.id,
+              name: product.name,
+              sku: product.sku,
+              barcode: product.barcode,
+              price: product.price,
+              unitLabel: product.unitLabel,
+              available: product.posStockUnits),
+      ], freshStock: true);
+      final available = {
+        for (final product in projected) product.id: product.available
+      };
       final conflictCount =
           pendingProducts.where((entry) => entry['syncError'] is String).length;
       if (!mounted || request != _loadRequest) return;
       setState(() {
         _categories = results[0] as List<AdminCategory>;
-        _productPage = results[1] as AdminProductPage;
+        _productPage = AdminProductPage(
+            pagination: (results[1] as AdminProductPage).pagination,
+            products: [
+              for (final product in loadedProducts)
+                product.copyWith(
+                    stock: product.weightStockKg == null
+                        ? available[product.id]
+                        : null,
+                    weightStockKg: product.weightStockKg == null
+                        ? null
+                        : (available[product.id] ?? product.posStockUnits) /
+                            1000)
+            ]);
         _page = page;
         _error = conflictCount == 0
             ? null
@@ -124,7 +171,8 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
       });
     } catch (error) {
       if (!mounted || request != _loadRequest) return;
-      final cachedCategories = await const OfflinePosStore().readCategories();
+      final cachedCategories = await widget.offlineStore.readCategories();
+      if (!mounted || request != _loadRequest) return;
       if (cachedCategories.isNotEmpty) {
         setState(() {
           _categories = cachedCategories.map(AdminCategory.fromJson).toList();
@@ -144,12 +192,6 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
         _loading = false;
       });
     }
-  }
-
-  Future<void> _retryPendingProducts() async {
-    if (!mounted || _loading) return;
-    final pending = await const OfflinePosStore().readPendingProducts();
-    if (pending.isNotEmpty) await _load(page: _page);
   }
 
   void _onSearchChanged(String value) {
@@ -190,19 +232,19 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Remove product from storefront?'),
-          content: Text(
+          title: const BillingText('Remove product from storefront?'),
+          content: BillingText(
             '“${product.name}” will no longer be available to customers. '
             'Its record and order history will be kept.',
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
+              child: const BillingText('Cancel'),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Remove product'),
+              child: const BillingText('Remove product'),
             ),
           ],
         ),
@@ -214,7 +256,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
+          content: BillingText(
             isActive
                 ? '${product.name} restored to the storefront.'
                 : '${product.name} removed from the storefront.',
@@ -225,9 +267,14 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_cleanError(error))),
+        SnackBar(content: BillingText(_cleanError(error))),
       );
     }
+  }
+
+  Future<void> _addStock(AdminProduct product) async {
+    final updated = await showAddStockDialog(context, _adminApi, product);
+    if (updated != null && mounted) await _load(page: _page);
   }
 
   @override
@@ -246,10 +293,14 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
         children: [
-          Row(
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Expanded(
-                child: Text(
+              SizedBox(
+                width: 280,
+                child: BillingText(
                   _productPage == null
                       ? widget.vendingOnly
                           ? 'Manage drinks shown in the customer drinks menu.'
@@ -260,7 +311,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
-              IconButton(
+              BillingIconButton(
                 tooltip: 'Refresh products',
                 onPressed: _loading ? null : () => _load(page: _page),
                 icon: const Icon(Icons.refresh_rounded),
@@ -270,8 +321,17 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                     ? () => _editProduct()
                     : null,
                 icon: const Icon(Icons.add, size: 18),
-                label: Text(widget.vendingOnly ? 'Add drink' : 'Add product'),
+                label: BillingText(
+                    widget.vendingOnly ? 'Add drink' : 'Add product'),
               ),
+              if (AppColors.isWindowsAdminTheme)
+                OutlinedButton.icon(
+                    onPressed: () => setState(() => _tableView = !_tableView),
+                    icon: Icon(_tableView
+                        ? Icons.view_agenda_outlined
+                        : Icons.table_rows_outlined),
+                    label: BillingText(
+                        _tableView ? 'Large product cards' : 'Table view')),
             ],
           ),
           if (_categories.isEmpty && !_loading) ...[
@@ -290,12 +350,12 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
               _searchTimer?.cancel();
               _load(page: 1);
             },
-            decoration: InputDecoration(
+            decoration: BillingInputDecoration(
               hintText: widget.vendingOnly
                   ? 'Search drinks by name, brand or SKU'
                   : 'Search products by name, brand or SKU',
               prefixIcon: const Icon(Icons.search_rounded),
-              suffixIcon: IconButton(
+              suffixIcon: BillingIconButton(
                 tooltip: 'Clear search',
                 onPressed: _searchController.text.isEmpty
                     ? null
@@ -311,22 +371,28 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
             const SizedBox(height: 12),
             _Notice(message: _error!, icon: Icons.warning_amber_rounded),
           ],
+          StockSummaryPanel(
+              api: widget.api,
+              drinksOnly: widget.vendingOnly,
+              offlineStore: widget.offlineStore),
           const SizedBox(height: 16),
           if (products.isEmpty && !_loading)
             _EmptyProducts(vendingOnly: widget.vendingOnly)
-          else if (AppColors.isWindowsAdminTheme)
+          else if (AppColors.isWindowsAdminTheme && _tableView)
             _WindowsProductTable(
               products: products,
               rowOffset: ((_productPage?.pagination.page ?? 1) - 1) *
                   (_productPage?.pagination.pageSize ?? products.length),
               onEdit: _editProduct,
+              onAddStock: _addStock,
               onSetActive: (product) => _setActive(product, !product.isActive),
             )
           else
             ...products.map(
-              (product) => _ProductCard(
+              (product) => ReadableProductCard(
                 product: product,
                 onEdit: () => _editProduct(product),
+                onAddStock: () => _addStock(product),
                 onSetActive: () => _setActive(product, !product.isActive),
               ),
             ),
@@ -615,7 +681,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
         }
         return;
       }
-      await const OfflinePosStore().queueProduct(data, stock);
+      await widget.api.offlineStore.queueProduct(data, stock);
       if (mounted) Navigator.pop(context, true);
     } on ApiTimeoutException {
       if (widget.product != null) {
@@ -628,7 +694,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
         }
         return;
       }
-      await const OfflinePosStore().queueProduct(data, stock);
+      await widget.api.offlineStore.queueProduct(data, stock);
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
       if (!mounted) return;
@@ -733,7 +799,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
+          content: BillingText(
             'GS1 dates were detected. Verify both dates on the package before saving.',
           ),
         ),
@@ -767,18 +833,18 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
         final editExisting = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Product already exists'),
-            content: Text(
+            title: const BillingText('Product already exists'),
+            content: BillingText(
               '${existing.name} already uses this barcode. Edit that product instead of creating a duplicate.',
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
-                child: const Text('Keep scanning'),
+                child: const BillingText('Keep scanning'),
               ),
               FilledButton(
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text('Edit product'),
+                child: const BillingText('Edit product'),
               ),
             ],
           ),
@@ -827,7 +893,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
       setState(() => _lookingUpBarcode = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
+          content: BillingText(
             'No product details were found. Enter the details manually; the barcode will be saved for future scans.',
           ),
         ),
@@ -893,7 +959,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(
+      title: BillingText(
         widget.vendingOnly
             ? widget.product == null
                 ? 'Add drink'
@@ -907,30 +973,33 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
         child: Form(
           key: _formKey,
           child: SingleChildScrollView(
+            padding: const EdgeInsets.only(top: 12),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextFormField(
+                BillingTextFormField(
                   controller: _nameController,
                   autofocus: true,
                   textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(labelText: 'Product name'),
+                  decoration:
+                      const BillingInputDecoration(labelText: 'Product name'),
                   onChanged: (_) => setState(() {}),
                   validator: (value) => value == null || value.trim().isEmpty
                       ? 'Enter a product name'
                       : null,
                 ),
                 const SizedBox(height: 11),
-                TextFormField(
+                BillingTextFormField(
                   controller: _brandController,
                   textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(labelText: 'Brand name'),
+                  decoration:
+                      const BillingInputDecoration(labelText: 'Brand name'),
                 ),
                 const SizedBox(height: 11),
-                TextFormField(
+                BillingTextFormField(
                   controller: _skuController,
                   textCapitalization: TextCapitalization.characters,
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'SKU (optional)',
                     helperText:
                         'Unique store stock code, not a universal barcode. '
@@ -947,22 +1016,22 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                   },
                 ),
                 const SizedBox(height: 11),
-                TextFormField(
+                BillingTextFormField(
                   controller: _barcodeController,
                   textInputAction: TextInputAction.search,
                   onFieldSubmitted: (_) => _lookupBarcode(),
-                  decoration: InputDecoration(
+                  decoration: BillingInputDecoration(
                     labelText: 'Barcode',
                     hintText: 'EAN, UPC, Code 128 or QR product code',
                     suffixIcon: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        IconButton(
+                        BillingIconButton(
                           tooltip: 'Scan barcode with camera',
                           onPressed: _saving ? null : _scanBarcode,
                           icon: const Icon(Icons.document_scanner_outlined),
                         ),
-                        IconButton(
+                        BillingIconButton(
                           tooltip: 'Look up product',
                           onPressed: _saving || _lookingUpBarcode
                               ? null
@@ -992,15 +1061,17 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                 ),
                 const SizedBox(height: 11),
                 DropdownButtonFormField<String>(
+                  isExpanded: true,
                   initialValue: _availableCategories
                           .any((category) => category.id == _categoryId)
                       ? _categoryId
                       : null,
-                  decoration: const InputDecoration(labelText: 'Category'),
+                  decoration:
+                      const BillingInputDecoration(labelText: 'Category'),
                   items: _availableCategories
                       .map((category) => DropdownMenuItem(
                             value: category.id,
-                            child: Text(
+                            child: BillingText(
                               category.name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -1013,19 +1084,25 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                 ),
                 const SizedBox(height: 11),
                 if (_isBiscuitOrCookie)
-                  Text(
+                  BillingText(
                     'Biscuits and cookies are sold by pack or piece, not by weight or volume.',
                     style: Theme.of(context).textTheme.bodySmall,
                   )
                 else
                   DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: _unitType,
-                    decoration: const InputDecoration(labelText: 'Sold by'),
+                    decoration:
+                        const BillingInputDecoration(labelText: 'Sold by'),
                     items: const [
-                      DropdownMenuItem(value: 'weight', child: Text('Weight')),
-                      DropdownMenuItem(value: 'volume', child: Text('Volume')),
-                      DropdownMenuItem(value: 'count', child: Text('Pieces')),
-                      DropdownMenuItem(value: 'pack', child: Text('Pack')),
+                      DropdownMenuItem(
+                          value: 'weight', child: BillingText('Weight')),
+                      DropdownMenuItem(
+                          value: 'volume', child: BillingText('Volume')),
+                      DropdownMenuItem(
+                          value: 'count', child: BillingText('Pieces')),
+                      DropdownMenuItem(
+                          value: 'pack', child: BillingText('Pack')),
                     ],
                     onChanged: (value) =>
                         setState(() => _unitType = value ?? _unitType),
@@ -1033,19 +1110,21 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                 const SizedBox(height: 8),
                 if (widget.vendingOnly)
                   DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: _vendingSection,
-                    decoration: const InputDecoration(
+                    decoration: const BillingInputDecoration(
                       labelText: 'Drink menu section',
                     ),
                     items: const [
-                      DropdownMenuItem(value: 'SODA', child: Text('Soda')),
+                      DropdownMenuItem(
+                          value: 'SODA', child: BillingText('Soda')),
                       DropdownMenuItem(
                         value: 'TEA_COFFEE',
-                        child: Text('Tea & Coffee'),
+                        child: BillingText('Tea & Coffee'),
                       ),
                       DropdownMenuItem(
                         value: 'ENERGY',
-                        child: Text('Energy drink'),
+                        child: BillingText('Energy drink'),
                       ),
                     ],
                     onChanged: (value) =>
@@ -1056,8 +1135,8 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                 if (widget.vendingOnly)
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Show as featured drink'),
-                    subtitle: const Text(
+                    title: const BillingText('Show as featured drink'),
+                    subtitle: const BillingText(
                       'Display this drink in the large card at the top of the menu.',
                     ),
                     value: _isBestSeller,
@@ -1068,12 +1147,12 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                   children: [
                     Expanded(
                       flex: 2,
-                      child: TextFormField(
+                      child: BillingTextFormField(
                         controller: _unitAmountController,
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
-                        decoration: const InputDecoration(
+                        decoration: const BillingInputDecoration(
                           labelText: 'Pack/quantity size',
                           hintText: 'e.g. 500',
                         ),
@@ -1091,11 +1170,13 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: DropdownButtonFormField<String>(
+                        isExpanded: true,
                         key: ValueKey(
                           '${_unitType}_${_isBiscuitOrCookie ? 'biscuit' : 'other'}',
                         ),
                         initialValue: _selectedUnitSuffix,
-                        decoration: const InputDecoration(labelText: 'Unit'),
+                        decoration:
+                            const BillingInputDecoration(labelText: 'Unit'),
                         items: (_isBiscuitOrCookie
                                 ? const ['pack', 'pcs']
                                 : switch (_unitType) {
@@ -1106,7 +1187,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                                   })
                             .map((unit) => DropdownMenuItem(
                                   value: unit,
-                                  child: Text(unit),
+                                  child: BillingText(unit),
                                 ))
                             .toList(),
                         onChanged: (value) {
@@ -1131,15 +1212,15 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                   const SizedBox(height: 8),
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: Text(
+                    child: BillingText(
                       'Opening batch dates are required when adding starting stock.',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
                   const SizedBox(height: 8),
-                  TextFormField(
+                  BillingTextFormField(
                     controller: _lotNumberController,
-                    decoration: const InputDecoration(
+                    decoration: const BillingInputDecoration(
                       labelText: 'Batch / lot number (optional)',
                     ),
                   ),
@@ -1162,14 +1243,14 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                     builder: (field) => ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.factory_outlined),
-                      title: Text(
+                      title: BillingText(
                         _manufacturedAt == null
                             ? 'Manufacture date (MFG)'
                             : 'MFG · ${_formatBatchDate(_manufacturedAt!)}',
                       ),
                       subtitle: field.errorText == null
                           ? null
-                          : Text(
+                          : BillingText(
                               field.errorText!,
                               style: TextStyle(
                                 color: Theme.of(context).colorScheme.error,
@@ -1201,7 +1282,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                     builder: (field) => ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.event_busy_outlined),
-                      title: Text(
+                      title: BillingText(
                         _noExpiry
                             ? 'No expiry date confirmed'
                             : _expiresAt == null
@@ -1210,7 +1291,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                       ),
                       subtitle: field.errorText == null
                           ? null
-                          : Text(
+                          : BillingText(
                               field.errorText!,
                               style: TextStyle(
                                 color: Theme.of(context).colorScheme.error,
@@ -1229,7 +1310,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                   ),
                   CheckboxListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('This product does not expire'),
+                    title: const BillingText('This product does not expire'),
                     value: _noExpiry,
                     onChanged: _saving
                         ? null
@@ -1240,12 +1321,12 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                   ),
                 ],
                 const SizedBox(height: 11),
-                TextFormField(
+                BillingTextFormField(
                   controller: _lowStockThresholdController,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'Low-stock alert threshold',
                     helperText:
                         'Show in Restock when available stock reaches this amount.',
@@ -1266,7 +1347,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                   child: OutlinedButton.icon(
                     onPressed: _saving ? null : _pickImage,
                     icon: const Icon(Icons.add_photo_alternate_outlined),
-                    label: Text(_pickedImageBytes != null ||
+                    label: BillingText(_pickedImageBytes != null ||
                             (widget.product?.imageUrl != null &&
                                 !_removeCurrentImage)
                         ? 'Change product image'
@@ -1302,13 +1383,13 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: Text(
+                          child: BillingText(
                             _pickedImageName ?? 'Current product image',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        IconButton(
+                        BillingIconButton(
                           tooltip: 'Remove product image',
                           onPressed: () => setState(() {
                             _pickedImageBytes = null;
@@ -1326,7 +1407,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                   child: OutlinedButton.icon(
                     onPressed: _saving ? null : _pickGalleryImages,
                     icon: const Icon(Icons.collections_outlined),
-                    label: const Text('Add product photos'),
+                    label: const BillingText('Add product photos'),
                   ),
                 ),
                 if (_galleryImageUrls.isNotEmpty ||
@@ -1367,12 +1448,12 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                 Row(
                   children: [
                     Expanded(
-                      child: TextFormField(
+                      child: BillingTextFormField(
                         controller: _priceController,
                         keyboardType: const TextInputType.numberWithOptions(
                             decimal: true),
-                        decoration:
-                            const InputDecoration(labelText: 'Price (Rs.)'),
+                        decoration: const BillingInputDecoration(
+                            labelText: 'Price (Rs.)'),
                         validator: (value) {
                           final price = double.tryParse(value?.trim() ?? '');
                           if (price == null || !price.isFinite || price <= 0) {
@@ -1384,12 +1465,12 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: TextFormField(
+                      child: BillingTextFormField(
                         controller: _stockController,
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
-                        decoration: InputDecoration(
+                        decoration: BillingInputDecoration(
                           labelText: _unitType == 'weight'
                               ? 'Stock quantity (kg)'
                               : 'Stock quantity',
@@ -1406,11 +1487,11 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                   ],
                 ),
                 const SizedBox(height: 11),
-                TextFormField(
+                BillingTextFormField(
                   controller: _originalPriceController,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'Before price / MRP (optional)',
                     helperText:
                         'Shown crossed out beside the sale price with the discount on product cards and details.',
@@ -1429,18 +1510,18 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                   },
                 ),
                 const SizedBox(height: 11),
-                TextFormField(
+                BillingTextFormField(
                   controller: _descriptionController,
                   minLines: 2,
                   maxLines: 4,
-                  decoration:
-                      const InputDecoration(labelText: 'Product description'),
+                  decoration: const BillingInputDecoration(
+                      labelText: 'Product description'),
                 ),
                 const SizedBox(height: 11),
-                TextFormField(
+                BillingTextFormField(
                   controller: _originController,
                   textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                       labelText: 'Country/region of origin'),
                 ),
                 if (_error != null) ...[
@@ -1455,7 +1536,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
       actions: [
         TextButton(
           onPressed: _saving ? null : () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
+          child: const BillingText('Cancel'),
         ),
         FilledButton(
           onPressed: _saving ? null : _save,
@@ -1463,7 +1544,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
               ? const SizedBox.square(
                   dimension: 17,
                   child: CircularProgressIndicator(strokeWidth: 2))
-              : Text(widget.vendingOnly ? 'Save drink' : 'Save product'),
+              : BillingText(widget.vendingOnly ? 'Save drink' : 'Save product'),
         ),
       ],
     );
@@ -1510,7 +1591,7 @@ class _GalleryImagePreview extends StatelessWidget {
         Positioned(
           top: 0,
           right: 0,
-          child: IconButton.filledTonal(
+          child: BillingIconButton.filledTonal(
             tooltip: 'Remove photo',
             onPressed: onRemove,
             visualDensity: VisualDensity.compact,
@@ -1527,12 +1608,14 @@ class _WindowsProductTable extends StatelessWidget {
     required this.products,
     required this.rowOffset,
     required this.onEdit,
+    required this.onAddStock,
     required this.onSetActive,
   });
 
   final List<AdminProduct> products;
   final int rowOffset;
   final ValueChanged<AdminProduct> onEdit;
+  final ValueChanged<AdminProduct> onAddStock;
   final ValueChanged<AdminProduct> onSetActive;
 
   @override
@@ -1542,9 +1625,9 @@ class _WindowsProductTable extends StatelessWidget {
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: DataTable(
-              headingRowHeight: 42,
-              dataRowMinHeight: 62,
-              dataRowMaxHeight: 70,
+              headingRowHeight: 70,
+              dataRowMinHeight: 104,
+              dataRowMaxHeight: 130,
               horizontalMargin: 14,
               columnSpacing: 22,
               headingTextStyle:
@@ -1553,13 +1636,13 @@ class _WindowsProductTable extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                       ),
               columns: const [
-                DataColumn(label: Text('SL. NO.')),
-                DataColumn(label: Text('NAME / SKU')),
-                DataColumn(label: Text('CATEGORY')),
-                DataColumn(label: Text('PRICE')),
-                DataColumn(label: Text('STOCK')),
-                DataColumn(label: Text('STATUS')),
-                DataColumn(label: Text('ACTIONS')),
+                DataColumn(label: BillingText('SL. NO.')),
+                DataColumn(label: BillingText('NAME / SKU')),
+                DataColumn(label: BillingText('CATEGORY')),
+                DataColumn(label: BillingText('PRICE')),
+                DataColumn(label: BillingText('STOCK')),
+                DataColumn(label: BillingText('STATUS')),
+                DataColumn(label: BillingText('ACTIONS')),
               ],
               rows: [
                 for (var index = 0; index < products.length; index++)
@@ -1573,10 +1656,10 @@ class _WindowsProductTable extends StatelessWidget {
   DataRow _productRow(BuildContext context, AdminProduct product, int number) =>
       DataRow(
         cells: [
-          DataCell(Text('$number')),
+          DataCell(BillingText('$number')),
           DataCell(
             SizedBox(
-              width: 230,
+              width: 340,
               child: Row(
                 children: [
                   _ProductImage(url: product.imageUrl),
@@ -1586,9 +1669,9 @@ class _WindowsProductTable extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
+                        BillingText(
                           product.name,
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style:
                               Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -1596,7 +1679,7 @@ class _WindowsProductTable extends StatelessWidget {
                                     fontWeight: FontWeight.w600,
                                   ),
                         ),
-                        Text(
+                        BillingText(
                           product.sku,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -1611,26 +1694,33 @@ class _WindowsProductTable extends StatelessWidget {
           ),
           DataCell(SizedBox(
             width: 130,
-            child: Text(
+            child: BillingText(
               product.categoryName.isEmpty ? '—' : product.categoryName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           )),
-          DataCell(Text(
+          DataCell(BillingText(
             '${AppConstants.currencySymbol}${product.price.toStringAsFixed(2)}',
           )),
-          DataCell(Text('${product.availableStockLabel} ${product.unitLabel}')),
+          DataCell(BillingText(
+              '${product.availableStockLabel} ${StockSummary.stockUnit(product.unitLabel)}',
+              style:
+                  const TextStyle(fontSize: 24, fontWeight: FontWeight.bold))),
           DataCell(_ProductStatus(active: product.isActive)),
           DataCell(Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              IconButton(
+              FilledButton.icon(
+                  onPressed: () => onAddStock(product),
+                  icon: const Icon(Icons.add),
+                  label: const BillingText('Add stock')),
+              BillingIconButton(
                 tooltip: 'Edit product',
                 onPressed: () => onEdit(product),
                 icon: const Icon(Icons.edit_outlined, size: 18),
               ),
-              IconButton(
+              BillingIconButton(
                 tooltip: product.isActive
                     ? 'Deactivate product'
                     : 'Activate product',
@@ -1646,133 +1736,6 @@ class _WindowsProductTable extends StatelessWidget {
           )),
         ],
       );
-}
-
-class _ProductCard extends StatelessWidget {
-  final AdminProduct product;
-  final VoidCallback onEdit;
-  final VoidCallback onSetActive;
-
-  const _ProductCard({
-    required this.product,
-    required this.onEdit,
-    required this.onSetActive,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadii.card),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.cardShadow,
-            offset: const Offset(0, 6),
-            blurRadius: 24,
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          _ProductImage(url: product.imageUrl),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(product.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w700)),
-                    ),
-                    const SizedBox(width: 5),
-                    _ProductStatus(active: product.isActive),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  product.categoryName.isEmpty
-                      ? product.sku
-                      : '${product.categoryName} · ${product.sku}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: AppColors.muted),
-                ),
-                if (product.brand?.isNotEmpty == true) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    product.brand!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Text(
-                      '${AppConstants.currencySymbol}${product.price.toStringAsFixed(2)}',
-                      style: Theme.of(context).textTheme.labelLarge,
-                    ),
-                    if (product.originalPrice != null &&
-                        product.originalPrice! > product.price)
-                      Text(
-                        '${AppConstants.currencySymbol}${product.originalPrice!.toStringAsFixed(2)}',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              decoration: TextDecoration.lineThrough,
-                            ),
-                      ),
-                    Text(
-                      '${product.unitLabel} · stock '
-                      '${product.weightStockKg?.toStringAsFixed(3) ?? product.stock}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                tooltip: product.isActive
-                    ? 'Remove product from storefront'
-                    : 'Restore product to storefront',
-                onPressed: onSetActive,
-                icon: Icon(
-                  product.isActive
-                      ? Icons.delete_outline_rounded
-                      : Icons.restore_rounded,
-                  color: product.isActive
-                      ? AppColors.errorText
-                      : AppColors.primary,
-                ),
-              ),
-              PopupMenuButton<String>(
-                tooltip: 'Product actions',
-                onSelected: (action) {
-                  if (action == 'edit') onEdit();
-                },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'edit', child: Text('Edit')),
-                ],
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _ProductImage extends StatelessWidget {
@@ -1828,15 +1791,15 @@ class _PaginationBar extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          IconButton(
+          BillingIconButton(
             tooltip: 'Previous page',
             onPressed:
                 pagination.page > 1 ? () => onPage(pagination.page - 1) : null,
             icon: const Icon(Icons.chevron_left),
           ),
-          Text('${pagination.page} of $pages',
+          BillingText('${pagination.page} of $pages',
               style: TextStyle(color: AppColors.muted)),
-          IconButton(
+          BillingIconButton(
             tooltip: 'Next page',
             onPressed: pagination.page < pages
                 ? () => onPage(pagination.page + 1)
@@ -1892,10 +1855,10 @@ class _EmptyProducts extends StatelessWidget {
                 size: 34,
                 color: AppColors.muted),
             const SizedBox(height: 10),
-            Text(vendingOnly ? 'No drinks yet' : 'No products found',
+            BillingText(vendingOnly ? 'No drinks yet' : 'No products found',
                 style: const TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 5),
-            Text(
+            BillingText(
                 vendingOnly
                     ? 'Add a drink to list it in the customer drinks menu.'
                     : 'Products from your catalog will appear here.',
@@ -1925,7 +1888,7 @@ class _Notice extends StatelessWidget {
             Icon(icon, size: 18, color: AppColors.warningText),
             const SizedBox(width: 8),
             Expanded(
-                child: Text(
+                child: BillingText(
               message,
               style: TextStyle(color: AppColors.warningText),
             )),

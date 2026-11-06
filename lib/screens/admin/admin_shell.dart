@@ -1,4 +1,7 @@
+import '../../widgets/billing_localized_widgets.dart';
+import '../../core/billing_strings.dart';
 import 'package:flutter/foundation.dart';
+import '../../widgets/billing_language_switch.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,6 +22,7 @@ import 'admin_customers_screen.dart';
 import 'admin_dashboard_screen.dart';
 import 'admin_delivery_people_screen.dart';
 import 'admin_inventory_expiry_screen.dart';
+import 'admin_room_inventory_screen.dart';
 import 'admin_orders_screen.dart';
 import 'admin_products_screen.dart';
 import 'admin_restock_screen.dart';
@@ -41,7 +45,7 @@ class AdminShell extends StatefulWidget {
   State<AdminShell> createState() => _AdminShellState();
 }
 
-enum _BillingAction { section, newBill, barcode, expiry, profile }
+enum _BillingAction { section, newBill, barcode, expiry, profile, inventory }
 
 class _BillingModule {
   const _BillingModule(
@@ -95,6 +99,7 @@ class _AdminShellState extends State<AdminShell> {
     21,
     23,
     27,
+    31,
     24,
   ];
   static const _onlineDeliveryDestinationIndices = [1, 2, 4, 12, 13, 14, 15];
@@ -103,6 +108,7 @@ class _AdminShellState extends State<AdminShell> {
   bool _onlineDeliveryExpanded = false;
   bool _managementExpanded = false;
   bool _useDarkWindowsTheme = false;
+  bool _recoveringSession = false;
 
   bool get _isWindows =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
@@ -260,6 +266,14 @@ class _AdminShellState extends State<AdminShell> {
           widget.isBillingStaff ? _billingStaffModules : _billingModules;
       final module = modules[moduleIndex];
       switch (module.action) {
+        case _BillingAction.inventory:
+          Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => AdminRoomInventoryScreen(
+                    api: context.read<ApiService>(),
+                    offlineStore: widget.offlineStore,
+                    readOnly: widget.isBillingStaff,
+                  )));
+          break;
         case _BillingAction.newBill:
           _billingKey.currentState?.startNewBill();
           break;
@@ -298,25 +312,25 @@ class _AdminShellState extends State<AdminShell> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('My profile'),
+        title: const BillingText('My profile'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            BillingText(
               user?.fullName ?? 'Store staff',
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
             if (user?.email.isNotEmpty == true) ...[
               const SizedBox(height: 4),
-              Text(user!.email),
+              BillingText(user!.email),
             ],
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Close'),
+            child: const BillingText('Close'),
           ),
           FilledButton.icon(
             onPressed: () {
@@ -324,7 +338,7 @@ class _AdminShellState extends State<AdminShell> {
               _signOut();
             },
             icon: const Icon(Icons.logout_rounded),
-            label: const Text('Log out'),
+            label: const BillingText('Log out'),
           ),
         ],
       ),
@@ -335,12 +349,12 @@ class _AdminShellState extends State<AdminShell> {
     final shouldSignOut = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(
+        title: BillingText(
           widget.isBillingStaff
               ? 'Sign out of the billing counter?'
               : 'Sign out of admin?',
         ),
-        content: Text(
+        content: BillingText(
           widget.isBillingStaff
               ? 'You will need to sign in again to continue billing.'
               : 'You will need to sign in again to manage the store.',
@@ -348,11 +362,11 @@ class _AdminShellState extends State<AdminShell> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Stay'),
+            child: const BillingText('Stay'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Sign out'),
+            child: const BillingText('Sign out'),
           ),
         ],
       ),
@@ -367,6 +381,28 @@ class _AdminShellState extends State<AdminShell> {
             ? const LoginScreen(isWindowsStaffLogin: true)
             : const LoginScreen(),
       ),
+      (_) => false,
+    );
+  }
+
+  Future<void> _signInAfterExpiry() async {
+    if (_recoveringSession) return;
+    setState(() => _recoveringSession = true);
+    try {
+      await context.read<AuthProvider>().logout();
+    } catch (_) {
+      // AuthProvider clears its in-memory token even if credential storage fails.
+      debugPrint(
+          'Expired credentials could not be removed from local storage.');
+    }
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pushAndRemoveUntil<void>(
+      MaterialPageRoute<void>(
+          builder: (_) => LoginScreen(
+                isWindowsStaffLogin: _isWindows,
+                isAdminLogin: !_isWindows && !widget.isBillingStaff,
+                isBillingLogin: !_isWindows && widget.isBillingStaff,
+              )),
       (_) => false,
     );
   }
@@ -401,10 +437,10 @@ class _AdminShellState extends State<AdminShell> {
           appBar: showSidebar
               ? null
               : AppBar(
-                  title: Text(title),
+                  title: BillingText(title),
                   actions: [
                     if (_isWindows) _windowsThemeButton(),
-                    IconButton(
+                    BillingIconButton(
                       tooltip: 'Sign out',
                       onPressed: _signOut,
                       icon: const Icon(Icons.logout_rounded),
@@ -419,12 +455,31 @@ class _AdminShellState extends State<AdminShell> {
               children: [
                 if (showSidebar)
                   SizedBox(
-                    width: 224,
+                    width: 300,
                     child: _buildSidebar(destinations),
                   ),
                 Expanded(
                   child: Column(
                     children: [
+                      const BillingLanguageSwitch(),
+                      ValueListenableBuilder<bool>(
+                        valueListenable:
+                            context.read<ApiService>().requiresSignIn,
+                        builder: (context, required, _) => required
+                            ? AppBanner(
+                                message:
+                                    'Your session has expired. Sign in again to continue.',
+                                variant: AppStatusVariant.error,
+                                icon: Icons.lock_outline,
+                                trailing: TextButton(
+                                  onPressed: _recoveringSession
+                                      ? null
+                                      : _signInAfterExpiry,
+                                  child: const BillingText('Sign in again'),
+                                ),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
                       if (showSidebar)
                         _buildPageHeader(title: title, subtitle: subtitle),
                       Expanded(
@@ -495,13 +550,15 @@ class _AdminShellState extends State<AdminShell> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: Theme.of(context).textTheme.headlineLarge),
+                  BillingText(title,
+                      style: Theme.of(context).textTheme.headlineLarge),
                   const SizedBox(height: 4),
-                  Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+                  BillingText(subtitle,
+                      style: Theme.of(context).textTheme.bodySmall),
                 ],
               ),
             ),
-            IconButton(
+            BillingIconButton(
               tooltip: 'Sign out',
               onPressed: _signOut,
               icon: const Icon(Icons.logout_rounded),
@@ -522,7 +579,7 @@ class _AdminShellState extends State<AdminShell> {
         alignment: Alignment.center,
         children: [
           Center(
-            child: Text(
+            child: BillingText(
               _invoisoPageTitle(title),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -535,7 +592,7 @@ class _AdminShellState extends State<AdminShell> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _windowsThemeButton(),
-                IconButton(
+                BillingIconButton(
                   tooltip: 'Sign out',
                   style: IconButton.styleFrom(
                     foregroundColor: Colors.white,
@@ -563,7 +620,7 @@ class _AdminShellState extends State<AdminShell> {
         _ => title,
       };
 
-  Widget _windowsThemeButton() => IconButton(
+  Widget _windowsThemeButton() => BillingIconButton(
         tooltip: _useDarkWindowsTheme
             ? 'Switch to white theme'
             : 'Switch to dark theme',
@@ -596,7 +653,7 @@ class _AdminShellState extends State<AdminShell> {
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 18, 14, 16),
               child: Center(
-                child: Text(
+                child: BillingText(
                   'Ram Prasad\nGeneral Store',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -622,11 +679,12 @@ class _AdminShellState extends State<AdminShell> {
                       radius: 11,
                       backgroundColor: AppColors.action,
                       foregroundColor: AppColors.onAction,
-                      child: const Text('M', style: TextStyle(fontSize: 11)),
+                      child: const BillingText('M',
+                          style: TextStyle(fontSize: 11)),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
+                      child: BillingText(
                         'My Company',
                         style: Theme.of(context).textTheme.labelLarge?.copyWith(
                               color: AppColors.action,
@@ -659,7 +717,7 @@ class _AdminShellState extends State<AdminShell> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
+                        BillingText(
                             widget.isBillingStaff
                                 ? 'STORE STAFF'
                                 : 'STORE ADMIN',
@@ -667,7 +725,7 @@ class _AdminShellState extends State<AdminShell> {
                                 .textTheme
                                 .labelLarge
                                 ?.copyWith(color: AppColors.primary)),
-                        Text('Ram Prasad General Store',
+                        BillingText('Ram Prasad General Store',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.bodySmall),
@@ -696,7 +754,7 @@ class _AdminShellState extends State<AdminShell> {
                   foregroundColor: AppColors.isWindowsAdminDarkTheme
                       ? AppColors.successText
                       : AppColors.accent,
-                  child: Text(
+                  child: BillingText(
                     (user?.fullName.isNotEmpty == true
                             ? user!.fullName.substring(0, 1)
                             : 'S')
@@ -706,7 +764,7 @@ class _AdminShellState extends State<AdminShell> {
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(
+                  child: BillingText(
                     user?.fullName ?? 'Store staff',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -716,7 +774,7 @@ class _AdminShellState extends State<AdminShell> {
                         ),
                   ),
                 ),
-                IconButton(
+                BillingIconButton(
                   tooltip: 'My profile / logout',
                   onPressed: _showProfile,
                   icon: const Icon(Icons.more_horiz_rounded),
@@ -770,7 +828,7 @@ class _AdminShellState extends State<AdminShell> {
               }
             },
             child: SizedBox(
-              height: _isWindows ? 40 : 32,
+              height: BillingStrings.isNepali ? 78 : 62,
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: _isWindows ? 10 : 5),
                 child: Row(
@@ -800,21 +858,22 @@ class _AdminShellState extends State<AdminShell> {
                       Icon(
                         icon,
                         size: 17,
-                        color: selected ? AppColors.action : AppColors.muted,
+                        color:
+                            selected ? AppColors.actionText : AppColors.muted,
                       ),
                       const SizedBox(width: 12),
                     ],
                     Expanded(
-                      child: Text(
+                      child: BillingText(
                         _isWindows
                             ? _invoisoNavigationTitle(titleForIndex(index))
                             : titleForIndex(index),
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               color: selected
                                   ? (_isWindows
-                                      ? AppColors.action
+                                      ? AppColors.actionText
                                       : (AppColors.isWindowsAdminDarkTheme
                                           ? AppColors.successText
                                           : AppColors.accent))
@@ -838,7 +897,7 @@ class _AdminShellState extends State<AdminShell> {
                           shape: BoxShape.circle,
                         ),
                         alignment: Alignment.center,
-                        child: Text(
+                        child: BillingText(
                           _unreadDeliveryCount > 99
                               ? '99+'
                               : '$_unreadDeliveryCount',
@@ -871,12 +930,17 @@ class _AdminShellState extends State<AdminShell> {
     }
 
     if (widget.isBillingStaff) {
-      final customerIndex = _billingStaffModules.indexWhere((module) => module.section == AdminBillingSection.customers);
-      final expiryIndex = _billingStaffModules.indexWhere((module) => module.action == _BillingAction.expiry);
-      return [for (var index = 0; index < destinations.length; index++) ...[
-        if (index != customerIndex) navigationTile(index),
-        if (index == expiryIndex && customerIndex >= 0) navigationTile(customerIndex),
-      ]];
+      final customerIndex = _billingStaffModules.indexWhere(
+          (module) => module.section == AdminBillingSection.customers);
+      final expiryIndex = _billingStaffModules
+          .indexWhere((module) => module.action == _BillingAction.expiry);
+      return [
+        for (var index = 0; index < destinations.length; index++) ...[
+          if (index != customerIndex) navigationTile(index),
+          if (index == expiryIndex && customerIndex >= 0)
+            navigationTile(customerIndex),
+        ]
+      ];
     }
 
     final primaryIndices = _primaryNavigationIndices.toSet();
@@ -920,7 +984,7 @@ class _AdminShellState extends State<AdminShell> {
                   }
                 },
                 icon: const Icon(Icons.add_rounded, size: 18),
-                label: const Text('New bill'),
+                label: const BillingText('New bill'),
               ),
             ),
           ),
@@ -969,7 +1033,7 @@ class _AdminShellState extends State<AdminShell> {
                 childrenPadding: EdgeInsets.zero,
                 visualDensity: VisualDensity.compact,
                 onExpansionChanged: onChanged,
-                title: Text(
+                title: BillingText(
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -989,82 +1053,82 @@ class _AdminShellState extends State<AdminShell> {
     NavigationRailDestination(
       icon: Icon(Icons.space_dashboard_outlined),
       selectedIcon: Icon(Icons.space_dashboard_rounded),
-      label: Text('Dashboard'),
+      label: BillingText('Dashboard'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.receipt_long_outlined),
       selectedIcon: Icon(Icons.receipt_long_rounded),
-      label: Text('Orders'),
+      label: BillingText('Orders'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.local_shipping_outlined),
       selectedIcon: Icon(Icons.local_shipping_rounded),
-      label: Text('Delivery'),
+      label: BillingText('Delivery'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.people_outline_rounded),
       selectedIcon: Icon(Icons.people_rounded),
-      label: Text('Customers'),
+      label: BillingText('Customers'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.campaign_outlined),
       selectedIcon: Icon(Icons.campaign_rounded),
-      label: Text('Announcements'),
+      label: BillingText('Announcements'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.inventory_2_outlined),
       selectedIcon: Icon(Icons.inventory_2_rounded),
-      label: Text('Products'),
+      label: BillingText('Products'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.local_drink_outlined),
       selectedIcon: Icon(Icons.local_drink_rounded),
-      label: Text('Drinks'),
+      label: BillingText('Drinks'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.storefront_outlined),
       selectedIcon: Icon(Icons.storefront_rounded),
-      label: Text('Wholesale'),
+      label: BillingText('Wholesale'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.add_box_outlined),
       selectedIcon: Icon(Icons.add_box_rounded),
-      label: Text('Restock'),
+      label: BillingText('Restock'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.category_outlined),
       selectedIcon: Icon(Icons.category_rounded),
-      label: Text('Categories'),
+      label: BillingText('Categories'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.view_carousel_outlined),
       selectedIcon: Icon(Icons.view_carousel_rounded),
-      label: Text('Showcase'),
+      label: BillingText('Showcase'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.qr_code_2_outlined),
       selectedIcon: Icon(Icons.qr_code_2_rounded),
-      label: Text('Product SKUs'),
+      label: BillingText('Product SKUs'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.schedule_outlined),
       selectedIcon: Icon(Icons.schedule_rounded),
-      label: Text('Store hours'),
+      label: BillingText('Store hours'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.local_fire_department_outlined),
       selectedIcon: Icon(Icons.local_fire_department_rounded),
-      label: Text('Buying streak'),
+      label: BillingText('Buying streak'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.local_offer_outlined),
       selectedIcon: Icon(Icons.local_offer_rounded),
-      label: Text('Promotions'),
+      label: BillingText('Promotions'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.point_of_sale_outlined),
       selectedIcon: Icon(Icons.point_of_sale_rounded),
-      label: Text('Billing'),
+      label: BillingText('Billing'),
     ),
   ];
 
@@ -1165,13 +1229,16 @@ class _AdminShellState extends State<AdminShell> {
       Icons.account_circle_rounded,
       action: _BillingAction.profile,
     ),
+    _BillingModule(
+        'Inventory', Icons.warehouse_outlined, Icons.warehouse_rounded,
+        action: _BillingAction.inventory),
   ];
 
   static final _billingDestinations = _billingModules
       .map((module) => NavigationRailDestination(
             icon: Icon(module.icon),
             selectedIcon: Icon(module.selectedIcon),
-            label: Text(module.title),
+            label: BillingText(module.title),
           ))
       .toList(growable: false);
 
@@ -1181,7 +1248,7 @@ class _AdminShellState extends State<AdminShell> {
       .map((module) => NavigationRailDestination(
             icon: Icon(module.icon),
             selectedIcon: Icon(module.selectedIcon),
-            label: Text(module.title),
+            label: BillingText(module.title),
           ))
       .toList(growable: false);
 }

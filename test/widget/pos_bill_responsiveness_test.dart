@@ -2,13 +2,21 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
+import 'dart:ui' as ui;
+import 'package:freshharvest_grocery/core/billing_strings.dart';
+import 'package:freshharvest_grocery/theme/app_theme.dart' as billing;
+import 'package:freshharvest_grocery/theme/app_colors.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:freshharvest_grocery/models/pos_models.dart';
 import 'package:freshharvest_grocery/screens/admin/admin_billing_screen.dart';
 import 'package:freshharvest_grocery/services/admin_api_service.dart';
 import 'package:freshharvest_grocery/services/api_service.dart';
 import 'package:freshharvest_grocery/services/offline_pos_store.dart';
+import 'package:freshharvest_grocery/services/local_billing_store.dart';
 import 'package:freshharvest_grocery/services/fonepay_api_service.dart';
+import 'package:freshharvest_grocery/services/billing_customer_service.dart';
 
 class _FonepayTestApi extends FonepayApiService {
   _FonepayTestApi() : super(ApiService());
@@ -31,6 +39,17 @@ class _Api extends AdminApiService {
   Completer<PosSale>? saveGate;
   final queries = <String, Completer<List<PosProduct>>>{};
   @override
+  Future<Map<String, dynamic>> getRoomInventory(
+          {List<String>? productIds}) async =>
+      {
+        'rooms': [],
+        'stocks': [],
+        'totals': [
+          {'productId': 'tea', 'total': 100, 'available': 100}
+        ],
+        'capturedAt': '2026-11-06T00:00:00Z',
+      };
+  @override
   Future<List<PosProduct>> searchPosProducts(String query) async {
     searches++;
     if (queries[query] != null) return queries[query]!.future;
@@ -52,10 +71,11 @@ class _Api extends AdminApiService {
       String? heldSaleId,
       double? expectedTotal,
       Map<String, double>? unitPrices,
+      List<Map<String, dynamic>>? roomPicks,
       Map<String, dynamic>? manualVerification}) {
     saves++;
-    expect(expectedTotal, 10);
-    expect(unitPrices, {'tea': 10});
+    expectSync(expectedTotal, 10);
+    expectSync(unitPrices, {'tea': 10});
     return (saveGate ??= Completer<PosSale>()).future;
   }
 }
@@ -72,6 +92,10 @@ const _tea = PosProduct(
 // UI assertions use deterministic storage; real file durability/cache/locking
 // are covered by local_billing_store_test and pos_performance_correctness_test.
 class _MemoryStore extends OfflinePosStore {
+  _MemoryStore(Directory root)
+      : super(
+            billingStore: LocalBillingStore(rootPath: root.path),
+            useLocalStock: false);
   @override
   Future<List<PosSale>> readOfflineSales() async => [
         PosSale.fromJson({
@@ -104,14 +128,16 @@ void main() {
   late Directory root;
   late OfflinePosStore store;
   late _Api api;
+  final previewKey = GlobalKey();
   setUp(() async {
     root = await Directory.systemTemp.createTemp('faststore-ui-test-');
-    store = _MemoryStore();
+    store = _MemoryStore(root);
     await store.saveCatalog([_tea]);
     api = _Api();
   });
   tearDown(() async {
     debugDefaultTargetPlatformOverride = null;
+    AppColors.clearWindowsAdminTheme();
     // Disposing a widget cannot cancel an already admitted asynchronous file
     // replacement. Let Windows close those fixture handles before cleanup.
     for (var attempt = 0;; attempt++) {
@@ -124,43 +150,82 @@ void main() {
       }
     }
   });
-  Future<void> start(WidgetTester tester) async {
+  Future<void> start(WidgetTester tester, {PosProduct? scanned}) async {
+    AppColors.windowsAdminDarkTheme = false;
     tester.view.reset();
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-            body: PosBillDialog(
-      api: api,
-      offlineStore: store,
-      refreshCatalogOnOpen: false,
-      operatorId: 'fixture',
-      allowOfflineSync: false,
-      onScan: () async => null,
-      onNewBill: () {},
-      heldSale: PosHeldSale(
-          id: 'held',
-          customerName: null,
-          customerPhone: null,
-          createdAt: DateTime.utc(2026),
-          items: const [
-            {
-              'productId': 'tea',
-              'productName': 'Fixture tea',
-              'sku': 'TEA',
-              'price': 10,
-              'unitLabel': 'pcs',
-              'quantity': 1
-            },
-          ]),
-    ))));
+    await tester.pumpWidget(RepaintBoundary(
+        key: previewKey,
+        child: MaterialApp(
+            theme: billing.AppTheme.data,
+            home: Scaffold(
+                body: PosBillDialog(
+              api: api,
+              offlineStore: store,
+              scannedProduct: scanned,
+              loadLocalCustomers: () => BillingCustomerService.readLocal(store,
+                  loadSavedCustomers: () async => []),
+              refreshCatalogOnOpen: false,
+              operatorId: 'fixture',
+              allowOfflineSync: false,
+              onScan: () async => null,
+              onNewBill: () {},
+              heldSale: PosHeldSale(
+                  id: 'held',
+                  customerName: null,
+                  customerPhone: null,
+                  createdAt: DateTime.utc(2026),
+                  items: const [
+                    {
+                      'productId': 'tea',
+                      'productName': 'Fixture tea',
+                      'sku': 'TEA',
+                      'price': 10,
+                      'unitLabel': 'pcs',
+                      'quantity': 1
+                    },
+                  ]),
+            )))));
     await settleIO(tester);
   }
 
   Finder field(String label) => find.byWidgetPredicate(
       (w) => w is TextField && w.decoration?.labelText == label);
+
+  testWidgets(
+      'Nepali desktop checkout keeps customer, cart, search and payment controls readable',
+      (tester) async {
+    await tester.runAsync(() async {
+      await BillingStrings.load();
+      final font = FontLoader('FastStoreDevanagari')
+        ..addFont(rootBundle.load('assets/fonts/NotoSansDevanagari.ttf'));
+      await font.load();
+      final icons = FontLoader('MaterialIcons')
+        ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+      await icons.load();
+    });
+    BillingStrings.languageCode = 'ne';
+    addTearDown(() => BillingStrings.languageCode = 'en');
+    await start(tester);
+    expect(find.text('Fixture tea'), findsWidgets);
+    expect(find.text('बिल बनाउनुहोस् (F8)'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.runAsync(() async {
+      final image = await (previewKey.currentContext!.findRenderObject()!
+              as RenderRepaintBoundary)
+          .toImage();
+      final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+      final dir = Directory('tmp/bilingual-preview')
+        ..createSync(recursive: true);
+      await File('${dir.path}/checkout-ne.png')
+          .writeAsBytes(bytes!.buffer.asUint8List());
+      image.dispose();
+    });
+    await tester.pumpWidget(const SizedBox.shrink());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('typing a saved offline customer name also fills its phone',
       (tester) async {
@@ -178,6 +243,27 @@ void main() {
     expect(find.textContaining('Saved on this computer'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
+  testWidgets('a wholesale sack uses pack quantity instead of loose grams',
+      (tester) async {
+    await start(tester,
+        scanned: const PosProduct(
+            id: 'wholesale-sack',
+            name: 'Fixture wholesale sack',
+            sku: 'SACK',
+            barcode: null,
+            price: 1000,
+            unitLabel: '25 kg',
+            available: 8));
+    expect(find.textContaining('Fixture wholesale sack'), findsWidgets);
+    expect(find.text('Weight in grams'), findsNothing);
+    final quantity = field('Quantity').last;
+    expect(tester.widget<TextField>(quantity).controller!.text, '1');
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(tester.takeException(), isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('quantity updates row, item count and total without losing focus',
@@ -229,7 +315,9 @@ void main() {
         find.widgetWithText(FilledButton, 'Create bill (F8)'));
     button.onPressed!();
     button.onPressed!();
-    await tester.pump();
+    await settleIO(tester);
+    await tester.tap(find.text('Use these rooms'));
+    await tester.pump(const Duration(milliseconds: 400));
     expect(api.saves, 1);
     api.saveGate!.completeError(
         const ApiResponseException('Fixture conflict', statusCode: 409));
@@ -261,6 +349,8 @@ void main() {
             .widget<FilledButton>(find.widgetWithText(FilledButton, 'Pay'))
             .onPressed,
         isNull);
+    await settleIO(tester);
+    await tester.tap(find.text('Use these rooms'));
     await settleIO(tester);
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('Waiting for cashier to confirm payment received.'),

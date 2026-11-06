@@ -1,3 +1,4 @@
+import '../../widgets/billing_localized_widgets.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -365,12 +366,12 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
     final colors = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Scan barcode'),
+        title: const BillingText('Scan barcode'),
         actions: [
           if (_useCamera)
             ValueListenableBuilder<MobileScannerState>(
               valueListenable: _scannerController,
-              builder: (context, state, _) => IconButton(
+              builder: (context, state, _) => BillingIconButton(
                 tooltip: state.torchState == TorchState.on
                     ? 'Turn flashlight off'
                     : 'Turn flashlight on',
@@ -396,12 +397,12 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
                   value: true,
                   enabled: _supportsLocalCamera || widget.api != null,
                   icon: const Icon(Icons.camera_alt_outlined),
-                  label: const Text('Mobile camera'),
+                  label: const BillingText('Mobile camera'),
                 ),
                 const ButtonSegment<bool>(
                   value: false,
                   icon: Icon(Icons.barcode_reader),
-                  label: Text('Barcode scanner'),
+                  label: BillingText('Barcode scanner'),
                 ),
               ],
               selected: {_useCamera},
@@ -426,15 +427,15 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
                             child: Center(
                               child: Padding(
                                 padding: const EdgeInsets.all(24),
-                                child: Text(
+                                child: BillingText(
                                   error.errorCode ==
                                           MobileScannerErrorCode
                                               .permissionDenied
                                       ? 'Camera access is off. Allow camera access in Settings or switch to a barcode scanner.'
                                       : 'Camera scanning is unavailable. Switch to a barcode scanner or enter the barcode below.',
                                   textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: AppColors.surface,
+                                  style: const TextStyle(
+                                    color: Colors.white,
                                   ),
                                 ),
                               ),
@@ -456,7 +457,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
                               height: 170,
                               decoration: BoxDecoration(
                                 border: Border.all(
-                                  color: AppColors.surface,
+                                  color: Colors.white,
                                   width: 3,
                                 ),
                                 borderRadius:
@@ -470,14 +471,14 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
                           left: 20,
                           right: 20,
                           bottom: 22,
-                          child: Text(
+                          child: BillingText(
                             'Align the barcode inside the frame',
                             textAlign: TextAlign.center,
                             style: Theme.of(context)
                                 .textTheme
                                 .titleMedium
                                 ?.copyWith(
-                              color: AppColors.surface,
+                              color: Colors.white,
                               shadows: [
                                 Shadow(
                                   color: AppColors.primary,
@@ -501,12 +502,12 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
                             color: colors.primary,
                           ),
                           const SizedBox(height: 12),
-                          Text(
+                          BillingText(
                             'External scanner selected',
                             style: Theme.of(context).textTheme.titleMedium,
                           ),
                           const SizedBox(height: 6),
-                          Text(
+                          BillingText(
                             'Connect a USB or Bluetooth scanner that types barcodes like a keyboard, then scan into the field below.',
                             textAlign: TextAlign.center,
                             style: Theme.of(context).textTheme.bodySmall,
@@ -526,13 +527,13 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
                   autofocus: !_useCamera,
                   textInputAction: TextInputAction.done,
                   onSubmitted: (_) => _submitManualCode(),
-                  decoration: InputDecoration(
+                  decoration: BillingInputDecoration(
                     labelText: _useCamera
                         ? 'Enter or scan with a hardware scanner'
                         : 'Scan or enter barcode',
                     hintText: 'Barcode or product code',
                     errorText: _scanError,
-                    suffixIcon: IconButton(
+                    suffixIcon: BillingIconButton(
                       tooltip: 'Look up barcode',
                       onPressed: _submitManualCode,
                       icon: Icon(Icons.search_rounded, color: colors.primary),
@@ -541,7 +542,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text(
+                BillingText(
                   _useCamera
                       ? 'USB and Bluetooth scanners can type into this field too.'
                       : 'Keyboard-wedge scanners send the barcode here and press Enter.',
@@ -560,7 +561,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
                 icon: Icon(_remotePhoneMode
                     ? Icons.link_off_rounded
                     : Icons.desktop_windows_outlined),
-                label: Text(_remotePhoneMode
+                label: BillingText(_remotePhoneMode
                     ? 'Disconnect from Windows billing'
                     : 'Send scans to Windows billing'),
               ),
@@ -578,7 +579,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
             children: [
               const Icon(Icons.phone_android_rounded, size: 56),
               const SizedBox(height: 14),
-              Text(
+              BillingText(
                 _pairingCode ?? '••••••••',
                 style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                       letterSpacing: 8,
@@ -586,10 +587,10 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
                     ),
               ),
               const SizedBox(height: 10),
-              Text(_remoteStatus ?? 'Waiting for phone camera…',
+              BillingText(_remoteStatus ?? 'Waiting for phone camera…',
                   textAlign: TextAlign.center),
               const SizedBox(height: 14),
-              const Text(
+              const BillingText(
                 'Enter the code on the phone once. Keep this invoice open to scan multiple products; disconnect from the phone when finished.',
                 textAlign: TextAlign.center,
               ),
@@ -605,7 +606,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.refresh_rounded),
-                label: Text(_creatingPairingCode
+                label: BillingText(_creatingPairingCode
                     ? 'Creating code…'
                     : 'Create new code'),
               ),
@@ -636,7 +637,7 @@ class _BarcodePairingCodeDialogState extends State<_BarcodePairingCodeDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: const Text('Connect to Windows billing'),
+        title: const BillingText('Connect to Windows billing'),
         content: TextField(
           controller: _controller,
           autofocus: true,
@@ -644,7 +645,7 @@ class _BarcodePairingCodeDialogState extends State<_BarcodePairingCodeDialog> {
           textInputAction: TextInputAction.done,
           maxLength: 8,
           onSubmitted: (_) => _connect(),
-          decoration: const InputDecoration(
+          decoration: const BillingInputDecoration(
             labelText: '8 digit pairing code',
             hintText: 'Enter the code shown on the computer',
           ),
@@ -652,11 +653,11 @@ class _BarcodePairingCodeDialogState extends State<_BarcodePairingCodeDialog> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
+            child: const BillingText('Cancel'),
           ),
           FilledButton(
             onPressed: _connect,
-            child: const Text('Connect'),
+            child: const BillingText('Connect'),
           ),
         ],
       );

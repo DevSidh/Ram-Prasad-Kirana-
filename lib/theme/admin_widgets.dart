@@ -1,3 +1,4 @@
+import '../widgets/billing_localized_widgets.dart';
 import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
@@ -26,7 +27,7 @@ class AppSectionLabel extends StatelessWidget {
   final String label;
 
   @override
-  Widget build(BuildContext context) => Text(
+  Widget build(BuildContext context) => BillingText(
         label.toUpperCase(),
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
               color: AppColors.muted,
@@ -77,14 +78,15 @@ class AppStatusPill extends StatelessWidget {
             Icon(icon, size: 12, color: foreground),
             const SizedBox(width: 4),
           ],
-          Text(
+          Flexible(
+              child: BillingText(
             label,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: foreground,
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                 ),
-          ),
+          )),
         ],
       ),
     );
@@ -125,22 +127,31 @@ class AppBanner extends StatelessWidget {
         color: background,
         borderRadius: BorderRadius.circular(AppRadii.banner),
       ),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: foreground),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              message,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: foreground,
-                    fontWeight: FontWeight.w600,
-                  ),
+      child: LayoutBuilder(builder: (context, constraints) {
+        final stacked = trailing != null && constraints.maxWidth < 500;
+        final messageRow = Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 18, color: foreground),
+            const SizedBox(width: 10),
+            Expanded(
+              child: BillingText(
+                message,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: foreground,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
             ),
-          ),
-          if (trailing != null) trailing!,
-        ],
-      ),
+            if (trailing != null && !stacked) trailing!,
+          ],
+        );
+        if (!stacked) return messageRow;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [messageRow, const SizedBox(height: 8), trailing!],
+        );
+      }),
     );
   }
 }
@@ -188,9 +199,10 @@ class AppStatCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label, style: Theme.of(context).textTheme.bodySmall),
+                  BillingText(label,
+                      style: Theme.of(context).textTheme.bodySmall),
                   const SizedBox(height: 2),
-                  Text(
+                  BillingText(
                     value,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -213,7 +225,7 @@ class AppRowCard extends StatelessWidget {
     this.tint,
     this.trailing,
     this.onTap,
-    this.padding = const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    this.padding = const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
   });
 
   final String title;
@@ -228,49 +240,59 @@ class AppRowCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final child = Padding(
       padding: padding,
-      child: Row(
-        children: [
-          if (leading != null) ...[
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: tint ?? AppColors.thumbnailGreen,
-                borderRadius: BorderRadius.circular(AppRadii.thumbnail),
-              ),
-              alignment: Alignment.center,
-              child: leading,
-            ),
-            const SizedBox(width: 12),
-          ],
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium,
+      child: LayoutBuilder(builder: (context, constraints) {
+        final stacked = constraints.maxWidth < 480;
+        final details = Row(
+          children: [
+            if (leading != null) ...[
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: tint ?? AppColors.thumbnailGreen,
+                  borderRadius: BorderRadius.circular(AppRadii.thumbnail),
                 ),
-                if (subtitle != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle!,
-                    maxLines: 2,
+                alignment: Alignment.center,
+                child: leading,
+              ),
+              const SizedBox(width: 12),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  BillingText(
+                    title,
+                    maxLines: 3,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall,
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    BillingText(
+                      subtitle!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-          if (trailing != null) ...[
-            const SizedBox(width: 10),
-            trailing!,
+            if (trailing != null && !stacked) ...[
+              const SizedBox(width: 10),
+              trailing!,
+            ],
           ],
-        ],
-      ),
+        );
+        return stacked && trailing != null
+            ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                details,
+                const SizedBox(height: 12),
+                Align(alignment: Alignment.centerRight, child: trailing)
+              ])
+            : details;
+      }),
     );
     return Material(
       color: AppColors.surface,

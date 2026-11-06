@@ -41,6 +41,7 @@ import { normalizeCustomerMenuFeatures } from './services/customer-menu-features
 import { recordBuyingStreakPurchase, removeCancelledOrderPurchaseDay } from './services/buying-streak.js';
 import { orderInput } from './schemas/order.js';
 import { InventoryService } from './services/inventory.js';
+import { consumeRoomStock } from './services/room-inventory.js';
 import { runTransactionWithRetry } from './services/transaction-retry.js';
 import { canCustomerCancelOrder } from './services/order-cancellation.js';
 import { orderCartCleanupWhere } from './services/order-cart-cleanup.js';
@@ -1379,6 +1380,8 @@ app.post('/api/v1/orders', authenticateToken, async (req: Request, res: Response
               'A wholesale item was just purchased by another customer.',
             );
           }
+          const remaining = await transaction.wholesaleItem.findUniqueOrThrow({ where: { id: wholesaleItemId }, select: { stock: true } });
+          await consumeRoomStock(transaction, `wholesale-${wholesaleItemId}`, quantity, remaining.stock + quantity, created.id, userId, undefined, 'ORDER');
         }
       } catch (error) {
         if (error instanceof Error && error.message.startsWith('INSUFFICIENT_STOCK:')) {

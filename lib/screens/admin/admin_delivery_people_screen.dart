@@ -1,3 +1,4 @@
+import '../../widgets/billing_localized_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -36,6 +37,8 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
   String? _savingId;
   String? _cashSavingId;
   bool _loading = true;
+  int _loadRequest = 0;
+  int _ordersRequest = 0;
 
   @override
   void initState() {
@@ -44,6 +47,7 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
   }
 
   Future<void> _load() async {
+    final request = ++_loadRequest;
     setState(() {
       _loading = true;
       _error = null;
@@ -58,7 +62,7 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
       } catch (error) {
         cashError = error.toString().replaceFirst('Exception: ', '');
       }
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _people = people;
         _pendingCash = pendingCash;
@@ -70,7 +74,7 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
       await ordersLoad;
     } catch (error) {
       await ordersLoad;
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _error = error.toString().replaceFirst('Exception: ', '');
         _loading = false;
@@ -79,6 +83,7 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
   }
 
   Future<void> _loadDeliveryOrders() async {
+    final request = ++_ordersRequest;
     if (mounted) {
       setState(() {
         _loadingDeliveries = true;
@@ -91,14 +96,14 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
         pageSize: 100,
         day: _selectedDeliveryDay,
       );
-      if (!mounted) return;
+      if (!mounted || request != _ordersRequest) return;
       setState(() {
         _deliveryOrderPage = page;
         _loadingDeliveries = false;
         _assigningOrderId = null;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || request != _ordersRequest) return;
       setState(() {
         _deliveryError = error.toString().replaceFirst('Exception: ', '');
         _loadingDeliveries = false;
@@ -115,7 +120,8 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${order.orderNumber} assigned to ${person.name}.'),
+          content:
+              BillingText('${order.orderNumber} assigned to ${person.name}.'),
         ),
       );
       await _load();
@@ -187,7 +193,7 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Delivery account created.')),
+        const SnackBar(content: BillingText('Delivery account created.')),
       );
       await _load();
     } catch (error) {
@@ -205,8 +211,8 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Remove delivery staff?'),
-          content: Text(
+          title: const BillingText('Remove delivery staff?'),
+          content: BillingText(
             '${person.name} will be removed from the active staff roster. '
             'Their account and delivery history will be kept. '
             'Finish or reassign active deliveries first.',
@@ -214,16 +220,16 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
+              child: const BillingText('Cancel'),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Remove staff'),
+              child: const BillingText('Remove staff'),
             ),
           ],
         ),
       );
-      if (confirmed != true) return;
+      if (confirmed != true || !mounted) return;
     }
     setState(() => _savingId = person.id);
     try {
@@ -231,7 +237,7 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
+          content: BillingText(
             isActive
                 ? '${person.name} restored to the active roster.'
                 : '${person.name} removed from the active roster.',
@@ -255,7 +261,7 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
+          content: BillingText(
             'Rs. ${delivery.cashCollected.toStringAsFixed(2)} received for ${delivery.orderNumber}.',
           ),
         ),
@@ -277,20 +283,18 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
         children: [
-          Row(
-            children: [
-              const Spacer(),
-              FilledButton.icon(
-                onPressed: _savingId == 'new' ? null : _createPerson,
-                icon: _savingId == 'new'
-                    ? const SizedBox.square(
-                        dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.person_add_alt_1_rounded),
-                label: const Text('Add staff'),
-              ),
-            ],
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              onPressed: _savingId == 'new' ? null : _createPerson,
+              icon: _savingId == 'new'
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.person_add_alt_1_rounded),
+              label: const BillingText('Add staff'),
+            ),
           ),
           const SizedBox(height: 12),
           const _SalaryNotice(),
@@ -341,7 +345,7 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
       children: [
         const AppSectionLabel('Delivery board'),
         const SizedBox(height: 4),
-        Text(
+        BillingText(
           'Review orders, customer details and rider progress. Assign ready orders to an on-duty rider.',
           style: TextStyle(color: AppColors.muted, height: 1.4),
         ),
@@ -381,7 +385,7 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
             OutlinedButton.icon(
               onPressed: _loadingDeliveries ? null : _selectDeliveryDay,
               icon: const Icon(Icons.calendar_month_rounded, size: 18),
-              label: Text(
+              label: BillingText(
                 _selectedDeliveryDay == null
                     ? 'Order day'
                     : '${_selectedDeliveryDay!.day.toString().padLeft(2, '0')}/'
@@ -400,7 +404,7 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
                         });
                         _loadDeliveryOrders();
                       },
-                child: const Text('Clear day'),
+                child: const BillingText('Clear day'),
               ),
           ],
         ),
@@ -412,7 +416,7 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
             child: TextButton.icon(
               onPressed: _loadingDeliveries ? null : _loadDeliveryOrders,
               icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Retry delivery board'),
+              label: const BillingText('Retry delivery board'),
             ),
           ),
         ],
@@ -424,7 +428,7 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
         else if (orders.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 18),
-            child: Text(
+            child: BillingText(
               'No orders match this delivery view.',
               style: TextStyle(color: AppColors.muted),
             ),
@@ -448,7 +452,7 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              IconButton(
+              BillingIconButton(
                 tooltip: 'Previous delivery page',
                 onPressed: _deliveryPageNumber <= 1 || _loadingDeliveries
                     ? null
@@ -458,11 +462,11 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
                       },
                 icon: const Icon(Icons.chevron_left_rounded),
               ),
-              Text(
+              BillingText(
                 'Page ${pagination.page} of '
                 '${(pagination.total / pagination.pageSize).ceil()}',
               ),
-              IconButton(
+              BillingIconButton(
                 tooltip: 'Next delivery page',
                 onPressed: _deliveryPageNumber * pagination.pageSize >=
                             pagination.total ||
@@ -477,7 +481,7 @@ class _AdminDeliveryPeopleScreenState extends State<AdminDeliveryPeopleScreen> {
             ],
           ),
         const Divider(height: 28),
-        Text(
+        BillingText(
           'Delivery team',
           style: Theme.of(context).textTheme.titleLarge,
         ),
@@ -500,7 +504,7 @@ class _DeliveryFilterChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ChoiceChip(
-      label: Text(label),
+      label: BillingText(label),
       selected: selected,
       onSelected: (_) => onTap(),
     );
@@ -534,7 +538,7 @@ class _DeliveryOrderAdminCard extends StatelessWidget {
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 3),
         childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-        title: Text(
+        title: BillingText(
           '${order.orderNumber} · ${order.customerName}',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -542,7 +546,7 @@ class _DeliveryOrderAdminCard extends StatelessWidget {
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4),
-          child: Text(
+          child: BillingText(
             'ORDERED ${formatOrderPlacedAt(order.createdAt)}\n'
             '$deliveryStatus · ${order.status.replaceAll('_', ' ')} · '
             'Rs. ${order.total.toStringAsFixed(0)}',
@@ -585,12 +589,12 @@ class _DeliveryOrderAdminCard extends StatelessWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(
+                    child: BillingText(
                       '${item.name} × ${item.quantity}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
-                  Text(
+                  BillingText(
                     'Rs. ${item.total.toStringAsFixed(0)}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
@@ -612,7 +616,7 @@ class _DeliveryOrderAdminCard extends StatelessWidget {
             for (final entry in order.deliveryHistory.take(3))
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Text(
+                child: BillingText(
                   [
                     entry['status']?.toString().replaceAll('_', ' '),
                     entry['note']?.toString(),
@@ -628,14 +632,14 @@ class _DeliveryOrderAdminCard extends StatelessWidget {
             const SizedBox(height: 10),
             Align(
               alignment: Alignment.centerRight,
-              child: PopupMenuButton<AdminDeliveryPerson>(
+              child: BillingPopupMenuButton<AdminDeliveryPerson>(
                 enabled: !isAssigning && availablePeople.isNotEmpty,
                 onSelected: onAssign,
                 itemBuilder: (context) => availablePeople
                     .map(
                       (person) => PopupMenuItem(
                         value: person,
-                        child: Text(
+                        child: BillingText(
                           '${person.name} · ${person.activeDeliveries} active',
                         ),
                       ),
@@ -653,7 +657,7 @@ class _DeliveryOrderAdminCard extends StatelessWidget {
                     children: [
                       const Icon(Icons.local_shipping_outlined, size: 18),
                       const SizedBox(width: 7),
-                      Text(
+                      BillingText(
                         availablePeople.isEmpty
                             ? 'No rider on duty'
                             : order.deliveryPersonName == null
@@ -687,13 +691,13 @@ class _AdminDeliveryDetail extends StatelessWidget {
         children: [
           SizedBox(
             width: 82,
-            child: Text(
+            child: BillingText(
               label,
               style: Theme.of(context).textTheme.labelSmall,
             ),
           ),
           Expanded(
-            child: Text(
+            child: BillingText(
               value,
               style: Theme.of(context).textTheme.bodySmall,
             ),
@@ -738,19 +742,19 @@ class _CashHandoverSection extends StatelessWidget {
                 const Icon(Icons.account_balance_wallet_outlined),
                 const SizedBox(width: 9),
                 const Expanded(
-                  child: Text(
+                  child: BillingText(
                     'Customer COD to receive',
                     style: TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ),
-                Text(
+                BillingText(
                   'Rs. ${total.toStringAsFixed(2)}',
                   style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
               ],
             ),
             const SizedBox(height: 4),
-            Text(
+            BillingText(
               'Confirm only after the delivery staff hands the collected cash to the store.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     height: 1.35,
@@ -769,7 +773,7 @@ class _CashHandoverSection extends StatelessWidget {
             else if (deliveries.isEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 12),
-                child: Text(
+                child: BillingText(
                   'No customer cash is waiting for store handover.',
                   style: TextStyle(color: AppColors.muted),
                 ),
@@ -783,12 +787,12 @@ class _CashHandoverSection extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
+                          BillingText(
                             delivery.orderNumber,
                             style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
                           const SizedBox(height: 3),
-                          Text(
+                          BillingText(
                             '${delivery.deliveryPersonName} · Rs. ${delivery.cashCollected.toStringAsFixed(2)}',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
@@ -807,7 +811,7 @@ class _CashHandoverSection extends StatelessWidget {
                               dimension: 16,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Text('Confirm received'),
+                          : const BillingText('Confirm received'),
                     ),
                   ],
                 ),
@@ -861,12 +865,12 @@ class _DeliveryPersonCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  BillingText(
                     person.name,
                     style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 3),
-                  Text(
+                  BillingText(
                     person.phone.isEmpty
                         ? person.email
                         : '${person.phone} · ${person.email}',
@@ -875,7 +879,7 @@ class _DeliveryPersonCard extends StatelessWidget {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 5),
-                  Text(
+                  BillingText(
                     '${person.isAvailable ? 'On duty' : 'Off duty'} · '
                     '${person.activeDeliveries} active deliveries',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -895,7 +899,7 @@ class _DeliveryPersonCard extends StatelessWidget {
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
             else
-              IconButton(
+              BillingIconButton(
                 tooltip: person.isActive
                     ? 'Remove delivery staff from roster'
                     : 'Restore delivery staff to roster',
@@ -957,23 +961,24 @@ class _NewDeliveryPersonDialogState extends State<_NewDeliveryPersonDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Add delivery staff'),
+      title: const BillingText('Add delivery staff'),
       content: Form(
         key: _formKey,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextFormField(
+              BillingTextFormField(
                 controller: _name,
                 textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(labelText: 'Full name'),
+                decoration:
+                    const BillingInputDecoration(labelText: 'Full name'),
                 validator: _required,
               ),
-              TextFormField(
+              BillingTextFormField(
                 controller: _email,
                 keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(labelText: 'Email'),
+                decoration: const BillingInputDecoration(labelText: 'Email'),
                 validator: (value) {
                   if (_required(value) != null) {
                     return 'Enter an email address.';
@@ -984,22 +989,22 @@ class _NewDeliveryPersonDialogState extends State<_NewDeliveryPersonDialog> {
                       : 'Enter a valid email address.';
                 },
               ),
-              TextFormField(
+              BillingTextFormField(
                 controller: _phone,
                 keyboardType: TextInputType.phone,
                 inputFormatters: nepalPhoneInputFormatters,
-                decoration: const InputDecoration(
+                decoration: const BillingInputDecoration(
                   labelText: 'Phone (optional)',
                 ),
                 validator: (value) => validateNepalPhone(value, optional: true),
               ),
-              TextFormField(
+              BillingTextFormField(
                 controller: _password,
                 obscureText: _obscurePassword,
-                decoration: InputDecoration(
+                decoration: BillingInputDecoration(
                   labelText: 'Temporary sign-in password',
                   helperText: 'At least 10 characters. Share it securely.',
-                  suffixIcon: IconButton(
+                  suffixIcon: BillingIconButton(
                     tooltip:
                         _obscurePassword ? 'Show password' : 'Hide password',
                     onPressed: () =>
@@ -1020,7 +1025,7 @@ class _NewDeliveryPersonDialogState extends State<_NewDeliveryPersonDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: const BillingText('Cancel'),
         ),
         FilledButton(
           onPressed: () {
@@ -1035,7 +1040,7 @@ class _NewDeliveryPersonDialogState extends State<_NewDeliveryPersonDialog> {
               ),
             );
           },
-          child: const Text('Create account'),
+          child: const BillingText('Create account'),
         ),
       ],
     );
@@ -1070,12 +1075,12 @@ class _EmptyRiders extends StatelessWidget {
           Icon(Icons.people_outline_rounded,
               size: 42, color: AppColors.primary),
           const SizedBox(height: 10),
-          const Text(
+          const BillingText(
             'No delivery staff yet',
             style: TextStyle(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
-          Text(
+          BillingText(
             'Add a staff account to start assigning prepared orders.',
             textAlign: TextAlign.center,
             style: TextStyle(color: AppColors.muted),
@@ -1099,7 +1104,7 @@ class _DeliveryAdminNotice extends StatelessWidget {
         color: AppColors.errorPill,
         borderRadius: BorderRadius.circular(AppRadii.row),
       ),
-      child: Text(
+      child: BillingText(
         message,
         style: TextStyle(color: AppColors.errorText),
       ),

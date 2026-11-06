@@ -1,3 +1,4 @@
+import 'billing_localized_widgets.dart';
 import 'dart:async';
 
 import 'package:dotlottie_flutter/dotlottie_flutter.dart';
@@ -76,7 +77,7 @@ class _StoreAnimationState extends State<StoreAnimation> {
         key: ValueKey('store-animation-${widget.assetPath}'),
         width: widget.size,
         height: aspectRatio == null ? widget.size : widget.size / aspectRatio,
-        child: _failedToLoad
+        child: _failedToLoad || MediaQuery.disableAnimationsOf(context)
             ? Icon(
                 Icons.animation_outlined,
                 size: widget.size * 0.45,
@@ -132,13 +133,13 @@ class StorePageError extends StatelessWidget {
                   semanticLabel: 'Page error animation',
                 ),
                 const SizedBox(height: 12),
-                Text(
+                BillingText(
                   title,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 8),
-                Text(
+                BillingText(
                   message,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium,
@@ -147,7 +148,7 @@ class StorePageError extends StatelessWidget {
                   const SizedBox(height: 14),
                   TextButton(
                     onPressed: onRetry,
-                    child: Text(retryLabel!),
+                    child: BillingText(retryLabel!),
                   ),
                 ],
               ],

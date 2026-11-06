@@ -47,14 +47,22 @@ void main() {
     await auth.sessionReady;
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextFormField).at(0), 'Customer Name');
     await tester.enterText(
-      find.byType(TextFormField).at(1),
+        find.byWidgetPredicate((widget) => widget is TextFormField).at(0),
+        'Customer Name');
+    await tester.enterText(
+      find.byWidgetPredicate((widget) => widget is TextFormField).at(1),
       'customer@example.com',
     );
-    await tester.enterText(find.byType(TextFormField).at(2), '9812345678');
-    await tester.enterText(find.byType(TextFormField).at(3), 'password123');
-    await tester.enterText(find.byType(TextFormField).at(4), 'password123');
+    await tester.enterText(
+        find.byWidgetPredicate((widget) => widget is TextFormField).at(2),
+        '9812345678');
+    await tester.enterText(
+        find.byWidgetPredicate((widget) => widget is TextFormField).at(3),
+        'password123');
+    await tester.enterText(
+        find.byWidgetPredicate((widget) => widget is TextFormField).at(4),
+        'password123');
     await tester.ensureVisible(find.text('Register & Continue'));
     await tester.tap(find.text('Register & Continue'));
     await tester.pumpAndSettle();
@@ -78,14 +86,22 @@ void main() {
     await auth.sessionReady;
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextFormField).at(0), 'Customer Name');
     await tester.enterText(
-      find.byType(TextFormField).at(1),
+        find.byWidgetPredicate((widget) => widget is TextFormField).at(0),
+        'Customer Name');
+    await tester.enterText(
+      find.byWidgetPredicate((widget) => widget is TextFormField).at(1),
       'customer@example.com',
     );
-    await tester.enterText(find.byType(TextFormField).at(2), '9812345678');
-    await tester.enterText(find.byType(TextFormField).at(3), 'password123');
-    await tester.enterText(find.byType(TextFormField).at(4), 'password123');
+    await tester.enterText(
+        find.byWidgetPredicate((widget) => widget is TextFormField).at(2),
+        '9812345678');
+    await tester.enterText(
+        find.byWidgetPredicate((widget) => widget is TextFormField).at(3),
+        'password123');
+    await tester.enterText(
+        find.byWidgetPredicate((widget) => widget is TextFormField).at(4),
+        'password123');
     await tester.ensureVisible(find.text('Register & Continue'));
     await tester.tap(find.text('Register & Continue'));
     await tester.pumpAndSettle();

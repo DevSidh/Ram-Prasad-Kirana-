@@ -1,3 +1,4 @@
+import '../../widgets/billing_localized_widgets.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -124,7 +125,7 @@ class _AdminStoreHoursScreenState extends State<AdminStoreHoursScreen> {
       });
       context.read<StoreAvailabilityProvider>().setAvailability(availability);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(successMessage)),
+        SnackBar(content: BillingText(successMessage)),
       );
     } catch (error) {
       if (!mounted) return;
@@ -180,11 +181,11 @@ class _AdminStoreHoursScreenState extends State<AdminStoreHoursScreen> {
             children: [
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: Text(
+                title: BillingText(
                   dayName,
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
-                subtitle: Text(hours.isOpen ? 'Open' : 'Closed'),
+                subtitle: BillingText(hours.isOpen ? 'Open' : 'Closed'),
                 value: hours.isOpen,
                 onChanged: _saving
                     ? null
@@ -201,7 +202,7 @@ class _AdminStoreHoursScreenState extends State<AdminStoreHoursScreen> {
                         onPressed:
                             _saving ? null : () => _selectTime(hours.day, true),
                         icon: const Icon(Icons.wb_sunny_outlined, size: 18),
-                        label: Text('Opens ${hours.openTime}'),
+                        label: BillingText('Opens ${hours.openTime}'),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -211,7 +212,7 @@ class _AdminStoreHoursScreenState extends State<AdminStoreHoursScreen> {
                             ? null
                             : () => _selectTime(hours.day, false),
                         icon: const Icon(Icons.nights_stay_outlined, size: 18),
-                        label: Text('Closes ${hours.closeTime}'),
+                        label: BillingText('Closes ${hours.closeTime}'),
                       ),
                     ),
                   ],
@@ -235,7 +236,7 @@ class _AdminStoreHoursScreenState extends State<AdminStoreHoursScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
+              BillingText(
                 _error ?? 'Store hours could not be loaded.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppColors.errorText),
@@ -247,7 +248,7 @@ class _AdminStoreHoursScreenState extends State<AdminStoreHoursScreen> {
                   unawaited(_load());
                 },
                 icon: const Icon(Icons.refresh_rounded),
-                label: const Text('Try again'),
+                label: const BillingText('Try again'),
               ),
             ],
           ),
@@ -263,11 +264,11 @@ class _AdminStoreHoursScreenState extends State<AdminStoreHoursScreen> {
           child: SwitchListTile(
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            title: Text(
+            title: BillingText(
               'Accept online orders',
               style: Theme.of(context).textTheme.titleMedium,
             ),
-            subtitle: Text(
+            subtitle: BillingText(
               _isOrderingEnabled
                   ? 'Orders follow the weekly hours below. Switching off pauses orders immediately.'
                   : 'Ordering is paused for every customer.',
@@ -279,7 +280,7 @@ class _AdminStoreHoursScreenState extends State<AdminStoreHoursScreen> {
         const SizedBox(height: 20),
         const AppSectionLabel('Weekly opening hours'),
         const SizedBox(height: 4),
-        Text(
+        BillingText(
           'Times use Nepal Standard Time (${_availability?.timeZone ?? 'Asia/Kathmandu'}).',
           style: Theme.of(context).textTheme.bodySmall,
         ),
@@ -317,7 +318,7 @@ class _AdminStoreHoursScreenState extends State<AdminStoreHoursScreen> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.save_rounded),
-          label: Text(_saving ? 'Saving...' : 'Save store hours'),
+          label: BillingText(_saving ? 'Saving...' : 'Save store hours'),
         ),
       ],
     );

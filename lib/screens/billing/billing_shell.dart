@@ -6,6 +6,9 @@ import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../admin/admin_billing_screen.dart';
 import '../auth/login_screen.dart';
+import '../../widgets/billing_localized_widgets.dart';
+import '../../widgets/billing_language_switch.dart';
+import '../../theme/app_theme.dart' as billing_theme;
 
 class BillingShell extends StatefulWidget {
   const BillingShell({super.key});
@@ -21,16 +24,17 @@ class _BillingShellState extends State<BillingShell> {
     final shouldSignOut = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Sign out of the billing counter?'),
-        content: const Text('You will need to sign in again to continue.'),
+        title: const BillingText('Sign out of the billing counter?'),
+        content:
+            const BillingText('You will need to sign in again to continue.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Stay'),
+            child: const BillingText('Stay'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Sign out'),
+            child: const BillingText('Sign out'),
           ),
         ],
       ),
@@ -54,43 +58,49 @@ class _BillingShellState extends State<BillingShell> {
   @override
   Widget build(BuildContext context) {
     final staff = context.watch<AuthProvider>().currentUser;
-    return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          children: [
-            const Icon(Icons.point_of_sale_rounded,
-                color: AppConstants.primary),
-            const SizedBox(width: 10),
-            const Text('Billing Counter'),
-            if (staff != null) ...[
-              const SizedBox(width: 14),
-              Text(
-                staff.fullName,
-                style: TextStyle(
-                  color: AppConstants.textMuted,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
+    return Theme(
+        data: billing_theme.AppTheme.data,
+        child: Scaffold(
+          appBar: AppBar(
+            title: Row(
+              children: [
+                const Icon(Icons.point_of_sale_rounded,
+                    color: AppConstants.primary),
+                const SizedBox(width: 10),
+                const BillingText('Billing Counter'),
+                if (staff != null) ...[
+                  const SizedBox(width: 14),
+                  BillingText(
+                    staff.fullName,
+                    style: TextStyle(
+                      color: AppConstants.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              BillingIconButton(
+                tooltip: 'Sign out',
+                onPressed: _signingOut ? null : _signOut,
+                icon: const Icon(Icons.logout_rounded),
               ),
+              const SizedBox(width: 8),
             ],
-          ],
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Sign out',
-            onPressed: _signingOut ? null : _signOut,
-            icon: const Icon(Icons.logout_rounded),
           ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: SafeArea(
-        top: false,
-        child: AdminBillingScreen(
-          api: context.read<ApiService>(),
-          isBillingStaff: true,
-        ),
-      ),
-    );
+          body: SafeArea(
+            top: false,
+            child: Column(children: [
+              const BillingLanguageSwitch(),
+              Expanded(
+                  child: AdminBillingScreen(
+                api: context.read<ApiService>(),
+                isBillingStaff: true,
+              ))
+            ]),
+          ),
+        ));
   }
 }

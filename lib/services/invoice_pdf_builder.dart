@@ -4,6 +4,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../core/constants.dart';
+import 'readable_bill_pdf.dart';
 
 class InvoicePdfLine {
   const InvoicePdfLine({
@@ -37,6 +38,28 @@ class InvoicePdfBuilder {
     double deliveryOrOther = 0,
     pw.Widget? paymentInstructions,
   }) async {
+    if (ReadableBillPdf.needsShaping(
+        [customerName, ...items.map((item) => item.item)])) {
+      return ReadableBillPdf.create(
+          number: invoiceNumber,
+          date: date,
+          customerName: customerName,
+          customerPhone: customerPhone,
+          items: [
+            for (final item in items)
+              (item: item.item, quantity: item.quantity, amount: item.amount)
+          ],
+          subtotal: subtotal,
+          discount: discount,
+          vat: vatAmount,
+          total: total,
+          method: paymentMethod,
+          status: paymentStatus,
+          paid: paidAmount,
+          due: outstandingAmount,
+          other: deliveryOrOther,
+          paymentInstructions: paymentInstructions);
+    }
     const rule = PdfColor(0.55, 0.57, 0.59);
     final document = pw.Document();
     final showCustomer = (customerName?.trim().isNotEmpty ?? false) ||
@@ -59,7 +82,7 @@ class InvoicePdfBuilder {
                 textAlign: pw.TextAlign.center,
                 style: const pw.TextStyle(
                   color: ink,
-                  fontSize: 17,
+                  fontSize: 20,
                   fontWeight: pw.FontWeight.bold,
                 ),
               ),
@@ -67,13 +90,13 @@ class InvoicePdfBuilder {
               pw.Text(
                 'Janakpur, Nepal',
                 textAlign: pw.TextAlign.center,
-                style: const pw.TextStyle(color: ink, fontSize: 10),
+                style: const pw.TextStyle(color: ink, fontSize: 12),
               ),
               pw.SizedBox(height: 3),
               pw.Text(
                 'PAN No. ${AppConstants.storePanNumber}',
                 textAlign: pw.TextAlign.center,
-                style: const pw.TextStyle(color: ink, fontSize: 10),
+                style: const pw.TextStyle(color: ink, fontSize: 12),
               ),
               pw.SizedBox(height: 12),
               pw.Divider(color: rule, height: 1),
@@ -149,7 +172,7 @@ class InvoicePdfBuilder {
               pw.Center(
                 child: pw.Text(
                   'Thank you for shopping with us!',
-                  style: const pw.TextStyle(color: ink, fontSize: 10),
+                  style: const pw.TextStyle(color: ink, fontSize: 12),
                 ),
               ),
             ],
@@ -168,13 +191,13 @@ class InvoicePdfBuilder {
             pw.SizedBox(
               width: 105,
               child: pw.Text(label,
-                  style: const pw.TextStyle(fontSize: 9, color: ink)),
+                  style: const pw.TextStyle(fontSize: 11, color: ink)),
             ),
-            pw.Text(':', style: const pw.TextStyle(fontSize: 9, color: ink)),
+            pw.Text(':', style: const pw.TextStyle(fontSize: 11, color: ink)),
             pw.SizedBox(width: 12),
             pw.Expanded(
               child: pw.Text(value,
-                  style: const pw.TextStyle(fontSize: 9, color: ink)),
+                  style: const pw.TextStyle(fontSize: 11, color: ink)),
             ),
           ],
         ),
@@ -192,7 +215,7 @@ class InvoicePdfBuilder {
                   ? pw.TextAlign.center
                   : pw.TextAlign.left,
           style: pw.TextStyle(
-            fontSize: 9,
+            fontSize: 11,
             fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
             color: ink,
           ),

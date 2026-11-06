@@ -1,3 +1,4 @@
+import '../../widgets/billing_localized_widgets.dart';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -31,6 +32,7 @@ class _AdminShowcaseScreenState extends State<AdminShowcaseScreen> {
   late final AdminApiService _adminApi = AdminApiService(widget.api);
   List<AdminProduct> _products = [];
   bool _loading = true;
+  int _loadRequest = 0;
   String? _error;
   String? _savingId;
 
@@ -41,13 +43,15 @@ class _AdminShowcaseScreenState extends State<AdminShowcaseScreen> {
   }
 
   Future<void> _load() async {
+    if (!mounted || _savingId != null) return;
+    final request = ++_loadRequest;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final products = await _adminApi.getAllProducts();
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       products.sort((a, b) {
         if (a.isFeatured != b.isFeatured) return a.isFeatured ? -1 : 1;
         return a.name.toLowerCase().compareTo(b.name.toLowerCase());
@@ -57,7 +61,7 @@ class _AdminShowcaseScreenState extends State<AdminShowcaseScreen> {
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || request != _loadRequest) return;
       setState(() {
         _error = _cleanError(error);
         _loading = false;
@@ -87,7 +91,7 @@ class _AdminShowcaseScreenState extends State<AdminShowcaseScreen> {
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
+          content: BillingText(
             isFeatured
                 ? '${product.name} added to the home carousel'
                 : '${product.name} removed from the home carousel',
@@ -98,7 +102,7 @@ class _AdminShowcaseScreenState extends State<AdminShowcaseScreen> {
       if (!mounted) return;
       setState(() => _savingId = null);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_cleanError(error))),
+        SnackBar(content: BillingText(_cleanError(error))),
       );
     }
   }
@@ -138,13 +142,14 @@ class _AdminShowcaseScreenState extends State<AdminShowcaseScreen> {
         _savingId = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${product.name} carousel image updated')),
+        SnackBar(
+            content: BillingText('${product.name} carousel image updated')),
       );
     } catch (error) {
       if (!mounted) return;
       setState(() => _savingId = null);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_cleanError(error))),
+        SnackBar(content: BillingText(_cleanError(error))),
       );
     }
   }
@@ -160,17 +165,18 @@ class _AdminShowcaseScreenState extends State<AdminShowcaseScreen> {
       final values = await showDialog<(double, double?)>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: Text('Carousel prices · ${product.name}'),
+          title: BillingText('Carousel prices · ${product.name}'),
           content: Form(
             key: formKey,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextFormField(
+                BillingTextFormField(
                   controller: priceController,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'New price'),
+                  decoration:
+                      const BillingInputDecoration(labelText: 'New price'),
                   validator: (value) {
                     final price = double.tryParse(value?.trim() ?? '');
                     if (price == null || !price.isFinite || price <= 0) {
@@ -180,11 +186,11 @@ class _AdminShowcaseScreenState extends State<AdminShowcaseScreen> {
                   },
                 ),
                 const SizedBox(height: 10),
-                TextFormField(
+                BillingTextFormField(
                   controller: originalPriceController,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
+                  decoration: const BillingInputDecoration(
                     labelText: 'Before price (optional)',
                     helperText: 'Must be higher than the new price.',
                   ),
@@ -207,7 +213,7 @@ class _AdminShowcaseScreenState extends State<AdminShowcaseScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
+              child: const BillingText('Cancel'),
             ),
             FilledButton(
               onPressed: () {
@@ -220,7 +226,7 @@ class _AdminShowcaseScreenState extends State<AdminShowcaseScreen> {
                   ),
                 );
               },
-              child: const Text('Save prices'),
+              child: const BillingText('Save prices'),
             ),
           ],
         ),
@@ -246,13 +252,14 @@ class _AdminShowcaseScreenState extends State<AdminShowcaseScreen> {
         _savingId = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${product.name} carousel prices updated')),
+        SnackBar(
+            content: BillingText('${product.name} carousel prices updated')),
       );
     } catch (error) {
       if (!mounted) return;
       setState(() => _savingId = null);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_cleanError(error))),
+        SnackBar(content: BillingText(_cleanError(error))),
       );
     } finally {
       priceController.dispose();
@@ -277,12 +284,12 @@ class _AdminShowcaseScreenState extends State<AdminShowcaseScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(8, 8, 30, 28),
         children: [
-          Text(
+          BillingText(
             'Homepage carousel',
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 8),
-          Text(
+          BillingText(
             'Choose the products that rotate in the customer storefront. '
             'Images fill a fixed, responsive slide area, so source-image proportions do not resize the card. '
             'Changing a carousel image also updates that product image across the store.',
@@ -294,7 +301,7 @@ class _AdminShowcaseScreenState extends State<AdminShowcaseScreen> {
             message: '$featuredCount '
                 '${featuredCount == 1 ? 'product' : 'products'} '
                 'currently featured • active products rotate automatically',
-            trailing: IconButton(
+            trailing: BillingIconButton(
               tooltip: 'Refresh products',
               onPressed: _loading ? null : _load,
               icon: const Icon(Icons.refresh_rounded),
@@ -390,14 +397,14 @@ class _ShowcaseProductTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                BillingText(
                   product.name,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 3),
-                Text(
+                BillingText(
                   '${product.categoryName} • Rs. ${product.price.toStringAsFixed(0)}'
                   '${product.originalPrice != null && product.originalPrice! > product.price ? '  ·  Rs. ${product.originalPrice!.toStringAsFixed(0)} before' : ''}'
                   '${product.isActive ? '' : ' • Inactive'}',
@@ -409,7 +416,7 @@ class _ShowcaseProductTile extends StatelessWidget {
                   TextButton.icon(
                     onPressed: isSaving ? null : onPricesChanged,
                     icon: const Icon(Icons.edit_outlined, size: 15),
-                    label: const Text('Edit carousel prices'),
+                    label: const BillingText('Edit carousel prices'),
                     style: TextButton.styleFrom(
                       padding: EdgeInsets.zero,
                       minimumSize: const Size(0, 28),
@@ -423,7 +430,7 @@ class _ShowcaseProductTile extends StatelessWidget {
                     onPressed: isSaving ? null : onImageChanged,
                     icon: const Icon(Icons.add_photo_alternate_outlined,
                         size: 16),
-                    label: Text(
+                    label: BillingText(
                       product.imageUrl == null || product.imageUrl!.isEmpty
                           ? 'Add carousel image'
                           : 'Change carousel image',
@@ -472,7 +479,7 @@ class _ShowcaseNotice extends StatelessWidget {
         color: AppColors.warningPill,
         borderRadius: BorderRadius.circular(AppRadii.row),
       ),
-      child: Text(
+      child: BillingText(
         message,
         style: TextStyle(color: AppColors.warningText),
       ),
@@ -491,12 +498,12 @@ class _ShowcaseEmpty extends StatelessWidget {
         children: [
           Icon(Icons.inventory_2_outlined, size: 42, color: AppColors.muted),
           const SizedBox(height: 12),
-          const Text(
+          const BillingText(
             'No products to feature yet',
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 5),
-          Text(
+          BillingText(
             'Add products in the Products section first.',
             style: TextStyle(color: AppColors.muted),
           ),

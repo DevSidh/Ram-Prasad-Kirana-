@@ -8,6 +8,7 @@ let batchStock = 1;
 const transactions: Array<Record<string, unknown>> = [];
 
 const transaction = {
+  inventoryRoomStock: { findMany: async () => [] },
   $queryRaw: async (
     query: TemplateStringsArray | Prisma.Sql,
     ..._values: unknown[]

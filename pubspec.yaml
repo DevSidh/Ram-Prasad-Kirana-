@@ -1,7 +1,7 @@
 name: freshharvest_grocery
 description: "A production-grade grocery shopping & delivery mobile application built with Flutter & Material 3."
 publish_to: 'none'
-version: 3.2.0+25
+version: 3.3.0+26
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
@@ -74,6 +74,12 @@ flutter:
     - assets/videos/dia.mp4
     - assets/videos/faststore_order_placed_preview.mp4
     - assets/audio/
+    - assets/translations/
+    - assets/fonts/OFL-NotoSansDevanagari.txt
+  fonts:
+    - family: FastStoreDevanagari
+      fonts:
+        - asset: assets/fonts/NotoSansDevanagari.ttf
 
 flutter_launcher_icons:
   android: true

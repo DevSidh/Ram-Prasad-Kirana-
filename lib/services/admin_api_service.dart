@@ -12,7 +12,8 @@ import 'fonepay_api_service.dart';
 class AdminApiService {
   final ApiService _api;
 
-  AdminApiService(this._api);
+  AdminApiService(this._api, {this.offlineStore = const OfflinePosStore()});
+  final OfflinePosStore offlineStore;
   FonepayApiService get fonepay => FonepayApiService(_api);
   Future<List<PosSale>> getFonepayCheckouts() async {
     final body = _asMap(await _api.get('/admin/billing/fonepay-checkouts'));
@@ -259,6 +260,7 @@ class AdminApiService {
     double? expectedTotal,
     Map<String, double>? unitPrices,
     Map<String, dynamic>? manualVerification,
+    List<Map<String, dynamic>>? roomPicks,
   }) async {
     final response = _asMap(await _api.post('/admin/billing/sales', {
       if (expectedTotal != null && unitPrices != null)
@@ -268,6 +270,7 @@ class AdminApiService {
         },
       'idempotencyKey': idempotencyKey,
       'items': items,
+      if (roomPicks != null) 'roomPicks': roomPicks,
       'discount': discount,
       'vatRate': vatRate,
       'paymentMethod': paymentMethod,
@@ -285,6 +288,40 @@ class AdminApiService {
           'The server did not return the completed bill.');
     }
     return PosSale.fromJson(sale);
+  }
+
+  Future<Map<String, dynamic>> getRoomInventory(
+          {List<String>? productIds}) async =>
+      _asMap(productIds == null
+          ? await _api.get('/admin/billing/rooms')
+          : await _api.post(
+              '/admin/billing/rooms/availability', {'productIds': productIds}));
+
+  Future<void> saveInventoryRoom(
+      {String? id,
+      required String name,
+      required String number,
+      bool active = true}) async {
+    final body = {
+      'name': name,
+      'number': number,
+      if (id != null) 'active': active
+    };
+    if (id == null) {
+      await _api.post('/admin/billing/rooms', body);
+    } else {
+      await _api.patch('/admin/billing/rooms/${Uri.encodeComponent(id)}', body);
+    }
+  }
+
+  Future<void> transferRoomStock(Map<String, dynamic> body) async {
+    await _api.post('/admin/billing/rooms/transfers', body);
+  }
+
+  Future<List<Map<String, dynamic>>> getRoomMovements(String productId) async {
+    final response = _asMap(await _api.get('/admin/billing/rooms/movements',
+        queryParams: {'productId': productId}));
+    return (response['movements'] as List).cast<Map<String, dynamic>>();
   }
 
   Future<void> recordOfflineStreakPurchase({
@@ -862,7 +899,7 @@ class AdminApiService {
         .whereType<Map<String, dynamic>>()
         .map(AdminCategory.fromJson)
         .toList();
-    unawaited(const OfflinePosStore().saveCategories([
+    unawaited(offlineStore.saveCategories([
       for (final category in parsed)
         {
           'id': category.id,
@@ -882,7 +919,7 @@ class AdminApiService {
   /// Barcode/SKU matches are reused only when the saved details and stock agree;
   /// conflicting records stay local for review instead of overwriting data.
   Future<int> syncPendingOfflineProducts() async {
-    const store = OfflinePosStore();
+    final store = offlineStore;
     final pending = (await store.readPendingProducts()).toList();
     var synced = 0;
     for (final entry in pending) {

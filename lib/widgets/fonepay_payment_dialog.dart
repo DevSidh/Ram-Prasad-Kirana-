@@ -1,3 +1,4 @@
+import 'billing_localized_widgets.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
@@ -182,8 +183,8 @@ class _FonepayPaymentDialogState extends State<FonepayPaymentDialog> {
         canPop: false,
         child: AlertDialog(
             title: Row(children: [
-              const Expanded(child: Text('Pay with Fonepay')),
-              IconButton(
+              const Expanded(child: BillingText('Pay with Fonepay')),
+              BillingIconButton(
                   tooltip: 'Close payment',
                   onPressed: _finishing ? null : _close,
                   icon: const Icon(Icons.close))
@@ -194,38 +195,40 @@ class _FonepayPaymentDialogState extends State<FonepayPaymentDialog> {
                     child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
+                    BillingText(
                         'Bill ${widget.sale.invoiceNumber ?? widget.sale.receiptNumber}'),
-                    Text(
+                    BillingText(
                         'Final total: NPR ${widget.sale.total.toStringAsFixed(2)}'),
                     if (request != null) ...[
                       if (!request.isTest &&
                           ['VERIFIED', 'PAID'].contains(request.state)) ...[
                         const Icon(Icons.check_circle,
                             color: Colors.green, size: 88),
-                        const Text('Payment successful',
+                        const BillingText('Payment successful',
                             style: TextStyle(
                                 color: Colors.green,
                                 fontSize: 24,
                                 fontWeight: FontWeight.bold)),
-                        if (_finishing) const Text('Finalizing your bill…'),
+                        if (_finishing)
+                          const BillingText('Finalizing your bill…'),
                         if (!_finishing && widget.finalizeCheckout)
                           FilledButton(
                               onPressed: () => _finalize(request),
-                              child: const Text('Retry bill finalization')),
+                              child:
+                                  const BillingText('Retry bill finalization')),
                       ],
                       if (request.isTest)
                         const Card(
                             child: Padding(
                                 padding: EdgeInsets.all(12),
-                                child: Text(
+                                child: BillingText(
                                     'SANDBOX TEST — cannot pay or settle a real bill.'))),
-                      Text(request.merchantName ??
+                      BillingText(request.merchantName ??
                           'Merchant verification pending'),
-                      Text('Payable: NPR ${request.amount}',
+                      BillingText('Payable: NPR ${request.amount}',
                           style: Theme.of(context).textTheme.headlineSmall),
                       SelectableText('Reference: ${request.reference}'),
-                      Text(
+                      BillingText(
                           'Status: ${request.paid ? 'Payment verified by backend' : request.state}'),
                       if (payable)
                         Padding(
@@ -236,18 +239,19 @@ class _FonepayPaymentDialogState extends State<FonepayPaymentDialog> {
                                 backgroundColor: Colors.white,
                                 semanticsLabel:
                                     'Fonepay QR for NPR ${request.amount}')),
-                      if (payable) const Text('Scan to pay with Fonepay'),
-                      if (payable) const Text('Waiting for payment…'),
+                      if (payable)
+                        const BillingText('Scan to pay with Fonepay'),
+                      if (payable) const BillingText('Waiting for payment…'),
                       if (!payable && !request.paid)
-                        const Text(
+                        const BillingText(
                             'This QR is not currently payable. Verify or reconcile this reference before requesting another.'),
                       if (request.failureCode != null)
-                        Text('Review: ${request.failureCode}'),
+                        BillingText('Review: ${request.failureCode}'),
                       if (!request.paid &&
                           request.state != 'VERIFIED' &&
                           request.expiresAt != null &&
                           !request.expiresAt!.isAfter(DateTime.now()))
-                        const Text(
+                        const BillingText(
                             'QR expired. Verify or cancel this reference before retrying.'),
                     ],
                     if (_busy)
@@ -267,7 +271,7 @@ class _FonepayPaymentDialogState extends State<FonepayPaymentDialog> {
                             });
                             unawaited(_open());
                           },
-                          child: const Text('Retry connection')),
+                          child: const BillingText('Retry connection')),
                     if (!_busy &&
                         !_finishing &&
                         request != null &&
@@ -277,11 +281,11 @@ class _FonepayPaymentDialogState extends State<FonepayPaymentDialog> {
                         FilledButton(
                             onPressed: () =>
                                 _action(() => widget.api.verify(request.id)),
-                            child: const Text('Verify with Fonepay')),
+                            child: const BillingText('Verify with Fonepay')),
                         TextButton(
                             onPressed: () =>
                                 _action(() => widget.api.cancel(request.id)),
-                            child: const Text('Cancel with provider')),
+                            child: const BillingText('Cancel with provider')),
                         if (['FAILED', 'EXPIRED', 'CANCELLED', 'TEST_VERIFIED']
                             .contains(request.state))
                           TextButton(
@@ -293,23 +297,23 @@ class _FonepayPaymentDialogState extends State<FonepayPaymentDialog> {
                                     await preferences.setString(_key, next.id);
                                     return next;
                                   }),
-                              child: const Text('Request fresh QR')),
+                              child: const BillingText('Request fresh QR')),
                       ]),
                     if (!_busy && payable && !widget.finalizeCheckout)
                       Wrap(children: [
                         TextButton(
                             onPressed: _print,
-                            child: const Text('Print/PDF with QR')),
+                            child: const BillingText('Print/PDF with QR')),
                         TextButton(
                             onPressed: () => _print(thermal: true),
-                            child: const Text('80 mm receipt with QR')),
+                            child: const BillingText('80 mm receipt with QR')),
                       ]),
                   ],
                 ))),
             actions: [
               TextButton(
                   onPressed: _finishing ? null : _close,
-                  child: const Text('Close'))
+                  child: const BillingText('Close'))
             ]));
   }
 }

@@ -8,24 +8,28 @@ import 'admin_api_service.dart';
 import 'api_service.dart';
 import 'local_billing_store.dart';
 import 'offline_pos_store.dart';
+import 'room_inventory_service.dart';
 
 class LocalBillingSync extends ChangeNotifier {
   LocalBillingSync(
       {required this.api,
       required this.ownerId,
       this.store = const LocalBillingStore(),
+      this.catalogStore,
       this.refreshStock,
       this.onSynced});
 
   final ApiService api;
   final String ownerId;
   final LocalBillingStore store;
+  final OfflinePosStore? catalogStore;
   final Future<void> Function(Map<String, dynamic> record)? refreshStock;
   final Future<void> Function()? onSynced;
   bool running = false;
   bool? online;
   int pending = 0;
   int localOnly = 0;
+  int stockPending = 0;
   DateTime? lastSync;
   String? error;
   String? backupError;
@@ -57,7 +61,8 @@ class LocalBillingSync extends ChangeNotifier {
           entry.record['ownerId'] == ownerId &&
           (entry.record['syncState'] == 'pending' ||
               (retryConflicts && entry.record['syncState'] == 'conflict')));
-      final adminApi = AdminApiService(api);
+      final offlineStore = catalogStore ?? OfflinePosStore(billingStore: store);
+      final adminApi = AdminApiService(api, offlineStore: offlineStore);
       if (candidates.isEmpty) await api.get('/health');
       for (final entry in candidates) {
         if (_disposed) break;
@@ -103,6 +108,18 @@ class LocalBillingSync extends ChangeNotifier {
               await const OfflinePosStore().mergeCatalog(refreshed);
             }
           }
+          if (entry.record['roomPicks'] != null) {
+            // Refresh the room baseline before a later offline checkout.
+            await RoomInventoryService(
+                    adminApi, OfflinePosStore(billingStore: store))
+                .load(
+                    allowCached: false,
+                    productIds: (entry.record['items'] as List)
+                        .cast<Map>()
+                        .map((item) => item['productId'] as String)
+                        .toSet()
+                        .toList());
+          }
           await store.setSyncResult(entry.file,
               state: 'synced', serverSale: serverRecord);
           acknowledged++;
@@ -110,6 +127,92 @@ class LocalBillingSync extends ChangeNotifier {
           if ([400, 403, 404, 409].contains(failure.statusCode)) {
             await store.setSyncResult(entry.file,
                 state: 'conflict', error: failure.message);
+          } else {
+            rethrow;
+          }
+        }
+      }
+      // Computer-only invoices/customers never leave the computer. Share only
+      // the inventory quantities so other tills see the same remaining stock.
+      for (final entry in entries.where((entry) =>
+          entry.record['ownerId'] == ownerId &&
+          entry.record['syncState'] == 'local_only' &&
+          entry.record['roomPicks'] is List &&
+          entry.record['roomStockSyncedAt'] == null &&
+          (retryConflicts ||
+              entry.record['roomStockSyncState'] != 'conflict'))) {
+        if (_disposed) break;
+        try {
+          final quantities = <String, int>{};
+          final skus = <String, String>{};
+          for (final item in (entry.record['items'] as List).cast<Map>()) {
+            final id = item['productId'] as String;
+            quantities[id] = (quantities[id] ?? 0) +
+                ((item['weightGrams'] ?? item['quantity']) as num).toInt();
+            skus[id] = item['sku'] as String;
+          }
+          final localIds = quantities.keys
+              .where((id) => RegExp(r'^(offline|wholesale)-\d+$').hasMatch(id))
+              .toSet();
+          if (localIds.isNotEmpty) {
+            await adminApi.syncPendingOfflineProducts();
+            if ((await offlineStore.readPendingProducts())
+                .any((product) => localIds.contains(product['localId']))) {
+              throw const ApiResponseException(
+                  'Resolve the offline product catalogue conflict before sharing this bill stock.',
+                  statusCode: 409);
+            }
+          }
+          final response = await api.post('/admin/billing/rooms/local-sales', {
+            'requestId': entry.record['idempotencyKey'],
+            'items': [
+              for (final item in quantities.entries)
+                {
+                  'productId': item.key,
+                  'quantity': item.value,
+                  'sku': skus[item.key]
+                }
+            ],
+            'roomPicks': entry.record['roomPicks'],
+          });
+          if (response is! Map<String, dynamic> ||
+              response['success'] != true ||
+              response['requestId'] != entry.record['idempotencyKey'] ||
+              response['productIds'] is! Map) {
+            throw const FormatException(
+                'The server did not confirm the stock reference. Retry synchronization.');
+          }
+          final resolvedIds =
+              Map<String, dynamic>.from(response['productIds'] as Map);
+          if (refreshStock != null) {
+            await refreshStock!(entry.record);
+          } else {
+            for (final item in (entry.record['items'] as List).cast<Map>()) {
+              final products = await adminApi
+                  .searchPosProducts(item['sku'] as String? ?? '');
+              if (!products
+                  .any((p) => p.id == resolvedIds[item['productId']])) {
+                throw const FormatException(
+                    'Stock snapshot could not be refreshed. Retry synchronization.');
+              }
+              await offlineStore.mergeCatalog(products);
+            }
+          }
+          if (localIds.isNotEmpty) {
+            await offlineStore.saveCatalog(
+                (await offlineStore.readCatalogBaseline())
+                    .where((p) => !localIds.contains(p.id))
+                    .toList());
+          }
+          await RoomInventoryService(adminApi, offlineStore).load(
+              allowCached: false,
+              productIds: resolvedIds.values.cast<String>().toList());
+          await store.setRoomStockSyncResult(entry.file, synced: true);
+          acknowledged++;
+        } on ApiResponseException catch (failure) {
+          if ([400, 403, 404, 409].contains(failure.statusCode)) {
+            await store.setRoomStockSyncResult(entry.file,
+                error: failure.message);
           } else {
             rethrow;
           }
@@ -143,8 +246,16 @@ class LocalBillingSync extends ChangeNotifier {
                 entry.record['syncState'] == null ||
                 entry.record['syncState'] == 'local_only')
             .length;
+        stockPending = owned
+            .where((entry) =>
+                entry.record['syncState'] == 'local_only' &&
+                entry.record['roomPicks'] is List &&
+                entry.record['roomStockSyncedAt'] == null)
+            .length;
         conflicts = owned
-            .where((entry) => entry.record['syncState'] == 'conflict')
+            .where((entry) =>
+                entry.record['syncState'] == 'conflict' ||
+                entry.record['roomStockSyncState'] == 'conflict')
             .map((entry) => entry.record)
             .toList(growable: false);
         if (lastSync == null) {

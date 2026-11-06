@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +9,41 @@ import 'package:http/testing.dart';
 import 'package:freshharvest_grocery/services/api_service.dart';
 
 void main() {
+  test('401 recovery signal is scoped to the token that made the request',
+      () async {
+    final pending = Completer<http.Response>();
+    http.Request? oldRequest;
+    final client = MockClient((request) {
+      oldRequest = request;
+      return pending.future;
+    });
+    final api =
+        ApiService(baseUrl: 'https://audit.example.test', client: client)
+          ..setAuthToken('old-session');
+    final oldResponse = api.get('/admin/categories');
+    final failed =
+        expectLater(oldResponse, throwsA(isA<ApiResponseException>()));
+    await Future<void>.delayed(Duration.zero);
+    api.setAuthToken('new-session');
+    pending.complete(
+        http.Response('{"error":"expired"}', 401, request: oldRequest));
+    await failed;
+    expect(api.requiresSignIn.value, isFalse,
+        reason: 'A stale 401 must not invalidate a newer login');
+    client.close();
+
+    final expiredClient = MockClient((request) async =>
+        http.Response('{"error":"expired"}', 401, request: request));
+    final expiredApi =
+        ApiService(baseUrl: 'https://audit.example.test', client: expiredClient)
+          ..setAuthToken('expired');
+    await expectLater(expiredApi.get('/admin/categories'),
+        throwsA(isA<ApiResponseException>()));
+    expect(expiredApi.requiresSignIn.value, isTrue);
+    expiredApi.setAuthToken('replacement');
+    expect(expiredApi.requiresSignIn.value, isFalse);
+    expiredClient.close();
+  });
   test('authenticated requests send the session token as a bearer credential',
       () async {
     http.Request? capturedRequest;
