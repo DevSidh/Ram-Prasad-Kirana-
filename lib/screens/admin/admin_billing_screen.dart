@@ -4905,6 +4905,12 @@ class _PosBillDialogState extends State<PosBillDialog> {
       setState(() => _error = 'Add products before completing the bill.');
       return;
     }
+    if (_cart.any((line) =>
+        line.weightGrams == null &&
+        int.tryParse(line.quantityController.text.trim()) != line.quantity)) {
+      setState(() => _error = 'Enter a valid quantity for every bill item.');
+      return;
+    }
     final enteredDiscount = double.tryParse(_discount.text.trim());
     if (enteredDiscount == null ||
         !enteredDiscount.isFinite ||
@@ -5906,8 +5912,40 @@ class _PosBillDialogState extends State<PosBillDialog> {
                                 key: ObjectKey(line),
                                 controller: line.quantityController,
                                 enabled: !_saving,
-                                readOnly: true,
-                                onTap: () => _editLineQuantity(line),
+                                readOnly: _assignedRoomProducts
+                                    .contains(line.product.id),
+                                onTap: _assignedRoomProducts
+                                        .contains(line.product.id)
+                                    ? () => _editLineQuantity(line)
+                                    : null,
+                                onChanged: (value) {
+                                  final quantity = int.tryParse(value);
+                                  if (quantity == null ||
+                                      quantity <= 0 ||
+                                      _saving ||
+                                      _choosingRooms) {
+                                    return;
+                                  }
+                                  line.quantity = quantity;
+                                  final required = _cart
+                                      .where((other) =>
+                                          other.product.id == line.product.id)
+                                      .fold<int>(
+                                          0,
+                                          (sum, other) =>
+                                              sum +
+                                              (other.weightGrams ??
+                                                  other.quantity));
+                                  _roomPicks = [
+                                    ...?_roomPicks?.where(
+                                        (p) => p.productId != line.product.id),
+                                    RoomPick(
+                                        productId: line.product.id,
+                                        roomId: null,
+                                        quantity: required)
+                                  ];
+                                  _cartChanged();
+                                },
                                 textAlign: TextAlign.center,
                                 keyboardType: TextInputType.number,
                                 inputFormatters: [

@@ -257,7 +257,29 @@ async function main(): Promise<void> {
       (await fetch(`${endpoint}/staff`)).status,
       403,
     );
-    console.log('POS billing works without cashier shift management.');
+    const stockBeforeAnonymous = stockConsumptionCount;
+    const anonymousBody = {
+      idempotencyKey: '550e8400-e29b-41d4-a716-446655440004',
+      items: [{ productId: 'product-1', quantity: 1 }], discount: 0,
+      paymentMethod: 'PENDING', paidAmount: 0,
+    };
+    const anonymous = await fetch(saleEndpoint, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(anonymousBody),
+    });
+    assert.equal(anonymous.status, 201);
+    const anonymousSale = (await anonymous.json() as { sale: Record<string, unknown> }).sale;
+    assert.equal(anonymousSale.customerName, null);
+    assert.equal(anonymousSale.customerPhone, null);
+    assert.equal(anonymousSale.paymentStatus, 'PENDING');
+    assert.equal(anonymousSale.outstandingAmount, 10);
+    const anonymousReplay = await fetch(saleEndpoint, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(anonymousBody),
+    });
+    assert.equal(anonymousReplay.status, 200);
+    assert.equal(stockConsumptionCount, stockBeforeAnonymous + 1);
+    console.log('POS billing supports optional customer details and idempotent anonymous pending balances.');
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => error ? reject(error) : resolve());

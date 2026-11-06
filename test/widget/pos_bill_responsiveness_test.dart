@@ -33,6 +33,9 @@ class _Api extends AdminApiService {
   _Api() : super(ApiService(baseUrl: 'http://127.0.0.1:1'));
   int searches = 0;
   int saves = 0;
+  bool assignedStock = false;
+  double expectedPayable = 10;
+  List<Map<String, dynamic>>? submittedRoomPicks;
   final payment = _FonepayTestApi();
   @override
   FonepayApiService get fonepay => payment;
@@ -42,10 +45,34 @@ class _Api extends AdminApiService {
   Future<Map<String, dynamic>> getRoomInventory(
           {List<String>? productIds}) async =>
       {
-        'rooms': [],
-        'stocks': [],
+        'rooms': assignedStock
+            ? [
+                {
+                  'id': 'room-a',
+                  'name': 'Main store',
+                  'number': '01',
+                  'active': true
+                },
+                {
+                  'id': 'room-b',
+                  'name': 'Second room',
+                  'number': '02',
+                  'active': true
+                },
+              ]
+            : [],
+        'stocks': assignedStock
+            ? [
+                {'productId': 'tea', 'roomId': 'room-a', 'quantity': 6},
+                {'productId': 'tea', 'roomId': 'room-b', 'quantity': 4},
+              ]
+            : [],
         'totals': [
-          {'productId': 'tea', 'total': 100, 'available': 100}
+          {
+            'productId': 'tea',
+            'total': assignedStock ? 10 : 100,
+            'available': assignedStock ? 10 : 100
+          }
         ],
         'capturedAt': '2026-11-06T00:00:00Z',
       };
@@ -74,7 +101,8 @@ class _Api extends AdminApiService {
       List<Map<String, dynamic>>? roomPicks,
       Map<String, dynamic>? manualVerification}) {
     saves++;
-    expectSync(expectedTotal, 10);
+    expectSync(expectedTotal, expectedPayable);
+    submittedRoomPicks = roomPicks;
     expectSync(unitPrices, {'tea': 10});
     return (saveGate ??= Completer<PosSale>()).future;
   }
@@ -232,10 +260,10 @@ void main() {
     await start(tester);
     final name = find.byWidgetPredicate((widget) =>
         widget is TextField &&
-        widget.decoration?.hintText == 'Temporary customer name');
+        widget.decoration?.hintText == 'Customer name (optional)');
     final phone = find.byWidgetPredicate((widget) =>
         widget is TextField &&
-        widget.decoration?.hintText == 'Temporary customer phone');
+        widget.decoration?.hintText == 'Customer phone (optional)');
     await tester.enterText(name, 'SS');
     await tester.pump(const Duration(milliseconds: 450));
     await settleIO(tester);
@@ -316,13 +344,77 @@ void main() {
     button.onPressed!();
     button.onPressed!();
     await settleIO(tester);
-    await tester.tap(find.text('Use these rooms'));
+    expect(find.text('Use these rooms'), findsNothing);
     await tester.pump(const Duration(milliseconds: 400));
     expect(api.saves, 1);
     api.saveGate!.completeError(
         const ApiResponseException('Fixture conflict', statusCode: 409));
     await tester.pump();
     expect(find.textContaining('Fixture conflict'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
+  testWidgets('an empty quantity cannot silently charge the last valid count',
+      (tester) async {
+    await start(tester);
+    await tester.enterText(field('Qty'), '');
+    await tester.tap(find.widgetWithText(FilledButton, 'Create bill (F8)'));
+    await tester.pump();
+    expect(api.saves, 0);
+    expect(find.text('Enter a valid quantity for every bill item.'),
+        findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
+  testWidgets('assigned stock chooses its room on item entry, never after Pay',
+      (tester) async {
+    await start(tester);
+    api.assignedStock = true;
+    api.expectedPayable = 20;
+    final search = tester.widget<TextField>(find.byWidgetPredicate((w) =>
+        w is TextField &&
+        w.decoration?.labelText?.startsWith('Scan barcode') == true));
+    search.onSubmitted!('8901234567890');
+    await settleIO(tester);
+    await tester.tap(find.text('Add to bill'));
+    await settleIO(tester);
+    expect(
+        find.text('Where should we take the products from?'), findsOneWidget);
+    expect(api.saves, 0);
+    await tester.tap(find.text('Use these rooms'));
+    await settleIO(tester);
+    expect(tester.widget<TextField>(field('Qty')).controller!.text, '2');
+    await tester.tap(find.widgetWithText(FilledButton, 'Create bill (F8)'));
+    await settleIO(tester);
+    expect(find.text('Use these rooms'), findsNothing);
+    expect(api.saves, 1);
+    expect(api.submittedRoomPicks, [
+      {'productId': 'tea', 'roomId': 'room-a', 'quantity': 2},
+    ]);
+    api.saveGate!.completeError(
+        const ApiResponseException('Fixture conflict', statusCode: 409));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
+  testWidgets('cancelling source selection does not add or sell an item',
+      (tester) async {
+    await start(tester);
+    api.assignedStock = true;
+    final search = tester.widget<TextField>(find.byWidgetPredicate((w) =>
+        w is TextField &&
+        w.decoration?.labelText?.startsWith('Scan barcode') == true));
+    search.onSubmitted!('8901234567890');
+    await settleIO(tester);
+    await tester.tap(find.text('Add to bill'));
+    await settleIO(tester);
+    await tester.tap(find.text('Cancel / Back'));
+    await settleIO(tester);
+    expect(tester.widget<TextField>(field('Qty')).controller!.text, '1');
+    expect(api.saves, 0);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
@@ -350,7 +442,7 @@ void main() {
             .onPressed,
         isNull);
     await settleIO(tester);
-    await tester.tap(find.text('Use these rooms'));
+    expect(find.text('Use these rooms'), findsNothing);
     await settleIO(tester);
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('Waiting for cashier to confirm payment received.'),

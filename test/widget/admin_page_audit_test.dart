@@ -59,6 +59,15 @@ class _AuditApi extends ApiService {
       {Map<String, String>? queryParams}) async {
     endpoints.add(endpoint);
     if (fail) throw Exception('Isolated audit network failure');
+    if (endpoint == '/admin/billing/rooms') {
+      return {
+        'rooms': [],
+        'stocks': [],
+        'totals': [],
+        'products': [],
+        'capturedAt': '2026-11-06T00:00:00Z'
+      };
+    }
     return <String, dynamic>{
       for (final key in [
         'products',
@@ -186,7 +195,7 @@ class _AuditApi extends ApiService {
 }
 
 class _MemoryCatalog extends OfflinePosStore {
-  const _MemoryCatalog();
+  const _MemoryCatalog() : super(useLocalStock: false);
   @override
   Future<void> mergeCatalog(List<PosProduct> products) async {}
   @override

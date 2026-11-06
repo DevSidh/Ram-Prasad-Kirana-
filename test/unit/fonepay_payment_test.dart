@@ -16,6 +16,7 @@ class _Api extends ApiService {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   test('canonical NPR balance uses saved total minus received payment', () {
     final request = fonepayFixtureRequest();
     expect(request.matchesPayableBill(fonepayFixtureSale()), isTrue);

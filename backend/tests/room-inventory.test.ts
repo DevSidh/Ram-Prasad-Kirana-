@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import express from 'express';
 import type { Prisma, PrismaClient } from '@prisma/client';
-import { consumeRoomStock, RoomInventoryError } from '../src/services/room-inventory.js';
+import { consumeRoomStock, RoomInventoryError, allocateOpeningRoomStock } from '../src/services/room-inventory.js';
 import { InventoryService } from '../src/services/inventory.js';
 import { createRoomInventoryRouter } from '../src/routes/admin-rooms.js';
 import { createAdminBillingRouter } from '../src/routes/admin-billing.js';
@@ -9,6 +9,30 @@ import { createAdminBillingRouter } from '../src/routes/admin-billing.js';
 // Isolated rollback-capable fixture. No database connection or real stock.
 type Row = Record<string, any>;
 async function main() {
+  const openingRows: Row[] = [], openingMovements: Row[] = [];
+  const openingTx = {
+    inventoryRoom: { count: async ({where}: Row) => where.id.in.filter((id: string) => ['a', 'b'].includes(id)).length },
+    inventoryRoomStock: { create: async ({data}: Row) => { openingRows.push(data); } },
+    inventoryRoomMovement: { create: async ({data}: Row) => { openingMovements.push(data); } },
+  } as unknown as Prisma.TransactionClient;
+  await allocateOpeningRoomStock(openingTx, 'new-product', 5,
+    [{roomId: 'a', quantity: 2}, {roomId: 'b', quantity: 3}], 'cashier', '1 pc');
+  assert.deepEqual(openingRows.map((r) => [r.roomId, r.quantity]), [['a', 2], ['b', 3]]);
+  assert.equal(openingMovements.length, 2);
+  openingRows.length = 0;
+  await allocateOpeningRoomStock(openingTx, 'rice', 1500,
+    [{roomId: 'a', quantity: 1.25}, {roomId: 'b', quantity: .25}], 'cashier', '1 kg');
+  assert.deepEqual(openingRows.map((r) => r.quantity), [1250, 250]);
+  for (const allocations of [
+    [{roomId: 'a', quantity: 1}],
+    [{roomId: 'a', quantity: 2}, {roomId: 'a', quantity: 3}],
+    [{roomId: 'inactive', quantity: 5}],
+    [{roomId: 'a', quantity: 2.5}, {roomId: 'b', quantity: 2.5}],
+  ]) {
+    const before = openingRows.length;
+    await assert.rejects(allocateOpeningRoomStock(openingTx, 'bad', 5, allocations, 'cashier', '1 pc'), RoomInventoryError);
+    assert.equal(openingRows.length, before, 'invalid opening allocations never create partial room stock');
+  }
   let stocks: Row[] = [{ productId: 'p', roomId: 'a', quantity: 6 }, { productId: 'p', roomId: 'b', quantity: 2 }];
   let movements: Row[] = [];
   let receipts: Row[] = [];

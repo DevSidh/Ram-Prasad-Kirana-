@@ -174,7 +174,7 @@ class BillingInputDecoration extends m.InputDecoration {
   @override
   int? get helperMaxLines => super.helperMaxLines ?? 3;
   @override
-  int? get hintMaxLines => super.hintMaxLines ?? 1;
+  int? get hintMaxLines => super.hintMaxLines ?? 2;
 }
 
 class BillingTextFormField extends m.TextFormField {
