@@ -1,5 +1,4 @@
-import 'dart:math' as math;
-import 'dart:typed_data';
+import 'dart:math' as math;import 'dart:typed_data';
 
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -338,130 +337,37 @@ class PosReceiptService {
     FonepayPaymentRequest? fonepay,
   }) async {
     _validateFonepay(sale, fonepay);
-    if (ReadableBillPdf.needsShaping(
-        [sale.customerName, ...sale.items.map((item) => item.productName)])) {
-      return ReadableBillPdf.create(
-          number: sale.receiptNumber,
-          date: sale.createdAt,
-          customerName: sale.customerName,
-          customerPhone: sale.customerPhone,
-          items: [
-            for (final item in sale.items)
-              (
-                item: item.productName,
-                quantity: item.weightGrams == null
-                    ? '${item.quantity}'
-                    : '${item.weightGrams} g',
-                amount: item.lineTotal
-              )
-          ],
-          subtotal: sale.subtotal,
-          discount: sale.discount,
-          vat: sale.vatAmount,
-          total: sale.total,
-          method: sale.paymentMethod,
-          status: sale.paymentStatus,
-          paid: sale.paidAmount ??
-              (sale.paymentStatus == 'COMPLETED' ? sale.total : 0),
-          due: sale.outstandingAmount,
-          paperWidthMm: paperWidthMm,
-          paymentInstructions: fonepay == null ? null : _fonepayQr(fonepay));
-    }
-    final baseFormat = pageFormat(sale, paperWidthMm: paperWidthMm);
-    final format = fonepay == null
-        ? baseFormat
-        : PdfPageFormat(
-            baseFormat.width,
-            baseFormat.height + 260,
-            marginAll: 4 * PdfPageFormat.mm,
-          );
-    final document = pw.Document();
-    document.addPage(
-      pw.Page(
-        pageFormat: format,
-        build: (context) => pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-          children: [
-            pw.Text(
-              'Ram Prasad General Store',
-              textAlign: pw.TextAlign.center,
-              style: pw.TextStyle(
-                fontSize: paperWidthMm == 58 ? 10 : 12,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-            pw.SizedBox(height: 4),
-            pw.Text(
-              'PAN No. ${AppConstants.storePanNumber}',
-              textAlign: pw.TextAlign.center,
-              style: const pw.TextStyle(fontSize: 8),
-            ),
-            pw.SizedBox(height: 3),
-            pw.Text(
-              'Receipt ${sale.receiptNumber}',
-              style: const pw.TextStyle(fontSize: 8),
-            ),
-            pw.Text(
-              sale.createdAt.toLocal().toString().substring(0, 16),
-              style: const pw.TextStyle(fontSize: 8),
-            ),
-            if (sale.customerName?.isNotEmpty == true)
-              pw.Text(
-                'Customer: ${sale.customerName}',
-                style: const pw.TextStyle(fontSize: 8),
-              ),
-            pw.Divider(),
-            for (final item in sale.items) ...[
-              pw.Row(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Expanded(
-                    child: pw.Text(
-                      item.productName,
-                      style: const pw.TextStyle(fontSize: 8),
-                    ),
-                  ),
-                  pw.Text(
-                    '${AppConstants.currencySymbol}'
-                    '${item.lineTotal.toStringAsFixed(2)}',
-                    style: const pw.TextStyle(fontSize: 8),
-                  ),
-                ],
-              ),
-              pw.Text(
-                item.weightGrams == null
-                    ? '${item.quantity} x ${item.unitPrice.toStringAsFixed(2)}'
-                    : '${item.weightGrams} g x ${item.unitPrice.toStringAsFixed(2)}/kg',
-                style: const pw.TextStyle(fontSize: 7),
-              ),
-              pw.SizedBox(height: 3),
-            ],
-            pw.Divider(),
-            _totalRow('Subtotal', sale.subtotal),
-            if (sale.discount > 0) _totalRow('Discount', -sale.discount),
-            if (sale.vatAmount > 0)
-              _totalRow(
-                  'VAT (${sale.vatRate.toStringAsFixed(2)}%)', sale.vatAmount),
-            pw.SizedBox(height: 4),
-            _totalRow('TOTAL', sale.total, bold: true),
-            pw.SizedBox(height: 5),
-            pw.Text(
-              'Payment: ${sale.paymentMethod}',
-              style: const pw.TextStyle(fontSize: 8),
-            ),
-            if (fonepay != null)
-              _fonepayQr(fonepay, size: paperWidthMm == 58 ? 104 : 135),
-            pw.SizedBox(height: 10),
-            pw.Text(
-              'Thank you for shopping with us!',
-              textAlign: pw.TextAlign.center,
-              style: const pw.TextStyle(fontSize: 8),
-            ),
-          ],
-        ),
-      ),
+    // The measured text renderer determines the roll length from the actual
+    // wrapped rows, for English and Nepali on both supported paper widths.
+    return ReadableBillPdf.create(
+      number: sale.receiptNumber,
+      date: sale.createdAt,
+      customerName: sale.customerName,
+      customerPhone: sale.customerPhone,
+      items: [
+        for (final item in sale.items)
+          (
+            item: item.productName,
+            quantity: item.weightGrams == null
+                ? '${item.quantity}'
+                : '${item.weightGrams} g',
+            amount: item.lineTotal
+          )
+      ],
+      subtotal: sale.subtotal,
+      discount: sale.discount,
+      vat: sale.vatAmount,
+      total: sale.total,
+      method: sale.paymentMethod,
+      status: sale.paymentStatus,
+      paid: sale.paidAmount ??
+          (sale.paymentStatus == 'COMPLETED' ? sale.total : 0),
+      due: sale.outstandingAmount,
+      paperWidthMm: paperWidthMm,
+      paymentInstructions: fonepay == null
+          ? null
+          : _fonepayQr(fonepay, size: paperWidthMm == 58 ? 104 : 135),
     );
-    return document.save();
   }
 
   static void _validateFonepay(PosSale sale, FonepayPaymentRequest? request) {
@@ -505,21 +411,4 @@ class PosReceiptService {
         pw.Text('Payment unconfirmed. Verify with Fonepay.',
             style: const pw.TextStyle(fontSize: 7)),
       ]);
-
-  static pw.Widget _totalRow(String label, double amount, {bool bold = false}) {
-    final style = pw.TextStyle(
-      fontSize: bold ? 10 : 8,
-      fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-    );
-    return pw.Row(
-      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-      children: [
-        pw.Text(label, style: style),
-        pw.Text(
-          '${AppConstants.currencySymbol}${amount.toStringAsFixed(2)}',
-          style: style,
-        ),
-      ],
-    );
-  }
 }

@@ -14,6 +14,8 @@ import '../../services/api_service.dart';
 import '../../theme/admin_widgets.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/store_animation.dart';
+import '../../widgets/product_identity.dart';
+import '../../widgets/product_thumbnail.dart';
 import 'admin_inventory_expiry_screen.dart';
 import 'admin_supplier_bills_screen.dart';
 
@@ -520,12 +522,10 @@ class _RestockReceiptCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          BillingText(
-            receipt.productName,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+          ProductIdentity(
+              name: receipt.productName,
+              sku: receipt.productSku,
+              style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 3),
           BillingText(
             '${receipt.productSku} · $date · $time',
@@ -660,12 +660,7 @@ class _RestockProductCard extends StatelessWidget {
             '${product.brand?.isNotEmpty == true ? product.brand : product.sku}'
             ' · ${product.availableStockLabel} available'
             ' · Alert at ${product.lowStockThreshold}',
-        leading: Icon(
-          isOutOfStock
-              ? Icons.remove_shopping_cart_outlined
-              : Icons.inventory_2_outlined,
-          size: 20,
-        ),
+        leading: ProductThumbnail(imageUrl: product.imageUrl ?? '', size: 56),
         tint: isOutOfStock ? AppColors.thumbnailRed : AppColors.thumbnailAmber,
         trailing: FilledButton.icon(
           onPressed: onRestock,
@@ -836,7 +831,11 @@ class _RestockDialogState extends State<_RestockDialog> {
               children: [
                 const BillingText(
                     'No supplier bill or invoice number is required.'),
-                BillingText(widget.product.name),
+                ProductIdentity(
+                    name: widget.product.name,
+                    imageUrl: widget.product.imageUrl,
+                    productId: widget.product.id,
+                    sku: widget.product.sku),
                 const SizedBox(height: 4),
                 BillingText(
                   'Current available stock: ${widget.product.availableStockLabel}',

@@ -1,4 +1,5 @@
 import '../../widgets/billing_localized_widgets.dart';
+import '../../widgets/product_identity.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -768,11 +769,11 @@ class _ProductCouponDialogState extends State<_ProductCouponDialog> {
                       .map(
                         (product) => DropdownMenuItem(
                           value: product,
-                          child: BillingText(
-                            '${product.name} · ${AppConstants.currencySymbol}${product.price.toStringAsFixed(0)}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          child: ProductIdentity(
+                              name:
+                                  '${product.name} · ${AppConstants.currencySymbol}${product.price.toStringAsFixed(0)}',
+                              imageUrl: product.imageUrl,
+                              size: 36),
                         ),
                       )
                       .toList(growable: false),

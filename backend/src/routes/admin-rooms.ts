@@ -35,14 +35,14 @@ export function createRoomInventoryRouter(prisma: PrismaClient, adminOnly: Reque
       tx.inventoryRoom.findMany({ orderBy: [{ number: 'asc' }, { id: 'asc' }] }),
       tx.inventoryRoomStock.findMany({ where: ids ? { productId: { in: ids } } : {}, take: 50001 }),
       tx.inventory.findMany({ where: ids ? { productId: { in: ids } } : {},
-        select: { productId: true, totalStock: true, reservedStock: true, product: { select: { id: true, name: true, sku: true, barcode: true, price: true, unitLabel: true } } }, take: 50001 }),
+        select: { productId: true, totalStock: true, reservedStock: true, product: { select: { id: true, name: true, sku: true, barcode: true, price: true, unitLabel: true, imageUrl: true } } }, take: 50001 }),
       tx.wholesaleItem.findMany({ where: ids ? { id: { in: ids.filter((id) => id.startsWith('wholesale-')).map((id) => id.slice(10)) } } : {},
-        select: { id: true, stock: true, name: true, sku: true, price: true, unitLabel: true }, take: 50001 }),
+        select: { id: true, stock: true, name: true, sku: true, price: true, unitLabel: true, imageUrl: true }, take: 50001 }),
     ]);
     if ([stocks, inventory, wholesale].some((rows) => rows.length > 50000)) throw new RoomInventoryError('Inventory is too large. Search for specific products.');
     return { rooms, stocks, products: [
       ...inventory.map((row) => ({ ...row.product, price: Number(row.product.price), available: row.totalStock - row.reservedStock })),
-      ...wholesale.map((row) => ({ id: `wholesale-${row.id}`, name: row.name, sku: row.sku, barcode: null, price: Number(row.price), unitLabel: row.unitLabel, available: row.stock })),
+      ...wholesale.map((row) => ({ id: `wholesale-${row.id}`, name: row.name, sku: row.sku, imageUrl: row.imageUrl, barcode: null, price: Number(row.price), unitLabel: row.unitLabel, available: row.stock })),
     ], totals: [
       ...inventory.map((row) => ({ productId: row.productId, total: row.totalStock, available: row.totalStock - row.reservedStock })),
       ...wholesale.map((row) => ({ productId: `wholesale-${row.id}`, total: row.stock, available: row.stock })),

@@ -1,4 +1,5 @@
 import '../../widgets/billing_localized_widgets.dart';
+import '../../widgets/product_thumbnail.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/admin_models.dart';
@@ -221,7 +222,8 @@ class _SkuProductTile extends StatelessWidget {
             AppRowCard(
               title: product.name,
               subtitle: product.categoryName,
-              leading: const Icon(Icons.inventory_2_outlined, size: 20),
+              leading:
+                  ProductThumbnail(imageUrl: product.imageUrl ?? '', size: 56),
               tint: AppColors.thumbnailBlue,
               trailing: AppStatusPill(
                 product.isActive ? 'Active' : 'Inactive',

@@ -907,6 +907,7 @@ class AdminOrder {
 }
 
 class AdminOrderItem {
+  final String? imageUrl;
   final String name;
   final String sku;
   final int quantity;
@@ -915,6 +916,7 @@ class AdminOrderItem {
   final bool isWholesale;
 
   const AdminOrderItem({
+    this.imageUrl,
     required this.name,
     required this.sku,
     required this.quantity,
@@ -925,6 +927,7 @@ class AdminOrderItem {
 
   factory AdminOrderItem.fromJson(Map<String, dynamic> json) {
     return AdminOrderItem(
+      imageUrl: json['imageUrl']?.toString(),
       name: json['name']?.toString() ?? '',
       sku: json['sku']?.toString() ?? '',
       quantity: _asInt(json['quantity']),

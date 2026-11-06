@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:printing/printing.dart';
+import 'package:pdf/pdf.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -42,6 +43,7 @@ import '../../services/store_audio_service.dart';
 import '../../theme/admin_widgets.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/product_thumbnail.dart';
+import '../../widgets/product_identity.dart';
 import 'barcode_scanner_screen.dart';
 import 'admin_billing_staff_screen.dart';
 import '../auth/login_screen.dart';
@@ -463,6 +465,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         operatorId: context.read<AuthProvider>().currentUser?.id ?? '',
         allowOfflineSync: _isWindowsOperatorMode,
         printSale: _printManuallyVerifiedBill,
+        paperWidthMm: _paperWidthMm,
       ),
     );
     if (!mounted) return;
@@ -502,7 +505,8 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       }
       if (completedSale.localPath != null) {
         printMessage = ' Saved on this computer: ${completedSale.localPath}';
-      } else if (completedSale.autoPrintAllowed &&
+      }
+      if (completedSale.autoPrintAllowed &&
           defaultTargetPlatform == TargetPlatform.windows) {
         try {
           final printed = await _printManuallyVerifiedBill(completedSale);
@@ -545,6 +549,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     return Printing.layoutPdf(
       name: BillPdfArchiveService.fileName(sale),
       format: PosReceiptService.pageFormat(sale, paperWidthMm: _paperWidthMm),
+      dynamicLayout: false,
       onLayout: (_) async => bytes,
     );
   }
@@ -925,10 +930,12 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                           .map(
                             (item) => DropdownMenuItem(
                               value: item,
-                              child: BillingText(
-                                '${item.productName} · ${item.sku}',
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                              child: ProductIdentity(
+                                  name: '${item.productName} · ${item.sku}',
+                                  productId: item.productId,
+                                  sku: item.sku,
+                                  store: widget.offlineStore,
+                                  size: 36),
                             ),
                           )
                           .toList(growable: false),
@@ -1028,6 +1035,8 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                             final product = matches[index];
                             return ListTile(
                               dense: true,
+                              leading: ProductThumbnail(
+                                  imageUrl: product.imageUrl ?? '', size: 48),
                               title: BillingText(product.name),
                               subtitle: BillingText(
                                 '${product.sku} · ${_money(product.price)} · '
@@ -1826,7 +1835,8 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               AppRowCard(
                 title: product.name,
                 subtitle: '${product.sku} · ${_money(product.price)}',
-                leading: const Icon(Icons.inventory_2_outlined),
+                leading: ProductThumbnail(
+                    imageUrl: product.imageUrl ?? '', size: 52),
                 trailing: FilledButton(
                   onPressed:
                       _working ? null : () => _newBill(scannedProduct: product),
@@ -2442,6 +2452,8 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           for (final item in exchange.items)
             ListTile(
               dense: true,
+              leading: CatalogProductThumbnail(
+                  name: item.productName, store: widget.offlineStore),
               title: BillingText(
                 '${item.type == 'RETURN' ? 'Return' : 'Replacement'}: '
                 '${item.productName}',
@@ -2639,6 +2651,10 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
                   for (final item in sale.items)
                     ListTile(
                       dense: true,
+                      leading: CatalogProductThumbnail(
+                          productId: item.productId,
+                          sku: item.sku,
+                          store: widget.offlineStore),
                       title: BillingText(item.productName),
                       subtitle: BillingText(
                         item.weightGrams == null
@@ -2718,6 +2734,9 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
             ),
           ],
         ),
+        const SizedBox(height: 12),
+        const BillingText(
+            'Choose the paper width used by your thermal printer. Receipt length adjusts automatically to the bill contents.'),
       ],
     );
   }
@@ -2844,6 +2863,10 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           for (final item in sale.items)
             ListTile(
               dense: true,
+              leading: CatalogProductThumbnail(
+                  productId: item.productId,
+                  sku: item.sku,
+                  store: widget.offlineStore),
               title: BillingText(item.productName),
               subtitle: BillingText(
                 item.weightGrams == null
@@ -3002,7 +3025,10 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
 
   Future<void> _printOrShareInvoice(PosSale sale) async {
     try {
-      final bytes = await PosReceiptService.createInvoicePdf(sale);
+      final thermal = defaultTargetPlatform == TargetPlatform.windows;
+      final bytes = thermal
+          ? await PosReceiptService.createPdf(sale, paperWidthMm: _paperWidthMm)
+          : await PosReceiptService.createInvoicePdf(sale);
       await BillPdfArchiveService.save(sale, bytes);
       if (!mounted) return;
       final filename = BillPdfArchiveService.fileName(sale);
@@ -3011,6 +3037,10 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
           defaultTargetPlatform == TargetPlatform.macOS) {
         await Printing.layoutPdf(
           name: filename,
+          format: thermal
+              ? PosReceiptService.pageFormat(sale, paperWidthMm: _paperWidthMm)
+              : PdfPageFormat.a4,
+          dynamicLayout: !thermal,
           onLayout: (_) async => bytes,
         );
       } else {
@@ -3639,10 +3669,12 @@ class _PosProductQuantityDialog extends StatefulWidget {
   const _PosProductQuantityDialog({
     required this.product,
     required this.isWeightProduct,
+    this.initialQuantity = 1,
   });
 
   final PosProduct product;
   final bool isWeightProduct;
+  final int initialQuantity;
 
   @override
   State<_PosProductQuantityDialog> createState() =>
@@ -3651,7 +3683,7 @@ class _PosProductQuantityDialog extends StatefulWidget {
 
 class _PosProductQuantityDialogState extends State<_PosProductQuantityDialog> {
   late final TextEditingController _quantityController =
-      TextEditingController(text: '1');
+      TextEditingController(text: '${widget.initialQuantity}');
 
   @override
   void dispose() {
@@ -3666,7 +3698,11 @@ class _PosProductQuantityDialogState extends State<_PosProductQuantityDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: BillingText('Add ${widget.product.name}'),
+        title: Row(children: [
+          ProductThumbnail(imageUrl: widget.product.imageUrl ?? '', size: 56),
+          const SizedBox(width: 12),
+          Expanded(child: BillingText('Add ${widget.product.name}')),
+        ]),
         content: TextField(
           controller: _quantityController,
           autofocus: true,
@@ -3704,6 +3740,7 @@ class PosBillDialog extends StatefulWidget {
     required this.operatorId,
     required this.allowOfflineSync,
     this.printSale,
+    this.paperWidthMm = 80,
     this.heldSale,
     this.scannedProduct,
     this.loadLocalCustomers,
@@ -3717,6 +3754,7 @@ class PosBillDialog extends StatefulWidget {
   final String operatorId;
   final bool allowOfflineSync;
   final Future<bool> Function(PosSale)? printSale;
+  final int paperWidthMm;
   final OfflinePosStore offlineStore;
   final bool refreshCatalogOnOpen;
   final Future<List<AdminCustomer>> Function()? loadLocalCustomers;
@@ -3727,7 +3765,9 @@ class PosBillDialog extends StatefulWidget {
 
 class _PosBillDialogState extends State<PosBillDialog> {
   List<RoomPick>? _roomPicks;
-  String? _roomSelectionFingerprint;
+  final _assignedRoomProducts = <String>{};
+  final _roomLabels = <String, String>{};
+  bool _choosingRooms = false;
   bool _roomSelectionNeedsRefresh = false;
   OfflinePosStore get _offlinePosStore => widget.offlineStore;
   final _barcodeQueue = OrderedWorkQueue();
@@ -3795,6 +3835,22 @@ class _PosBillDialogState extends State<PosBillDialog> {
     }
     final scanned = widget.scannedProduct;
     if (scanned != null) _addProduct(scanned);
+    if (held != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_additionQueue.run(() async {
+          final products = {
+            for (final line in _cart) line.product.id: line.product
+          };
+          for (final product in products.values) {
+            final required = _cart
+                .where((line) => line.product.id == product.id)
+                .fold<int>(0,
+                    (sum, line) => sum + (line.weightGrams ?? line.quantity));
+            if (!await _chooseProductRooms(product, required)) break;
+          }
+        }));
+      });
+    }
     unawaited(_searchProducts(''));
     if (widget.refreshCatalogOnOpen) unawaited(_refreshOfflineCatalog());
     _offlineSyncTimer = Timer.periodic(const Duration(seconds: 45), (_) {
@@ -4239,7 +4295,10 @@ class _PosBillDialogState extends State<PosBillDialog> {
     // JSON is the committed financial record. A printer/PDF failure must not
     // turn a completed sale into a failed sale or cause a duplicate retry.
     try {
-      final bytes = await PosReceiptService.createInvoicePdf(sale);
+      final bytes = defaultTargetPlatform == TargetPlatform.windows
+          ? await PosReceiptService.createPdf(sale,
+              paperWidthMm: widget.paperWidthMm)
+          : await PosReceiptService.createInvoicePdf(sale);
       await File('${directory.path}/$invoiceNumber.pdf').writeAsBytes(
         bytes,
         flush: true,
@@ -4551,6 +4610,9 @@ class _PosBillDialogState extends State<PosBillDialog> {
 
   Future<bool> _promptAndAddProduct(PosProduct product) async {
     if (!mounted || _saving) return false;
+    final existingProduct =
+        _cart.where((line) => _sameProduct(line.product, product)).firstOrNull;
+    if (existingProduct != null) product = existingProduct.product;
     final quantity = await showDialog<int>(
       context: context,
       builder: (dialogContext) => _PosProductQuantityDialog(
@@ -4559,6 +4621,12 @@ class _PosBillDialogState extends State<PosBillDialog> {
       ),
     );
     if (quantity == null || !mounted) return false;
+    final required = _cart
+        .where((line) => line.product.id == product.id)
+        .fold<int>(
+            quantity, (sum, line) => sum + (line.weightGrams ?? line.quantity));
+    if (!await _chooseProductRooms(product, required)) return false;
+    if (!mounted) return false;
     if (_isWeightProduct(product)) {
       _cart.add(_PosCartLine(product, weightGrams: quantity));
       _cartChanged(membership: true);
@@ -4574,6 +4642,166 @@ class _PosBillDialogState extends State<PosBillDialog> {
       _cartChanged(membership: true);
     }
     return true;
+  }
+
+  Future<bool> _chooseProductRooms(PosProduct product, int required) async {
+    if (!mounted) return false;
+    setState(() {
+      _choosingRooms = true;
+      _error = null;
+    });
+    try {
+      final snapshot = await RoomInventoryService(widget.api, _offlinePosStore)
+          .load(productIds: [product.id]);
+      if (!mounted) return false;
+      final assigned =
+          snapshot.stocks[product.id]?.values.any((n) => n > 0) ?? false;
+      _roomLabels
+          .addEntries(snapshot.rooms.map((r) => MapEntry(r.id, r.label)));
+      if (assigned) _assignedRoomProducts.add(product.id);
+      List<RoomPick>? picks;
+      if (assigned) {
+        picks = await showDialog<List<RoomPick>>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => RoomPickDialog(
+                snapshot: snapshot,
+                products: [product],
+                requiredQuantities: {product.id: required},
+                initialPicks: _roomPicks
+                        ?.where((p) => p.productId == product.id)
+                        .toList() ??
+                    const []));
+        if (picks == null || !mounted) return false;
+      } else {
+        if (required >
+            (snapshot.totals[product.id]?.available ?? product.available)) {
+          throw StateError('Not enough available stock for this quantity.');
+        }
+        picks = [
+          RoomPick(productId: product.id, roomId: null, quantity: required)
+        ];
+      }
+      _roomPicks = [
+        ...?_roomPicks?.where((p) => p.productId != product.id),
+        ...picks
+      ];
+      if (assigned) {
+        _assignedRoomProducts.add(product.id);
+      } else {
+        _assignedRoomProducts.remove(product.id);
+      }
+      _roomSelectionNeedsRefresh = false;
+      return true;
+    } catch (error) {
+      if (mounted) {
+        setState(
+            () => _error = error.toString().replaceFirst('Bad state: ', ''));
+      }
+      return false;
+    } finally {
+      if (mounted) setState(() => _choosingRooms = false);
+    }
+  }
+
+  void _trimRoomPicks(String productId) {
+    var left = _cart
+        .where((line) => line.product.id == productId)
+        .fold<int>(0, (sum, line) => sum + (line.weightGrams ?? line.quantity));
+    final retained = <RoomPick>[];
+    for (final pick in _roomPicks ?? <RoomPick>[]) {
+      if (pick.productId != productId) {
+        retained.add(pick);
+        continue;
+      }
+      final take = pick.quantity.clamp(0, left);
+      if (take > 0) {
+        retained.add(RoomPick(
+            productId: productId, roomId: pick.roomId, quantity: take));
+      }
+      left -= take;
+    }
+    _roomPicks = retained;
+    if (!_cart.any((line) => line.product.id == productId)) {
+      _assignedRoomProducts.remove(productId);
+    }
+  }
+
+  Future<void> _changeLineQuantity(_PosCartLine line, int quantity,
+      {int? delta}) async {
+    if (_saving || _choosingRooms || quantity <= 0) return;
+    await _additionQueue.run(() async {
+      if (!mounted || !_cart.contains(line)) return;
+      if (delta != null) quantity = line.quantity + delta;
+      if (quantity <= 0) {
+        _removeCartLine(line);
+        return;
+      }
+      final required = _cart
+          .where(
+              (other) => other != line && other.product.id == line.product.id)
+          .fold<int>(quantity,
+              (sum, other) => sum + (other.weightGrams ?? other.quantity));
+      if (quantity > line.quantity &&
+          !await _chooseProductRooms(line.product, required)) {
+        return;
+      }
+      if (!mounted || !_cart.contains(line)) return;
+      line.setQuantity(quantity);
+      _trimRoomPicks(line.product.id);
+      _cartChanged();
+    });
+  }
+
+  Future<void> _editLineQuantity(_PosCartLine line) async {
+    if (_saving || _choosingRooms) return;
+    final quantity = await showDialog<int>(
+        context: context,
+        builder: (_) => _PosProductQuantityDialog(
+            product: line.product,
+            isWeightProduct: false,
+            initialQuantity: line.quantity));
+    if (quantity != null) await _changeLineQuantity(line, quantity);
+  }
+
+  void _removeCartLine(_PosCartLine line) {
+    if (_saving || _choosingRooms) return;
+    _cart.remove(line);
+    _trimRoomPicks(line.product.id);
+    line.dispose();
+    _cartChanged(membership: true);
+  }
+
+  Widget _cartRoomLabel(_PosCartLine line) {
+    if (!_assignedRoomProducts.contains(line.product.id)) {
+      return BillingText(line.product.sku,
+          style: Theme.of(context).textTheme.bodySmall);
+    }
+    final picks = _roomPicks?.where((p) => p.productId == line.product.id) ??
+        const <RoomPick>[];
+    final label = picks
+        .map((p) =>
+            '${p.roomId == null ? 'Unassigned' : _roomLabels[p.roomId] ?? p.roomId}: ${p.quantity}')
+        .join(', ');
+    return TextButton.icon(
+      style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          alignment: Alignment.centerLeft),
+      onPressed: _saving || _choosingRooms
+          ? null
+          : () => unawaited(_additionQueue.run(() async {
+                final required = _cart
+                    .where((other) => other.product.id == line.product.id)
+                    .fold<int>(
+                        0,
+                        (sum, other) =>
+                            sum + (other.weightGrams ?? other.quantity));
+                await _chooseProductRooms(line.product, required);
+              })),
+      icon: const Icon(Icons.warehouse_outlined, size: 18),
+      label: BillingText(label.isEmpty ? 'Choose source room' : label,
+          maxLines: 2, overflow: TextOverflow.ellipsis),
+    );
   }
 
   bool _sameProduct(PosProduct first, PosProduct second) {
@@ -4708,13 +4936,6 @@ class _PosBillDialogState extends State<PosBillDialog> {
       setState(() => _error = 'Enter a VAT rate from 0% to 100%.');
       return;
     }
-    if (_paymentMethod == 'PENDING' &&
-        (_customerName.text.trim().isEmpty ||
-            _customerPhone.text.trim().isEmpty)) {
-      setState(() =>
-          _error = 'Enter the customer name and phone for a pending balance.');
-      return;
-    }
     final enteredPaidNow = _paymentMethod == 'PENDING'
         ? double.tryParse(_paidNow.text.trim())
         : _total;
@@ -4740,32 +4961,22 @@ class _PosBillDialogState extends State<PosBillDialog> {
     });
     try {
       final required = <String, int>{};
-      final products = <String, PosProduct>{};
       for (final line in _cart) {
         required[line.product.id] = (required[line.product.id] ?? 0) +
             (line.weightGrams ?? line.quantity);
-        products[line.product.id] = line.product;
       }
-      final fingerprint = jsonEncode(_requestItems());
-      if (_roomPicks == null || _roomSelectionFingerprint != fingerprint) {
-        final snapshot =
-            await RoomInventoryService(widget.api, _offlinePosStore)
-                .load(productIds: required.keys.toList());
-        if (!mounted) return;
-        final picks = await showDialog<List<RoomPick>>(
-            context: context,
-            barrierDismissible: false,
-            builder: (_) => RoomPickDialog(
-                snapshot: snapshot,
-                products: products.values.toList(),
-                requiredQuantities: required));
-        if (picks == null) {
-          if (mounted) setState(() => _saving = false);
-          return;
+      final snapshot = await RoomInventoryService(widget.api, _offlinePosStore)
+          .load(productIds: required.keys.toList());
+      if (!mounted) return;
+      for (final id in required.keys) {
+        if (snapshot.stocks[id]?.values.any((n) => n > 0) ?? false) {
+          _assignedRoomProducts.add(id);
         }
-        _roomPicks = picks;
-        _roomSelectionFingerprint = fingerprint;
       }
+      // Availability is rechecked silently. Source choices are made on the item,
+      // before opening any payment UI, never in response to Pay.
+      snapshot.validatePicks(_roomPicks ?? const [], required);
+      _roomSelectionNeedsRefresh = false;
       if (payingFonepay) {
         await _payWithFonepay(discount, vatRate);
         return;
@@ -4848,9 +5059,6 @@ class _PosBillDialogState extends State<PosBillDialog> {
     } catch (error) {
       if (mounted) {
         setState(() {
-          if (error is ApiResponseException && error.statusCode == 409) {
-            _roomPicks = null;
-          }
           _error = error.toString().replaceFirst('Exception: ', '');
           _saving = false;
         });
@@ -4879,7 +5087,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
               onVerified: (verification) async {
                 if (_roomSelectionNeedsRefresh) {
                   throw StateError(
-                      'Close payment and choose source rooms again before retrying.');
+                      'Close payment and edit the source room beside the bill item before retrying.');
                 }
                 if (_saveOnThisComputer) {
                   return _createLocalSale(
@@ -4920,11 +5128,14 @@ class _PosBillDialogState extends State<PosBillDialog> {
               },
               onPrint: widget.printSale ??
                   (sale) async {
-                    final bytes =
-                        await PosReceiptService.createInvoicePdf(sale);
+                    final bytes = await PosReceiptService.createPdf(sale,
+                        paperWidthMm: widget.paperWidthMm);
                     await BillPdfArchiveService.save(sale, bytes);
                     return Printing.layoutPdf(
                         name: BillPdfArchiveService.fileName(sale),
+                        format: PosReceiptService.pageFormat(sale,
+                            paperWidthMm: widget.paperWidthMm),
+                        dynamicLayout: false,
                         onLayout: (_) async => bytes);
                   },
             ));
@@ -4933,8 +5144,6 @@ class _PosBillDialogState extends State<PosBillDialog> {
       Navigator.pop(context, completion.withAutoPrintAllowed(false));
     }
     if (_roomSelectionNeedsRefresh) {
-      _roomPicks = null;
-      _roomSelectionFingerprint = null;
       _roomSelectionNeedsRefresh = false;
     }
     if (mounted) setState(() => _saving = false);
@@ -5030,7 +5239,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                     size: 17, color: AppColors.muted),
                 const SizedBox(width: 8),
                 BillingText(
-                  'CUSTOMER DETAILS',
+                  'CUSTOMER DETAILS (OPTIONAL)',
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                         color: AppColors.primary,
                         fontWeight: FontWeight.w700,
@@ -5067,7 +5276,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                     enabled: !_saving,
                     onChanged: (_) => _customerDetailsChanged(byName: true),
                     decoration: const BillingInputDecoration(
-                      hintText: 'Temporary customer name',
+                      hintText: 'Customer name (optional)',
                       isDense: true,
                     ),
                   ),
@@ -5081,7 +5290,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                     inputFormatters: nepalPhoneInputFormatters,
                     onChanged: (_) => _customerDetailsChanged(byName: false),
                     decoration: const BillingInputDecoration(
-                      hintText: 'Temporary customer phone',
+                      hintText: 'Customer phone (optional)',
                       isDense: true,
                     ),
                   ),
@@ -5655,7 +5864,10 @@ class _PosBillDialogState extends State<PosBillDialog> {
 
   Widget _buildCart() => ValueListenableBuilder<int>(
         valueListenable: _cartMembership,
-        builder: (_, __, ___) => _buildCartList(),
+        builder: (_, __, ___) => Column(children: [
+          if (_choosingRooms) const LinearProgressIndicator(),
+          Expanded(child: _buildCartList()),
+        ]),
       );
 
   Widget _buildCartList() {
@@ -5692,12 +5904,11 @@ class _PosBillDialogState extends State<PosBillDialog> {
                                   ? null
                                   : () {
                                       if (line.quantity > 1) {
-                                        line.setQuantity(line.quantity - 1);
-                                        _cartChanged();
+                                        unawaited(_changeLineQuantity(
+                                            line, line.quantity - 1,
+                                            delta: -1));
                                       } else {
-                                        line.dispose();
-                                        _cart.removeAt(index);
-                                        _cartChanged(membership: true);
+                                        _removeCartLine(line);
                                       }
                                     },
                               icon: const Icon(Icons.remove_circle_outline),
@@ -5708,6 +5919,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
                                 key: ObjectKey(line),
                                 controller: line.quantityController,
                                 enabled: !_saving,
+                                readOnly: true,
+                                onTap: () => _editLineQuantity(line),
                                 textAlign: TextAlign.center,
                                 keyboardType: TextInputType.number,
                                 inputFormatters: [
@@ -5719,13 +5932,6 @@ class _PosBillDialogState extends State<PosBillDialog> {
                                   contentPadding: EdgeInsets.symmetric(
                                       horizontal: 8, vertical: 10),
                                 ),
-                                onChanged: (value) {
-                                  final quantity = int.tryParse(value);
-                                  if (quantity != null && quantity > 0) {
-                                    line.quantity = quantity;
-                                    _cartChanged();
-                                  }
-                                },
                               ),
                             ),
                             BillingIconButton(
@@ -5734,8 +5940,9 @@ class _PosBillDialogState extends State<PosBillDialog> {
                               onPressed: _saving
                                   ? null
                                   : () {
-                                      line.setQuantity(line.quantity + 1);
-                                      _cartChanged();
+                                      unawaited(_changeLineQuantity(
+                                          line, line.quantity + 1,
+                                          delta: 1));
                                     },
                               icon: const Icon(Icons.add_circle_outline),
                             ),
@@ -5756,9 +5963,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                         onPressed: _saving
                             ? null
                             : () {
-                                line.dispose();
-                                _cart.removeAt(index);
-                                _cartChanged(membership: true);
+                                _removeCartLine(line);
                               },
                         icon: const Icon(Icons.delete_outline),
                       ),
@@ -5771,8 +5976,10 @@ class _PosBillDialogState extends State<PosBillDialog> {
                       children: [
                         ListTile(
                           contentPadding: EdgeInsets.zero,
+                          leading: ProductThumbnail(
+                              imageUrl: line.product.imageUrl ?? '', size: 52),
                           title: BillingText(line.product.name),
-                          subtitle: BillingText(line.product.sku),
+                          subtitle: _cartRoomLabel(line),
                           trailing: amountAndRemove,
                         ),
                         Row(
@@ -5790,15 +5997,20 @@ class _PosBillDialogState extends State<PosBillDialog> {
                     children: [
                       Expanded(
                         flex: 5,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            BillingText(line.product.name,
-                                maxLines: 1, overflow: TextOverflow.ellipsis),
-                            BillingText(line.product.sku,
-                                style: Theme.of(context).textTheme.bodySmall),
-                          ],
-                        ),
+                        child: Row(children: [
+                          ProductThumbnail(
+                              imageUrl: line.product.imageUrl ?? '', size: 52),
+                          const SizedBox(width: 10),
+                          Expanded(
+                              child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              BillingText(line.product.name,
+                                  maxLines: 1, overflow: TextOverflow.ellipsis),
+                              _cartRoomLabel(line),
+                            ],
+                          )),
+                        ]),
                       ),
                       Expanded(flex: 4, child: quantityControls),
                       Expanded(flex: 2, child: amountAndRemove),
@@ -5825,10 +6037,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
                 child: TextField(
                   controller: _customerName,
                   onChanged: (_) => _customerDetailsChanged(byName: true),
-                  decoration: BillingInputDecoration(
-                    labelText: _paymentMethod == 'PENDING'
-                        ? 'Customer name *'
-                        : 'Customer (optional)',
+                  decoration: const BillingInputDecoration(
+                    labelText: 'Customer (optional)',
                     isDense: true,
                   ),
                 ),
@@ -5840,10 +6050,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
                   keyboardType: TextInputType.phone,
                   inputFormatters: nepalPhoneInputFormatters,
                   onChanged: (_) => _customerDetailsChanged(byName: false),
-                  decoration: BillingInputDecoration(
-                    labelText: _paymentMethod == 'PENDING'
-                        ? 'Customer phone *'
-                        : 'Customer phone',
+                  decoration: const BillingInputDecoration(
+                    labelText: 'Customer phone (optional)',
                     isDense: true,
                   ),
                 ),

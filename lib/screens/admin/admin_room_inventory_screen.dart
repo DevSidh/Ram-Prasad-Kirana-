@@ -9,6 +9,7 @@ import '../../services/offline_pos_store.dart';
 import '../../services/room_inventory_service.dart';
 import '../../widgets/billing_localized_widgets.dart';
 import '../../core/billing_strings.dart';
+import '../../widgets/product_identity.dart';
 
 class AdminRoomInventoryScreen extends StatefulWidget {
   const AdminRoomInventoryScreen(
@@ -254,7 +255,12 @@ class _AdminRoomInventoryScreenState extends State<AdminRoomInventoryScreen> {
                                 mainAxisSize: MainAxisSize.min,
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                              Text(product.name,
+                              ProductIdentity(
+                                  name: product.name,
+                                  imageUrl: product.imageUrl,
+                                  productId: product.id,
+                                  sku: product.sku,
+                                  store: widget.offlineStore,
                                   style:
                                       Theme.of(context).textTheme.titleLarge),
                               const SizedBox(height: 12),
@@ -337,7 +343,12 @@ class _AdminRoomInventoryScreenState extends State<AdminRoomInventoryScreen> {
     await showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
-              title: Text(product.name),
+              title: ProductIdentity(
+                  name: product.name,
+                  imageUrl: product.imageUrl,
+                  productId: product.id,
+                  sku: product.sku,
+                  store: widget.offlineStore),
               content: SizedBox(
                   width: 600,
                   height: 420,
@@ -512,7 +523,12 @@ class _AdminRoomInventoryScreenState extends State<AdminRoomInventoryScreen> {
                         child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(product.name,
+                              ProductIdentity(
+                                  name: product.name,
+                                  imageUrl: product.imageUrl,
+                                  productId: product.id,
+                                  sku: product.sku,
+                                  store: widget.offlineStore,
                                   style:
                                       Theme.of(context).textTheme.titleLarge),
                               Text(product.sku),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/pos_models.dart';
 import '../models/room_inventory.dart';
 import 'billing_localized_widgets.dart';
+import 'product_thumbnail.dart';
 
 /// Selection only: stock is deducted when the bill commits, never on Cancel.
 class RoomPickDialog extends StatefulWidget {
@@ -9,10 +10,12 @@ class RoomPickDialog extends StatefulWidget {
       {super.key,
       required this.snapshot,
       required this.products,
-      required this.requiredQuantities});
+      required this.requiredQuantities,
+      this.initialPicks = const []});
   final RoomInventorySnapshot snapshot;
   final List<PosProduct> products;
   final Map<String, int> requiredQuantities;
+  final List<RoomPick> initialPicks;
   @override
   State<RoomPickDialog> createState() => _RoomPickDialogState();
 }
@@ -26,12 +29,24 @@ class _RoomPickDialogState extends State<RoomPickDialog> {
     for (final product in widget.products) {
       var left = widget.requiredQuantities[product.id]!;
       _controllers[product.id] = {};
+      final selected = <String?, int>{};
+      for (final pick
+          in widget.initialPicks.where((p) => p.productId == product.id)) {
+        if (!widget.snapshot.locations.contains(pick.roomId)) continue;
+        final take = pick.quantity
+            .clamp(0, widget.snapshot.available(product.id, pick.roomId))
+            .clamp(0, left);
+        selected[pick.roomId] = take;
+        left -= take;
+      }
       for (final id in widget.snapshot.locations) {
         if (id != null && widget.snapshot.quantity(product.id, id) == 0) {
           continue;
         }
-        final take = left.clamp(0, widget.snapshot.available(product.id, id));
-        left -= take;
+        final extra = left.clamp(
+            0, widget.snapshot.available(product.id, id) - (selected[id] ?? 0));
+        final take = (selected[id] ?? 0) + extra;
+        left -= extra;
         _controllers[product.id]![id] =
             TextEditingController(text: take == 0 ? '' : '$take');
       }
@@ -97,10 +112,17 @@ class _RoomPickDialogState extends State<RoomPickDialog> {
                           child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(product.name,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleMedium),
+                                Row(children: [
+                                  ProductThumbnail(
+                                      imageUrl: product.imageUrl ?? '',
+                                      size: 56),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                      child: Text(product.name,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleMedium)),
+                                ]),
                                 BillingText(
                                     'Needed: ${widget.requiredQuantities[product.id]} ${roomStockUnit(product)}'),
                                 for (final id in widget.snapshot.locations)

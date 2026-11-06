@@ -63,14 +63,6 @@ const saleInput = z.object({
   if (sale.paymentMethod === 'ESEWA' && !sale.manualVerification) {
     context.addIssue({code: 'custom', path: ['manualVerification'], message: 'Confirm payment received before creating an eSewa bill.'});
   }
-  if (sale.paymentMethod === 'PENDING' &&
-      (!sale.customerName || !sale.customerPhone)) {
-    context.addIssue({
-      code: 'custom',
-      path: ['customerPhone'],
-      message: 'A customer name and phone are required for pending bills.',
-    });
-  }
 });
 
 const holdInput = z.object({

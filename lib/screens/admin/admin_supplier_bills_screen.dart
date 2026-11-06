@@ -1,4 +1,6 @@
 import '../../widgets/billing_localized_widgets.dart';
+import '../../widgets/product_thumbnail.dart';
+import '../../widgets/product_identity.dart';
 import '../../core/billing_strings.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -351,12 +353,10 @@ class _SupplierBillCard extends StatelessWidget {
                 child: Row(
                   children: [
                     Expanded(
-                      child: BillingText(
-                        '${item.name} · ${item.sku}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
+                      child: ProductIdentity(
+                          name: '${item.name} · ${item.sku}',
+                          sku: item.sku,
+                          style: Theme.of(context).textTheme.bodyMedium),
                     ),
                     BillingText(
                       '${_quantity(item.quantity)} × ${_money(item.unitCost)}',
@@ -993,6 +993,8 @@ class _SupplierBillFormDialogState extends State<_SupplierBillFormDialog> {
                       final alreadyAdded = _lines.containsKey(product.id);
                       return ListTile(
                         dense: true,
+                        leading: ProductThumbnail(
+                            imageUrl: product.imageUrl ?? '', size: 48),
                         title: BillingText(product.name),
                         subtitle: BillingText(
                             '${product.sku} · ${product.unitLabel}'),
@@ -1130,12 +1132,13 @@ class _SupplierBillLineEditor extends StatelessWidget {
               Row(
                 children: [
                   Expanded(
-                    child: BillingText(
-                      '${line.product.name} · ${line.product.unitLabel}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
+                    child: ProductIdentity(
+                        name:
+                            '${line.product.name} · ${line.product.unitLabel}',
+                        imageUrl: line.product.imageUrl,
+                        productId: line.product.id,
+                        sku: line.product.sku,
+                        style: Theme.of(context).textTheme.titleSmall),
                   ),
                   BillingIconButton(
                     tooltip: 'Remove product',

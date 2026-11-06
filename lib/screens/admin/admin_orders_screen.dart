@@ -1,4 +1,5 @@
 import '../../widgets/billing_localized_widgets.dart';
+import '../../widgets/product_identity.dart';
 import '../../core/billing_strings.dart';
 import 'dart:async';
 
@@ -779,6 +780,9 @@ class _AdminOrderCard extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 5),
               child: Row(
                 children: [
+                  CatalogProductThumbnail(
+                      sku: item.sku, imageUrl: item.imageUrl),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: BillingText(
                       '${item.name}${item.isWholesale ? ' · wholesale' : ''}'

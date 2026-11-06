@@ -70,6 +70,18 @@ The separate wholesale catalog follows the application's existing checkout capab
 
 ## Opening stock locations
 
+### Choosing stock while billing
+
+Adding an item now checks its room stock immediately after entering the quantity. Only products with positive stock assigned to named rooms open the source-room dialog; unassigned products are added normally. The chosen source is shown on the cart item and can be changed there. Increasing a quantity rechecks its locations before changing the bill. Decreasing/removing quantities trims their source allocations. Restoring a held bill prepares its room selections when it opens.
+
+Pay/Create Bill silently rechecks availability and uses those selections. It does not open a source-room dialog. If room stock changes before checkout, correct the source using the item's room button and retry. Stock is still deducted only when a bill commits, not when a room is selected.
+
+Customer name and phone are optional for all POS methods, including pending balances. A supplied phone must still be valid. Anonymous pending bills remain identifiable by bill/POS number.
+
+**Receipt & Printer Settings → Receipt paper width** selects and remembers 58 mm or 80 mm. Windows checkout, reprinting and saved receipt PDFs use the chosen width. Thermal PDF length is measured from wrapped English/Nepali text and adjusts to the number of items and details. Product pictures appear in product views and bill details, while printed receipts remain text-only. A placeholder is shown when no product image is available.
+
+Hardware printing and the revised room-selection workflows need validation on the billing computer; no live sale or stock changes were made during implementation.
+
 New retail products, drink-menu products and wholesale items now include **Starting stock by room**. For positive starting stock, select an active room by its name/number and enter the quantity. Use **Add another room** to split the same product across rooms. The sum must equal starting stock; loose retail weights use kilograms (up to three decimals), while sealed/wholesale goods use whole stock units. **Add room** creates a room without leaving the product form. Zero-stock products need no allocation until stock is received.
 
 The backend writes opening stock and all room allocations in one transaction. Duplicate rooms, inactive/missing rooms and mismatched totals are rejected. Existing clients that do not send allocations retain Unassigned opening stock. No additional migration is needed. Deploy the updated backend before using the updated product forms.

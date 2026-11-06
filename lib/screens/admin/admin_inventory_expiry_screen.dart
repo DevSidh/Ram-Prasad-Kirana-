@@ -9,6 +9,8 @@ import '../../services/api_service.dart';
 import '../../widgets/store_animation.dart';
 import '../../theme/admin_widgets.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/product_identity.dart';
+import '../../widgets/product_thumbnail.dart';
 
 class AdminInventoryExpiryScreen extends StatefulWidget {
   final ApiService api;
@@ -395,7 +397,11 @@ class _ExpiryBatchCard extends StatelessWidget {
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: BillingText(batch.productName),
+        title: ProductIdentity(
+            name: batch.productName,
+            imageUrl: batch.imageUrl,
+            productId: batch.productId,
+            sku: batch.sku),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -432,13 +438,6 @@ class _ExpiryBatchCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = switch (batch.expiryStatus) {
-      'expired' => AppColors.errorText,
-      'today' => AppColors.warningText,
-      'expiring' => AppColors.warningText,
-      'dates_unverified' => AppColors.muted,
-      _ => AppColors.successText,
-    };
     final statusText = switch (batch.expiryStatus) {
       'expired' => 'Expired',
       'today' => 'Expires today',
@@ -467,15 +466,7 @@ class _ExpiryBatchCard extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(AppRadii.thumbnail),
-                ),
-                child: Icon(Icons.inventory_2_outlined, color: color),
-              ),
+              ProductThumbnail(imageUrl: batch.imageUrl ?? '', size: 56),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(

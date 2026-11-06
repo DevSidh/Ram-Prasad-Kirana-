@@ -1768,5 +1768,13 @@
   "Choose active rooms. Refresh the room list before saving.": "प्रयोगमा रहेका कोठा छान्नुहोस्। सुरक्षित गर्नुअघि कोठाको सूची फेरि ल्याउनुहोस्।",
   "Wait for the room list to load.": "कोठाको सूची आउन्जेल पर्खनुहोस्।",
   "Unable to load rooms. Retry or open Inventory to add a room.": "कोठाको सूची आएन। फेरि प्रयास गर्नुहोस् वा कोठा थप्न इन्भेन्टरी खोल्नुहोस्।",
-  "OPENING": "सुरुको मौज्दात"
+  "OPENING": "सुरुको मौज्दात",
+  "Bad state: ": "अवस्था मिलेन: ",
+  "CUSTOMER DETAILS (OPTIONAL)": "ग्राहकको विवरण (नलेखे पनि हुन्छ)",
+  "Customer name (optional)": "ग्राहकको नाम (नलेखे पनि हुन्छ)",
+  "Customer phone (optional)": "ग्राहकको फोन (नलेखे पनि हुन्छ)",
+  "Choose source room": "सामान निकाल्ने कोठा छान्नुहोस्",
+  "Not enough available stock for this quantity.": "यो परिमाणका लागि पर्याप्त मौज्दात छैन।",
+  "Close payment and edit the source room beside the bill item before retrying.": "भुक्तानी बन्द गरी बिलको सामानसँगै भएको कोठा सच्याएर फेरि प्रयास गर्नुहोस्।",
+  "Choose the paper width used by your thermal printer. Receipt length adjusts automatically to the bill contents.": "थर्मल प्रिन्टरमा प्रयोग हुने कागजको चौडाइ छान्नुहोस्। बिलमा भएको विवरणअनुसार कागजको लम्बाइ आफैँ मिल्छ।"
 }
