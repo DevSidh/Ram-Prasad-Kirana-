@@ -132,8 +132,10 @@ class OfflinePosStore {
         }
         try {
           final decoded = await billingStore.readJson(entity);
-          if (decoded['syncState'] == 'synced' ||
-              decoded['status'] == 'CANCELLED') {
+          // This card reports sales created on this computer, including bills
+          // that have already synchronized. Excluding synced records made the
+          // offline amount fall back to zero after background sync completed.
+          if (decoded['status'] == 'CANCELLED') {
             continue;
           }
           if (day != null) {
