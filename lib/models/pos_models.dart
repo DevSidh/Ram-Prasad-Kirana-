@@ -211,6 +211,49 @@ class PosSale {
       localPath: localPath,
       autoPrintAllowed: value);
 
+  Map<String, dynamic> toReceiptJson() => {
+        'id': id,
+        'receiptNumber': receiptNumber,
+        'invoiceNumber': invoiceNumber,
+        'customerName': customerName,
+        'customerPhone': customerPhone,
+        'status': status,
+        'paymentMethod': paymentMethod,
+        'paymentStatus': paymentStatus,
+        'subtotal': subtotal,
+        'discount': discount,
+        'vatRate': vatRate,
+        'vatAmount': vatAmount,
+        'total': total,
+        'refundedAmount': refundedAmount,
+        'createdAt': createdAt.toIso8601String(),
+        'paidAmount': paidAmount,
+        'outstandingAmount': outstandingAmount,
+        'paymentCollections': [
+          for (final p in paymentCollections)
+            {
+              'id': p.id,
+              'amount': p.amount,
+              'method': p.method,
+              'note': p.note,
+              'createdAt': p.createdAt.toIso8601String()
+            }
+        ],
+        'items': [
+          for (final i in items)
+            {
+              'id': i.id,
+              'productId': i.productId,
+              'productName': i.productName,
+              'sku': i.sku,
+              'quantity': i.quantity,
+              'weightGrams': i.weightGrams,
+              'unitPrice': i.unitPrice,
+              'lineTotal': i.lineTotal
+            }
+        ],
+      };
+
   factory PosSale.fromJson(Map<String, dynamic> json) {
     final createdAt = DateTime.tryParse(json['createdAt'] as String? ?? '');
     if (json['id'] is! String ||

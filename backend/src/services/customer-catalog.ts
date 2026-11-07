@@ -4,8 +4,8 @@ const excludedCategoryTerms = ['rice', 'vegetable', 'dairy'];
 
 const excludedCategoryFilter = {
   OR: excludedCategoryTerms.flatMap((term) => [
-    { name: { contains: term, mode: 'insensitive' } },
-    { slug: { contains: term, mode: 'insensitive' } },
+    { name: { contains: term } },
+    { slug: { contains: term } },
   ]),
 } satisfies Prisma.CategoryWhereInput;
 

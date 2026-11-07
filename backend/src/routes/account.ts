@@ -20,6 +20,7 @@ import {
   getBuyingStreakSnapshot,
 } from '../services/buying-streak.js';
 import { isWeightUnitLabel } from '../services/product-validation.js';
+import { prismaBytes } from '../services/prisma-bytes.js';
 
 const addressFields = {
   title: z.string().trim().min(1).max(40),
@@ -1176,7 +1177,7 @@ export function createAccountRouter(
         where: { id: userId },
         data: {
           avatarUrl,
-          avatarData: req.file.buffer,
+          avatarData: prismaBytes(req.file.buffer),
           avatarMimeType,
         },
         select: {

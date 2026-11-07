@@ -10,7 +10,9 @@ import 'local_billing_store.dart';
 class BillingExcelExportService {
   BillingExcelExportService._();
 
-  static const _baseDirectory = 'C:/Ramprasad store/bills';
+  static String? baseDirectoryOverride;
+  static String get _baseDirectory =>
+      baseDirectoryOverride ?? 'C:/Ramprasad store/bills';
 
   static Future<String> writePendingCash(
     List<PosSale> sales, {
@@ -65,7 +67,7 @@ class BillingExcelExportService {
           _cell('Offline bill'),
         ],
     ];
-    await const LocalBillingStore().withLock(() async {
+    await LocalBillingStore(rootPath: _baseDirectory).withLock(() async {
       final source = await file.exists() ? await file.readAsString() : '';
       final incoming = _parseCsv(_encode(rows));
       final existing = _parseCsv(source);
@@ -293,7 +295,7 @@ class BillingExcelExportService {
   }
 
   static Future<void> _upsertSavedCustomer(PosSale sale) =>
-      const LocalBillingStore()
+      LocalBillingStore(rootPath: _baseDirectory)
           .withLock(() => _upsertSavedCustomerUnlocked(sale));
 
   static Future<void> _upsertSavedCustomerUnlocked(PosSale sale) async {
@@ -360,7 +362,7 @@ class BillingExcelExportService {
           required String phone,
           required String address,
           String email = ''}) =>
-      const LocalBillingStore().withLock(() async {
+      LocalBillingStore(rootPath: _baseDirectory).withLock(() async {
         if (name.trim().isEmpty ||
             address.trim().isEmpty ||
             validateNepalPhone(phone) != null) {

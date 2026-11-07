@@ -13,11 +13,10 @@ import { isWeightUnitLabel } from '../services/product-validation.js';
 import { runTransactionWithRetry } from '../services/transaction-retry.js';
 import { recordBuyingStreakPurchase } from '../services/buying-streak.js';
 import { serializeSale } from '../services/pos-sale-serializer.js';
-import { configuredFonepayGateway, FonepayError, type FonepayGateway } from '../services/fonepay-gateway.js';
-import { createFonepayRouter } from './admin-fonepay.js';
 import { manualFonepayNote, manualFonepayReference, manualPaymentProvider } from '../services/manual-fonepay.js';
 import { createRoomInventoryRouter } from './admin-rooms.js';
 import { RoomInventoryError } from '../services/room-inventory.js';
+import { applyPosPriceChanges, priceChangesInput } from '../services/pos-price-changes.js';
 
 const saleItemsInput = z.array(z.object({
   productId: z.string().trim().min(1).max(100),
@@ -26,6 +25,7 @@ const saleItemsInput = z.array(z.object({
 }).strict()).min(1).max(100);
 
 const saleInput = z.object({
+  cataloguePriceChanges: priceChangesInput.optional(),
   items: saleItemsInput,
   roomPicks: z.array(z.object({ productId: z.string().min(1).max(100), roomId: z.string().min(1).max(100).nullable(), quantity: z.number().int().positive().max(2147483647) }).strict()).min(1).max(500).optional(),
   idempotencyKey: z.string().uuid().optional(),
@@ -73,6 +73,7 @@ const holdInput = z.object({
     productName: z.string().trim().min(1).max(180),
     sku: z.string().trim().min(1).max(80),
     price: z.number().finite().nonnegative().max(999999999),
+    cataloguePrice: z.number().finite().nonnegative().max(999999999).optional(),
     unitLabel: z.string().trim().max(50),
   }).strict()).min(1).max(100),
   customerName: z.string().trim().max(120).nullable().optional(),
@@ -180,14 +181,24 @@ export function createAdminBillingRouter(
   prisma: PrismaClient,
   inventoryService: InventoryService,
   requireAdmin?: RequestHandler,
-  fonepayGatewayFactory:()=>FonepayGateway=configuredFonepayGateway,
 ): Router {
   const router = Router();
-  router.use('/fonepay', createFonepayRouter(prisma,fonepayGatewayFactory));
   const adminOnly: RequestHandler = requireAdmin ?? ((_req, res) => {
     res.status(403).json({ error: 'Administrator access required.' });
   });
   router.use('/rooms', createRoomInventoryRouter(prisma, adminOnly));
+  router.post('/catalogue-price-changes', adminOnly, async (req, res) => {
+    const parsed = z.object({requestId: z.string().uuid(), changes: priceChangesInput}).strict().safeParse(req.body);
+    const cashierId = authenticatedAdminId(res);
+    if (!parsed.success || !cashierId) return res.status(400).json({error: 'Invalid price change.'});
+    try {
+      await runTransactionWithRetry(prisma, tx => applyPosPriceChanges(tx, parsed.data.requestId, cashierId, parsed.data.changes));
+      return res.json({saved: true});
+    } catch (error) {
+      if (error instanceof Error && error.message === 'POS_QUOTE_CHANGED') return res.status(409).json({error: 'The catalogue price has changed. Review this price update before retrying.'});
+      return sendAdminError(error, res);
+    }
+  });
 
   router.post('/scanner-sessions', adminOnly, async (req, res) => {
     const ownerId = authenticatedAdminId(res);
@@ -323,8 +334,8 @@ export function createAdminBillingRouter(
           ...(query
             ? {
               OR: [
-                { name: { contains: query, mode: 'insensitive' } },
-                { email: { contains: query, mode: 'insensitive' } },
+                { name: { contains: query } },
+                { email: { contains: query } },
               ],
             }
             : {}),
@@ -938,8 +949,8 @@ export function createAdminBillingRouter(
             isActive: true,
             OR: [
               { id: query.data },
-              { sku: { equals: query.data, mode: 'insensitive' } },
-              { barcode: { equals: query.data, mode: 'insensitive' } },
+              { sku: { equals: query.data } },
+              { barcode: { equals: query.data } },
             ],
           },
           select,
@@ -951,9 +962,9 @@ export function createAdminBillingRouter(
           ...(query.data
             ? {
               OR: [
-                { name: { contains: query.data, mode: 'insensitive' } },
-                { sku: { contains: query.data, mode: 'insensitive' } },
-                { barcode: { contains: query.data, mode: 'insensitive' } },
+                { name: { contains: query.data } },
+                { sku: { contains: query.data } },
+                { barcode: { contains: query.data } },
               ],
             }
             : {}),
@@ -1008,15 +1019,12 @@ export function createAdminBillingRouter(
       return res.status(403).json({ error: 'Only a cashier or administrator can manually verify a Fonepay payment.' });
     }
     const confirmedAt = new Date();
-    const fonepayCheckout = parsed.data.paymentMethod === 'FONEPAY' && !manualFonepay;
-    if (fonepayCheckout) {
-      if (!parsed.data.idempotencyKey || !parsed.data.quote || parsed.data.offlineSale || (parsed.data.paidAmount ?? 0) !== 0) {
-        return res.status(400).json({ error: 'Fonepay requires an online, idempotent checkout without a client payment claim.' });
-      }
-      try { fonepayGatewayFactory(); } catch (error) {
-        if (error instanceof FonepayError) return res.status(error.statusCode).json({ code:error.code, error:error.message });
-        return res.status(503).json({ error:'Fonepay is unavailable.' });
-      }
+    if (parsed.data.cataloguePriceChanges && (authenticatedRole(res) !== 'ADMIN' || !parsed.data.idempotencyKey ||
+        parsed.data.cataloguePriceChanges.some(change => !parsed.data.items.some(item => item.productId === change.productId)))) {
+      return res.status(403).json({error: 'Only an administrator may update prices of products in this bill.'});
+    }
+    if (parsed.data.paymentMethod === 'FONEPAY' && !manualFonepay) {
+      return res.status(400).json({ error: 'Confirm receipt of the static QR payment before creating this bill.' });
     }
     const offline = parsed.data.offlineSale;
     if (offline && (authenticatedRole(res) !== 'ADMIN' ||
@@ -1037,7 +1045,7 @@ export function createAdminBillingRouter(
       paymentMethod?: string;
       paymentCollections?: Array<{ method: string; note: string | null }>;
       items: Array<{ productId: string | null; quantity: number; weightGrams: number | null; unitPrice: Prisma.Decimal }>;
-    }) => !(offline || fonepayCheckout || manualFonepay) || (
+    }) => !(offline || manualFonepay) || (
       (!manualFonepay || (existing.paymentMethod === storedPaymentMethod && existing.paymentCollections?.some(payment => payment.method === storedPaymentMethod && manualPaymentProvider(payment.note) === parsed.data.paymentMethod && manualFonepayReference(payment.note) === parsed.data.manualVerification!.transactionReference))) &&
       roundMoney(Number(existing.total)) === roundMoney((offline?.expectedTotal ?? parsed.data.quote!.expectedTotal)) &&
       roundMoney(Number(existing.discount)) === roundMoney(parsed.data.discount) &&
@@ -1074,6 +1082,9 @@ export function createAdminBillingRouter(
             replayed = true;
             return existing;
           }
+        }
+        if (parsed.data.cataloguePriceChanges) {
+          await applyPosPriceChanges(tx, parsed.data.idempotencyKey!, cashierId, parsed.data.cataloguePriceChanges);
         }
         const products = await tx.product.findMany({
           where: {
@@ -1161,14 +1172,14 @@ export function createAdminBillingRouter(
           throw new Error(offline ? 'POS_OFFLINE_PRICE_CONFLICT' : 'POS_QUOTE_CHANGED');
         }
         const invoiceYear = Number(getStoreDayKey(new Date()).slice(0, 4));
-        const invoiceSequence = offline || fonepayCheckout ? null : await tx.invoiceSequence.upsert({
+        const invoiceSequence = offline ? null : await tx.invoiceSequence.upsert({
           where: { year: invoiceYear },
           create: { year: invoiceYear, nextNumber: 1 },
           update: { nextNumber: { increment: 1 } },
         });
-        const invoiceNumber = fonepayCheckout ? null : offline?.invoiceNumber ?? `RPGS-INV-${invoiceYear}-${String(invoiceSequence!.nextNumber).padStart(6, '0')}`;
+        const invoiceNumber = offline?.invoiceNumber ?? `RPGS-INV-${invoiceYear}-${String(invoiceSequence!.nextNumber).padStart(6, '0')}`;
         const paidAmount = roundMoney(
-          fonepayCheckout ? 0 : parsed.data.paymentMethod === 'PENDING'
+          parsed.data.paymentMethod === 'PENDING'
             ? Math.min(parsed.data.paidAmount ?? 0, total)
             : total,
         );
@@ -1176,7 +1187,7 @@ export function createAdminBillingRouter(
             (parsed.data.paidAmount ?? 0) > total) {
           throw new Error('POS_PAID_AMOUNT_EXCEEDS_TOTAL');
         }
-        if ((fonepayCheckout || manualFonepay) && total <= 0) throw new Error('POS_FONEPAY_EMPTY_TOTAL');
+        if (manualFonepay && total <= 0) throw new Error('POS_FONEPAY_EMPTY_TOTAL');
         const isPending = paidAmount < total;
         const collectionMethod = parsed.data.paymentMethod === 'PENDING'
           ? parsed.data.paidNowMethod
@@ -1200,8 +1211,8 @@ export function createAdminBillingRouter(
             shiftId: shift.id,
             customerName: customer?.name ?? parsed.data.customerName ?? null,
             customerPhone: customer?.phone ?? parsed.data.customerPhone ?? null,
-            status: fonepayCheckout ? 'CHECKOUT' : 'COMPLETED',
-            paymentMethod: fonepayCheckout ? 'FONEPAY' : isPending ? 'PENDING' : collectionMethod,
+            status: 'COMPLETED',
+            paymentMethod: isPending ? 'PENDING' : collectionMethod,
             paymentStatus: isPending ? 'PENDING' : 'COMPLETED',
             paidAmount,
             subtotal,
@@ -1241,7 +1252,7 @@ export function createAdminBillingRouter(
           if (parsed.data.roomPicks.some((pick) => !stockTotals.has(pick.productId))) throw new RoomInventoryError('Room selections contain a product outside this bill.');
           await tx.inventoryRoomCheckout.create({ data: { saleId: sale.id, picks: parsed.data.roomPicks } });
         }
-        if (!fonepayCheckout) await inventoryService.consumeStockForPosSale(
+        await inventoryService.consumeStockForPosSale(
           tx,
           [...stockTotals].map(([productId, quantity]) => ({
             productId,
@@ -1251,7 +1262,7 @@ export function createAdminBillingRouter(
           cashierId,
           parsed.data.roomPicks,
         );
-        if (!fonepayCheckout && parsed.data.heldSaleId) {
+        if (parsed.data.heldSaleId) {
           await tx.posHeldSale.deleteMany({
             where: offline
               ? { id: parsed.data.heldSaleId, shift: { cashierId } }
@@ -1340,9 +1351,9 @@ export function createAdminBillingRouter(
         ...(parsed.data.search?.trim()
           ? {
             OR: [
-              { receiptNumber: { contains: parsed.data.search.trim(), mode: 'insensitive' } },
-              { invoiceNumber: { contains: parsed.data.search.trim(), mode: 'insensitive' } },
-              { customerName: { contains: parsed.data.search.trim(), mode: 'insensitive' } },
+              { receiptNumber: { contains: parsed.data.search.trim() } },
+              { invoiceNumber: { contains: parsed.data.search.trim() } },
+              { customerName: { contains: parsed.data.search.trim() } },
               { customerPhone: { contains: parsed.data.search.trim() } },
             ],
           }
@@ -1370,18 +1381,6 @@ export function createAdminBillingRouter(
     } catch (error) {
       sendAdminError(error, res);
     }
-  });
-
-  router.get('/fonepay-checkouts', async (_req, res) => {
-    const id = authenticatedAdminId(res);
-    if (!id) return res.status(401).json({ error:'Authentication required.' });
-    try {
-      const sales = await prisma.posSale.findMany({
-        where: { status:'CHECKOUT', shift: { cashierId:id } },
-        include: { items:true, paymentCollections:true }, orderBy:{ createdAt:'desc' }, take:50,
-      });
-      return res.json({ sales:sales.map(serializeSale) });
-    } catch(error) { sendAdminError(error,res); }
   });
 
   router.get('/pending-payments', async (req, res) => {
@@ -1414,9 +1413,9 @@ export function createAdminBillingRouter(
       ...(search
         ? {
           OR: [
-            { receiptNumber: { contains: search, mode: 'insensitive' } },
-            { invoiceNumber: { contains: search, mode: 'insensitive' } },
-            { customerName: { contains: search, mode: 'insensitive' } },
+            { receiptNumber: { contains: search } },
+            { invoiceNumber: { contains: search } },
+            { customerName: { contains: search } },
             { customerPhone: { contains: search } },
           ],
         }
@@ -1706,14 +1705,14 @@ export function createAdminBillingRouter(
           ...(search
             ? {
               OR: [
-                { reason: { contains: search, mode: 'insensitive' } },
+                { reason: { contains: search } },
                 { sale: { is: { OR: [
-                  { receiptNumber: { contains: search, mode: 'insensitive' } },
-                  { invoiceNumber: { contains: search, mode: 'insensitive' } },
-                  { customerName: { contains: search, mode: 'insensitive' } },
+                  { receiptNumber: { contains: search } },
+                  { invoiceNumber: { contains: search } },
+                  { customerName: { contains: search } },
                   { customerPhone: { contains: search } },
                 ] } } },
-                { requestedBy: { is: { name: { contains: search, mode: 'insensitive' } } } },
+                { requestedBy: { is: { name: { contains: search } } } },
               ],
             }
             : {}),
@@ -1927,9 +1926,9 @@ export function createAdminBillingRouter(
           ...(isBillingStaff ? {cashierId} : {}),
           ...(range ? {requestedAt: {gte: range.start, lt: range.end}} : {}),
           ...(search ? {sale: {OR: [
-            {receiptNumber: {contains: search, mode: 'insensitive' as const}},
-            {invoiceNumber: {contains: search, mode: 'insensitive' as const}},
-            {customerName: {contains: search, mode: 'insensitive' as const}},
+            {receiptNumber: {contains: search}},
+            {invoiceNumber: {contains: search}},
+            {customerName: {contains: search}},
             {customerPhone: {contains: search}},
           ]}} : {}),
         },

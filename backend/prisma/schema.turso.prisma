@@ -1,0 +1,993 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("TURSO_SCHEMA_URL")
+}
+
+model Address {
+  id           String  @id
+  userId       String
+  label        String?
+  fullName     String
+  phone        String
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  district     String?
+  province     String?
+  postalCode   String?
+  instructions String?
+  latitude     Float?
+  longitude    Float?
+  isDefault    Int     @default(0)
+  createdAt    String
+  updatedAt    String
+  User         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  Order        Order[]
+
+  @@index([userId])
+}
+
+model BarcodeScannerSession {
+  code        String  @id
+  ownerId     String
+  barcode     String?
+  expiresAt   String
+  connectedAt String?
+  createdAt   String
+
+  @@index([ownerId, expiresAt])
+  @@index([expiresAt])
+}
+
+model BuyingStreakPurchaseDay {
+  id        String @id
+  userId    String
+  dayKey    String
+  createdAt String
+  User      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dayKey], map: "sqlite_autoindex_BuyingStreakPurchaseDay_2")
+}
+
+model BuyingStreakRewardConfig {
+  id          String  @id
+  day         Int     @unique(map: "sqlite_autoindex_BuyingStreakRewardConfig_2")
+  title       String
+  description String
+  couponId    String?
+  createdAt   String
+  updatedAt   String
+  Coupon      Coupon? @relation(fields: [couponId], references: [id])
+}
+
+model BuyingStreakRewardProgress {
+  id                                                         String  @id
+  userId                                                     String
+  day                                                        Int
+  title                                                      String
+  description                                                String
+  couponTemplateId                                           String?
+  couponId                                                   String? @unique(map: "sqlite_autoindex_BuyingStreakRewardProgress_3")
+  unlockedAt                                                 String
+  claimedAt                                                  String?
+  Coupon_BuyingStreakRewardProgress_couponIdToCoupon         Coupon? @relation("BuyingStreakRewardProgress_couponIdToCoupon", fields: [couponId], references: [id])
+  Coupon_BuyingStreakRewardProgress_couponTemplateIdToCoupon Coupon? @relation("BuyingStreakRewardProgress_couponTemplateIdToCoupon", fields: [couponTemplateId], references: [id])
+  User                                                       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, day], map: "sqlite_autoindex_BuyingStreakRewardProgress_2")
+  @@index([userId, claimedAt])
+}
+
+model Cart {
+  id        String     @id
+  userId    String     @unique(map: "sqlite_autoindex_Cart_2")
+  createdAt String
+  updatedAt String
+  User      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  CartItem  CartItem[]
+
+  @@index([userId])
+}
+
+model CartItem {
+  id               String          @id
+  cartId           String
+  productId        String?
+  wholesaleItemId  String?
+  productVariantId String?
+  quantity         Int             @default(1)
+  weightGrams      Int?
+  unitPrice        String
+  isWholesale      Int             @default(0)
+  createdAt        String
+  updatedAt        String
+  ProductVariant   ProductVariant? @relation(fields: [productVariantId], references: [id])
+  WholesaleItem    WholesaleItem?  @relation(fields: [wholesaleItemId], references: [id], onDelete: Cascade)
+  Product          Product?        @relation(fields: [productId], references: [id])
+  Cart             Cart            @relation(fields: [cartId], references: [id], onDelete: Cascade)
+
+  @@index([wholesaleItemId])
+  @@index([productId])
+  @@index([cartId])
+}
+
+model Category {
+  id            String          @id
+  name          String
+  slug          String          @unique(map: "sqlite_autoindex_Category_2")
+  description   String?
+  imageUrl      String?
+  isActive      Int             @default(1)
+  sortOrder     Int             @default(0)
+  createdAt     String
+  updatedAt     String
+  Product       Product[]
+  WholesaleItem WholesaleItem[]
+
+  @@index([sortOrder])
+  @@index([isActive])
+}
+
+model Coupon {
+  id                                                                             String                       @id
+  code                                                                           String                       @unique(map: "sqlite_autoindex_Coupon_2")
+  productId                                                                      String?
+  assignedUserId                                                                 String?
+  discountType                                                                   String                       @default("PERCENTAGE")
+  discountPercent                                                                String?
+  discountAmount                                                                 String?
+  minOrderAmount                                                                 String                       @default("0")
+  maxDiscount                                                                    String?
+  usageLimit                                                                     Int?
+  perUserLimit                                                                   Int?
+  usedCount                                                                      Int                          @default(0)
+  isActive                                                                       Int                          @default(1)
+  isDeleted                                                                      Int                          @default(0)
+  isAnnounced                                                                    Int                          @default(0)
+  isBannerFeatured                                                               Int                          @default(0)
+  expiresAt                                                                      String?
+  createdAt                                                                      String
+  updatedAt                                                                      String
+  BuyingStreakRewardConfig                                                       BuyingStreakRewardConfig[]
+  BuyingStreakRewardProgress_BuyingStreakRewardProgress_couponIdToCoupon         BuyingStreakRewardProgress?  @relation("BuyingStreakRewardProgress_couponIdToCoupon")
+  BuyingStreakRewardProgress_BuyingStreakRewardProgress_couponTemplateIdToCoupon BuyingStreakRewardProgress[] @relation("BuyingStreakRewardProgress_couponTemplateIdToCoupon")
+  User                                                                           User?                        @relation(fields: [assignedUserId], references: [id], onDelete: Cascade)
+  Product                                                                        Product?                     @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([assignedUserId])
+  @@index([productId])
+  @@index([expiresAt])
+  @@index([isActive])
+}
+
+model CustomerRemovalAudit {
+  id                                          String @id
+  customerId                                  String
+  customerDisplayId                           Int
+  removedById                                 String
+  removedAt                                   String
+  User_CustomerRemovalAudit_removedByIdToUser User   @relation("CustomerRemovalAudit_removedByIdToUser", fields: [removedById], references: [id])
+  User_CustomerRemovalAudit_customerIdToUser  User   @relation("CustomerRemovalAudit_customerIdToUser", fields: [customerId], references: [id])
+
+  @@index([customerId, removedAt])
+  @@index([removedAt])
+}
+
+model Delivery {
+  id                        String                  @id
+  orderId                   String                  @unique(map: "sqlite_autoindex_Delivery_2")
+  deliveryPersonId          String?
+  status                    String                  @default("PENDING")
+  assignedAt                String?
+  pickedUpAt                String?
+  deliveredAt               String?
+  cashCollected             String                  @default("0")
+  cashCollectedAt           String?
+  cashHandedOver            String                  @default("0")
+  cashHandedOverAt          String?
+  latitude                  Float?
+  longitude                 Float?
+  locationUpdatedAt         String?
+  customerLatitude          Float?
+  customerLongitude         Float?
+  customerLocationUpdatedAt String?
+  notes                     String?
+  createdAt                 String
+  updatedAt                 String
+  Order                     Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  User                      User?                   @relation(fields: [deliveryPersonId], references: [id])
+  DeliveryStatusHistory     DeliveryStatusHistory[]
+
+  @@index([deliveryPersonId, status, assignedAt])
+  @@index([status])
+  @@index([deliveryPersonId])
+}
+
+model DeliveryStatusHistory {
+  id          String   @id
+  deliveryId  String
+  changedById String
+  status      String
+  note        String?
+  createdAt   String
+  User        User     @relation(fields: [changedById], references: [id])
+  Delivery    Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([changedById])
+  @@index([deliveryId])
+}
+
+model DeviceToken {
+  id        String @id
+  userId    String
+  token     String @unique(map: "sqlite_autoindex_DeviceToken_2")
+  platform  String
+  createdAt String
+  updatedAt String
+  User      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model EmailVerificationOtp {
+  email     String @id
+  otpHash   String
+  expiresAt String
+  attempts  Int    @default(0)
+  createdAt String
+
+  @@index([expiresAt])
+}
+
+model Inventory {
+  id                   String                 @id
+  productId            String                 @unique(map: "sqlite_autoindex_Inventory_2")
+  totalStock           Int                    @default(0)
+  reservedStock        Int                    @default(0)
+  version              Int                    @default(0)
+  createdAt            String
+  updatedAt            String
+  Product              Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
+  InventoryTransaction InventoryTransaction[]
+
+  @@index([totalStock])
+}
+
+model InventoryBatch {
+  id                   String                 @id
+  productId            String
+  lotNumber            String?
+  manufacturedAt       String?
+  expiresAt            String?
+  noExpiry             Int                    @default(0)
+  datesVerified        Int                    @default(0)
+  receivedQuantity     Int
+  remainingQuantity    Int
+  purchasePrice        String?
+  createdAt            String
+  updatedAt            String
+  Product              Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
+  OrderBatchAllocation OrderBatchAllocation[]
+
+  @@index([expiresAt])
+  @@index([productId, expiresAt])
+}
+
+model InventoryLocalStockReceipt {
+  id        String @id
+  ownerId   String
+  items     String
+  roomPicks String
+  createdAt String
+}
+
+model InventoryRoom {
+  id                 String               @id
+  name               String
+  number             String               @unique(map: "sqlite_autoindex_InventoryRoom_2")
+  active             Int                  @default(1)
+  createdAt          String
+  updatedAt          String
+  InventoryRoomStock InventoryRoomStock[]
+}
+
+model InventoryRoomCheckout {
+  saleId String @id
+  picks  String
+}
+
+model InventoryRoomMovement {
+  id          String  @id
+  requestId   String? @unique(map: "sqlite_autoindex_InventoryRoomMovement_2")
+  productId   String
+  fromRoomId  String?
+  toRoomId    String?
+  quantity    Int
+  reason      String
+  referenceId String?
+  actorId     String?
+  createdAt   String
+
+  @@index([productId, createdAt])
+  @@index([referenceId])
+}
+
+model InventoryRoomStock {
+  roomId        String
+  productId     String
+  quantity      Int           @default(0)
+  InventoryRoom InventoryRoom @relation(fields: [roomId], references: [id])
+
+  @@id([roomId, productId])
+  @@index([productId])
+}
+
+model InventoryTransaction {
+  id            String    @id
+  inventoryId   String
+  type          String
+  quantity      Int
+  balanceAfter  Int
+  referenceId   String?
+  notes         String?
+  performedById String?
+  createdAt     String
+  User          User?     @relation(fields: [performedById], references: [id])
+  Inventory     Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([performedById])
+  @@index([referenceId])
+  @@index([type])
+  @@index([inventoryId])
+}
+
+model InvoiceSequence {
+  year       Int    @id @default(autoincrement())
+  nextNumber Int    @default(0)
+  updatedAt  String
+}
+
+model Notification {
+  id        String  @id
+  userId    String
+  type      String
+  title     String
+  body      String
+  isRead    Int     @default(0)
+  metadata  String?
+  createdAt String
+  User      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([isRead])
+  @@index([userId])
+}
+
+model Order {
+  id                   String                 @id
+  orderNumber          String                 @unique(map: "sqlite_autoindex_Order_2")
+  invoiceNumber        String?                @unique(map: "sqlite_autoindex_Order_3")
+  userId               String
+  addressId            String?
+  status               String                 @default("PLACED")
+  paymentMethod        String
+  paymentStatus        String                 @default("PENDING")
+  subtotal             String
+  deliveryFee          String                 @default("0")
+  discount             String                 @default("0")
+  tip                  String                 @default("0")
+  total                String
+  couponCode           String?
+  idempotencyKey       String?                @unique(map: "sqlite_autoindex_Order_4")
+  scheduledDeliveryAt  String?
+  shippingName         String
+  shippingPhone        String
+  shippingAddress      String
+  shippingCity         String
+  shippingDistrict     String?
+  shippingProvince     String?
+  shippingPostalCode   String?
+  notes                String?
+  createdAt            String
+  updatedAt            String
+  Delivery             Delivery?
+  User                 User                   @relation(fields: [userId], references: [id])
+  Address              Address?               @relation(fields: [addressId], references: [id])
+  OrderBatchAllocation OrderBatchAllocation[]
+  OrderItem            OrderItem[]
+  OrderStatusHistory   OrderStatusHistory[]
+  Payment              Payment[]
+
+  @@index([createdAt])
+  @@index([paymentStatus])
+  @@index([status])
+  @@index([userId, couponCode, status])
+  @@index([userId, createdAt])
+  @@index([userId])
+}
+
+model OrderBatchAllocation {
+  id             String         @id
+  orderId        String
+  productId      String
+  batchId        String
+  quantity       Int
+  createdAt      String
+  InventoryBatch InventoryBatch @relation(fields: [batchId], references: [id])
+  Product        Product        @relation(fields: [productId], references: [id])
+  Order          Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([batchId])
+  @@index([orderId])
+}
+
+model OrderItem {
+  id              String         @id
+  orderId         String
+  productId       String?
+  wholesaleItemId String?
+  productName     String
+  sku             String
+  quantity        Int
+  weightGrams     Int?
+  price           String
+  total           String
+  isWholesale     Int            @default(0)
+  createdAt       String
+  WholesaleItem   WholesaleItem? @relation(fields: [wholesaleItemId], references: [id])
+  Product         Product?       @relation(fields: [productId], references: [id])
+  Order           Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([wholesaleItemId])
+  @@index([productId])
+  @@index([orderId])
+}
+
+model OrderStatusHistory {
+  id        String  @id
+  orderId   String
+  status    String
+  note      String?
+  createdAt String
+  Order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model PasswordResetOtp {
+  email     String @id
+  otpHash   String
+  expiresAt String
+  attempts  Int    @default(0)
+  createdAt String
+
+  @@index([expiresAt])
+}
+
+model Payment {
+  id              String  @id
+  orderId         String
+  method          String
+  status          String  @default("PENDING")
+  transactionId   String?
+  amount          String
+  gatewayResponse String?
+  errorMessage    String?
+  createdAt       String
+  updatedAt       String
+  Order           Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([transactionId])
+  @@index([orderId])
+}
+
+model PendingRegistration {
+  email        String @id
+  name         String
+  phone        String
+  passwordHash String
+  expiresAt    String
+  createdAt    String
+
+  @@index([expiresAt])
+}
+
+model PosCashMovement {
+  id        String   @id
+  shiftId   String
+  actorId   String
+  type      String
+  amount    String
+  note      String
+  createdAt String
+  User      User     @relation(fields: [actorId], references: [id])
+  PosShift  PosShift @relation(fields: [shiftId], references: [id])
+
+  @@index([shiftId, createdAt])
+}
+
+model PosCataloguePriceChange {
+  requestId String @id
+  cashierId String
+  changes   String
+  createdAt String
+}
+
+model PosExchange {
+  id                                  String            @id
+  idempotencyKey                      String            @unique(map: "sqlite_autoindex_PosExchange_2")
+  saleId                              String
+  cashierId                           String
+  shiftId                             String
+  resolvedById                        String?
+  returnedCredit                      String
+  replacementTotal                    String
+  difference                          String
+  paymentMethod                       String?
+  refundPaymentMethod                 String?
+  status                              String            @default("COMPLETED")
+  restockReturnedItems                Int               @default(1)
+  reason                              String?
+  requestedAt                         String
+  resolvedAt                          String?
+  User_PosExchange_resolvedByIdToUser User?             @relation("PosExchange_resolvedByIdToUser", fields: [resolvedById], references: [id], onDelete: Restrict)
+  PosShift                            PosShift          @relation(fields: [shiftId], references: [id])
+  User_PosExchange_cashierIdToUser    User              @relation("PosExchange_cashierIdToUser", fields: [cashierId], references: [id])
+  PosSale                             PosSale           @relation(fields: [saleId], references: [id])
+  PosExchangeItem                     PosExchangeItem[]
+
+  @@index([shiftId])
+  @@index([cashierId, requestedAt])
+  @@index([status, requestedAt])
+  @@index([saleId, requestedAt])
+}
+
+model PosExchangeItem {
+  id          String       @id
+  exchangeId  String
+  saleItemId  String?
+  productId   String?
+  type        String
+  productName String
+  sku         String
+  quantity    Int
+  weightGrams Int?
+  unitPrice   String
+  lineTotal   String
+  Product     Product?     @relation(fields: [productId], references: [id])
+  PosSaleItem PosSaleItem? @relation(fields: [saleItemId], references: [id])
+  PosExchange PosExchange  @relation(fields: [exchangeId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([saleItemId])
+  @@index([exchangeId])
+}
+
+model PosFonepayRequest {
+  id                    String  @id
+  saleId                String
+  reference             String  @unique(map: "sqlite_autoindex_PosFonepayRequest_3")
+  activeKey             String? @unique(map: "sqlite_autoindex_PosFonepayRequest_4")
+  requestedById         String
+  environment           String
+  merchantCode          String
+  merchantName          String?
+  currency              String  @default("NPR")
+  amount                String
+  billFingerprint       String
+  invoiceNumber         String
+  state                 String  @default("CREATING")
+  qrPayload             String?
+  expiresAt             String?
+  lastCheckedAt         String?
+  providerTransactionId String?
+  verifiedAt            String?
+  autoPrintClaimedAt    String?
+  failureCode           String?
+  createdAt             String
+  updatedAt             String
+  PosSale               PosSale @relation(fields: [saleId], references: [id])
+
+  @@unique([environment, merchantCode, providerTransactionId], map: "sqlite_autoindex_PosFonepayRequest_2")
+  @@index([state, expiresAt])
+  @@index([saleId, createdAt])
+}
+
+model PosHeldSale {
+  id            String   @id
+  shiftId       String
+  customerName  String?
+  customerPhone String?
+  items         String
+  createdAt     String
+  updatedAt     String
+  PosShift      PosShift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@index([shiftId, createdAt])
+}
+
+model PosOfflineStreakPurchase {
+  id            String @id
+  invoiceNumber String @unique(map: "sqlite_autoindex_PosOfflineStreakPurchase_2")
+  userId        String
+  purchaseDate  String
+  createdAt     String
+  User          User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purchaseDate])
+}
+
+model PosPaymentCollection {
+  id           String  @id
+  saleId       String
+  recordedById String
+  amount       String
+  method       String
+  note         String?
+  createdAt    String
+  User         User    @relation(fields: [recordedById], references: [id])
+  PosSale      PosSale @relation(fields: [saleId], references: [id])
+
+  @@index([recordedById, createdAt])
+  @@index([saleId, createdAt])
+  @@index([createdAt])
+}
+
+model PosRefund {
+  id                                 String  @id
+  saleId                             String
+  requestedById                      String
+  resolvedById                       String?
+  amount                             String
+  reason                             String
+  status                             String  @default("REQUESTED")
+  restockStock                       Int     @default(0)
+  requestedAt                        String
+  resolvedAt                         String?
+  User_PosRefund_resolvedByIdToUser  User?   @relation("PosRefund_resolvedByIdToUser", fields: [resolvedById], references: [id], onDelete: Restrict)
+  User_PosRefund_requestedByIdToUser User    @relation("PosRefund_requestedByIdToUser", fields: [requestedById], references: [id])
+  PosSale                            PosSale @relation(fields: [saleId], references: [id])
+
+  @@index([saleId])
+  @@index([status, requestedAt])
+}
+
+model PosSale {
+  id                   String                 @id
+  receiptNumber        String                 @unique(map: "sqlite_autoindex_PosSale_2")
+  invoiceNumber        String?                @unique(map: "sqlite_autoindex_PosSale_3")
+  shiftId              String
+  customerName         String?
+  customerPhone        String?
+  status               String                 @default("COMPLETED")
+  paymentMethod        String
+  paymentStatus        String                 @default("COMPLETED")
+  paidAmount           String                 @default("0")
+  subtotal             String
+  discount             String                 @default("0")
+  vatRate              String                 @default("0")
+  vatAmount            String                 @default("0")
+  total                String
+  refundedAmount       String                 @default("0")
+  createdAt            String
+  updatedAt            String
+  PosExchange          PosExchange[]
+  PosFonepayRequest    PosFonepayRequest[]
+  PosPaymentCollection PosPaymentCollection[]
+  PosRefund            PosRefund[]
+  PosShift             PosShift               @relation(fields: [shiftId], references: [id])
+  PosSaleItem          PosSaleItem[]
+
+  @@index([paymentStatus])
+  @@index([createdAt, status])
+  @@index([shiftId, createdAt])
+}
+
+model PosSaleItem {
+  id              String            @id
+  saleId          String
+  productId       String?
+  productName     String
+  sku             String
+  quantity        Int
+  weightGrams     Int?
+  unitPrice       String
+  lineTotal       String
+  PosExchangeItem PosExchangeItem[]
+  Product         Product?          @relation(fields: [productId], references: [id])
+  PosSale         PosSale           @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([saleId])
+}
+
+model PosShift {
+  id                  String            @id
+  cashierId           String
+  status              String            @default("OPEN")
+  openingCash         String
+  expectedClosingCash String?
+  actualClosingCash   String?
+  openedAt            String
+  closedAt            String?
+  PosCashMovement     PosCashMovement[]
+  PosExchange         PosExchange[]
+  PosHeldSale         PosHeldSale[]
+  PosSale             PosSale[]
+  User                User              @relation(fields: [cashierId], references: [id])
+
+  @@index([openedAt])
+  @@index([cashierId, status])
+}
+
+model Product {
+  id                       String                     @id
+  sku                      String                     @unique(map: "sqlite_autoindex_Product_2")
+  barcode                  String?                    @unique(map: "sqlite_autoindex_Product_3")
+  name                     String
+  slug                     String                     @unique(map: "sqlite_autoindex_Product_4")
+  categoryId               String
+  brand                    String?
+  price                    String
+  originalPrice            String?
+  rating                   String                     @default("0")
+  reviewCount              Int                        @default(0)
+  description              String?
+  origin                   String?
+  imageUrl                 String?
+  imageUrls                String                     @default("[]")
+  imageData                Bytes?
+  imageMimeType            String?
+  normalizedImageData      Bytes?
+  normalizedMimeType       String?
+  unitLabel                String                     @default("1 pc")
+  isWholesale              Int                        @default(0)
+  wholesalePrice           String?
+  wholesaleMinimumQuantity Int                        @default(1)
+  lowStockThreshold        Int                        @default(10)
+  isOrganic                Int                        @default(0)
+  isFeatured               Int                        @default(0)
+  isBestSeller             Int                        @default(0)
+  isVendingDrink           Int                        @default(0)
+  vendingSection           String?
+  isActive                 Int                        @default(1)
+  createdAt                String
+  updatedAt                String
+  CartItem                 CartItem[]
+  Coupon                   Coupon[]
+  Inventory                Inventory?
+  InventoryBatch           InventoryBatch[]
+  OrderBatchAllocation     OrderBatchAllocation[]
+  OrderItem                OrderItem[]
+  PosExchangeItem          PosExchangeItem[]
+  PosSaleItem              PosSaleItem[]
+  Category                 Category                   @relation(fields: [categoryId], references: [id])
+  ProductVariant           ProductVariant[]
+  Review                   Review[]
+  SupplierPurchaseBillItem SupplierPurchaseBillItem[]
+  WishlistItem             WishlistItem[]
+
+  @@index([name])
+  @@index([isBestSeller])
+  @@index([isFeatured])
+  @@index([isActive])
+  @@index([categoryId])
+}
+
+model ProductVariant {
+  id            String         @id
+  productId     String
+  name          String
+  sku           String         @unique(map: "sqlite_autoindex_ProductVariant_2")
+  price         String?
+  originalPrice String?
+  stock         Int            @default(0)
+  isActive      Int            @default(1)
+  createdAt     String
+  updatedAt     String
+  CartItem      CartItem[]
+  Product       Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  WishlistItem  WishlistItem[]
+
+  @@index([isActive])
+  @@index([productId])
+}
+
+model Review {
+  id              String         @id
+  productId       String?
+  wholesaleItemId String?
+  userId          String
+  rating          Int
+  text            String?
+  imageUrl        String?
+  createdAt       String
+  updatedAt       String
+  User            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  WholesaleItem   WholesaleItem? @relation(fields: [wholesaleItemId], references: [id], onDelete: Cascade)
+  Product         Product?       @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([wholesaleItemId, userId], map: "sqlite_autoindex_Review_3")
+  @@unique([productId, userId], map: "sqlite_autoindex_Review_2")
+  @@index([userId])
+  @@index([wholesaleItemId])
+  @@index([productId])
+}
+
+model StoreSetting {
+  id                   String @id @default("store")
+  isOrderingEnabled    Int    @default(1)
+  weeklyHours          String
+  customerMenuFeatures String @default("{}")
+  createdAt            String
+  updatedAt            String
+}
+
+model StoredImage {
+  id                  String  @id
+  imageData           Bytes
+  mimeType            String
+  normalizedImageData Bytes?
+  normalizedMimeType  String?
+  createdAt           String
+}
+
+model SupplierPurchaseBill {
+  id                       String                     @id
+  supplierName             String
+  supplierPhone            String?
+  invoiceNumber            String
+  invoiceDate              String
+  deliveryPerson           String?
+  notes                    String?
+  photoData                Bytes?
+  photoMimeType            String?
+  totalCost                String
+  status                   String                     @default("RECEIVED")
+  createdById              String?
+  createdAt                String
+  updatedAt                String
+  User                     User?                      @relation(fields: [createdById], references: [id])
+  SupplierPurchaseBillItem SupplierPurchaseBillItem[]
+
+  @@unique([supplierName, invoiceNumber], map: "sqlite_autoindex_SupplierPurchaseBill_2")
+  @@index([supplierName])
+  @@index([createdAt])
+  @@index([invoiceDate])
+}
+
+model SupplierPurchaseBillItem {
+  id                   String               @id
+  billId               String
+  productId            String
+  name                 String
+  sku                  String
+  unitLabel            String
+  quantity             String
+  unitCost             String
+  lineTotal            String
+  Product              Product              @relation(fields: [productId], references: [id])
+  SupplierPurchaseBill SupplierPurchaseBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([billId])
+}
+
+model User {
+  id                                                          String                       @id
+  userNumber                                                  Int                          @unique(map: "sqlite_autoindex_User_2")
+  name                                                        String
+  email                                                       String                       @unique(map: "sqlite_autoindex_User_3")
+  phone                                                       String?                      @unique(map: "sqlite_autoindex_User_4")
+  avatarUrl                                                   String?
+  avatarData                                                  Bytes?
+  avatarMimeType                                              String?
+  passwordHash                                                String
+  role                                                        String                       @default("CUSTOMER")
+  isActive                                                    Int                          @default(1)
+  emailVerified                                               Int                          @default(1)
+  phoneVerified                                               Int                          @default(0)
+  tokenVersion                                                Int                          @default(0)
+  isAvailable                                                 Int                          @default(1)
+  createdAt                                                   String
+  updatedAt                                                   String
+  Address                                                     Address[]
+  BuyingStreakPurchaseDay                                     BuyingStreakPurchaseDay[]
+  BuyingStreakRewardProgress                                  BuyingStreakRewardProgress[]
+  Cart                                                        Cart?
+  Coupon                                                      Coupon[]
+  CustomerRemovalAudit_CustomerRemovalAudit_removedByIdToUser CustomerRemovalAudit[]       @relation("CustomerRemovalAudit_removedByIdToUser")
+  CustomerRemovalAudit_CustomerRemovalAudit_customerIdToUser  CustomerRemovalAudit[]       @relation("CustomerRemovalAudit_customerIdToUser")
+  Delivery                                                    Delivery[]
+  DeliveryStatusHistory                                       DeliveryStatusHistory[]
+  DeviceToken                                                 DeviceToken[]
+  InventoryTransaction                                        InventoryTransaction[]
+  Notification                                                Notification[]
+  Order                                                       Order[]
+  PosCashMovement                                             PosCashMovement[]
+  PosExchange_PosExchange_resolvedByIdToUser                  PosExchange[]                @relation("PosExchange_resolvedByIdToUser")
+  PosExchange_PosExchange_cashierIdToUser                     PosExchange[]                @relation("PosExchange_cashierIdToUser")
+  PosOfflineStreakPurchase                                    PosOfflineStreakPurchase[]
+  PosPaymentCollection                                        PosPaymentCollection[]
+  PosRefund_PosRefund_resolvedByIdToUser                      PosRefund[]                  @relation("PosRefund_resolvedByIdToUser")
+  PosRefund_PosRefund_requestedByIdToUser                     PosRefund[]                  @relation("PosRefund_requestedByIdToUser")
+  PosShift                                                    PosShift[]
+  Review                                                      Review[]
+  SupplierPurchaseBill                                        SupplierPurchaseBill[]
+  Wishlist                                                    Wishlist?
+
+  @@index([createdAt])
+  @@index([role])
+}
+
+model WholesaleItem {
+  id                  String      @id
+  sku                 String      @unique(map: "sqlite_autoindex_WholesaleItem_2")
+  name                String
+  slug                String      @unique(map: "sqlite_autoindex_WholesaleItem_3")
+  categoryId          String
+  brand               String?
+  price               String
+  stock               Int         @default(0)
+  minimumQuantity     Int         @default(1)
+  description         String?
+  origin              String?
+  imageUrl            String?
+  imageData           Bytes?
+  imageMimeType       String?
+  normalizedImageData Bytes?
+  normalizedMimeType  String?
+  unitLabel           String      @default("1 pc")
+  rating              String      @default("0")
+  reviewCount         Int         @default(0)
+  isActive            Int         @default(1)
+  createdAt           String
+  updatedAt           String
+  CartItem            CartItem[]
+  OrderItem           OrderItem[]
+  Review              Review[]
+  Category            Category    @relation(fields: [categoryId], references: [id])
+
+  @@index([name])
+  @@index([isActive])
+  @@index([categoryId])
+}
+
+model Wishlist {
+  id           String         @id
+  userId       String         @unique(map: "sqlite_autoindex_Wishlist_2")
+  createdAt    String
+  updatedAt    String
+  User         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  WishlistItem WishlistItem[]
+
+  @@index([userId])
+}
+
+model WishlistItem {
+  id               String          @id
+  wishlistId       String
+  productId        String
+  productVariantId String?
+  createdAt        String
+  Wishlist         Wishlist        @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
+  ProductVariant   ProductVariant? @relation(fields: [productVariantId], references: [id])
+  Product          Product         @relation(fields: [productId], references: [id])
+
+  @@unique([wishlistId, productId, productVariantId], map: "sqlite_autoindex_WishlistItem_2")
+  @@index([wishlistId])
+}
+
+model FaststoreStagingImport {
+  snapshotId  String @id
+  completedAt String
+  purpose     String
+
+  @@map("_FaststoreStagingImport")
+}

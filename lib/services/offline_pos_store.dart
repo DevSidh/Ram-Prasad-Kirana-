@@ -285,13 +285,14 @@ class OfflinePosStore {
     final deductions = freshStock
         ? await billingStore.stockDeductions()
         : await billingStore.stockDeductionsForDisplay();
+    final prices = await billingStore.pendingCataloguePrices();
     return products
         .map((product) => PosProduct(
               id: product.id,
               name: product.name,
               sku: product.sku,
               barcode: product.barcode,
-              price: product.price,
+              price: prices[product.id] ?? product.price,
               unitLabel: product.unitLabel,
               available: (product.available - (deductions[product.id] ?? 0))
                   .clamp(0, product.available)

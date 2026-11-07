@@ -138,10 +138,10 @@ async function main(): Promise<void> {
     };
     const response = await upload(originalUpload, 'transparent.png');
     assert.equal(response.status, 201);
-    assert.deepEqual(storedImage?.imageData, originalUpload);
+    assert.deepEqual(Buffer.from(storedImage?.imageData ?? []), originalUpload);
     assert.equal(storedImage?.mimeType, 'image/png');
     assert.equal(storedImage?.normalizedMimeType, 'image/jpeg');
-    assert.ok(storedImage?.normalizedImageData instanceof Buffer);
+    assert.ok(storedImage?.normalizedImageData instanceof Uint8Array);
 
     const corruptImage = Buffer.concat([
       Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
@@ -149,14 +149,14 @@ async function main(): Promise<void> {
     ]);
     const corruptResponse = await upload(corruptImage, 'broken.png');
     assert.equal(corruptResponse.status, 422);
-    assert.deepEqual(storedImage?.imageData, originalUpload);
+    assert.deepEqual(Buffer.from(storedImage?.imageData ?? []), originalUpload);
 
     const oversizedResponse = await upload(
       Buffer.alloc(5 * 1024 * 1024 + 1),
       'oversized.png',
     );
     assert.equal(oversizedResponse.status, 413);
-    assert.deepEqual(storedImage?.imageData, originalUpload);
+    assert.deepEqual(Buffer.from(storedImage?.imageData ?? []), originalUpload);
     console.log('Product image normalization and safe-upload tests passed.');
   } finally {
     await new Promise<void>((resolve, reject) => {

@@ -19,6 +19,29 @@ class LocalBillingStore {
       <String, ({DateTime time, Map<String, int> values})>{};
   static final _displayLoads = <String, Future<Map<String, int>>>{};
   static int _displayRevision = 0;
+  static final _priceDisplay =
+      <String, ({int revision, Map<String, double> prices})>{};
+  Future<Map<String, double>> pendingCataloguePrices() async {
+    final key = Directory(rootPath).absolute.path;
+    final cached = _priceDisplay[key];
+    if (cached?.revision == _displayRevision) return cached!.prices;
+    final revision = _displayRevision;
+    final entries = await records();
+    entries
+        .sort((a, b) => '${a.record['date']}'.compareTo('${b.record['date']}'));
+    final prices = <String, double>{};
+    for (final entry in entries) {
+      if ((entry.record['postCommit'] as Map?)?['prices'] == true) continue;
+      for (final change
+          in (entry.record['cataloguePriceChanges'] as List? ?? [])
+              .whereType<Map>()) {
+        prices[change['productId'] as String] =
+            (change['price'] as num).toDouble();
+      }
+    }
+    _priceDisplay[key] = (revision: revision, prices: prices);
+    return prices;
+  }
 
   /// One-second display estimate only. Financial validation always calls
   /// stockDeductions() directly under the existing writer lock.
@@ -255,7 +278,24 @@ class LocalBillingStore {
           throw StateError(
               'Synchronize this queued bill before collecting another payment.');
         }
-        await writeJson(file, record);
+        await writeJson(file, {
+          ...record,
+          if (current['postCommit'] is Map) ...{
+            'postCommit': {
+              ...Map<String, dynamic>.from(current['postCommit'] as Map),
+              'archive': false,
+              'pendingCash': false
+            },
+            'receiptSnapshot': {
+              ...Map<String, dynamic>.from(current['receiptSnapshot'] as Map),
+              'paymentStatus': record['paymentStatus'],
+              'paymentMethod': record['paymentMethod'],
+              'paidAmount': record['paidAmount'],
+              'outstandingAmount': record['outstandingAmount'],
+              'paymentCollections': record['paymentCollections'] ?? [],
+            },
+          }
+        });
       });
 
   Future<Map<String, int>> stockDeductions() async {

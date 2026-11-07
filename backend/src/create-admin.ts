@@ -1,11 +1,12 @@
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
-import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
+import { createTursoPrismaClient } from './turso-prisma.js';
+import { allocateUserNumber, initializeUserNumberSequence } from './services/user-number-sequence.js';
 
 dotenv.config();
 
-const prisma = new PrismaClient();
+const prisma = createTursoPrismaClient();
 
 async function createAdmin(): Promise<void> {
   const name = process.env.ADMIN_NAME?.trim();
@@ -28,14 +29,12 @@ async function createAdmin(): Promise<void> {
     throw new Error('Set ADMIN_PASSWORD to a password with at least 8 characters.');
   }
 
-  const user = await prisma.user.create({
-    data: {
-      name,
-      email: email.data.toLowerCase(),
-      passwordHash: await bcrypt.hash(password, 12),
-      role: 'ADMIN',
-    },
-    select: { id: true, name: true, email: true, role: true },
+  const user = await prisma.$transaction(async (transaction) => {
+    await initializeUserNumberSequence(transaction);
+    return transaction.user.create({
+      data: { name, email: email.data.toLowerCase(), userNumber: await allocateUserNumber(transaction), passwordHash: await bcrypt.hash(password, 12), role: 'ADMIN' },
+      select: { id: true, name: true, email: true, role: true },
+    });
   });
 
   console.log(`Created ${user.role} account for username "${username}".`);

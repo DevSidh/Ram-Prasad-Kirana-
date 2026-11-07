@@ -970,6 +970,13 @@ model Coupon {
   @@index([assignedUserId])
 }
 
+model PosCataloguePriceChange {
+  requestId String @id
+  cashierId String
+  changes Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+
 model StoreSetting {
   id                   String   @id @default("store")
   isOrderingEnabled    Boolean  @default(true)

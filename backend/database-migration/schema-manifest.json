@@ -1,0 +1,6590 @@
+{
+  "format": 1,
+  "purpose": "lossless-staging-only",
+  "sourceSchemaSha256": "5f45dd668eedf03a4beb3a5325ec98aff3ecd684460a7ab87c0f6be3a8a55d5e",
+  "enums": [
+    {
+      "name": "UserRole",
+      "values": [
+        "CUSTOMER",
+        "ADMIN",
+        "DELIVERY_PERSON",
+        "BILLING_STAFF"
+      ]
+    },
+    {
+      "name": "OrderStatus",
+      "values": [
+        "PLACED",
+        "CONFIRMED",
+        "PROCESSING",
+        "OUT_FOR_DELIVERY",
+        "DELIVERED",
+        "CANCELLED"
+      ]
+    },
+    {
+      "name": "PaymentMethod",
+      "values": [
+        "COD",
+        "ESEWA",
+        "KHALTI"
+      ]
+    },
+    {
+      "name": "PaymentStatus",
+      "values": [
+        "PENDING",
+        "COMPLETED",
+        "FAILED",
+        "REFUNDED",
+        "CANCELLED"
+      ]
+    },
+    {
+      "name": "PosShiftStatus",
+      "values": [
+        "OPEN",
+        "CLOSED"
+      ]
+    },
+    {
+      "name": "SupplierPurchaseBillStatus",
+      "values": [
+        "RECEIVED"
+      ]
+    },
+    {
+      "name": "PosSaleStatus",
+      "values": [
+        "CHECKOUT",
+        "COMPLETED",
+        "PARTIALLY_REFUNDED",
+        "REFUNDED",
+        "CANCELLED"
+      ]
+    },
+    {
+      "name": "PosPaymentMethod",
+      "values": [
+        "FONEPAY",
+        "CASH",
+        "DIGITAL",
+        "PENDING"
+      ]
+    },
+    {
+      "name": "PosRefundStatus",
+      "values": [
+        "REQUESTED",
+        "APPROVED",
+        "REJECTED"
+      ]
+    },
+    {
+      "name": "PosExchangeStatus",
+      "values": [
+        "COMPLETED",
+        "REFUND_REQUESTED",
+        "REFUND_APPROVED",
+        "REFUND_REJECTED"
+      ]
+    },
+    {
+      "name": "PosExchangeItemType",
+      "values": [
+        "RETURN",
+        "REPLACEMENT"
+      ]
+    },
+    {
+      "name": "PosCashMovementType",
+      "values": [
+        "CASH_IN",
+        "CASH_OUT"
+      ]
+    },
+    {
+      "name": "InventoryTransactionType",
+      "values": [
+        "RESERVED",
+        "PURCHASED",
+        "RELEASED",
+        "RESTOCKED",
+        "ADJUSTED"
+      ]
+    },
+    {
+      "name": "DiscountType",
+      "values": [
+        "PERCENTAGE",
+        "FIXED"
+      ]
+    },
+    {
+      "name": "DeliveryStatus",
+      "values": [
+        "PENDING",
+        "ASSIGNED",
+        "ACCEPTED",
+        "DECLINED",
+        "PICKED_UP",
+        "OUT_FOR_DELIVERY",
+        "DELIVERED",
+        "FAILED",
+        "CANCELLED"
+      ]
+    },
+    {
+      "name": "NotificationType",
+      "values": [
+        "ORDER_PLACED",
+        "ORDER_CONFIRMED",
+        "ORDER_PROCESSING",
+        "ORDER_OUT_FOR_DELIVERY",
+        "ORDER_DELIVERED",
+        "ORDER_CANCELLED",
+        "DELIVERY_ASSIGNED",
+        "DELIVERY_UPDATED",
+        "PROMOTIONAL"
+      ]
+    }
+  ],
+  "models": [
+    {
+      "name": "User",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "userNumber",
+          "type": "BigInt",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": true,
+          "default": {
+            "name": "sequence",
+            "args": []
+          }
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "email",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "phone",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "avatarUrl",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "avatarData",
+          "type": "Bytes",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "avatarMimeType",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "passwordHash",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "role",
+          "type": "UserRole",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": "CUSTOMER"
+        },
+        {
+          "name": "isActive",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": true
+        },
+        {
+          "name": "emailVerified",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": true
+        },
+        {
+          "name": "phoneVerified",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": false
+        },
+        {
+          "name": "tokenVersion",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "isAvailable",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": true
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "role"
+        ],
+        [
+          "createdAt"
+        ]
+      ],
+      "relations": []
+    },
+    {
+      "name": "BuyingStreakPurchaseDay",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "userId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "dayKey",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [
+        [
+          "userId",
+          "dayKey"
+        ]
+      ],
+      "indexes": [],
+      "relations": [
+        {
+          "fields": [
+            "userId"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "InvoiceSequence",
+      "fields": [
+        {
+          "name": "year",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false
+        },
+        {
+          "name": "nextNumber",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "year"
+      ],
+      "uniqueFields": [],
+      "indexes": [],
+      "relations": []
+    },
+    {
+      "name": "BarcodeScannerSession",
+      "fields": [
+        {
+          "name": "code",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false
+        },
+        {
+          "name": "ownerId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "barcode",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "expiresAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "connectedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "code"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "expiresAt"
+        ],
+        [
+          "ownerId",
+          "expiresAt"
+        ]
+      ],
+      "relations": []
+    },
+    {
+      "name": "BuyingStreakRewardConfig",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "day",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "title",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "description",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "couponId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [],
+      "relations": [
+        {
+          "fields": [
+            "couponId"
+          ],
+          "target": "Coupon",
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "BuyingStreakRewardProgress",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "userId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "day",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "title",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "description",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "couponTemplateId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "couponId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "unlockedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "claimedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [
+        [
+          "userId",
+          "day"
+        ]
+      ],
+      "indexes": [
+        [
+          "userId",
+          "claimedAt"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "userId"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "couponTemplateId"
+          ],
+          "target": "Coupon",
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "couponId"
+          ],
+          "target": "Coupon",
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "CustomerRemovalAudit",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "customerId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "customerDisplayId",
+          "type": "BigInt",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "removedById",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "removedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "removedAt"
+        ],
+        [
+          "customerId",
+          "removedAt"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "customerId"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "removedById"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "PasswordResetOtp",
+      "fields": [
+        {
+          "name": "email",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false
+        },
+        {
+          "name": "otpHash",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "expiresAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "attempts",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "email"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "expiresAt"
+        ]
+      ],
+      "relations": []
+    },
+    {
+      "name": "EmailVerificationOtp",
+      "fields": [
+        {
+          "name": "email",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false
+        },
+        {
+          "name": "otpHash",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "expiresAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "attempts",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "email"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "expiresAt"
+        ]
+      ],
+      "relations": []
+    },
+    {
+      "name": "PendingRegistration",
+      "fields": [
+        {
+          "name": "email",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "phone",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "passwordHash",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "expiresAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "email"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "expiresAt"
+        ]
+      ],
+      "relations": []
+    },
+    {
+      "name": "Address",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "userId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "label",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "fullName",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "phone",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "addressLine1",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "addressLine2",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "city",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "district",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "province",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "postalCode",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "instructions",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "latitude",
+          "type": "Float",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "longitude",
+          "type": "Float",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "isDefault",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "userId"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "userId"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "Category",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "slug",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "description",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "imageUrl",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "isActive",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": true
+        },
+        {
+          "name": "sortOrder",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "isActive"
+        ],
+        [
+          "sortOrder"
+        ]
+      ],
+      "relations": []
+    },
+    {
+      "name": "Product",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "sku",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "barcode",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "slug",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "categoryId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "brand",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "price",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "originalPrice",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "rating",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "reviewCount",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "description",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "origin",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "imageUrl",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "imageUrls",
+          "type": "Json",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": "[]"
+        },
+        {
+          "name": "imageData",
+          "type": "Bytes",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "imageMimeType",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "normalizedImageData",
+          "type": "Bytes",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "normalizedMimeType",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "unitLabel",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": "1 pc"
+        },
+        {
+          "name": "isWholesale",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": false
+        },
+        {
+          "name": "wholesalePrice",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "wholesaleMinimumQuantity",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 1
+        },
+        {
+          "name": "lowStockThreshold",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 10
+        },
+        {
+          "name": "isOrganic",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": false
+        },
+        {
+          "name": "isFeatured",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": false
+        },
+        {
+          "name": "isBestSeller",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": false
+        },
+        {
+          "name": "isVendingDrink",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": false
+        },
+        {
+          "name": "vendingSection",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "isActive",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": true
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "categoryId"
+        ],
+        [
+          "isActive"
+        ],
+        [
+          "isFeatured"
+        ],
+        [
+          "isBestSeller"
+        ],
+        [
+          "name"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "categoryId"
+          ],
+          "target": "Category",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "WholesaleItem",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "sku",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "slug",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "categoryId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "brand",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "price",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "stock",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "minimumQuantity",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 1
+        },
+        {
+          "name": "description",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "origin",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "imageUrl",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "imageData",
+          "type": "Bytes",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "imageMimeType",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "normalizedImageData",
+          "type": "Bytes",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "normalizedMimeType",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "unitLabel",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": "1 pc"
+        },
+        {
+          "name": "rating",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "reviewCount",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "isActive",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": true
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "categoryId"
+        ],
+        [
+          "isActive"
+        ],
+        [
+          "name"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "categoryId"
+          ],
+          "target": "Category",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "StoredImage",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "imageData",
+          "type": "Bytes",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "mimeType",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "normalizedImageData",
+          "type": "Bytes",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "normalizedMimeType",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [],
+      "relations": []
+    },
+    {
+      "name": "Inventory",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "productId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "totalStock",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "reservedStock",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "version",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "totalStock"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "productId"
+          ],
+          "target": "Product",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "InventoryBatch",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "productId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "lotNumber",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "manufacturedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "expiresAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "noExpiry",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": false
+        },
+        {
+          "name": "datesVerified",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": false
+        },
+        {
+          "name": "receivedQuantity",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "remainingQuantity",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "purchasePrice",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "productId",
+          "expiresAt"
+        ],
+        [
+          "expiresAt"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "productId"
+          ],
+          "target": "Product",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "SupplierPurchaseBill",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "supplierName",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "supplierPhone",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "invoiceNumber",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "invoiceDate",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "deliveryPerson",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "notes",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "photoData",
+          "type": "Bytes",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "photoMimeType",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "totalCost",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "status",
+          "type": "SupplierPurchaseBillStatus",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": "RECEIVED"
+        },
+        {
+          "name": "createdById",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [
+        [
+          "supplierName",
+          "invoiceNumber"
+        ]
+      ],
+      "indexes": [
+        [
+          "invoiceDate"
+        ],
+        [
+          "createdAt"
+        ],
+        [
+          "supplierName"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "createdById"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "SupplierPurchaseBillItem",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "billId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "productId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "sku",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "unitLabel",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "quantity",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "unitCost",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "lineTotal",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "billId"
+        ],
+        [
+          "productId"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "billId"
+          ],
+          "target": "SupplierPurchaseBill",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "productId"
+          ],
+          "target": "Product",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "OrderBatchAllocation",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "orderId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "productId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "batchId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "quantity",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "orderId"
+        ],
+        [
+          "batchId"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "orderId"
+          ],
+          "target": "Order",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "productId"
+          ],
+          "target": "Product",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "batchId"
+          ],
+          "target": "InventoryBatch",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "ProductVariant",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "productId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "sku",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "price",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "originalPrice",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "stock",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "isActive",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": true
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "productId"
+        ],
+        [
+          "isActive"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "productId"
+          ],
+          "target": "Product",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "InventoryTransaction",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "inventoryId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "type",
+          "type": "InventoryTransactionType",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "quantity",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "balanceAfter",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "referenceId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "notes",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "performedById",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "inventoryId"
+        ],
+        [
+          "type"
+        ],
+        [
+          "referenceId"
+        ],
+        [
+          "performedById"
+        ],
+        [
+          "createdAt"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "inventoryId"
+          ],
+          "target": "Inventory",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "performedById"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "Order",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "orderNumber",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "invoiceNumber",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "userId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "addressId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "status",
+          "type": "OrderStatus",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": "PLACED"
+        },
+        {
+          "name": "paymentMethod",
+          "type": "PaymentMethod",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "paymentStatus",
+          "type": "PaymentStatus",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": "PENDING"
+        },
+        {
+          "name": "subtotal",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "deliveryFee",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "discount",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "tip",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "total",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "couponCode",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "idempotencyKey",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "scheduledDeliveryAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "shippingName",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "shippingPhone",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "shippingAddress",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "shippingCity",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "shippingDistrict",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "shippingProvince",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "shippingPostalCode",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "notes",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "userId"
+        ],
+        [
+          "userId",
+          "createdAt"
+        ],
+        [
+          "userId",
+          "couponCode",
+          "status"
+        ],
+        [
+          "status"
+        ],
+        [
+          "paymentStatus"
+        ],
+        [
+          "createdAt"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "addressId"
+          ],
+          "target": "Address",
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "userId"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "OrderItem",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "orderId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "productId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "wholesaleItemId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "productName",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "sku",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "quantity",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "weightGrams",
+          "type": "Int",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "price",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "total",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "isWholesale",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "orderId"
+        ],
+        [
+          "productId"
+        ],
+        [
+          "wholesaleItemId"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "orderId"
+          ],
+          "target": "Order",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "productId"
+          ],
+          "target": "Product",
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "wholesaleItemId"
+          ],
+          "target": "WholesaleItem",
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "Payment",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "orderId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "method",
+          "type": "PaymentMethod",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "status",
+          "type": "PaymentStatus",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": "PENDING"
+        },
+        {
+          "name": "transactionId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "amount",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "gatewayResponse",
+          "type": "Json",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "errorMessage",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "orderId"
+        ],
+        [
+          "transactionId"
+        ],
+        [
+          "status"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "orderId"
+          ],
+          "target": "Order",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "PosShift",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "cashierId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "status",
+          "type": "PosShiftStatus",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": "OPEN"
+        },
+        {
+          "name": "openingCash",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "expectedClosingCash",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "actualClosingCash",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "openedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "closedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "cashierId",
+          "status"
+        ],
+        [
+          "openedAt"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "cashierId"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "InventoryRoom",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "number",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "active",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": true
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [],
+      "relations": []
+    },
+    {
+      "name": "InventoryRoomStock",
+      "fields": [
+        {
+          "name": "roomId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "productId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "quantity",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        }
+      ],
+      "primaryKey": [
+        "roomId",
+        "productId"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "productId"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "roomId"
+          ],
+          "target": "InventoryRoom",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "InventoryRoomMovement",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "requestId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "productId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "fromRoomId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "toRoomId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "quantity",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "reason",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "referenceId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "actorId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "referenceId"
+        ],
+        [
+          "productId",
+          "createdAt"
+        ]
+      ],
+      "relations": []
+    },
+    {
+      "name": "InventoryRoomCheckout",
+      "fields": [
+        {
+          "name": "saleId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false
+        },
+        {
+          "name": "picks",
+          "type": "Json",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "saleId"
+      ],
+      "uniqueFields": [],
+      "indexes": [],
+      "relations": []
+    },
+    {
+      "name": "InventoryLocalStockReceipt",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false
+        },
+        {
+          "name": "ownerId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "items",
+          "type": "Json",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "roomPicks",
+          "type": "Json",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [],
+      "relations": []
+    },
+    {
+      "name": "PosSale",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "receiptNumber",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "invoiceNumber",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "shiftId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "customerName",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "customerPhone",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "status",
+          "type": "PosSaleStatus",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": "COMPLETED"
+        },
+        {
+          "name": "paymentMethod",
+          "type": "PosPaymentMethod",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "paymentStatus",
+          "type": "PaymentStatus",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": "COMPLETED"
+        },
+        {
+          "name": "paidAmount",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "subtotal",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "discount",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "vatRate",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "vatAmount",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "total",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "refundedAmount",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "shiftId",
+          "createdAt"
+        ],
+        [
+          "createdAt",
+          "status"
+        ],
+        [
+          "paymentStatus"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "shiftId"
+          ],
+          "target": "PosShift",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "PosFonepayRequest",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false
+        },
+        {
+          "name": "saleId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "reference",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "activeKey",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "requestedById",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "environment",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "merchantCode",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "merchantName",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "currency",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": "NPR"
+        },
+        {
+          "name": "amount",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "billFingerprint",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "invoiceNumber",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "state",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": "CREATING"
+        },
+        {
+          "name": "qrPayload",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "expiresAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "lastCheckedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "providerTransactionId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "verifiedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "autoPrintClaimedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "failureCode",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [
+        [
+          "environment",
+          "merchantCode",
+          "providerTransactionId"
+        ]
+      ],
+      "indexes": [
+        [
+          "saleId",
+          "createdAt"
+        ],
+        [
+          "state",
+          "expiresAt"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "saleId"
+          ],
+          "target": "PosSale",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "PosPaymentCollection",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "saleId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "recordedById",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "amount",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "method",
+          "type": "PosPaymentMethod",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "note",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "createdAt"
+        ],
+        [
+          "saleId",
+          "createdAt"
+        ],
+        [
+          "recordedById",
+          "createdAt"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "saleId"
+          ],
+          "target": "PosSale",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "recordedById"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "PosOfflineStreakPurchase",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "invoiceNumber",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "userId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "purchaseDate",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "userId",
+          "purchaseDate"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "userId"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "PosSaleItem",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "saleId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "productId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "productName",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "sku",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "quantity",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "weightGrams",
+          "type": "Int",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "unitPrice",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "lineTotal",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "saleId"
+        ],
+        [
+          "productId"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "saleId"
+          ],
+          "target": "PosSale",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "productId"
+          ],
+          "target": "Product",
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "PosHeldSale",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "shiftId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "customerName",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "customerPhone",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "items",
+          "type": "Json",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "shiftId",
+          "createdAt"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "shiftId"
+          ],
+          "target": "PosShift",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "PosRefund",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "saleId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "requestedById",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "resolvedById",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "amount",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "reason",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "status",
+          "type": "PosRefundStatus",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": "REQUESTED"
+        },
+        {
+          "name": "restockStock",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": false
+        },
+        {
+          "name": "requestedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "resolvedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "status",
+          "requestedAt"
+        ],
+        [
+          "saleId"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "saleId"
+          ],
+          "target": "PosSale",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "requestedById"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "resolvedById"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "PosCashMovement",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "shiftId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "actorId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "type",
+          "type": "PosCashMovementType",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "amount",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "note",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "shiftId",
+          "createdAt"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "shiftId"
+          ],
+          "target": "PosShift",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "actorId"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "PosExchange",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "idempotencyKey",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "saleId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "cashierId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "shiftId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "resolvedById",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "returnedCredit",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "replacementTotal",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "difference",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "paymentMethod",
+          "type": "PosPaymentMethod",
+          "kind": "enum",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "refundPaymentMethod",
+          "type": "PosPaymentMethod",
+          "kind": "enum",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "status",
+          "type": "PosExchangeStatus",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": "COMPLETED"
+        },
+        {
+          "name": "restockReturnedItems",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": true
+        },
+        {
+          "name": "reason",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "requestedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "resolvedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "saleId",
+          "requestedAt"
+        ],
+        [
+          "status",
+          "requestedAt"
+        ],
+        [
+          "cashierId",
+          "requestedAt"
+        ],
+        [
+          "shiftId"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "saleId"
+          ],
+          "target": "PosSale",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "cashierId"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "shiftId"
+          ],
+          "target": "PosShift",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "resolvedById"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "PosExchangeItem",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "exchangeId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "saleItemId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "productId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "type",
+          "type": "PosExchangeItemType",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "productName",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "sku",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "quantity",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "weightGrams",
+          "type": "Int",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "unitPrice",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "lineTotal",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "exchangeId"
+        ],
+        [
+          "saleItemId"
+        ],
+        [
+          "productId"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "exchangeId"
+          ],
+          "target": "PosExchange",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "saleItemId"
+          ],
+          "target": "PosSaleItem",
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "productId"
+          ],
+          "target": "Product",
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "Cart",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "userId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "userId"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "userId"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "CartItem",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "cartId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "productId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "wholesaleItemId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "productVariantId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "quantity",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 1
+        },
+        {
+          "name": "weightGrams",
+          "type": "Int",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "unitPrice",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "isWholesale",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "cartId"
+        ],
+        [
+          "productId"
+        ],
+        [
+          "wholesaleItemId"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "cartId"
+          ],
+          "target": "Cart",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "productId"
+          ],
+          "target": "Product",
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "wholesaleItemId"
+          ],
+          "target": "WholesaleItem",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "productVariantId"
+          ],
+          "target": "ProductVariant",
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "Wishlist",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "userId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "userId"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "userId"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "WishlistItem",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "wishlistId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "productId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "productVariantId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [
+        [
+          "wishlistId",
+          "productId",
+          "productVariantId"
+        ]
+      ],
+      "indexes": [
+        [
+          "wishlistId"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "productId"
+          ],
+          "target": "Product",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "productVariantId"
+          ],
+          "target": "ProductVariant",
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "wishlistId"
+          ],
+          "target": "Wishlist",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "Review",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "productId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "wholesaleItemId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "userId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "rating",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "text",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "imageUrl",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [
+        [
+          "productId",
+          "userId"
+        ],
+        [
+          "wholesaleItemId",
+          "userId"
+        ]
+      ],
+      "indexes": [
+        [
+          "productId"
+        ],
+        [
+          "wholesaleItemId"
+        ],
+        [
+          "userId"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "productId"
+          ],
+          "target": "Product",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "wholesaleItemId"
+          ],
+          "target": "WholesaleItem",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "userId"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "Notification",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "userId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "type",
+          "type": "NotificationType",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "title",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "body",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "isRead",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": false
+        },
+        {
+          "name": "metadata",
+          "type": "Json",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "userId"
+        ],
+        [
+          "isRead"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "userId"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "DeviceToken",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "userId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "token",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "platform",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "userId"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "userId"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "Delivery",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "orderId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "deliveryPersonId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "status",
+          "type": "DeliveryStatus",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": "PENDING"
+        },
+        {
+          "name": "assignedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "pickedUpAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "deliveredAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "cashCollected",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "cashCollectedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "cashHandedOver",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "cashHandedOverAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "latitude",
+          "type": "Float",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "longitude",
+          "type": "Float",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "locationUpdatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "customerLatitude",
+          "type": "Float",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "customerLongitude",
+          "type": "Float",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "customerLocationUpdatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "notes",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "deliveryPersonId"
+        ],
+        [
+          "status"
+        ],
+        [
+          "deliveryPersonId",
+          "status",
+          "assignedAt"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "deliveryPersonId"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "orderId"
+          ],
+          "target": "Order",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "DeliveryStatusHistory",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "deliveryId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "changedById",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "status",
+          "type": "DeliveryStatus",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "note",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "deliveryId"
+        ],
+        [
+          "changedById"
+        ],
+        [
+          "createdAt"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "deliveryId"
+          ],
+          "target": "Delivery",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "changedById"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "OrderStatusHistory",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "orderId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "status",
+          "type": "OrderStatus",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "note",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "orderId"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "orderId"
+          ],
+          "target": "Order",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "Coupon",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": {
+            "name": "cuid",
+            "args": []
+          }
+        },
+        {
+          "name": "code",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": true
+        },
+        {
+          "name": "productId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "assignedUserId",
+          "type": "String",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "discountType",
+          "type": "DiscountType",
+          "kind": "enum",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": "PERCENTAGE"
+        },
+        {
+          "name": "discountPercent",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "discountAmount",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "minOrderAmount",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "maxDiscount",
+          "type": "Decimal",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "usageLimit",
+          "type": "Int",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "perUserLimit",
+          "type": "Int",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "usedCount",
+          "type": "Int",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": 0
+        },
+        {
+          "name": "isActive",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": true
+        },
+        {
+          "name": "isDeleted",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": false
+        },
+        {
+          "name": "isAnnounced",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": false
+        },
+        {
+          "name": "isBannerFeatured",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": false
+        },
+        {
+          "name": "expiresAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": false,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [
+        [
+          "isActive"
+        ],
+        [
+          "expiresAt"
+        ],
+        [
+          "productId"
+        ],
+        [
+          "assignedUserId"
+        ]
+      ],
+      "relations": [
+        {
+          "fields": [
+            "productId"
+          ],
+          "target": "Product",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "onUpdate": "Cascade"
+        },
+        {
+          "fields": [
+            "assignedUserId"
+          ],
+          "target": "User",
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        }
+      ]
+    },
+    {
+      "name": "PosCataloguePriceChange",
+      "fields": [
+        {
+          "name": "requestId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false
+        },
+        {
+          "name": "cashierId",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "changes",
+          "type": "Json",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "requestId"
+      ],
+      "uniqueFields": [],
+      "indexes": [],
+      "relations": []
+    },
+    {
+      "name": "StoreSetting",
+      "fields": [
+        {
+          "name": "id",
+          "type": "String",
+          "kind": "scalar",
+          "required": true,
+          "id": true,
+          "unique": false,
+          "default": "store"
+        },
+        {
+          "name": "isOrderingEnabled",
+          "type": "Boolean",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": true
+        },
+        {
+          "name": "weeklyHours",
+          "type": "Json",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false
+        },
+        {
+          "name": "customerMenuFeatures",
+          "type": "Json",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": "{}"
+        },
+        {
+          "name": "createdAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": "DateTime",
+          "kind": "scalar",
+          "required": true,
+          "id": false,
+          "unique": false,
+          "default": {
+            "name": "now",
+            "args": []
+          }
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ],
+      "uniqueFields": [],
+      "indexes": [],
+      "relations": []
+    }
+  ]
+}

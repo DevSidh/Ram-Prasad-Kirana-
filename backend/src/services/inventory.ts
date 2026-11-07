@@ -64,7 +64,6 @@ export class InventoryService {
         CASE WHEN "expiresAt" IS NULL THEN 1 ELSE 0 END,
         "expiresAt" ASC,
         "createdAt" ASC
-      FOR UPDATE
     `;
     let remaining = -adjustment;
     for (const batch of batches) {
@@ -105,7 +104,6 @@ export class InventoryService {
       SELECT "totalStock", "reservedStock"
       FROM "Inventory"
       WHERE "productId" = ${productId}
-      FOR UPDATE
     `;
     const current = rows[0];
     if (!current) {
@@ -142,7 +140,7 @@ export class InventoryService {
       UPDATE "Inventory"
       SET "totalStock" = ${totalStock},
           "version" = "version" + 1,
-          "updatedAt" = NOW()
+          "updatedAt" = CURRENT_TIMESTAMP
       WHERE "productId" = ${productId}
         AND "totalStock" = ${current.totalStock}
         AND "reservedStock" = ${current.reservedStock}
@@ -188,7 +186,6 @@ export class InventoryService {
       SELECT "totalStock", "reservedStock"
       FROM "Inventory"
       WHERE "productId" = ${productId}
-      FOR UPDATE
     `;
     const current = rows[0];
 
@@ -230,7 +227,7 @@ export class InventoryService {
       UPDATE "Inventory"
       SET "totalStock" = ${totalStock},
           "version" = "version" + 1,
-          "updatedAt" = NOW()
+          "updatedAt" = CURRENT_TIMESTAMP
       WHERE "productId" = ${productId}
         AND "totalStock" = ${current.totalStock}
         AND "reservedStock" = ${current.reservedStock}
@@ -295,7 +292,6 @@ export class InventoryService {
         CASE WHEN "expiresAt" IS NULL THEN 1 ELSE 0 END,
         "expiresAt" ASC,
         "createdAt" ASC
-      FOR UPDATE
     `);
 
     const allocations: Prisma.OrderBatchAllocationCreateManyInput[] = [];
@@ -340,7 +336,7 @@ export class InventoryService {
       UPDATE "InventoryBatch" AS batch
       SET "remainingQuantity" =
             batch."remainingQuantity" - allocation."quantity",
-          "updatedAt" = NOW()
+          "updatedAt" = CURRENT_TIMESTAMP
       FROM (VALUES ${Prisma.join(
         allocations.map((allocation) => Prisma.sql`
           (${allocation.batchId}, ${allocation.quantity})
@@ -375,7 +371,7 @@ export class InventoryService {
       SET "totalStock" = inventory."totalStock" - requested."quantity",
           ${reservedStockUpdate}
           "version" = inventory."version" + 1,
-          "updatedAt" = NOW()
+          "updatedAt" = CURRENT_TIMESTAMP
       FROM (VALUES ${Prisma.join(
         productIds.map((productId) => Prisma.sql`
           (${productId}, ${quantities.get(productId)})
@@ -422,7 +418,7 @@ export class InventoryService {
         SET 
           "reservedStock" = "reservedStock" + ${item.quantity},
           "version" = "version" + 1,
-          "updatedAt" = NOW()
+          "updatedAt" = CURRENT_TIMESTAMP
         WHERE 
           "productId" = ${item.productId}
           AND ("totalStock" - "reservedStock") >= ${item.quantity};
@@ -479,7 +475,7 @@ export class InventoryService {
         UPDATE "Inventory"
         SET "totalStock" = "totalStock" - ${item.quantity},
             "version" = "version" + 1,
-            "updatedAt" = NOW()
+            "updatedAt" = CURRENT_TIMESTAMP
         WHERE "productId" = ${item.productId}
           AND "totalStock" - "reservedStock" >= ${item.quantity}
       `;
@@ -553,7 +549,6 @@ export class InventoryService {
         CASE WHEN "expiresAt" IS NULL THEN 1 ELSE 0 END,
         "expiresAt" ASC,
         "createdAt" ASC
-      FOR UPDATE
     `;
     let remaining = quantity;
     const allocations: Prisma.OrderBatchAllocationCreateManyInput[] = [];
@@ -659,9 +654,9 @@ export class InventoryService {
       await tx.$executeRaw`
         UPDATE "Inventory"
         SET 
-          "reservedStock" = GREATEST(0, "reservedStock" - ${item.quantity}),
+          "reservedStock" = MAX(0, "reservedStock" - ${item.quantity}),
           "version" = "version" + 1,
-          "updatedAt" = NOW()
+          "updatedAt" = CURRENT_TIMESTAMP
         WHERE "productId" = ${item.productId};
       `;
 
@@ -710,7 +705,7 @@ export class InventoryService {
         SET
           "totalStock" = "totalStock" + ${item.quantity},
           "version" = "version" + 1,
-          "updatedAt" = NOW()
+          "updatedAt" = CURRENT_TIMESTAMP
         WHERE "productId" = ${item.productId};
       `;
 

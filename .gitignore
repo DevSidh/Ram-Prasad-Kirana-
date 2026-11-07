@@ -48,3 +48,8 @@ FastStore-Windows-*/
 FastStore-Windows-*.zip
 FastStore-Windows-*.zip.sha256
 tmp/
+
+# Database exports contain customer details, password hashes and tokens.
+backend/database-migration/private/
+backend/database-migration/*.db
+backend/database-migration/*.db-*

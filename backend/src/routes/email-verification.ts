@@ -13,6 +13,7 @@ import {
   type SendStoreEmail,
 } from '../services/email-sender.js';
 import { formatUserDisplayId } from '../services/user-display-id.js';
+import { allocateUserNumber, initializeUserNumberSequence } from '../services/user-number-sequence.js';
 
 const emailSchema = z.string().trim().email().max(254)
   .transform((email) => email.toLowerCase());
@@ -279,8 +280,10 @@ export function createEmailVerificationRouter(
           if (registrationConsumed.count !== 1) {
             throw new InvalidVerificationCodeError();
           }
+          await initializeUserNumberSequence(transaction);
           return transaction.user.create({
             data: {
+              userNumber: await allocateUserNumber(transaction),
               email,
               name: pendingRegistration.name,
               phone: pendingRegistration.phone,

@@ -1,4 +1,4 @@
-import 'dart:math' as math;import 'dart:typed_data';
+import 'dart:math' as math;
 
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -8,8 +8,34 @@ import '../models/pos_models.dart';
 import '../models/fonepay_payment_request.dart';
 import 'invoice_pdf_builder.dart';
 import 'readable_bill_pdf.dart';
+import 'compact_receipt_pdf.dart';
+import '../core/billing_strings.dart';
+import 'pos_timing.dart';
+import 'dart:convert';
+import 'dart:io';
+import 'package:crypto/crypto.dart';
+import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 
 class PosReceiptService {
+  static final _prepared = <String, Future<Uint8List>>{};
+  static Directory? cacheDirectoryOverride;
+  static void clearMemoryCache() => _prepared.clear();
+  static PdfPageFormat formatForBytes(Uint8List bytes, int width) {
+    final match = RegExp(
+            r'/MediaBox\s*\[\s*0(?:\.0)?\s+0(?:\.0)?\s+([\d.]+)\s+([\d.]+)\s*\]')
+        .firstMatch(latin1.decode(bytes));
+    if (match == null) {
+      throw const FormatException('The receipt page size is missing.');
+    }
+    final actualWidth = double.parse(match[1]!);
+    if ((actualWidth - width * PdfPageFormat.mm).abs() > .1) {
+      throw const FormatException(
+          'Receipt width does not match printer settings.');
+    }
+    return PdfPageFormat(actualWidth, double.parse(match[2]!));
+  }
+
   static Future<Uint8List> createInvoicePdf(PosSale sale,
       {FonepayPaymentRequest? fonepay}) async {
     _validateFonepay(sale, fonepay);
@@ -335,11 +361,86 @@ class PosReceiptService {
     PosSale sale, {
     required int paperWidthMm,
     FonepayPaymentRequest? fonepay,
+    bool? nepaliOverride,
   }) async {
     _validateFonepay(sale, fonepay);
+    if (paperWidthMm != 58 && paperWidthMm != 80) {
+      throw ArgumentError.value(paperWidthMm, 'paperWidthMm');
+    }
+    await BillingStrings.load();
+    final nepali = nepaliOverride ?? BillingStrings.isNepali;
+    // Include every receipt field, language and layout revision: revised
+    // balances and paper settings must never reuse a stale PDF.
+    final key = sha256
+        .convert(utf8.encode(jsonEncode([
+          'compact-v1',
+          AppConstants.storePanNumber,
+          paperWidthMm,
+          nepali,
+          sale.toReceiptJson(),
+          fonepay?.reference,
+          fonepay?.qrPayload,
+        ])))
+        .toString();
+    if (_prepared.containsKey(key)) return _prepared[key]!;
+    if (_prepared.length >= 32) _prepared.remove(_prepared.keys.first);
+    final work = _cached(sale, paperWidthMm, fonepay, key, nepali);
+    _prepared[key] = work;
+    try {
+      return await work;
+    } catch (_) {
+      _prepared.remove(key);
+      rethrow;
+    }
+  }
+
+  static Future<Uint8List> _cached(PosSale sale, int paperWidthMm,
+      FonepayPaymentRequest? fonepay, String key, bool nepali) async {
+    Directory? directory;
+    try {
+      directory = cacheDirectoryOverride ??
+          Directory(
+              '${(await getApplicationSupportDirectory()).path}/receipt_cache');
+      final file = File('${directory.path}/$key.pdf');
+      final checksum = File('${file.path}.sha256');
+      if (await file.exists() && await checksum.exists()) {
+        final bytes = await file.readAsBytes();
+        if (sha256.convert(bytes).toString() == await checksum.readAsString() &&
+            bytes.length > 5 &&
+            String.fromCharCodes(bytes.take(5)) == '%PDF-') {
+          return bytes;
+        }
+      }
+    } on MissingPluginException {/* Unit fixtures have no path provider. */}
+    final bytes = await PosTiming.measure('receipt_generation', () async {
+      if (fonepay == null &&
+          !nepali &&
+          ![
+            sale.customerName,
+            ...sale.items.map((i) => i.productName)
+          ].any((s) => s != null && RegExp(r'[\u0900-\u097f]').hasMatch(s))) {
+        return CompactReceiptPdf.create(sale, paperWidthMm);
+      }
+      return _createShaped(sale, paperWidthMm, fonepay, nepali);
+    });
+    if (directory != null) {
+      await directory.create(recursive: true);
+      final file = File('${directory.path}/$key.pdf');
+      final temporary = File('${file.path}.tmp');
+      await temporary.writeAsBytes(bytes, flush: true);
+      await temporary.rename(file.path);
+      await File('${file.path}.sha256')
+          .writeAsString(sha256.convert(bytes).toString(), flush: true);
+    }
+    return bytes;
+  }
+
+  static Future<Uint8List> _createShaped(PosSale sale, int paperWidthMm,
+      FonepayPaymentRequest? fonepay, bool nepali) async {
     // The measured text renderer determines the roll length from the actual
     // wrapped rows, for English and Nepali on both supported paper widths.
     return ReadableBillPdf.create(
+      nepaliOverride: nepali,
       number: sale.receiptNumber,
       date: sale.createdAt,
       customerName: sale.customerName,

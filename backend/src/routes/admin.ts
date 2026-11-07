@@ -7,6 +7,7 @@ import { sendAdminError } from '../middleware/auth.js';
 import { InventoryAdjustmentError, InventoryService } from '../services/inventory.js';
 import { consumeRoomStock, lockRoomProduct, RoomInventoryError, initialRoomAllocationsInput, allocateOpeningRoomStock } from '../services/room-inventory.js';
 import { runTransactionWithRetry } from '../services/transaction-retry.js';
+import { allocateUserNumber, initializeUserNumberSequence } from '../services/user-number-sequence.js';
 import { createAdminBillingRouter } from './admin-billing.js';
 import {
   getImageMimeType,
@@ -28,6 +29,7 @@ import {
 } from '../services/product-image.js';
 import { identityAlreadyInUse, normalizeEmail, normalizePhone } from '../services/user-identity.js';
 import { formatUserDisplayId } from '../services/user-display-id.js';
+import { prismaBytes } from '../services/prisma-bytes.js';
 import {
   CUSTOMER_MENU_FEATURE_KEYS,
   normalizeCustomerMenuFeatures,
@@ -812,7 +814,7 @@ export function createAdminRouter(
       }
       const image = await prisma.storedImage.create({
         data: {
-          imageData: req.file.buffer,
+          imageData: prismaBytes(req.file.buffer),
           mimeType,
         },
         select: { id: true },
@@ -834,9 +836,9 @@ export function createAdminRouter(
       const normalized = await normalizeProductImage(req.file.buffer, mimeType);
       const image = await prisma.storedImage.create({
         data: {
-          imageData: req.file.buffer,
+          imageData: prismaBytes(req.file.buffer),
           mimeType,
-          normalizedImageData: normalized.data,
+          normalizedImageData: prismaBytes(normalized.data),
           normalizedMimeType: normalized.mimeType,
         },
         select: { id: true },
@@ -1575,10 +1577,10 @@ export function createAdminRouter(
       ...(search
         ? {
           OR: [
-            { orderNumber: { contains: search, mode: 'insensitive' } },
-            { shippingName: { contains: search, mode: 'insensitive' } },
-            { shippingPhone: { contains: search, mode: 'insensitive' } },
-            { user: { name: { contains: search, mode: 'insensitive' } } },
+            { orderNumber: { contains: search } },
+            { shippingName: { contains: search } },
+            { shippingPhone: { contains: search } },
+            { user: { name: { contains: search } } },
           ],
         }
         : {}),
@@ -1722,13 +1724,13 @@ export function createAdminRouter(
       ...(search
         ? {
           OR: [
-            { name: { contains: search, mode: 'insensitive' } },
-            { email: { contains: search, mode: 'insensitive' } },
-            { phone: { contains: search, mode: 'insensitive' } },
+            { name: { contains: search } },
+            { email: { contains: search } },
+            { phone: { contains: search } },
             {
               orders: {
                 some: {
-                  orderNumber: { contains: search, mode: 'insensitive' },
+                  orderNumber: { contains: search },
                 },
               },
             },
@@ -2154,8 +2156,10 @@ export function createAdminRouter(
       if (await identityAlreadyInUse(prisma, { email, phone })) {
         return res.status(409).json({ error: 'An account with this email or phone already exists.' });
       }
-      const person = await prisma.user.create({
-        data: {
+      const person = await prisma.$transaction(async (transaction) => {
+        await initializeUserNumberSequence(transaction);
+        return transaction.user.create({ data: {
+          userNumber: await allocateUserNumber(transaction),
           name: parsed.data.name,
           email,
           phone,
@@ -2171,7 +2175,7 @@ export function createAdminRouter(
           avatarUrl: true,
           isActive: true,
           isAvailable: true,
-        },
+        }, });
       });
       return res.status(201).json({ deliveryPerson: person });
     } catch (error) {
@@ -2677,9 +2681,9 @@ export function createAdminRouter(
       ...(search
         ? {
           OR: [
-            { name: { contains: search, mode: 'insensitive' } },
-            { sku: { contains: search, mode: 'insensitive' } },
-            { brand: { contains: search, mode: 'insensitive' } },
+            { name: { contains: search } },
+            { sku: { contains: search } },
+            { brand: { contains: search } },
           ],
         }
         : {}),
@@ -2724,9 +2728,9 @@ export function createAdminRouter(
           ...fields,
           ...(imageUpload
             ? {
-                imageData: imageUpload.originalData,
+                imageData: prismaBytes(imageUpload.originalData),
                 imageMimeType: imageUpload.originalMimeType,
-                normalizedImageData: imageUpload.normalized.data,
+                normalizedImageData: prismaBytes(imageUpload.normalized.data),
                 normalizedMimeType: imageUpload.normalized.mimeType,
                 imageUrl: `/api/v1/wholesale/${id}/image`,
               }
@@ -2767,9 +2771,9 @@ export function createAdminRouter(
           ...parsed.data,
           ...(imageUpload
             ? {
-                imageData: imageUpload.originalData,
+                imageData: prismaBytes(imageUpload.originalData),
                 imageMimeType: imageUpload.originalMimeType,
-                normalizedImageData: imageUpload.normalized.data,
+                normalizedImageData: prismaBytes(imageUpload.normalized.data),
                 normalizedMimeType: imageUpload.normalized.mimeType,
                 imageUrl: `/api/v1/wholesale/${id}/image`,
               }
@@ -2831,9 +2835,9 @@ export function createAdminRouter(
       if (query.search) {
         and.push({
           OR: [
-            { name: { contains: query.search, mode: 'insensitive' } },
-            { sku: { contains: query.search, mode: 'insensitive' } },
-            { brand: { contains: query.search, mode: 'insensitive' } },
+            { name: { contains: query.search } },
+            { sku: { contains: query.search } },
+            { brand: { contains: query.search } },
           ],
         });
       }
@@ -3012,9 +3016,9 @@ export function createAdminRouter(
             ...data,
             ...(imageUpload
               ? {
-                  imageData: imageUpload.originalData,
+                  imageData: prismaBytes(imageUpload.originalData),
                   imageMimeType: imageUpload.originalMimeType,
-                  normalizedImageData: imageUpload.normalized.data,
+                  normalizedImageData: prismaBytes(imageUpload.normalized.data),
                   normalizedMimeType: imageUpload.normalized.mimeType,
                 }
               : {}),
@@ -3150,9 +3154,9 @@ export function createAdminRouter(
               ...data,
               ...(imageUpload
                 ? {
-                    imageData: imageUpload.originalData,
+                    imageData: prismaBytes(imageUpload.originalData),
                     imageMimeType: imageUpload.originalMimeType,
-                    normalizedImageData: imageUpload.normalized.data,
+                    normalizedImageData: prismaBytes(imageUpload.normalized.data),
                     normalizedMimeType: imageUpload.normalized.mimeType,
                     imageUrl: `/api/v1/products/${id}/image`,
                   }
@@ -3246,10 +3250,10 @@ export function createAdminRouter(
       remainingQuantity: { gt: 0 },
       ...(categoryId ? { product: { categoryId } } : {}),
       ...(search ? { AND: [{ OR: [
-        { product: { name: { contains: search, mode: 'insensitive' as const } } },
-        { product: { sku: { contains: search, mode: 'insensitive' as const } } },
-        { product: { barcode: { contains: search, mode: 'insensitive' as const } } },
-        { lotNumber: { contains: search, mode: 'insensitive' as const } },
+        { product: { name: { contains: search } } },
+        { product: { sku: { contains: search } } },
+        { product: { barcode: { contains: search } } },
+        { lotNumber: { contains: search } },
       ] }] } : {}),
     };
     const expiredWhere: Prisma.InventoryBatchWhereInput = {
@@ -3510,7 +3514,7 @@ export function createAdminRouter(
             invoiceDate: new Date(parsed.data.invoiceDate),
             deliveryPerson: parsed.data.deliveryPerson?.trim() || null,
             notes: parsed.data.notes?.trim() || null,
-            photoData: photoBuffer,
+            photoData: photoBuffer ? prismaBytes(photoBuffer) : null,
             photoMimeType,
             totalCost,
             status: 'RECEIVED',
@@ -3636,9 +3640,9 @@ export function createAdminRouter(
       ...(search
         ? {
           OR: [
-            { supplierName: { contains: search, mode: 'insensitive' } },
-            { invoiceNumber: { contains: search, mode: 'insensitive' } },
-            { deliveryPerson: { contains: search, mode: 'insensitive' } },
+            { supplierName: { contains: search } },
+            { invoiceNumber: { contains: search } },
+            { deliveryPerson: { contains: search } },
           ],
         }
         : {}),
@@ -3719,11 +3723,11 @@ export function createAdminRouter(
     const where: Prisma.InventoryTransactionWhereInput = {
       ...(movementType === 'ALL' ? {} : { type: movementType }),
       ...(search ? { OR: [
-        { referenceId: { contains: search, mode: 'insensitive' as const } },
-        { notes: { contains: search, mode: 'insensitive' as const } },
-        { inventory: { product: { name: { contains: search, mode: 'insensitive' as const } } } },
-        { inventory: { product: { sku: { contains: search, mode: 'insensitive' as const } } } },
-        { performedBy: { name: { contains: search, mode: 'insensitive' as const } } },
+        { referenceId: { contains: search } },
+        { notes: { contains: search } },
+        { inventory: { product: { name: { contains: search } } } },
+        { inventory: { product: { sku: { contains: search } } } },
+        { performedBy: { name: { contains: search } } },
       ] } : {}),
       ...(dayRange
         ? { createdAt: { gte: dayRange.start, lt: dayRange.end } }

@@ -103,12 +103,12 @@ export async function consumeRoomStock(
 export async function lockRoomProduct(tx: Prisma.TransactionClient, productId: string) {
   if (productId.startsWith('wholesale-')) {
     const rows = await tx.$queryRaw<Array<{ stock: number }>>`
-      SELECT "stock" FROM "WholesaleItem" WHERE "id" = ${productId.slice(10)} FOR UPDATE`;
+      SELECT "stock" FROM "WholesaleItem" WHERE "id" = ${productId.slice(10)}`;
     if (!rows[0]) throw new RoomInventoryError('Product not found.');
     return Number(rows[0].stock);
   }
   const rows = await tx.$queryRaw<Array<{ totalStock: number }>>`
-    SELECT "totalStock" FROM "Inventory" WHERE "productId" = ${productId} FOR UPDATE`;
+    SELECT "totalStock" FROM "Inventory" WHERE "productId" = ${productId}`;
   if (!rows[0]) throw new RoomInventoryError('Product has no stock record.');
   return Number(rows[0].totalStock);
 }

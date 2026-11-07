@@ -86,9 +86,7 @@ async function run(): Promise<void> {
         state.user.emailVerified = data.emailVerified;
         return { count: 1 };
       },
-      create: async ({ data }: {
-        data: Omit<StoredUser, 'id' | 'userNumber' | 'avatarUrl' | 'tokenVersion' | 'isActive' | 'role'>;
-      }) => {
+      create: async ({ data }: { data: any }) => {
         if (
           state.user?.email === data.email ||
           (state.user?.phone !== null && state.user?.phone === data.phone)
@@ -98,7 +96,7 @@ async function run(): Promise<void> {
         state.user = {
           ...data,
           id: 'registered-customer',
-          userNumber: 2n,
+          userNumber: data.userNumber,
           role: 'CUSTOMER',
           avatarUrl: null,
           tokenVersion: 0,
@@ -107,6 +105,8 @@ async function run(): Promise<void> {
         return { ...state.user };
       },
     },
+    $executeRaw: async () => 1,
+    $queryRaw: async () => [{ userNumber: 2n }],
     pendingRegistration: {
       create: async ({ data }: { data: StoredRegistration }) => {
         if (state.pending?.email === data.email) {

@@ -1,3 +1,4 @@
+import 'pos_timing.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -7,20 +8,12 @@ import '../models/pos_models.dart';
 import '../models/store_availability.dart';
 import 'api_service.dart';
 import 'offline_pos_store.dart';
-import 'fonepay_api_service.dart';
 
 class AdminApiService {
   final ApiService _api;
 
   AdminApiService(this._api, {this.offlineStore = const OfflinePosStore()});
   final OfflinePosStore offlineStore;
-  FonepayApiService get fonepay => FonepayApiService(_api);
-  Future<List<PosSale>> getFonepayCheckouts() async {
-    final body = _asMap(await _api.get('/admin/billing/fonepay-checkouts'));
-    return (body['sales'] as List)
-        .map((value) => PosSale.fromJson(Map<String, dynamic>.from(value)))
-        .toList();
-  }
 
   Future<String> createBarcodeScannerSession() async {
     final response =
@@ -259,29 +252,35 @@ class AdminApiService {
     String? heldSaleId,
     double? expectedTotal,
     Map<String, double>? unitPrices,
+    List<Map<String, dynamic>>? cataloguePriceChanges,
     Map<String, dynamic>? manualVerification,
     List<Map<String, dynamic>>? roomPicks,
   }) async {
-    final response = _asMap(await _api.post('/admin/billing/sales', {
-      if (expectedTotal != null && unitPrices != null)
-        'quote': {
-          'expectedTotal': expectedTotal,
-          'unitPrices': unitPrices,
-        },
-      'idempotencyKey': idempotencyKey,
-      'items': items,
-      if (roomPicks != null) 'roomPicks': roomPicks,
-      'discount': discount,
-      'vatRate': vatRate,
-      'paymentMethod': paymentMethod,
-      if (manualVerification != null) 'manualVerification': manualVerification,
-      if (paidAmount != null) 'paidAmount': paidAmount,
-      if (paidNowMethod != null) 'paidNowMethod': paidNowMethod,
-      'customerName': customerName,
-      'customerPhone': customerPhone,
-      'customerId': customerId,
-      if (heldSaleId != null) 'heldSaleId': heldSaleId,
-    }));
+    final response = _asMap(await PosTiming.measure(
+        'bill_saving',
+        () => _api.post('/admin/billing/sales', {
+              if (expectedTotal != null && unitPrices != null)
+                'quote': {
+                  'expectedTotal': expectedTotal,
+                  'unitPrices': unitPrices,
+                },
+              'idempotencyKey': idempotencyKey,
+              'items': items,
+              if (cataloguePriceChanges != null)
+                'cataloguePriceChanges': cataloguePriceChanges,
+              if (roomPicks != null) 'roomPicks': roomPicks,
+              'discount': discount,
+              'vatRate': vatRate,
+              'paymentMethod': paymentMethod,
+              if (manualVerification != null)
+                'manualVerification': manualVerification,
+              if (paidAmount != null) 'paidAmount': paidAmount,
+              if (paidNowMethod != null) 'paidNowMethod': paidNowMethod,
+              'customerName': customerName,
+              'customerPhone': customerPhone,
+              'customerId': customerId,
+              if (heldSaleId != null) 'heldSaleId': heldSaleId,
+            })));
     final sale = response['sale'];
     if (sale is! Map<String, dynamic>) {
       throw const FormatException(
@@ -332,6 +331,12 @@ class AdminApiService {
       'customerId': customerId,
       'invoiceNumber': invoiceNumber,
     });
+  }
+
+  Future<void> applyCataloguePriceChanges(
+      String requestId, List<Map<String, dynamic>> changes) async {
+    await _api.post('/admin/billing/catalogue-price-changes',
+        {'requestId': requestId, 'changes': changes});
   }
 
   Future<PosSalesPage> getPosSales({

@@ -17,6 +17,10 @@ class ReadableBillPdf {
         final loader = FontLoader('FastStoreDevanagari')
           ..addFont(rootBundle.load('assets/fonts/NotoSansDevanagari.ttf'));
         await loader.load();
+        await (FontLoader('FastStoreMono')
+              ..addFont(
+                  rootBundle.load('assets/fonts/NotoSansMono-Regular.ttf')))
+            .load();
       }();
 
   static bool needsShaping(Iterable<String?> values) =>
@@ -41,34 +45,38 @@ class ReadableBillPdf {
     double other = 0,
     int? paperWidthMm,
     pw.Widget? paymentInstructions,
+    bool? nepaliOverride,
   }) async {
     if (paperWidthMm != null && paperWidthMm != 58 && paperWidthMm != 80) {
       throw ArgumentError.value(paperWidthMm, 'paperWidthMm');
     }
     await _loadFont();
     await BillingStrings.load();
-    final nepali = BillingStrings.isNepali;
+    final nepali = nepaliOverride ?? BillingStrings.isNepali;
     String label(String en, String ne) => nepali ? ne : en;
     final thermal = paperWidthMm != null;
-    final margin = thermal ? 3 * PdfPageFormat.mm : 32.0;
+    final margin = thermal ? 5 * PdfPageFormat.mm : 32.0;
     final width =
         (thermal ? paperWidthMm * PdfPageFormat.mm : PdfPageFormat.a4.width) -
             margin * 2;
-    final fontSize = thermal ? (paperWidthMm == 58 ? 10.0 : 11.5) : 16.0;
+    final fontSize = thermal ? (paperWidthMm == 58 ? 8.5 : 9.5) : 16.0;
     final rows = <({pw.Widget widget, double height})>[];
     Future<void> text(String value,
         {bool bold = false, bool center = false, double? size}) async {
+      final family = RegExp(r'[\u0900-\u097f]').hasMatch(value)
+          ? 'FastStoreDevanagari'
+          : 'FastStoreMono';
       final paragraph = ui.ParagraphBuilder(ui.ParagraphStyle(
         textDirection: ui.TextDirection.ltr,
         textAlign: center ? ui.TextAlign.center : ui.TextAlign.left,
-        fontFamily: 'FastStoreDevanagari',
+        fontFamily: family,
         fontSize: size ?? fontSize,
         fontWeight: bold ? ui.FontWeight.w700 : ui.FontWeight.w400,
-        height: 1.55,
+        height: thermal ? 1.3 : 1.55,
       ))
         ..pushStyle(ui.TextStyle(
             color: const ui.Color(0xff000000),
-            fontFamily: 'FastStoreDevanagari',
+            fontFamily: family,
             fontSize: size ?? fontSize,
             fontWeight: bold ? ui.FontWeight.w700 : ui.FontWeight.w400))
         ..addText(value);
@@ -108,8 +116,12 @@ class ReadableBillPdf {
         ));
     String money(double amount) =>
         '${label('NPR', 'रु.')} ${amount.toStringAsFixed(2)}';
-    await text(label('Ram Prasad General Store', 'राम प्रसाद जनरल स्टोर'),
-        bold: true, center: true, size: fontSize + 3);
+    await text(
+        label(thermal ? 'RAM PRASAD KIRANA STORE' : 'Ram Prasad General Store',
+            'राम प्रसाद जनरल स्टोर'),
+        bold: true,
+        center: true,
+        size: thermal ? fontSize + 1 : fontSize + 3);
     await text(label('Janakpur, Nepal', 'जनकपुर, नेपाल'), center: true);
     await text(
         '${label('PAN No.', 'प्यान नं.')} ${AppConstants.storePanNumber}',

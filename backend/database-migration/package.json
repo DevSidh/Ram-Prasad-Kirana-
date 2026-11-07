@@ -1,0 +1,17 @@
+{
+  "name": "faststore-database-migration",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "schema": "node generate-schema.mjs",
+    "source:check": "node export-cockroach.mjs --check",
+    "export": "node export-cockroach.mjs",
+    "import": "node import-turso.mjs",
+    "test": "node --test migration.test.mjs"
+  },
+  "dependencies": {
+    "@libsql/client": "0.18.0",
+    "pg": "8.23.1"
+  }
+}

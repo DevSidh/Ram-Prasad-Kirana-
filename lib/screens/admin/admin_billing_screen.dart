@@ -28,8 +28,6 @@ import '../../models/scanned_product_barcode.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
-import '../../services/fonepay_api_service.dart';
-import '../../widgets/fonepay_payment_dialog.dart';
 import '../../services/billing_excel_export_service.dart';
 import '../../services/bill_pdf_archive_service.dart';
 import '../../services/billing_customer_service.dart';
@@ -39,6 +37,9 @@ import '../../services/local_billing_sync.dart';
 import '../../services/ordered_work_queue.dart';
 import '../../widgets/local_billing_status_panel.dart';
 import '../../services/pos_receipt_service.dart';
+import '../../services/receipt_print_service.dart';
+import '../../services/billing_post_commit.dart';
+import '../../services/pos_timing.dart';
 import '../../services/store_audio_service.dart';
 import '../../theme/admin_widgets.dart';
 import '../../theme/app_colors.dart';
@@ -156,8 +157,12 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   Color get _border => Theme.of(context).colorScheme.outlineVariant;
   Color get _muted => Theme.of(context).colorScheme.onSurfaceVariant;
 
+  BillingPostCommit? _postCommit;
+  String? _printerName;
+
   @override
   void dispose() {
+    _postCommit?.dispose();
     _localBillingSync?.dispose();
     _scrollController.dispose();
     _customerSearch.dispose();
@@ -176,6 +181,19 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     unawaited(_loadPaperWidth());
     unawaited(_syncPendingLocalStreaks());
     unawaited(_load());
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      PosTiming.logPath =
+          '${widget.offlineStore.billingStore.rootPath}/diagnostics/checkout-timing.jsonl';
+      _postCommit = BillingPostCommit(widget.offlineStore.billingStore,
+          _adminApi, context.read<AuthProvider>().currentUser?.id ?? '',
+          catalog: widget.offlineStore, onChanged: () {
+        if (mounted) setState(() {});
+      })
+        ..start();
+      unawaited(ReceiptPrintService.selected().then((p) {
+        if (mounted) setState(() => _printerName = p?.name);
+      }));
+    }
     if (_isWindowsOperatorMode) {
       _localBillingSync = LocalBillingSync(
         api: widget.api,
@@ -464,72 +482,44 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         onNewBill: startNewBill,
         operatorId: context.read<AuthProvider>().currentUser?.id ?? '',
         allowOfflineSync: _isWindowsOperatorMode,
+        allowPriceEditing: !widget.isBillingStaff,
         printSale: _printManuallyVerifiedBill,
         paperWidthMm: _paperWidthMm,
       ),
     );
     if (!mounted) return;
-    if (completedSale?.localPath == null) await _load();
-    if (completedSale != null && mounted) {
-      if (completedSale.localPath != null) {
-        final local = await widget.offlineStore.readOfflineSales();
-        if (!mounted) return;
-        setState(() {
-          _sales = [
-            ...local,
-            ..._sales.where((sale) => sale.localPath == null)
-          ];
-          _localPendingSales =
-              local.where((sale) => sale.paymentStatus == 'PENDING').toList();
-        });
-        unawaited(_localBillingSync?.synchronize());
-      }
-      unawaited(StoreAudioService.playConfirmation());
-      if (_isWindowsOperatorMode && completedSale.localPath != null) {
-        unawaited(_syncPendingCashExport());
-      }
-      var printMessage = '';
-      final hasCustomerDetails =
-          (completedSale.customerName?.trim().isNotEmpty ?? false) ||
-              (completedSale.customerPhone?.trim().isNotEmpty ?? false);
-      if (_isWindowsOperatorMode && hasCustomerDetails) {
-        try {
-          final customerFile =
-              await BillingExcelExportService.recordBillCustomer(completedSale);
-          unawaited(_loadLocalBillingCustomers());
-          printMessage = ' Customer record saved to $customerFile.';
-        } catch (error) {
-          printMessage =
-              ' Customer record could not be saved: ${error.toString().replaceFirst('Exception: ', '')}';
-        }
-      }
-      if (completedSale.localPath != null) {
-        printMessage = ' Saved on this computer: ${completedSale.localPath}';
+    if (completedSale == null) return;
+    // The financial commit has finished. Report it before preparing a receipt.
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: BillingText('Bill saved: ${completedSale.receiptNumber}')));
+    unawaited(StoreAudioService.playConfirmation());
+    var printMessage = 'Bill saved.';
+    try {
+      if (_postCommit != null) {
+        await _postCommit!.enqueue(completedSale, _paperWidthMm);
       }
       if (completedSale.autoPrintAllowed &&
           defaultTargetPlatform == TargetPlatform.windows) {
-        try {
-          final printed = await _printManuallyVerifiedBill(completedSale);
-          printMessage = printed
-              ? ' Receipt sent to the printer.'
-              : ' Receipt was not printed.';
-        } catch (error) {
-          printMessage =
-              ' Bill is confirmed; receipt printing failed: ${error.toString().replaceFirst('Exception: ', '')}';
-        }
+        final printed = await _printManuallyVerifiedBill(completedSale);
+        printMessage = printed
+            ? 'Bill saved. Receipt submitted to printer.'
+            : 'Bill saved. Printing cancelled. Use Reprint Bill.';
       } else if (completedSale.autoPrintAllowed &&
           ['FONEPAY', 'ESEWA'].contains(completedSale.paymentMethod)) {
         await _printOrShareInvoice(completedSale);
       }
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: BillingText(
-            'Bill ${completedSale.receiptNumber} completed.$printMessage',
-          ),
-        ),
-      );
+    } catch (error) {
+      printMessage =
+          'Bill saved. Printing needs attention: ${error.toString().replaceFirst('Exception: ', '')}. Use Reprint Bill.';
+    } finally {
+      unawaited(_postCommit?.run());
+      unawaited(_load());
+      unawaited(_localBillingSync?.synchronize());
+      if (_isWindowsOperatorMode) unawaited(_syncPendingCashExport());
     }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: BillingText(printMessage)));
   }
 
   void startNewBill() {
@@ -537,21 +527,28 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   }
 
   Future<bool> _printManuallyVerifiedBill(PosSale sale) async {
-    final bytes = defaultTargetPlatform == TargetPlatform.windows
-        ? await PosReceiptService.createPdf(sale, paperWidthMm: _paperWidthMm)
-        : await PosReceiptService.createInvoicePdf(sale);
-    await BillPdfArchiveService.save(sale, bytes);
-    if (defaultTargetPlatform != TargetPlatform.windows) {
-      return Printing.layoutPdf(
-          name: BillPdfArchiveService.fileName(sale),
-          onLayout: (_) async => bytes);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: BillingText('Bill saved. Preparing receipt…')));
     }
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      await _postCommit?.enqueue(sale, _paperWidthMm);
+      if (await ReceiptPrintService.selected() == null && mounted) {
+        final chosen = await ReceiptPrintService.choose(context);
+        if (chosen == null) return false;
+        if (mounted) setState(() => _printerName = chosen.name);
+      }
+      try {
+        return await ReceiptPrintService.print(sale, _paperWidthMm);
+      } finally {
+        unawaited(_postCommit?.run());
+      }
+    }
+    final bytes = await PosReceiptService.createInvoicePdf(sale);
+    await BillPdfArchiveService.save(sale, bytes);
     return Printing.layoutPdf(
-      name: BillPdfArchiveService.fileName(sale),
-      format: PosReceiptService.pageFormat(sale, paperWidthMm: _paperWidthMm),
-      dynamicLayout: false,
-      onLayout: (_) async => bytes,
-    );
+        name: BillPdfArchiveService.fileName(sale),
+        onLayout: (_) async => bytes);
   }
 
   Future<void> _syncPendingCashExport({bool showMessage = false}) async {
@@ -2705,6 +2702,36 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionHeading('Receipt & printer settings'),
+        if ((_postCommit?.pendingTasks ?? 0) > 0) ...[
+          BillingText('Background tasks pending: ${_postCommit!.pendingTasks}'),
+          BillingText(_postCommit!.lastError ?? ''),
+          TextButton(
+              onPressed: () => unawaited(_postCommit!.run()),
+              child: const BillingText('Retry background tasks')),
+        ],
+        if (defaultTargetPlatform == TargetPlatform.windows)
+          ListTile(
+            title: BillingText(_printerName ?? 'Select receipt printer'),
+            subtitle: const BillingText(
+                'Choose Deli ES301 for direct receipt printing. Reprints use the same saved bill.'),
+            trailing: FilledButton.icon(
+                icon: const Icon(Icons.print),
+                label: const BillingText('Choose printer'),
+                onPressed: () async {
+                  try {
+                    final printer = await ReceiptPrintService.choose(context);
+                    if (mounted && printer != null) {
+                      setState(() => _printerName = printer.name);
+                    }
+                  } catch (error) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content:
+                              BillingText('Could not select printer: $error')));
+                    }
+                  }
+                }),
+          ),
         const SizedBox(height: 8),
         Row(
           children: [
@@ -2876,28 +2903,6 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
               ),
               subtitle: BillingText(_dateTime(payment.createdAt)),
             ),
-          if (sale.paymentStatus == 'PENDING' && sale.status == 'COMPLETED')
-            Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: BillingTooltip(
-                    message: isLocal
-                        ? 'Fonepay requires a server-saved bill. This computer-only bill will not be uploaded.'
-                        : 'Generate an official merchant QR for the saved payable balance',
-                    child: OutlinedButton.icon(
-                      onPressed: _working || isLocal
-                          ? null
-                          : () async {
-                              await showDialog<bool>(
-                                  context: context,
-                                  builder: (_) => FonepayPaymentDialog(
-                                      sale: sale,
-                                      api: FonepayApiService(widget.api)));
-                              if (mounted) await _load();
-                            },
-                      icon: const Icon(Icons.qr_code_2),
-                      label: const BillingText('Pay with Fonepay'),
-                    ))),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
             child: Align(
@@ -2960,58 +2965,16 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
             ),
             BillingText('Total: $_salesTotal',
                 style: Theme.of(context).textTheme.bodySmall),
-            OutlinedButton.icon(
-              onPressed: _working ? null : _recoverFonepayCheckout,
-              icon: const Icon(Icons.qr_code_2),
-              label: const BillingText('Pending Fonepay checkouts'),
-            ),
           ],
         ),
       );
 
-  Future<void> _recoverFonepayCheckout() async {
-    setState(() => _working = true);
-    try {
-      final drafts = await _adminApi.getFonepayCheckouts();
-      if (!mounted) return;
-      final selected = await showDialog<PosSale>(
-          context: context,
-          builder: (context) => SimpleDialog(
-              title: const BillingText('Pending Fonepay checkouts'),
-              children: drafts.isEmpty
-                  ? [
-                      const Padding(
-                          padding: EdgeInsets.all(16),
-                          child: BillingText('No pending checkouts.'))
-                    ]
-                  : drafts
-                      .map((sale) => SimpleDialogOption(
-                            onPressed: () => Navigator.pop(context, sale),
-                            child: BillingText(
-                                '${sale.receiptNumber}\n${sale.customerName ?? 'Customer'} · ${_money(sale.total)}'),
-                          ))
-                      .toList()));
-      if (selected == null || !mounted) return;
-      final completion = await showDialog<FonepayCheckoutCompletion>(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => FonepayPaymentDialog(
-              sale: selected, api: _adminApi.fonepay, finalizeCheckout: true));
-      if (completion != null && mounted) {
-        if (completion.autoPrintAllowed) {
-          await _printOrShareInvoice(completion.sale);
-        }
-        await _load();
-      }
-    } catch (error) {
-      if (mounted) _showMessage(error.toString());
-    } finally {
-      if (mounted) setState(() => _working = false);
-    }
-  }
-
   Future<void> _printOrShareInvoice(PosSale sale) async {
     try {
+      if (defaultTargetPlatform == TargetPlatform.windows) {
+        await _printManuallyVerifiedBill(sale);
+        return;
+      }
       final thermal = defaultTargetPlatform == TargetPlatform.windows;
       final bytes = thermal
           ? await PosReceiptService.createPdf(sale, paperWidthMm: _paperWidthMm)
@@ -3726,6 +3689,7 @@ class PosBillDialog extends StatefulWidget {
     this.refreshCatalogOnOpen = true,
     required this.operatorId,
     required this.allowOfflineSync,
+    this.allowPriceEditing = true,
     this.printSale,
     this.paperWidthMm = 80,
     this.heldSale,
@@ -3740,6 +3704,7 @@ class PosBillDialog extends StatefulWidget {
   final VoidCallback onNewBill;
   final String operatorId;
   final bool allowOfflineSync;
+  final bool allowPriceEditing;
   final Future<bool> Function(PosSale)? printSale;
   final int paperWidthMm;
   final OfflinePosStore offlineStore;
@@ -3811,13 +3776,14 @@ class _PosBillDialogState extends State<PosBillDialog> {
             name: item['productName'] as String,
             sku: item['sku'] as String,
             barcode: null,
-            price: (item['price'] as num).toDouble(),
+            price:
+                ((item['cataloguePrice'] ?? item['price']) as num).toDouble(),
             unitLabel: item['unitLabel'] as String,
             available: 0,
           ),
           quantity: (item['quantity'] as num).toInt(),
           weightGrams: (item['weightGrams'] as num?)?.toInt(),
-        ));
+        )..setPrice((item['price'] as num).toDouble()));
       }
     }
     final scanned = widget.scannedProduct;
@@ -4068,7 +4034,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
         0,
         (sum, item) =>
             sum +
-            _roundBillMoney(item.product.price *
+            _roundBillMoney(item.unitPrice *
                 (item.weightGrams == null
                     ? item.quantity
                     : item.weightGrams! / 1000)),
@@ -4112,7 +4078,6 @@ class _PosBillDialogState extends State<PosBillDialog> {
       throw StateError(
           'Offline server-bound billing supports administrator cash bills only. Reconnect to record a digital payment.');
     }
-    final preferences = await SharedPreferences.getInstance();
     final now = DateTime.now();
     final localStore = _offlinePosStore.billingStore;
     final invoiceNumber = localStore.invoiceNumber(_idempotencyKey, now);
@@ -4169,8 +4134,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
             sku: line.product.sku,
             quantity: line.quantity,
             weightGrams: line.weightGrams,
-            unitPrice: line.product.price,
-            lineTotal: _roundBillMoney(line.product.price *
+            unitPrice: line.unitPrice,
+            lineTotal: _roundBillMoney(line.unitPrice *
                 (line.weightGrams == null
                     ? line.quantity
                     : line.weightGrams! / 1000)),
@@ -4180,140 +4145,120 @@ class _PosBillDialogState extends State<PosBillDialog> {
     final directoryPath = localStore.rootPath;
     final directory = Directory(directoryPath);
     await directory.create(recursive: true);
-    final dataFile = await localStore.saveBill(
-      requestId: _idempotencyKey,
-      ownerId: widget.operatorId,
-      queueForSync: queueForSync,
-      validate: () async {
-        if (_roomPicks != null) {
-          final snapshot =
-              await RoomInventoryService(widget.api, _offlinePosStore)
-                  .load(offline: true);
-          snapshot.validatePicks(_roomPicks!, {
-            for (final line in _cart)
-              line.product.id: _cart
-                  .where((item) => item.product.id == line.product.id)
-                  .fold<int>(0,
-                      (sum, item) => sum + (item.weightGrams ?? item.quantity))
-          });
-        }
-        final available = {
-          for (final product
-              in await _offlinePosStore.readCatalog(freshStock: true))
-            product.id: product.available
-        };
-        final quantities = <String, int>{};
-        for (final line in _cart) {
-          quantities[line.product.id] = (quantities[line.product.id] ?? 0) +
-              (line.weightGrams ?? line.quantity);
-        }
-        for (final entry in quantities.entries) {
-          if (entry.value > (available[entry.key] ?? 0)) {
-            throw StateError(
-                'This bill exceeds the locally estimated stock. Review quantities before saving.');
-          }
-        }
-      },
-      uploadPayload: {
-        if (_roomPicks != null)
-          'roomPicks': _roomPicks!.map((pick) => pick.toJson()).toList(),
-        'idempotencyKey': _idempotencyKey,
-        'items': _requestItems(),
-        'discount': discount,
-        'vatRate': vatRate,
-        'paymentMethod': _paymentMethod,
-        if (_paymentMethod == 'PENDING') ...{
-          'paidAmount': paidNow,
-          'paidNowMethod': _paidNowMethod,
-        },
-        'customerName': sale.customerName,
-        'customerPhone': sale.customerPhone,
-        if (widget.heldSale != null) 'heldSaleId': widget.heldSale!.id,
-        'offlineSale': {
-          'invoiceNumber': invoiceNumber,
-          'occurredAt': now.toUtc().toIso8601String(),
-          'expectedTotal': total,
-          'unitPrices': {
-            for (final item in sale.items) item.productId!: item.unitPrice
-          },
-        },
-      },
-      record: {
-        if (_roomPicks != null)
-          'roomPicks': _roomPicks!.map((pick) => pick.toJson()).toList(),
-        if (_roomPicks != null && !queueForSync)
-          'roomStockSyncState': 'pending',
-        'invoiceNumber': invoiceNumber,
-        'date': now.toIso8601String(),
-        'customerName': sale.customerName,
-        'customerPhone': sale.customerPhone,
-        'paymentMethod': sale.paymentMethod,
-        'paymentStatus': sale.paymentStatus,
-        'paidAmount': sale.paidAmount,
-        'outstandingAmount': sale.outstandingAmount,
-        'paymentCollections': sale.paymentCollections
-            .map((payment) => {
-                  'id': payment.id,
-                  'amount': payment.amount,
-                  'method': payment.method,
-                  'note': payment.note,
-                  'createdAt': payment.createdAt.toIso8601String(),
-                })
-            .toList(growable: false),
-        'subtotal': _subtotal,
-        'discount': discount,
-        'vatRate': vatRate,
-        'vatAmount': vatAmount,
-        'total': total,
-        'status': sale.status,
-        'items': sale.items
-            .map((item) => {
-                  'productId': item.productId,
-                  'name': item.productName,
-                  'sku': item.sku,
-                  'quantity': item.quantity,
-                  'weightGrams': item.weightGrams,
-                  'unitPrice': item.unitPrice,
-                  'amount': item.lineTotal,
-                })
-            .toList(growable: false),
-      },
-    );
-    // JSON is the committed financial record. A printer/PDF failure must not
-    // turn a completed sale into a failed sale or cause a duplicate retry.
-    try {
-      final bytes = defaultTargetPlatform == TargetPlatform.windows
-          ? await PosReceiptService.createPdf(sale,
-              paperWidthMm: widget.paperWidthMm)
-          : await PosReceiptService.createInvoicePdf(sale);
-      await File('${directory.path}/$invoiceNumber.pdf').writeAsBytes(
-        bytes,
-        flush: true,
-      );
-      await BillPdfArchiveService.save(sale, bytes);
-    } catch (error) {
-      debugPrint('Bill saved, PDF regeneration required: $error');
-    }
-    if (_selectedCustomer != null &&
-        !_selectedCustomer!.id.startsWith('local-customer-')) {
-      try {
-        await widget.api.recordOfflineStreakPurchase(
-          customerId: _selectedCustomer!.id,
-          invoiceNumber: invoiceNumber,
-        );
-      } catch (_) {
-        final pending =
-            preferences.getStringList(_pendingLocalStreaksPreferenceKey) ?? [];
-        pending.add(jsonEncode({
-          'customerId': _selectedCustomer!.id,
-          'invoiceNumber': invoiceNumber,
-        }));
-        await preferences.setStringList(
-          _pendingLocalStreaksPreferenceKey,
-          pending,
-        );
-      }
-    }
+    final dataFile = await PosTiming.measure(
+        'bill_saving',
+        () => localStore.saveBill(
+              requestId: _idempotencyKey,
+              ownerId: widget.operatorId,
+              queueForSync: queueForSync,
+              validate: () => PosTiming.measure('stock_validation', () async {
+                final snapshot =
+                    await RoomInventoryService(widget.api, _offlinePosStore)
+                        .load(offline: true);
+                snapshot.validatePicks(_roomPicks ?? const [], {
+                  for (final line in _cart)
+                    line.product.id: _cart
+                        .where((item) => item.product.id == line.product.id)
+                        .fold<int>(
+                            0,
+                            (sum, item) =>
+                                sum + (item.weightGrams ?? item.quantity))
+                });
+                final available = {
+                  for (final product
+                      in await _offlinePosStore.readCatalog(freshStock: true))
+                    product.id: product.available
+                };
+                final quantities = <String, int>{};
+                for (final line in _cart) {
+                  quantities[line.product.id] =
+                      (quantities[line.product.id] ?? 0) +
+                          (line.weightGrams ?? line.quantity);
+                }
+                for (final entry in quantities.entries) {
+                  if (entry.value > (available[entry.key] ?? 0)) {
+                    throw StateError(
+                        'This bill exceeds the locally estimated stock. Review quantities before saving.');
+                  }
+                }
+              }),
+              uploadPayload: {
+                if (_roomPicks != null)
+                  'roomPicks':
+                      _roomPicks!.map((pick) => pick.toJson()).toList(),
+                'idempotencyKey': _idempotencyKey,
+                'items': _requestItems(),
+                if (_priceChanges.isNotEmpty)
+                  'cataloguePriceChanges': _priceChanges,
+                'discount': discount,
+                'vatRate': vatRate,
+                'paymentMethod': _paymentMethod,
+                if (_paymentMethod == 'PENDING') ...{
+                  'paidAmount': paidNow,
+                  'paidNowMethod': _paidNowMethod,
+                },
+                'customerName': sale.customerName,
+                'customerPhone': sale.customerPhone,
+                if (widget.heldSale != null) 'heldSaleId': widget.heldSale!.id,
+                'offlineSale': {
+                  'invoiceNumber': invoiceNumber,
+                  'occurredAt': now.toUtc().toIso8601String(),
+                  'expectedTotal': total,
+                  'unitPrices': {
+                    for (final item in sale.items)
+                      item.productId!: item.unitPrice
+                  },
+                },
+              },
+              record: {
+                ...BillingPostCommit.tasks(sale, widget.paperWidthMm,
+                    customerId: _selectedCustomer != null &&
+                            !_selectedCustomer!.id.startsWith('local-customer-')
+                        ? _selectedCustomer!.id
+                        : null),
+                if (_priceChanges.isNotEmpty)
+                  'cataloguePriceChanges': _priceChanges,
+                if (_roomPicks != null)
+                  'roomPicks':
+                      _roomPicks!.map((pick) => pick.toJson()).toList(),
+                if (_roomPicks != null && !queueForSync)
+                  'roomStockSyncState': 'pending',
+                'invoiceNumber': invoiceNumber,
+                'date': now.toIso8601String(),
+                'customerName': sale.customerName,
+                'customerPhone': sale.customerPhone,
+                'paymentMethod': sale.paymentMethod,
+                'paymentStatus': sale.paymentStatus,
+                'paidAmount': sale.paidAmount,
+                'outstandingAmount': sale.outstandingAmount,
+                'paymentCollections': sale.paymentCollections
+                    .map((payment) => {
+                          'id': payment.id,
+                          'amount': payment.amount,
+                          'method': payment.method,
+                          'note': payment.note,
+                          'createdAt': payment.createdAt.toIso8601String(),
+                        })
+                    .toList(growable: false),
+                'subtotal': _subtotal,
+                'discount': discount,
+                'vatRate': vatRate,
+                'vatAmount': vatAmount,
+                'total': total,
+                'status': sale.status,
+                'items': sale.items
+                    .map((item) => {
+                          'productId': item.productId,
+                          'name': item.productName,
+                          'sku': item.sku,
+                          'quantity': item.quantity,
+                          'weightGrams': item.weightGrams,
+                          'unitPrice': item.unitPrice,
+                          'amount': item.lineTotal,
+                        })
+                    .toList(growable: false),
+              },
+            ));
     return PosSale(
       id: sale.id,
       receiptNumber: sale.receiptNumber,
@@ -4615,7 +4560,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
     if (!await _chooseProductRooms(product, required)) return false;
     if (!mounted) return false;
     if (_isWeightProduct(product)) {
-      _cart.add(_PosCartLine(product, weightGrams: quantity));
+      _cart.add(_PosCartLine(product, weightGrams: quantity)
+        ..setPrice(existingProduct?.unitPrice ?? product.price));
       _cartChanged(membership: true);
       return true;
     }
@@ -4854,7 +4800,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
                   'weightGrams': line.weightGrams,
                   'productName': line.product.name,
                   'sku': line.product.sku,
-                  'price': line.product.price,
+                  'price': line.unitPrice,
+                  'cataloguePrice': line.product.price,
                   'unitLabel': line.product.unitLabel,
                 })
             .toList(growable: false),
@@ -4953,22 +4900,23 @@ class _PosBillDialogState extends State<PosBillDialog> {
       _error = null;
     });
     try {
-      final required = <String, int>{};
+      // The server transaction checks stock and rooms atomically online.
+      // Local checkout validates both inside saveBill under its writer lock.
+      // No duplicate network fetch on the checkout-to-print path.
+      final quantities = <String, int>{};
       for (final line in _cart) {
-        required[line.product.id] = (required[line.product.id] ?? 0) +
+        quantities[line.product.id] = (quantities[line.product.id] ?? 0) +
             (line.weightGrams ?? line.quantity);
       }
-      final snapshot = await RoomInventoryService(widget.api, _offlinePosStore)
-          .load(productIds: required.keys.toList());
-      if (!mounted) return;
-      for (final id in required.keys) {
-        if (snapshot.stocks[id]?.values.any((n) => n > 0) ?? false) {
-          _assignedRoomProducts.add(id);
+      for (final entry in quantities.entries) {
+        final chosen = (_roomPicks ?? const <RoomPick>[])
+            .where((p) => p.productId == entry.key)
+            .fold<int>(0, (sum, p) => sum + p.quantity);
+        if (chosen != entry.value) {
+          throw StateError(
+              'Choose the source room beside each bill item before paying.');
         }
       }
-      // Availability is rechecked silently. Source choices are made on the item,
-      // before opening any payment UI, never in response to Pay.
-      snapshot.validatePicks(_roomPicks ?? const [], required);
       _roomSelectionNeedsRefresh = false;
       if (payingFonepay) {
         await _payWithFonepay(discount, vatRate);
@@ -4998,8 +4946,10 @@ class _PosBillDialogState extends State<PosBillDialog> {
                   : _selectedCustomer!.id,
               heldSaleId: widget.heldSale?.id,
               expectedTotal: _total,
+              cataloguePriceChanges:
+                  _priceChanges.isEmpty ? null : _priceChanges,
               unitPrices: {
-                for (final line in _cart) line.product.id: line.product.price
+                for (final line in _cart) line.product.id: line.unitPrice
               },
             );
       if (mounted) Navigator.pop(context, sale);
@@ -5109,9 +5059,10 @@ class _PosBillDialogState extends State<PosBillDialog> {
                             ? null
                             : _selectedCustomer?.id,
                     expectedTotal: _total,
+                    cataloguePriceChanges:
+                        _priceChanges.isEmpty ? null : _priceChanges,
                     unitPrices: {
-                      for (final line in _cart)
-                        line.product.id: line.product.price
+                      for (final line in _cart) line.product.id: line.unitPrice
                     }).onError<ApiResponseException>((error, stack) {
                   if (error.statusCode == 409) {
                     _roomSelectionNeedsRefresh = true;
@@ -5458,18 +5409,20 @@ class _PosBillDialogState extends State<PosBillDialog> {
                           }),
                 ),
                 if (widget.allowOfflineSync)
-                  SwitchListTile.adaptive(
-                    contentPadding: EdgeInsets.zero,
-                    value: _saveOnThisComputer,
-                    title: const BillingText('Save on this computer only'),
-                    subtitle: const BillingText(
-                      'Bill, invoice and customer details stay in C:/Ramprasad store/bills/.',
-                    ),
-                    onChanged: _saving
-                        ? null
-                        : (value) =>
-                            setState(() => _saveOnThisComputer = value),
-                  ),
+                  Material(
+                      type: MaterialType.transparency,
+                      child: SwitchListTile.adaptive(
+                        contentPadding: EdgeInsets.zero,
+                        value: _saveOnThisComputer,
+                        title: const BillingText('Save on this computer only'),
+                        subtitle: const BillingText(
+                          'Bill, invoice and customer details stay in C:/Ramprasad store/bills/.',
+                        ),
+                        onChanged: _saving
+                            ? null
+                            : (value) =>
+                                setState(() => _saveOnThisComputer = value),
+                      )),
               ],
             ),
           ),
@@ -5863,6 +5816,93 @@ class _PosBillDialogState extends State<PosBillDialog> {
         ]),
       );
 
+  List<Map<String, dynamic>> get _priceChanges => {
+        for (final line in _cart)
+          if (line.unitPrice != line.product.price)
+            line.product.id: {
+              'productId': line.product.id,
+              'expectedPrice': line.product.price,
+              'price': line.unitPrice,
+            }
+      }.values.toList();
+
+  Future<void> _editPrice(_PosCartLine line) async {
+    final quantity = line.weightGrams == null
+        ? line.quantity.toDouble()
+        : line.weightGrams! / 1000;
+    final rate = TextEditingController(text: line.unitPrice.toStringAsFixed(2));
+    final amount = TextEditingController(
+        text: _roundBillMoney(line.unitPrice * quantity).toStringAsFixed(2));
+    final result = await showDialog<double>(
+        context: context,
+        builder: (context) => AlertDialog(
+                title: BillingText('Edit price: ${line.product.name}'),
+                content: SizedBox(
+                    width: 400,
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      const BillingText(
+                          'The new unit price also becomes the current product price when this bill is saved. Line total is rounded to two decimals.'),
+                      BillingTextFormField(
+                          controller: rate,
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: const BillingInputDecoration(
+                              labelText: 'Unit price (NPR)'),
+                          onChanged: (value) {
+                            final price = double.tryParse(value);
+                            if (price != null && price.isFinite) {
+                              amount.text = _roundBillMoney(price * quantity)
+                                  .toStringAsFixed(2);
+                            }
+                          }),
+                      BillingTextFormField(
+                          controller: amount,
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: const BillingInputDecoration(
+                              labelText: 'Line total (NPR)'),
+                          onChanged: (value) {
+                            final total = double.tryParse(value);
+                            if (total != null && total.isFinite) {
+                              rate.text = _roundBillMoney(total / quantity)
+                                  .toStringAsFixed(2);
+                            }
+                          }),
+                      ValueListenableBuilder<TextEditingValue>(
+                        valueListenable: rate,
+                        builder: (_, value, __) => BillingText(
+                            'Calculated line total: NPR ${_roundBillMoney((double.tryParse(value.text) ?? 0) * quantity).toStringAsFixed(2)}'),
+                      ),
+                    ])),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const BillingText('Cancel')),
+                  FilledButton(
+                      onPressed: () {
+                        final price = double.tryParse(rate.text);
+                        if (price != null &&
+                            price.isFinite &&
+                            price >= 0 &&
+                            price <= 999999999) {
+                          Navigator.pop(context, _roundBillMoney(price));
+                        }
+                      },
+                      child: const BillingText('Save price'))
+                ]));
+    // Controllers are disposed after the route's closing animation completes.
+    Future.delayed(const Duration(seconds: 1), () {
+      rate.dispose();
+      amount.dispose();
+    });
+    if (result != null && mounted) {
+      for (final item in _cart.where((i) => i.product.id == line.product.id)) {
+        item.setPrice(result);
+      }
+      _cartChanged();
+    }
+  }
+
   Widget _buildCartList() {
     if (_cart.isEmpty) {
       return const Center(child: BillingText('Bill is empty.'));
@@ -5876,7 +5916,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
           key: ObjectKey(line),
           listenable: line,
           builder: (context, _) {
-            final total = line.product.price *
+            final total = line.unitPrice *
                 (line.weightGrams == null
                     ? line.quantity
                     : line.weightGrams! / 1000);
@@ -5978,6 +6018,11 @@ class _PosBillDialogState extends State<PosBillDialog> {
                   final amountAndRemove = Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (widget.allowPriceEditing)
+                        BillingIconButton(
+                            tooltip: 'Edit unit price / line total',
+                            onPressed: _saving ? null : () => _editPrice(line),
+                            icon: const Icon(Icons.edit_outlined)),
                       Flexible(
                           child: FittedBox(
                         fit: BoxFit.scaleDown,
@@ -6240,6 +6285,13 @@ class _PosCartLine extends ChangeNotifier {
         quantityController = TextEditingController(text: '$quantity');
 
   final PosProduct product;
+  double? _editedPrice;
+  double get unitPrice => _editedPrice ?? product.price;
+  void setPrice(double price) {
+    _editedPrice = price;
+    notifyListeners();
+  }
+
   final TextEditingController quantityController;
   int _quantity;
   int get quantity => _quantity;

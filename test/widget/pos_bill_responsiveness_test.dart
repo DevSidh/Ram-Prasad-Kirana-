@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:freshharvest_grocery/services/pos_timing.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -15,19 +17,7 @@ import 'package:freshharvest_grocery/services/admin_api_service.dart';
 import 'package:freshharvest_grocery/services/api_service.dart';
 import 'package:freshharvest_grocery/services/offline_pos_store.dart';
 import 'package:freshharvest_grocery/services/local_billing_store.dart';
-import 'package:freshharvest_grocery/services/fonepay_api_service.dart';
 import 'package:freshharvest_grocery/services/billing_customer_service.dart';
-
-class _FonepayTestApi extends FonepayApiService {
-  _FonepayTestApi() : super(ApiService());
-  int checks = 0;
-  Completer<Map<String, dynamic>>? gate;
-  @override
-  Future<Map<String, dynamic>> configuration() {
-    checks++;
-    return (gate ??= Completer<Map<String, dynamic>>()).future;
-  }
-}
 
 class _Api extends AdminApiService {
   _Api() : super(ApiService(baseUrl: 'http://127.0.0.1:1'));
@@ -35,10 +25,9 @@ class _Api extends AdminApiService {
   int saves = 0;
   bool assignedStock = false;
   double expectedPayable = 10;
+  double expectedRate = 10;
+  List<Map<String, dynamic>>? submittedPrices;
   List<Map<String, dynamic>>? submittedRoomPicks;
-  final payment = _FonepayTestApi();
-  @override
-  FonepayApiService get fonepay => payment;
   Completer<PosSale>? saveGate;
   final queries = <String, Completer<List<PosProduct>>>{};
   @override
@@ -98,12 +87,14 @@ class _Api extends AdminApiService {
       String? heldSaleId,
       double? expectedTotal,
       Map<String, double>? unitPrices,
+      List<Map<String, dynamic>>? cataloguePriceChanges,
       List<Map<String, dynamic>>? roomPicks,
       Map<String, dynamic>? manualVerification}) {
     saves++;
     expectSync(expectedTotal, expectedPayable);
     submittedRoomPicks = roomPicks;
-    expectSync(unitPrices, {'tea': 10});
+    expectSync(unitPrices, {'tea': expectedRate});
+    submittedPrices = cataloguePriceChanges;
     return (saveGate ??= Completer<PosSale>()).future;
   }
 }
@@ -139,6 +130,9 @@ class _MemoryStore extends OfflinePosStore {
   Future<void> saveCatalog(List<PosProduct> products) async {}
   @override
   Future<void> mergeCatalog(List<PosProduct> products) async {}
+  @override
+  Future<List<PosProduct>> readCatalog({bool freshStock = false}) async =>
+      [_tea];
   @override
   Future<List<PosProduct>> searchCatalog(String query) async => query.isEmpty ||
           'fixture tea tea 8901234567890'.contains(query.toLowerCase())
@@ -294,6 +288,134 @@ void main() {
     expect(tester.takeException(), isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
+  testWidgets(
+      'editing rate or line total recalculates the bill and sends an atomic catalogue update',
+      (tester) async {
+    await start(tester);
+    final qty = find.byWidgetPredicate(
+        (w) => w is TextField && w.decoration?.labelText == 'Qty');
+    await tester.enterText(qty.first, '10');
+    await tester.pump();
+    await tester.tap(find.byTooltip('Edit unit price / line total'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byWidgetPredicate((w) =>
+            w is TextField && w.decoration?.labelText == 'Unit price (NPR)'),
+        '110');
+    await tester.pump();
+    expect(
+        find.byWidgetPredicate((w) =>
+            w is TextField &&
+            w.decoration?.labelText == 'Line total (NPR)' &&
+            w.controller?.text == '1100.00'),
+        findsOneWidget);
+    await tester.enterText(
+        find.byWidgetPredicate((w) =>
+            w is TextField && w.decoration?.labelText == 'Line total (NPR)'),
+        '1200');
+    await tester.pump();
+    expect(
+        find.byWidgetPredicate((w) =>
+            w is TextField &&
+            w.decoration?.labelText == 'Unit price (NPR)' &&
+            w.controller?.text == '120.00'),
+        findsOneWidget);
+    await tester.tap(find.text('Save price'));
+    await tester.pumpAndSettle();
+    api.expectedPayable = 1200;
+    api.expectedRate = 120;
+    await tester.tap(find.widgetWithText(FilledButton, 'Create bill (F8)'));
+    await settleIO(tester);
+    expect(api.saves, 1);
+    expect(api.submittedPrices, [
+      {'productId': 'tea', 'expectedPrice': 10.0, 'price': 120.0}
+    ]);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 2));
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
+  testWidgets(
+      'offline checkout commits totals and retryable work before any PDF or server call',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.runAsync(() async => store.billingStore.writeJson(
+        File('${root.path}/inventory/rooms.json'),
+        await api.getRoomInventory()));
+    await tester.pumpWidget(MaterialApp(
+        theme: billing.AppTheme.data,
+        home: Builder(
+            builder: (context) => Scaffold(
+                body: TextButton(
+                    onPressed: () => showDialog<PosSale>(
+                        context: context,
+                        builder: (_) => PosBillDialog(
+                            api: api,
+                            offlineStore: store,
+                            refreshCatalogOnOpen: false,
+                            loadLocalCustomers: () async => [],
+                            operatorId: 'fixture',
+                            allowOfflineSync: true,
+                            onScan: () async => null,
+                            onNewBill: () {},
+                            heldSale: PosHeldSale(
+                                id: 'held',
+                                customerName: null,
+                                customerPhone: null,
+                                createdAt: DateTime.utc(2026),
+                                items: const [
+                                  {
+                                    'productId': 'tea',
+                                    'productName': 'Fixture tea',
+                                    'sku': 'TEA',
+                                    'price': 10,
+                                    'unitLabel': 'pcs',
+                                    'quantity': 10
+                                  }
+                                ]))),
+                    child: const Text('Open fixture'))))));
+    await tester.tap(find.text('Open fixture'));
+    await settleIO(tester);
+    final toggle = tester.widget<SwitchListTile>(find.byType(SwitchListTile));
+    toggle.onChanged!(true);
+    await tester.pumpAndSettle();
+    await tester.enterText(field('Discount amount'), '10');
+    await tester.enterText(field('VAT (%)'), '13');
+    await tester.pump();
+    final pay = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Save local bill (F8)'));
+    pay.onPressed!();
+    pay.onPressed!();
+    await settleIO(tester);
+    await settleIO(tester);
+    await settleIO(tester);
+    final records = await tester.runAsync(() => store.billingStore.records());
+    expect(records!.length, 1);
+    final bill = records.single.record;
+    expect(bill['subtotal'], 100);
+    expect(bill['discount'], 10);
+    expect(bill['vatAmount'], 11.7);
+    expect(bill['total'], 101.7);
+    expect(bill['paidAmount'], 101.7);
+    expect(bill['outstandingAmount'], 0);
+    expect(bill['customerName'], isNull);
+    expect(bill['postCommit']['archive'], false);
+    expect(api.saves, 0);
+    final pdfs = await tester.runAsync(() async =>
+        (await root.list(recursive: true).toList())
+            .where((f) => f.path.endsWith('.pdf'))
+            .length);
+    expect(pdfs, 0);
+    await tester.runAsync(() async {
+      await Directory('tmp/pdfs').create(recursive: true);
+      await File('tmp/pdfs/checkout-fixture-timing.json').writeAsString(jsonEncode(PosTiming.samples));
+    });
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
   testWidgets('quantity updates row, item count and total without losing focus',
       (tester) async {
     await start(tester);
@@ -434,7 +556,6 @@ void main() {
     button.onPressed!();
     button.onPressed!();
     await tester.pump();
-    expect(api.payment.checks, 0);
     expect(api.saves, 0);
     expect(
         tester

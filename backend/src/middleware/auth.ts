@@ -1,6 +1,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import type { PrismaClient } from '@prisma/client';
+import { sendDatabaseUnavailable } from '../services/database-availability.js';
 
 interface AuthenticatedRequest extends Request {
   userId?: string;
@@ -154,5 +155,6 @@ export function createAuthMiddleware(prisma: PrismaClient, secret: string): {
 
 export function sendAdminError(error: unknown, res: Response): void {
   console.error('Admin API request failed:', error);
+  if (sendDatabaseUnavailable(error, res)) return;
   res.status(500).json({ error: 'Unable to complete the admin request' });
 }

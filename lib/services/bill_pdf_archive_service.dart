@@ -11,6 +11,7 @@ import 'ordered_work_queue.dart';
 class BillPdfArchiveService {
   BillPdfArchiveService._();
   static final _writes = OrderedWorkQueue();
+  static String? rootOverride;
 
   static String fileName(PosSale sale) {
     final reference = sale.receiptNumber.trim();
@@ -28,9 +29,10 @@ class BillPdfArchiveService {
     if (bytes.length < 5 || String.fromCharCodes(bytes.take(5)) != '%PDF-') {
       throw const FormatException('The bill PDF could not be generated.');
     }
-    final root = Platform.isWindows
-        ? 'C:/Ramprasad store/bills/pdf'
-        : '${(await getApplicationDocumentsDirectory()).path}/FastStore/bills/pdf';
+    final root = rootOverride ??
+        (Platform.isWindows
+            ? 'C:/Ramprasad store/bills/pdf'
+            : '${(await getApplicationDocumentsDirectory()).path}/FastStore/bills/pdf');
     final name = fileName(sale);
     return _writes.run(() async {
       final directory = Directory(root);

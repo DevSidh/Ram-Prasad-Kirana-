@@ -1,6 +1,7 @@
 import sharp from 'sharp';
 import type { PrismaClient } from '@prisma/client';
 import { getImageMimeType } from './image-upload.js';
+import { prismaBytes } from './prisma-bytes.js';
 
 const MAX_INPUT_PIXELS = 40_000_000;
 const OUTPUT_SIZE = 640;
@@ -143,7 +144,7 @@ export function getNormalizedProductImage(
       const saved = await prisma.product.updateMany({
         where: { id, normalizedImageData: null },
         data: {
-          normalizedImageData: normalized.data,
+          normalizedImageData: prismaBytes(normalized.data),
           normalizedMimeType: normalized.mimeType,
         },
       });
@@ -175,7 +176,7 @@ export function getNormalizedWholesaleImage(
       const saved = await prisma.wholesaleItem.updateMany({
         where: { id, normalizedImageData: null },
         data: {
-          normalizedImageData: normalized.data,
+          normalizedImageData: prismaBytes(normalized.data),
           normalizedMimeType: normalized.mimeType,
         },
       });

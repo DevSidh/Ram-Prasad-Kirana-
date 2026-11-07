@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import path from 'node:path';
 import { Prisma, PrismaClient } from '@prisma/client';
+import { createTursoPrismaClient } from './turso-prisma';
 import { z } from 'zod';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createAccountRouter } from './routes/account.js';
@@ -36,6 +37,7 @@ import {
   normalizeEmail,
 } from './services/user-identity.js';
 import { findAdminByPassword } from './services/admin-login.js';
+import { databaseAvailabilityFailure, sendDatabaseUnavailable } from './services/database-availability.js';
 import { formatUserDisplayId } from './services/user-display-id.js';
 import { normalizeCustomerMenuFeatures } from './services/customer-menu-features.js';
 import { recordBuyingStreakPurchase, removeCancelledOrderPurchaseDay } from './services/buying-streak.js';
@@ -86,7 +88,7 @@ app.set('trust proxy', process.env.RENDER === 'true' ? 1 : false);
 const AUTH_SECRET = process.env.AUTH_SECRET;
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME?.trim().toLowerCase();
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL?.trim().toLowerCase();
-const prisma = new PrismaClient();
+const prisma = createTursoPrismaClient();
 const inventoryService = new InventoryService(prisma);
 const sendVerificationEmail = createStoreEmailSender();
 const productionCorsOrigins = new Set(
@@ -569,6 +571,7 @@ app.post('/api/v1/auth/login', async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('User login failed:', error);
+    if (sendDatabaseUnavailable(error, res)) return;
     return res.status(500).json({ error: 'Unable to sign in at this time' });
   }
 });
@@ -670,9 +673,9 @@ app.get('/api/v1/products', async (req: Request, res: Response) => {
       ...(search
         ? {
           OR: [
-            { name: { contains: search, mode: 'insensitive' } },
-            { brand: { contains: search, mode: 'insensitive' } },
-            { description: { contains: search, mode: 'insensitive' } },
+            { name: { contains: search } },
+            { brand: { contains: search } },
+            { description: { contains: search } },
           ],
         }
         : {}),
@@ -831,9 +834,9 @@ app.get('/api/v1/wholesale', async (req: Request, res: Response) => {
       ...(search
         ? {
           OR: [
-            { name: { contains: search, mode: 'insensitive' } },
-            { brand: { contains: search, mode: 'insensitive' } },
-            { description: { contains: search, mode: 'insensitive' } },
+            { name: { contains: search } },
+            { brand: { contains: search } },
+            { description: { contains: search } },
           ],
         }
         : {}),
@@ -1808,7 +1811,7 @@ const healthCheck = async (_req: Request, res: Response) => {
       status: 'ok',
       service: 'Ram Prasad General Store API',
       database: 'connected',
-      billingCapabilities: { manualQrConfirmation: true, providers: ['FONEPAY', 'ESEWA'] },
+      billingCapabilities: { manualQrConfirmation: true, providers: ['FONEPAY'] },
       emailDelivery: getEmailDeliveryConfigurationStatus(),
       timestamp: new Date().toISOString(),
     });
@@ -1818,6 +1821,7 @@ const healthCheck = async (_req: Request, res: Response) => {
       status: 'unavailable',
       service: 'Ram Prasad General Store API',
       database: 'disconnected',
+      code: databaseAvailabilityFailure(error)?.code ?? 'DATABASE_UNAVAILABLE',
       emailDelivery: getEmailDeliveryConfigurationStatus(),
       timestamp: new Date().toISOString(),
     });

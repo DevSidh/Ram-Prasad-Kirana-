@@ -49,7 +49,7 @@ async function main() {
   try {
     // Derive the matrix from actual router declarations so new routes are covered.
     const routes = [
-      ['admin.ts', ''], ['admin-billing.ts', '/billing'], ['admin-fonepay.ts', '/billing/fonepay'],
+      ['admin.ts', ''], ['admin-billing.ts', '/billing'],
     ].flatMap(([file, prefix]) => {
       const source = readFileSync(new URL(`../src/routes/${file}`, import.meta.url), 'utf8');
       return [...source.matchAll(/router\.(get|post|put|patch|delete)\('([^']+)'/g)]

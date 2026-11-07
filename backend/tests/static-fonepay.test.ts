@@ -7,7 +7,7 @@ import { manualFonepayReference } from '../src/services/manual-fonepay.js';
 
 async function main(): Promise<void> {
   const sales = new Map<string, any>();
-  let writes = 0, stockDeductions = 0, sequence = 0, gatewayCalls = 0;
+  let writes = 0, stockDeductions = 0, sequence = 0;
   const tx = {
     invoiceSequence: { upsert: async () => ({ nextNumber: ++sequence }) },
     product: { findMany: async () => [{ id: 'tea', name: 'Tea', sku: 'TEA', price: 100, unitLabel: 'pcs', inventory: { totalStock: 20, reservedStock: 0 } }] },
@@ -35,7 +35,7 @@ async function main(): Promise<void> {
     res.locals.authenticatedUserRole = req.header('x-role') ?? 'BILLING_STAFF';
     next();
   };
-  app.use('/billing', auth, createAdminBillingRouter(prisma, inventory, undefined, () => { gatewayCalls++; throw new Error('No API should be used'); }));
+  app.use('/billing', auth, createAdminBillingRouter(prisma, inventory));
   const server = app.listen(0);
   try {
     await new Promise<void>((resolve) => server.once('listening', resolve));
@@ -60,7 +60,7 @@ async function main(): Promise<void> {
     const retry = await post(payload); assert.equal(retry.status, 200);
     const replay = await retry.json() as any;
     assert.equal(replay.sale.id, sale.id); assert.equal(replay.sale.autoPrintAllowed, false);
-    assert.equal(writes, 1); assert.equal(sequence, 1); assert.equal(stockDeductions, 1); assert.equal(gatewayCalls, 0);
+    assert.equal(writes, 1); assert.equal(sequence, 1); assert.equal(stockDeductions, 1);
     assert.equal((await post({ ...payload, manualVerification: { ...payload.manualVerification, transactionReference: 'DIFFERENT-REF' } })).status, 409);
     assert.equal((await post({ ...payload, manualVerification: { ...payload.manualVerification, confirmed: false } })).status, 400);
     assert.equal((await post(payload, { 'x-role': 'CUSTOMER' })).status, 403);
