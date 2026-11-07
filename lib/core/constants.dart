@@ -22,9 +22,9 @@ class AppConstants {
   static const String appTagline = 'Janakpur';
   static const String storePanNumber = '300854653';
 
-  /// The store owner's supplied eSewa Circle QR, bundled without alteration.
-  static const String staticFonepayQrAsset = String.fromEnvironment(
-      'FONEPAY_STATIC_QR_ASSET',
+  /// The store owner's supplied static eSewa QR, bundled without alteration.
+  static const String staticEsewaQrAsset = String.fromEnvironment(
+      'ESEWA_STATIC_QR_ASSET',
       defaultValue: 'assets/images/business_esewa_qr.jpeg');
 
   static String get localDevelopmentApiBaseUrl {

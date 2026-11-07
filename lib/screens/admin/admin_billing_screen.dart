@@ -53,7 +53,7 @@ const _pendingLocalStreaksPreferenceKey = 'pending_local_streak_receipts_v1';
 
 String _paymentNoteLabel(String note) {
   final manual = ManualFonepayVerification.fromNote(note);
-  final provider = manual?.provider == 'ESEWA' ? 'eSewa' : 'Fonepay';
+  final provider = manual?.provider == 'ESEWA' ? 'eSewa' : 'eSewa';
   return manual == null
       ? note
       : manual.isCashierConfirmation
@@ -4847,7 +4847,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
   }
 
   Future<void> _submitSale() async {
-    final payingFonepay = ['FONEPAY', 'ESEWA'].contains(_paymentMethod);
+    final payingFonepay = _paymentMethod == 'ESEWA';
     if (_cart.isEmpty) {
       setState(() => _error = 'Add products before completing the bill.');
       return;
@@ -4959,7 +4959,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
         setState(() {
           _saving = false;
           _error =
-              'Fonepay connection interrupted. Retry the same checkout; no offline bill was created.';
+              'eSewa connection interrupted. Retry the same checkout; no offline bill was created.';
         });
         return;
       }
@@ -4982,7 +4982,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
         setState(() {
           _saving = false;
           _error =
-              'Fonepay response is uncertain. Reopen the same checkout to reconcile it; no offline bill was created.';
+              'eSewa response is uncertain. Reopen the same checkout to reconcile it; no offline bill was created.';
         });
         return;
       }
@@ -5023,10 +5023,10 @@ class _PosBillDialogState extends State<PosBillDialog> {
         builder: (_) => StaticFonepayPaymentDialog(
               amount: _total,
               cashierId: widget.operatorId,
-              qrAsset: AppConstants.staticFonepayQrAsset,
+              qrAsset: AppConstants.staticEsewaQrAsset,
               confirmationReference: 'CASHIER-$_idempotencyKey',
               paymentMethod: _paymentMethod,
-              providerName: _paymentMethod == 'ESEWA' ? 'eSewa' : 'Fonepay',
+              providerName: 'eSewa',
               onVerified: (verification) async {
                 if (_roomSelectionNeedsRefresh) {
                   throw StateError(
@@ -6261,7 +6261,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.check_circle_outline),
-                label: BillingText(['FONEPAY', 'ESEWA'].contains(_paymentMethod)
+                label: BillingText(_paymentMethod == 'ESEWA'
                     ? 'Pay'
                     : 'Create bill'),
               ),
