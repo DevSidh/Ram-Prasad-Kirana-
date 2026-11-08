@@ -6064,8 +6064,14 @@ class _PosBillDialogState extends State<PosBillDialog> {
                         ListTile(
                           contentPadding: EdgeInsets.zero,
                           leading: ProductThumbnail(
-                              imageUrl: line.product.imageUrl ?? '', size: 52),
-                          title: BillingText(line.product.name),
+                              imageUrl: line.product.imageUrl ?? '', size: 56),
+                          title: BillingText(
+                            line.product.name,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
                           subtitle: _cartRoomLabel(line),
                           trailing: amountAndRemove,
                         ),
@@ -6085,15 +6091,22 @@ class _PosBillDialogState extends State<PosBillDialog> {
                       Expanded(
                         flex: 5,
                         child: Row(children: [
-                          ProductThumbnail(
-                              imageUrl: line.product.imageUrl ?? '', size: 52),
+                              ProductThumbnail(
+                              imageUrl: line.product.imageUrl ?? '', size: 56),
                           const SizedBox(width: 10),
                           Expanded(
                               child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              BillingText(line.product.name,
-                                  maxLines: 1, overflow: TextOverflow.ellipsis),
+                              BillingText(
+                                line.product.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
                               _cartRoomLabel(line),
                             ],
                           )),
