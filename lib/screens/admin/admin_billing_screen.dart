@@ -5163,23 +5163,19 @@ class _PosBillDialogState extends State<PosBillDialog> {
 
   Widget _buildWindowsItemsColumn() => Column(
         children: [
-          if (_usingOfflineCatalog) ...[
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.orange.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
-              ),
-              child: const BillingText(
-                'Saved catalogue · showing last-synced prices and estimated stock. Online checkout verifies them before saving.',
-                style: TextStyle(fontSize: 12),
-              ),
-            ),
-          ],
           _buildWindowsCustomerCard(),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(child: _buildSearchField(isDesktop: true)),
+              const SizedBox(width: 8),
+              BillingIconButton.outlined(
+                tooltip: 'Scan barcode',
+                onPressed: _saving ? null : _scan,
+                icon: const Icon(Icons.qr_code_scanner_rounded),
+              ),
+            ],
+          ),
           const SizedBox(height: 8),
           Expanded(child: _buildWindowsProductPanel()),
           if (_error != null) ...[
@@ -5211,95 +5207,52 @@ class _PosBillDialogState extends State<PosBillDialog> {
             ),
             const SizedBox(height: 6),
             Expanded(child: RepaintBoundary(child: _buildMatches())),
-            const Divider(height: 12),
-            Row(
-              children: [
-                Expanded(child: _buildSearchField(isDesktop: true)),
-                const SizedBox(width: 8),
-                BillingIconButton.outlined(
-                  tooltip: 'Scan barcode',
-                  onPressed: _saving ? null : _scan,
-                  icon: const Icon(Icons.qr_code_scanner_rounded),
-                ),
-              ],
-            ),
           ],
         ),
       );
 
   Widget _buildWindowsCustomerCard() => AppSurface(
-        padding: const EdgeInsets.fromLTRB(10, 7, 10, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        child: Row(
           children: [
-            Row(
-              children: [
-                Icon(Icons.person_outline_rounded,
-                    size: 17, color: AppColors.muted),
-                const SizedBox(width: 8),
-                BillingText(
-                  'CUSTOMER DETAILS (OPTIONAL)',
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w700,
-                      ),
+            const Icon(Icons.person_outline_rounded, size: 17),
+            const SizedBox(width: 6),
+            Expanded(
+              flex: 3,
+              child: TextField(
+                controller: _customerName,
+                enabled: !_saving,
+                onChanged: (_) => _customerDetailsChanged(byName: true),
+                decoration: const BillingInputDecoration(
+                  hintText: 'Customer name (optional)',
+                  isDense: true,
                 ),
-              ],
+              ),
             ),
-            const SizedBox(height: 5),
-            Row(
-              children: [
-                Expanded(
-                  child: BillingText(
-                    _selectedCustomer == null
-                        ? 'Use a saved customer or enter a temporary name and phone.'
-                        : '${_selectedCustomer!.id.startsWith('local-customer-') ? 'Saved on this computer' : 'Registered customer'} · ${_selectedCustomer!.phone}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+            const SizedBox(width: 6),
+            SizedBox(
+              width: 130,
+              child: TextField(
+                controller: _customerPhone,
+                enabled: !_saving,
+                keyboardType: TextInputType.phone,
+                inputFormatters: nepalPhoneInputFormatters,
+                onChanged: (_) => _customerDetailsChanged(byName: false),
+                decoration: const BillingInputDecoration(
+                  hintText: 'Phone (optional)',
+                  isDense: true,
                 ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: _saving ? null : _selectRegisteredCustomer,
-                  icon: const Icon(Icons.people_alt_outlined, size: 16),
-                  label: const BillingText('Select existing'),
-                ),
-              ],
+              ),
             ),
-            const SizedBox(height: 5),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _customerName,
-                    enabled: !_saving,
-                    onChanged: (_) => _customerDetailsChanged(byName: true),
-                    decoration: const BillingInputDecoration(
-                      hintText: 'Customer name (optional)',
-                      isDense: true,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: _customerPhone,
-                    enabled: !_saving,
-                    keyboardType: TextInputType.phone,
-                    inputFormatters: nepalPhoneInputFormatters,
-                    onChanged: (_) => _customerDetailsChanged(byName: false),
-                    decoration: const BillingInputDecoration(
-                      hintText: 'Customer phone (optional)',
-                      isDense: true,
-                    ),
-                  ),
-                ),
-              ],
+            const SizedBox(width: 6),
+            OutlinedButton.icon(
+              onPressed: _saving ? null : _selectRegisteredCustomer,
+              icon: const Icon(Icons.people_alt_outlined, size: 15),
+              label: const BillingText('Select existing'),
             ),
           ],
         ),
       );
-
   // ignore: unused_element
   Widget _buildWindowsItemsCard() => ValueListenableBuilder<int>(
         valueListenable: _cartMembership,
@@ -5879,7 +5832,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
       itemCount: _matches.length > 60 ? 60 : _matches.length,
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 170,
-        mainAxisExtent: 150,
+        mainAxisExtent: 170,
         crossAxisSpacing: 8,
         mainAxisSpacing: 8,
       ),
@@ -5914,17 +5867,28 @@ class _PosBillDialogState extends State<PosBillDialog> {
                 const SizedBox(height: 4),
                 BillingText(
                   product.name,
+                  textAlign: TextAlign.left,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        height: 1.1,
                         fontWeight: FontWeight.w700,
                       ),
                 ),
+                const SizedBox(height: 2),
                 BillingText(
-                  '${_money(product.price)} · ${StockSummary.availableLabel(product)}',
+                  _money(product.price),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                BillingText(
+                  StockSummary.availableLabel(product),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall,
                 ),
                 const Spacer(),
                 SizedBox(
