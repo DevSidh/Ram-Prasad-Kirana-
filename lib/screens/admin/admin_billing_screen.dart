@@ -5261,7 +5261,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
             Row(
               children: [
                 BillingText(
-                  'ITEMS',
+                  'BILL ITEMS',
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                         color: AppColors.primary,
                         fontWeight: FontWeight.w700,
@@ -5295,7 +5295,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
             ),
             const SizedBox(height: 4),
             Expanded(
-              flex: 3,
+              flex: 2,
               child: Scrollbar(
                 child: _cart.isEmpty
                     ? Center(
@@ -5342,7 +5342,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
             ),
             const SizedBox(height: 4),
             Expanded(
-              flex: 2,
+              flex: 3,
               child: Scrollbar(child: _buildMatches()),
             ),
             const Divider(height: 12),
