@@ -5115,7 +5115,9 @@ class _PosBillDialogState extends State<PosBillDialog> {
         child: ConstrainedBox(
           constraints: BoxConstraints(
             maxWidth: isDesktop ? 1440 : 760,
-            maxHeight: isDesktop ? 1040 : 820,
+            maxHeight: isDesktop
+                ? MediaQuery.sizeOf(context).height * .90
+                : 820,
           ),
           child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
         ),
@@ -5168,12 +5170,50 @@ class _PosBillDialogState extends State<PosBillDialog> {
           ],
           _buildWindowsCustomerCard(),
           const SizedBox(height: 8),
-          Expanded(child: _buildWindowsItemsCard()),
+          Expanded(child: _buildWindowsProductPanel()),
           if (_error != null) ...[
             const SizedBox(height: 8),
             _buildErrorMessage(),
           ],
         ],
+      );
+
+  Widget _buildWindowsProductPanel() => AppSurface(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                BillingText('PRODUCTS',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w800)),
+                const SizedBox(width: 8),
+                BillingText('${_matches.length} found',
+                    style: Theme.of(context).textTheme.bodySmall),
+                const Spacer(),
+                if (_searching)
+                  const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2)),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Expanded(child: RepaintBoundary(child: _buildMatches())),
+            const Divider(height: 12),
+            Row(
+              children: [
+                Expanded(child: _buildSearchField(isDesktop: true)),
+                const SizedBox(width: 8),
+                BillingIconButton.outlined(
+                  tooltip: 'Scan barcode',
+                  onPressed: _saving ? null : _scan,
+                  icon: const Icon(Icons.qr_code_scanner_rounded),
+                ),
+              ],
+            ),
+          ],
+        ),
       );
 
   Widget _buildWindowsCustomerCard() => AppSurface(
@@ -5249,6 +5289,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
         ),
       );
 
+  // ignore: unused_element
   Widget _buildWindowsItemsCard() => ValueListenableBuilder<int>(
         valueListenable: _cartMembership,
         builder: (_, __, ___) => _buildWindowsItemsCardContents(),
@@ -5363,6 +5404,54 @@ class _PosBillDialogState extends State<PosBillDialog> {
 
   Widget _buildWindowsBillDetailsColumn() => Column(
         children: [
+          SizedBox(
+            height: 150,
+            child: AppSurface(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      BillingText('BILL ITEMS',
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w800)),
+                      const SizedBox(width: 8),
+                      ValueListenableBuilder<int>(
+                        valueListenable: _cartTotals,
+                        builder: (_, __, ___) => BillingText(
+                          '${_cart.fold<int>(0, (sum, line) => sum + (line.weightGrams == null ? line.quantity : 1))} items',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: _saving || _cart.isEmpty
+                            ? null
+                            : () {
+                                for (final line in _cart) {
+                                  line.dispose();
+                                }
+                                _cart.clear();
+                                _cartChanged(membership: true);
+                              },
+                        child: const BillingText('Clear all'),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 8),
+                  Expanded(
+                    child: Scrollbar(
+                      child: _cart.isEmpty
+                          ? const Center(child: BillingText('No items added yet'))
+                          : _buildCart(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
           AppSurface(
             padding: const EdgeInsets.all(14),
             child: Column(
@@ -5774,13 +5863,79 @@ class _PosBillDialogState extends State<PosBillDialog> {
         ),
       );
     }
-    return ListView.builder(
-      itemCount: _matches.length,
+    return GridView.builder(
+      padding: EdgeInsets.zero,
+      itemCount: _matches.length > 60 ? 60 : _matches.length,
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 170,
+        mainAxisExtent: 150,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+      ),
       itemBuilder: (context, index) {
         final product = _matches[index];
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: AppRowCard(
+        return InkWell(
+          key: ValueKey(product.id),
+          borderRadius: BorderRadius.circular(8),
+          onTap: _saving || product.available <= 0
+              ? null
+              : () => _addProduct(product),
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              border: Border.all(color: AppColors.outline, width: .5),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  height: 56,
+                  child: ProductThumbnail(
+                    imageUrl: product.imageUrl ?? '',
+                    size: 56,
+                    width: double.infinity,
+                    height: 56,
+                    backgroundColor: AppColors.thumbnailGreen,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                BillingText(
+                  product.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                BillingText(
+                  '${_money(product.price)} · ${StockSummary.availableLabel(product)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const Spacer(),
+                SizedBox(
+                  height: 30,
+                  child: FilledButton(
+                    onPressed: _saving || product.available <= 0
+                        ? null
+                        : () => _addProduct(product),
+                    style: FilledButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const BillingText('Add'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+        /* AppRowCard(
             key: ValueKey(product.id),
             title: product.name,
             titleStyle: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -5820,7 +5975,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
             ),
           ),
-        );
+        ); */
       },
     );
   }
