@@ -5421,28 +5421,6 @@ class _PosBillDialogState extends State<PosBillDialog> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: BillingText(
-                        'BILL DETAILS',
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w700,
-                            ),
-                      ),
-                    ),
-                    Icon(Icons.receipt_long_outlined,
-                        size: 18, color: AppColors.muted),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                _billDetailRow('Bill type', 'Retail sale'),
-                const SizedBox(height: 8),
-                _billDetailRow('Date', _todayDateLabel()),
-                const SizedBox(height: 8),
-                _billDetailRow('Bill number', 'Assigned on completion'),
-                const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   isExpanded: true,
                   initialValue: _paymentMethod,
@@ -5623,27 +5601,6 @@ class _PosBillDialogState extends State<PosBillDialog> {
                   ],
                 ),
               ),
-            ),
-          ),
-        ],
-      );
-
-  Widget _billDetailRow(String label, String value) => Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: BillingText(label,
-                style: Theme.of(context).textTheme.bodySmall),
-          ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: BillingText(
-              value,
-              textAlign: TextAlign.right,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
             ),
           ),
         ],
@@ -5884,12 +5841,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                         fontWeight: FontWeight.w600,
                       ),
                 ),
-                BillingText(
-                  StockSummary.availableLabel(product),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelSmall,
-                ),
+                const SizedBox(height: 18),
                 const Spacer(),
                 SizedBox(
                   height: 30,

@@ -9,7 +9,6 @@ import 'bill_pdf_archive_service.dart';
 import 'pos_receipt_service.dart';
 import 'pos_timing.dart';
 import 'offline_pos_store.dart';
-import '../core/billing_strings.dart';
 
 /// Durable work is part of the local bill commit. Each independently retried
 /// step is idempotent. Never retries a print: spooler delivery is ambiguous.
@@ -31,7 +30,7 @@ class BillingPostCommit {
       {
         'receiptSnapshot': sale.toReceiptJson(),
         'receiptWidth': width,
-        'receiptNepali': BillingStrings.isNepali,
+        'receiptNepali': false,
         'postCommit': {
           'archive': false,
           'customer': false,
@@ -45,12 +44,12 @@ class BillingPostCommit {
     if (sale.localPath != null) {
       final record = await store.readJson(File(sale.localPath!));
       if (record['receiptWidth'] == width &&
-          record['receiptNepali'] == BillingStrings.isNepali) {
+          record['receiptNepali'] == false) {
         return;
       }
     }
     final file = File(
-        '${store.rootPath}/jobs/${BillPdfArchiveService.fileName(sale)}.$width.${BillingStrings.languageCode}.json');
+        '${store.rootPath}/jobs/${BillPdfArchiveService.fileName(sale)}.$width.en.json');
     await store.withLock(() async {
       if (await file.exists()) return;
       await store.writeJson(file, {...tasks(sale, width), 'ownerId': ownerId});

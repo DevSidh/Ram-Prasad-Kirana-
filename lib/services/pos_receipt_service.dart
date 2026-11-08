@@ -370,7 +370,9 @@ class PosReceiptService {
       throw ArgumentError.value(paperWidthMm, 'paperWidthMm');
     }
     await BillingStrings.load();
-    final nepali = nepaliOverride ?? BillingStrings.isNepali;
+    // Printed receipts are intentionally English-only so thermal output stays
+    // consistent regardless of the app language selected on screen.
+    const nepali = false;
     // Include every receipt field, language and layout revision: revised
     // balances and paper settings must never reuse a stale PDF.
     final key = sha256
