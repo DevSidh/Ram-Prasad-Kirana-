@@ -80,15 +80,20 @@ class CompactReceiptPdf {
           marginRight: 5 * PdfPageFormat.mm,
           marginTop: 4 * PdfPageFormat.mm,
           marginBottom: 8 * PdfPageFormat.mm),
-      build: (_) =>
-          pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-        for (final line in lines)
-          pw.SizedBox(
-              height: lineHeight,
-              child: pw.Text(line,
-                  style: pw.TextStyle(
-                      font: font, fontSize: size, color: PdfColors.black)))
-      ]),
+      build: (_) => pw.Center(
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            for (final line in lines)
+              pw.SizedBox(
+                height: lineHeight,
+                child: pw.Text(line,
+                    style: pw.TextStyle(
+                        font: font, fontSize: size, color: PdfColors.black)),
+              ),
+          ],
+        ),
+      ),
     ));
     return document.save();
   }

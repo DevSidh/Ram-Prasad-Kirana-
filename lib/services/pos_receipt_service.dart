@@ -353,7 +353,9 @@ class PosReceiptService {
     return PdfPageFormat(
       paperWidthMm * PdfPageFormat.mm,
       heightMm * PdfPageFormat.mm,
-      marginAll: 3 * PdfPageFormat.mm,
+      // Leave a safe printable margin so right-aligned amounts are not clipped
+      // by narrow Windows thermal printer drivers.
+      marginAll: 5 * PdfPageFormat.mm,
     );
   }
 

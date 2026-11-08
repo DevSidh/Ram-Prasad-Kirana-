@@ -3743,6 +3743,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
   Timer? _searchTimer;
   Timer? _offlineSyncTimer;
   List<PosProduct> _matches = const [];
+  List<PosProduct> _catalogIndex = const [];
   final List<_PosCartLine> _cart = [];
   final _cartMembership = ValueNotifier<int>(0);
   final _cartTotals = ValueNotifier<int>(0);
@@ -4296,28 +4297,38 @@ class _PosBillDialogState extends State<PosBillDialog> {
       _error = null;
     });
     try {
-      final cached = await _offlinePosStore.searchCatalog(query);
-      if (!mounted || requestId != _productSearchRequest) return;
-      if (cached.isNotEmpty) {
-        setState(() {
-          _matches = cached;
-          _usingOfflineCatalog = true;
-          _searching = false;
-        });
+      // Warm one local snapshot, then keep keystrokes in memory. This avoids
+      // reopening the local store or hitting the network for every character.
+      if (_catalogIndex.isEmpty) {
+        _catalogIndex = await _offlinePosStore.searchCatalog('');
       }
+      final normalized = query.trim().toLowerCase();
+      final cached = _catalogIndex
+          .where((product) => normalized.isEmpty ||
+              product.name.toLowerCase().contains(normalized) ||
+              product.sku.toLowerCase().contains(normalized) ||
+              (product.barcode ?? '').toLowerCase().contains(normalized))
+          .take(60)
+          .toList(growable: false);
+      if (!mounted || requestId != _productSearchRequest) return;
+      setState(() {
+        _matches = cached;
+        _usingOfflineCatalog = cached.isNotEmpty;
+        _searching = false;
+      });
+
+      // Revalidate silently. The cashier already has a usable local result.
       final serverProducts = await widget.api.searchPosProducts(query);
       if (!mounted || requestId != _productSearchRequest) return;
       await _offlinePosStore.mergeCatalog(serverProducts);
       final products = await _includeCachedWholesale(
           await _offlinePosStore.projectLocalStock(serverProducts), query);
+      _catalogIndex = await _offlinePosStore.searchCatalog('');
       if (!mounted || requestId != _productSearchRequest) return;
-      if (mounted) {
-        setState(() {
-          _matches = products;
-          _usingOfflineCatalog = false;
-          _searching = false;
-        });
-      }
+      setState(() {
+        _matches = products.take(60).toList(growable: false);
+        _usingOfflineCatalog = false;
+      });
     } catch (error) {
       final cachedProducts = await _offlinePosStore.searchCatalog(query);
       if (mounted && requestId == _productSearchRequest) {
@@ -4428,7 +4439,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
   void _onSearchChanged(String value) {
     _searchTimer?.cancel();
     ++_productSearchRequest; // Invalidate immediately, including debounce time.
-    _searchTimer = Timer(const Duration(milliseconds: 250), () {
+    _searchTimer = Timer(const Duration(milliseconds: 150), () {
       if (mounted) unawaited(_searchProducts(value.trim()));
     });
   }
