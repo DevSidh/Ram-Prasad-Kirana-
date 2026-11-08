@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:uuid/uuid.dart';
 import 'inventory_changes.dart';
+import 'local_pos_database.dart';
 
 /// Durable financial snapshots. An explicit computer-only bill is never queued.
 /// The directory override is used by isolated persistence/restore tests.
@@ -204,6 +205,31 @@ class LocalBillingStore {
           'syncError': null,
           if (queueForSync) 'uploadPayload': uploadPayload,
         });
+        if (Platform.isWindows &&
+            rootPath.replaceAll('\\', '/').toLowerCase() ==
+                'c:/ramprasad store/bills') {
+          try {
+            final database = await LocalPosDatabase.defaultInstance();
+            final localRecord = {
+              ...record,
+              'id': record['id'] ?? reference,
+              'invoiceNumber': reference,
+              'syncState': queueForSync ? 'pending' : 'local_only',
+            };
+            await database.saveBill(localRecord);
+            if (queueForSync) {
+              await database.enqueue(
+                id: requestId,
+                entityType: 'bill',
+                entityId: reference,
+                operation: 'create',
+                payload: uploadPayload,
+              );
+            }
+          } catch (_) {
+            // The durable JSON bill and retry queue remain the recovery source.
+          }
+        }
         return file;
       });
 
@@ -256,6 +282,28 @@ class LocalBillingStore {
             'syncedAt': DateTime.now().toUtc().toIso8601String(),
           },
         });
+        if (Platform.isWindows &&
+            rootPath.replaceAll('\\', '/').toLowerCase() ==
+                'c:/ramprasad store/bills') {
+          try {
+            final database = await LocalPosDatabase.defaultInstance();
+            await database.updateBillSyncState(
+                record['id']?.toString() ??
+                    record['invoiceNumber']?.toString() ??
+                    '',
+                state);
+            final requestId = record['idempotencyKey']?.toString();
+            if (requestId != null && requestId.isNotEmpty) {
+              if (state == 'synced') {
+                await database.completeOutbox(requestId);
+              } else if (error != null) {
+                await database.recordOutboxFailure(requestId, error);
+              }
+            }
+          } catch (_) {
+            // The JSON record remains authoritative if SQLite is unavailable.
+          }
+        }
       });
 
   Future<void> updateLocalBill(File file, Map<String, dynamic> record,

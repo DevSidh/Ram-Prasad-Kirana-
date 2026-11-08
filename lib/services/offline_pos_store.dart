@@ -4,9 +4,11 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../models/admin_models.dart';
 import '../models/pos_models.dart';
 import '../models/stock_summary.dart';
 import 'local_billing_store.dart';
+import 'local_pos_database.dart';
 import 'inventory_changes.dart';
 
 /// Persistent local POS catalog used by the Windows billing screen when the
@@ -32,6 +34,11 @@ class OfflinePosStore {
     final key = file.absolute.path;
     final inFlight = _refreshes[key];
     if (inFlight != null) return inFlight;
+    final localDatabase = Platform.isWindows ? await _localDatabase() : null;
+    if (localDatabase != null) {
+      final persistedCursor = await localDatabase.lastSyncedAt('products');
+      if (!force && persistedCursor != null) return false;
+    }
     final last = _refreshedAt[key];
     if (!force &&
         last != null &&
@@ -40,8 +47,14 @@ class OfflinePosStore {
       return false;
     }
     final request = () async {
+      final startedAt = DateTime.now().toUtc();
       final products = await load();
       await saveCatalog(products);
+      if (localDatabase != null) {
+        for (final table in ['products', 'wholesale_products']) {
+          await localDatabase.setLastSyncedAt(table, startedAt);
+        }
+      }
       if (_refreshedAt.length >= 4) {
         _refreshedAt.remove(_refreshedAt.keys.first);
       }
@@ -67,6 +80,13 @@ class OfflinePosStore {
     final offlineDirectory = Directory('${directory.path}/offline_pos');
     await offlineDirectory.create(recursive: true);
     return File('${offlineDirectory.path}/catalog.json');
+  }
+
+  Future<LocalPosDatabase> _localDatabase() async {
+    final catalog = await _catalogFile();
+    final path = '${catalog.parent.path}${Platform.pathSeparator}'
+        'faststore_pos.sqlite';
+    return LocalPosDatabase.atPath(path);
   }
 
   Future<File> _pendingProductsFile() async {
@@ -307,6 +327,14 @@ class OfflinePosStore {
   Future<List<PosProduct>> _readRawCatalog({bool fresh = false}) async {
     if (kIsWeb) return const [];
     try {
+      final localDatabase = Platform.isWindows ? await _localDatabase() : null;
+      if (localDatabase != null) {
+        final localProducts = await localDatabase.readCatalog();
+        if (localProducts.isNotEmpty ||
+            await localDatabase.lastSyncedAt('products') != null) {
+          return localProducts;
+        }
+      }
       final file = await _catalogFile();
       final stat = await file.stat();
       if (stat.type != FileSystemEntityType.file) return const [];
@@ -331,6 +359,13 @@ class OfflinePosStore {
       if (normalized.isNotEmpty) {
         products =
             products.map((p) => normalized[p.id] ?? p).toList(growable: false);
+      }
+      if (localDatabase != null) {
+        try {
+          await localDatabase.replaceCatalog(products);
+        } catch (_) {
+          // The JSON snapshot remains the recovery source if SQLite is unavailable.
+        }
       }
       // Recovery copies must remain observable; never cache a broken primary.
       if (decoded['_recoveredFromBackup'] != true && products.length <= 20000) {
@@ -363,6 +398,15 @@ class OfflinePosStore {
       'savedAt': DateTime.now().toUtc().toIso8601String(),
       'products': combined.values.map(_toJson).toList(growable: false),
     });
+    if (Platform.isWindows) {
+      try {
+        final localDatabase = await _localDatabase();
+        await localDatabase
+            .replaceCatalog(combined.values.toList(growable: false));
+      } catch (error) {
+        debugPrint('Unable to update the local POS SQLite catalog: $error');
+      }
+    }
     _catalogs.remove(file.absolute.path);
   }
 
@@ -511,6 +555,57 @@ class OfflinePosStore {
           product.sku.toLowerCase().contains(normalized) ||
           (product.barcode?.toLowerCase().contains(normalized) ?? false);
     }).toList(growable: false));
+  }
+
+  Future<List<AdminCustomer>> readCustomers() async {
+    if (kIsWeb || !Platform.isWindows) return const [];
+    try {
+      return await (await _localDatabase()).readCustomers();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> saveCustomers(List<AdminCustomer> customers) async {
+    if (kIsWeb || !Platform.isWindows || customers.isEmpty) return;
+    try {
+      await (await _localDatabase()).saveCustomers(customers);
+    } catch (_) {}
+  }
+
+  Future<PosSalesPage?> readCachedBillsPage({
+    int page = 1,
+    int pageSize = 50,
+  }) async {
+    if (kIsWeb || !Platform.isWindows) return null;
+    try {
+      return await (await _localDatabase())
+          .readBillsPage(page: page, pageSize: pageSize);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<PosSalesPage?> readCachedPendingPayments({
+    int page = 1,
+    int pageSize = 50,
+  }) async {
+    if (kIsWeb || !Platform.isWindows) return null;
+    try {
+      return await (await _localDatabase())
+          .readPendingPayments(page: page, pageSize: pageSize);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<List<PosRefund>?> readCachedRefunds() async {
+    if (kIsWeb || !Platform.isWindows) return null;
+    try {
+      return await (await _localDatabase()).readRefunds();
+    } catch (_) {
+      return null;
+    }
   }
 
   static bool _sameSnapshot(PosProduct? a, PosProduct b) =>

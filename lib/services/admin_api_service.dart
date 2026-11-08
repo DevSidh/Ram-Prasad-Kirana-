@@ -186,6 +186,35 @@ class AdminApiService {
     }
   }
 
+  Future<Map<String, dynamic>> getOfflinePosSync(
+      Map<String, DateTime?> cursors) async {
+    final response = _asMap(await _api.get(
+      '/admin/billing/offline-sync',
+      queryParams: {
+        if (cursors['products'] != null)
+          'productsSince': cursors['products']!.toUtc().toIso8601String(),
+        if (cursors['wholesale_products'] != null)
+          'wholesaleSince':
+              cursors['wholesale_products']!.toUtc().toIso8601String(),
+        if (cursors['drinks_menu'] != null)
+          'drinksSince': cursors['drinks_menu']!.toUtc().toIso8601String(),
+        if (cursors['customers'] != null)
+          'customersSince': cursors['customers']!.toUtc().toIso8601String(),
+        if (cursors['bills'] != null)
+          'billsSince': cursors['bills']!.toUtc().toIso8601String(),
+        if (cursors['refunds'] != null)
+          'refundsSince': cursors['refunds']!.toUtc().toIso8601String(),
+        if (cursors['pending_cash'] != null)
+          'pendingCashSince':
+              cursors['pending_cash']!.toUtc().toIso8601String(),
+      },
+    ));
+    if (response['cutoff'] is! String) {
+      throw const FormatException('The store returned invalid sync cursors.');
+    }
+    return response;
+  }
+
   final _posSearches = <String, Future<List<PosProduct>>>{};
 
   Future<List<PosProduct>> _searchPosProducts(String query) async {

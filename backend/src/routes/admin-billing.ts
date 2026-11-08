@@ -61,7 +61,7 @@ const saleInput = z.object({
     context.addIssue({ code: 'custom', path: ['manualVerification'], message: 'Manual Fonepay requires a cashier checkout with an idempotency key and exact quote.' });
   }
   if (sale.paymentMethod === 'ESEWA' && !sale.manualVerification) {
-    context.addIssue({code: 'custom', path: ['manualVerification'], message: 'Confirm payment received before creating an eSewa bill.'});
+    context.addIssue({ code: 'custom', path: ['manualVerification'], message: 'Confirm payment received before creating an eSewa bill.' });
   }
 });
 
@@ -188,14 +188,14 @@ export function createAdminBillingRouter(
   });
   router.use('/rooms', createRoomInventoryRouter(prisma, adminOnly));
   router.post('/catalogue-price-changes', adminOnly, async (req, res) => {
-    const parsed = z.object({requestId: z.string().uuid(), changes: priceChangesInput}).strict().safeParse(req.body);
+    const parsed = z.object({ requestId: z.string().uuid(), changes: priceChangesInput }).strict().safeParse(req.body);
     const cashierId = authenticatedAdminId(res);
-    if (!parsed.success || !cashierId) return res.status(400).json({error: 'Invalid price change.'});
+    if (!parsed.success || !cashierId) return res.status(400).json({ error: 'Invalid price change.' });
     try {
       await runTransactionWithRetry(prisma, tx => applyPosPriceChanges(tx, parsed.data.requestId, cashierId, parsed.data.changes));
-      return res.json({saved: true});
+      return res.json({ saved: true });
     } catch (error) {
-      if (error instanceof Error && error.message === 'POS_QUOTE_CHANGED') return res.status(409).json({error: 'The catalogue price has changed. Review this price update before retrying.'});
+      if (error instanceof Error && error.message === 'POS_QUOTE_CHANGED') return res.status(409).json({ error: 'The catalogue price has changed. Review this price update before retrying.' });
       return sendAdminError(error, res);
     }
   });
@@ -223,7 +223,7 @@ export function createAdminBillingRouter(
           return res.status(201).json({ code, expiresInSeconds: null });
         } catch (error) {
           if (!(error instanceof Prisma.PrismaClientKnownRequestError) ||
-              error.code !== 'P2002') throw error;
+            error.code !== 'P2002') throw error;
         }
       }
       return res.status(503).json({ error: 'Could not create a unique pairing code. Try again.' });
@@ -380,7 +380,7 @@ export function createAdminBillingRouter(
         return res.status(404).json({ error: 'Eligible staff account not found.' });
       }
       if (parsed.data.role === 'BILLING_STAFF' &&
-          (!user.isActive || !user.emailVerified)) {
+        (!user.isActive || !user.emailVerified)) {
         return res.status(409).json({
           error: 'Only active, verified accounts can be billing staff.',
         });
@@ -547,7 +547,7 @@ export function createAdminBillingRouter(
       );
       const totalSales = roundMoney(
         sales.reduce((sum, sale) => sum + Number(sale.total), 0) +
-          exchangeNet,
+        exchangeNet,
       );
       const cashSales = paymentCollections
         .filter((payment) => payment.method === 'CASH')
@@ -570,13 +570,13 @@ export function createAdminBillingRouter(
           return sum;
         }, 0);
       const digitalSales = paymentCollections
-        .filter((payment) => ['DIGITAL','FONEPAY','ESEWA'].includes(payment.method))
+        .filter((payment) => ['DIGITAL', 'FONEPAY', 'ESEWA'].includes(payment.method))
         .reduce((sum, payment) => sum + Number(payment.amount), 0) +
         sales
           .filter((sale) =>
             sale.paymentCollections.length === 0 &&
             sale.paymentStatus === 'COMPLETED' &&
-            ['DIGITAL','FONEPAY','ESEWA'].includes(sale.paymentMethod),
+            ['DIGITAL', 'FONEPAY', 'ESEWA'].includes(sale.paymentMethod),
           )
           .reduce((sum, sale) => sum + Number(sale.total), 0) +
         exchanges.reduce((sum, exchange) => {
@@ -610,7 +610,7 @@ export function createAdminBillingRouter(
           const available = Math.max(
             0,
             (product.inventory?.totalStock ?? 0) -
-              (product.inventory?.reservedStock ?? 0),
+            (product.inventory?.reservedStock ?? 0),
           );
           const threshold = isWeightUnitLabel(product.unitLabel)
             ? product.lowStockThreshold * 1000
@@ -623,7 +623,7 @@ export function createAdminBillingRouter(
           available: Math.max(
             0,
             (product.inventory?.totalStock ?? 0) -
-              (product.inventory?.reservedStock ?? 0),
+            (product.inventory?.reservedStock ?? 0),
           ),
           unitLabel: product.unitLabel,
         }));
@@ -717,10 +717,10 @@ export function createAdminBillingRouter(
           pendingSales: roundMoney(pendingSales),
           refunds: roundMoney(
             sales.reduce((sum, sale) => sum + Number(sale.refundedAmount), 0) +
-              exchanges.reduce(
-                (sum, exchange) => sum + Math.max(0, -Number(exchange.difference)),
-                0,
-              ),
+            exchanges.reduce(
+              (sum, exchange) => sum + Math.max(0, -Number(exchange.difference)),
+              0,
+            ),
           ),
           cancelledBills,
           openRefundRequests: openRefundCount + openExchangeRefundCount,
@@ -927,6 +927,174 @@ export function createAdminBillingRouter(
     }
   });
 
+  router.get('/offline-sync', adminOnly, async (req, res) => {
+    const parsed = z.object({
+      productsSince: z.string().datetime({ offset: true }).optional(),
+      wholesaleSince: z.string().datetime({ offset: true }).optional(),
+      drinksSince: z.string().datetime({ offset: true }).optional(),
+      customersSince: z.string().datetime({ offset: true }).optional(),
+      billsSince: z.string().datetime({ offset: true }).optional(),
+      refundsSince: z.string().datetime({ offset: true }).optional(),
+      pendingCashSince: z.string().datetime({ offset: true }).optional(),
+    }).strict().safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Choose valid offline sync cursors.' });
+    }
+    const cutoff = new Date();
+    const since = (value?: string) => new Date(value ?? '1970-01-01T00:00:00.000Z');
+    const productSince = since(parsed.data.productsSince);
+    const drinksSince = since(parsed.data.drinksSince);
+    const billsSince = since(parsed.data.billsSince);
+    const pendingCashSince = since(parsed.data.pendingCashSince);
+    const productQuerySince = new Date(Math.min(productSince.getTime(), drinksSince.getTime()));
+    const saleQuerySince = new Date(Math.min(billsSince.getTime(), pendingCashSince.getTime()));
+    try {
+      const [products, wholesaleProducts, customers, sales, refunds] = await Promise.all([
+        prisma.product.findMany({
+          where: { updatedAt: { gt: productQuerySince, lte: cutoff } },
+          orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+          select: {
+            id: true, name: true, sku: true, barcode: true, price: true,
+            unitLabel: true, imageUrl: true, imageMimeType: true, isActive: true,
+            isVendingDrink: true, updatedAt: true,
+            inventory: { select: { totalStock: true, reservedStock: true } },
+          },
+        }),
+        prisma.wholesaleItem.findMany({
+          where: { updatedAt: { gt: since(parsed.data.wholesaleSince), lte: cutoff } },
+          orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+          select: {
+            id: true, name: true, sku: true, price: true, stock: true,
+            unitLabel: true, imageUrl: true, imageMimeType: true, isActive: true,
+            updatedAt: true,
+          },
+        }),
+        prisma.user.findMany({
+          where: {
+            role: 'CUSTOMER',
+            updatedAt: { gt: since(parsed.data.customersSince), lte: cutoff },
+          },
+          orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+          select: {
+            id: true, userNumber: true, name: true, email: true, phone: true,
+            isActive: true, createdAt: true, updatedAt: true,
+          },
+        }),
+        prisma.posSale.findMany({
+          where: { updatedAt: { gt: saleQuerySince, lte: cutoff } },
+          orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+          select: {
+            id: true, receiptNumber: true, invoiceNumber: true, customerName: true,
+            customerPhone: true, status: true, paymentMethod: true,
+            paymentStatus: true, paidAmount: true, subtotal: true, discount: true,
+            vatRate: true, vatAmount: true, total: true, refundedAmount: true,
+            createdAt: true, updatedAt: true,
+            items: {
+              select: {
+                id: true, productId: true, productName: true, sku: true,
+                quantity: true, weightGrams: true, unitPrice: true, lineTotal: true,
+              },
+            },
+            paymentCollections: {
+              select: { id: true, amount: true, method: true, note: true, createdAt: true },
+            },
+          },
+        }),
+        prisma.posRefund.findMany({
+          where: {
+            OR: [
+              { requestedAt: { gt: since(parsed.data.refundsSince), lte: cutoff } },
+              { resolvedAt: { gt: since(parsed.data.refundsSince), lte: cutoff } },
+            ],
+          },
+          orderBy: [{ requestedAt: 'asc' }, { id: 'asc' }],
+          select: {
+            id: true, saleId: true, amount: true, reason: true, status: true,
+            restockStock: true, requestedAt: true, resolvedAt: true,
+            sale: { select: { receiptNumber: true, customerName: true, customerPhone: true } },
+            requestedBy: { select: { name: true } },
+          },
+        }),
+      ]);
+      const changedProducts = products.filter((product) => product.updatedAt > productSince);
+      const changedDrinks = products.filter((product) =>
+        product.isVendingDrink && product.updatedAt > drinksSince);
+      const changedBills = sales.filter((sale) => sale.updatedAt > billsSince);
+      const changedPendingCash = sales.filter((sale) => sale.updatedAt > pendingCashSince);
+      const imageUrl = (product: { id: string; updatedAt: Date; imageMimeType: string | null; imageUrl: string | null }) =>
+        product.imageMimeType
+          ? `/api/v1/products/${encodeURIComponent(product.id)}/image?v=${product.updatedAt.getTime()}`
+          : product.imageUrl;
+      return res.json({
+        cutoff: cutoff.toISOString(),
+        products: changedProducts.map((product) => ({
+          id: product.id, name: product.name, sku: product.sku, barcode: product.barcode,
+          price: Number(product.price), unitLabel: product.unitLabel,
+          available: Math.max(0, (product.inventory?.totalStock ?? 0) - (product.inventory?.reservedStock ?? 0)),
+          imageUrl: imageUrl(product), isActive: product.isActive,
+          isVendingDrink: product.isVendingDrink, updatedAt: product.updatedAt.toISOString(),
+        })),
+        wholesaleProducts: wholesaleProducts.map((product) => ({
+          id: product.id, name: product.name, sku: product.sku,
+          price: Number(product.price), stock: product.stock, unitLabel: product.unitLabel,
+          imageUrl: imageUrl(product), isActive: product.isActive,
+          updatedAt: product.updatedAt.toISOString(),
+        })),
+        drinks: changedDrinks.map((drink) => ({
+          id: drink.id, name: drink.name, sku: drink.sku, barcode: drink.barcode,
+          price: Number(drink.price), isActive: drink.isActive,
+          updatedAt: drink.updatedAt.toISOString(),
+        })),
+        customers: customers.map((customer) => ({
+          id: customer.id, profileId: customer.userNumber.toString(),
+          name: customer.name, email: customer.email, phone: customer.phone ?? '',
+          isActive: customer.isActive, createdAt: customer.createdAt.toISOString(),
+          updatedAt: customer.updatedAt.toISOString(), orderCount: 0, orderValue: 0,
+          addresses: [], recentOrders: [],
+        })),
+        bills: changedBills.map((sale) => ({
+          id: sale.id, receiptNumber: sale.receiptNumber, invoiceNumber: sale.invoiceNumber,
+          customerName: sale.customerName, customerPhone: sale.customerPhone,
+          status: sale.status, paymentMethod: sale.paymentMethod,
+          paymentStatus: sale.paymentStatus, paidAmount: Number(sale.paidAmount),
+          subtotal: Number(sale.subtotal), discount: Number(sale.discount),
+          vatRate: Number(sale.vatRate), vatAmount: Number(sale.vatAmount),
+          total: Number(sale.total), refundedAmount: Number(sale.refundedAmount),
+          createdAt: sale.createdAt.toISOString(), updatedAt: sale.updatedAt.toISOString(),
+          items: sale.items.map((item) => ({
+            id: item.id, productId: item.productId, productName: item.productName,
+            sku: item.sku, quantity: item.quantity, weightGrams: item.weightGrams,
+            unitPrice: Number(item.unitPrice), lineTotal: Number(item.lineTotal),
+          })),
+          paymentCollections: sale.paymentCollections.map((payment) => ({
+            id: payment.id, amount: Number(payment.amount), method: payment.method,
+            note: payment.note, createdAt: payment.createdAt.toISOString(),
+          })),
+        })),
+        refunds: refunds.map((refund) => ({
+          id: refund.id, saleId: refund.saleId, receiptNumber: refund.sale.receiptNumber,
+          customerName: refund.sale.customerName, customerPhone: refund.sale.customerPhone,
+          amount: Number(refund.amount), reason: refund.reason, status: refund.status,
+          restockStock: refund.restockStock, requestedBy: refund.requestedBy.name,
+          requestedAt: refund.requestedAt.toISOString(),
+          updatedAt: (refund.resolvedAt ?? refund.requestedAt).toISOString(),
+          isDeleted: false,
+        })),
+        pendingCash: changedPendingCash.map((sale) => ({
+          id: sale.id, invoiceNumber: sale.invoiceNumber,
+          customerName: sale.customerName, customerPhone: sale.customerPhone,
+          amount: Math.max(0, Number(sale.total) - Number(sale.paidAmount)),
+          total: Number(sale.total), paidAmount: Number(sale.paidAmount),
+          paymentStatus: sale.paymentStatus, status: sale.status,
+          updatedAt: sale.updatedAt.toISOString(),
+          isDeleted: sale.paymentStatus !== 'PENDING' || sale.status === 'CANCELLED',
+        })),
+      });
+    } catch (error) {
+      sendAdminError(error, res);
+    }
+  });
+
   router.get('/products', async (req, res) => {
     const query = z.string().trim().max(100).safeParse(req.query.query ?? '');
     if (!query.success) return res.status(400).json({ error: 'Enter a valid product search.' });
@@ -995,7 +1163,7 @@ export function createAdminBillingRouter(
           available: Math.max(
             0,
             (product.inventory?.totalStock ?? 0) -
-              (product.inventory?.reservedStock ?? 0),
+            (product.inventory?.reservedStock ?? 0),
           ),
         })),
       });
@@ -1020,21 +1188,21 @@ export function createAdminBillingRouter(
     }
     const confirmedAt = new Date();
     if (parsed.data.cataloguePriceChanges && (authenticatedRole(res) !== 'ADMIN' || !parsed.data.idempotencyKey ||
-        parsed.data.cataloguePriceChanges.some(change => !parsed.data.items.some(item => item.productId === change.productId)))) {
-      return res.status(403).json({error: 'Only an administrator may update prices of products in this bill.'});
+      parsed.data.cataloguePriceChanges.some(change => !parsed.data.items.some(item => item.productId === change.productId)))) {
+      return res.status(403).json({ error: 'Only an administrator may update prices of products in this bill.' });
     }
     if (parsed.data.paymentMethod === 'FONEPAY' && !manualFonepay) {
       return res.status(400).json({ error: 'Confirm receipt of the static QR payment before creating this bill.' });
     }
     const offline = parsed.data.offlineSale;
     if (offline && (authenticatedRole(res) !== 'ADMIN' ||
-        parsed.data.paymentMethod === 'DIGITAL' ||
-        (parsed.data.paymentMethod === 'PENDING' && parsed.data.paidNowMethod === 'DIGITAL'))) {
+      parsed.data.paymentMethod === 'DIGITAL' ||
+      (parsed.data.paymentMethod === 'PENDING' && parsed.data.paidNowMethod === 'DIGITAL'))) {
       return res.status(403).json({ error: 'Only an administrator may import offline cash bills. Digital payments require online verification.' });
     }
     if (offline && (!parsed.data.idempotencyKey ||
-        new Date(offline.occurredAt).getTime() > Date.now() + 300000 ||
-        offline.invoiceNumber !== `RPGS-INV-${getStoreDayKey(new Date(offline.occurredAt)).slice(0, 4)}-L-${parsed.data.idempotencyKey.replaceAll('-', '').toUpperCase()}`)) {
+      new Date(offline.occurredAt).getTime() > Date.now() + 300000 ||
+      offline.invoiceNumber !== `RPGS-INV-${getStoreDayKey(new Date(offline.occurredAt)).slice(0, 4)}-L-${parsed.data.idempotencyKey.replaceAll('-', '').toUpperCase()}`)) {
       return res.status(400).json({ error: 'The offline reference or sale date is invalid.' });
     }
     const receiptNumber = parsed.data.idempotencyKey
@@ -1076,7 +1244,7 @@ export function createAdminBillingRouter(
             }
             if (parsed.data.roomPicks) {
               const plan = await tx.inventoryRoomCheckout.findUnique({ where: { saleId: existing.id } });
-              const canonical = (picks: unknown) => JSON.stringify((picks as Array<{productId: string; roomId: string | null; quantity: number}>).map(p => [p.productId, p.roomId, p.quantity]).sort());
+              const canonical = (picks: unknown) => JSON.stringify((picks as Array<{ productId: string; roomId: string | null; quantity: number }>).map(p => [p.productId, p.roomId, p.quantity]).sort());
               if (!plan || canonical(plan.picks) !== canonical(parsed.data.roomPicks)) throw new RoomInventoryError('This bill is already saved with different source rooms. Review the original bill.');
             }
             replayed = true;
@@ -1113,13 +1281,13 @@ export function createAdminBillingRouter(
           const available = Math.max(
             0,
             (product.inventory?.totalStock ?? 0) -
-              (product.inventory?.reservedStock ?? 0),
+            (product.inventory?.reservedStock ?? 0),
           );
           if (stockQuantity > available) throw new Error('POS_INSUFFICIENT_STOCK');
           const unitPrice = Number(product.price);
           const quotedPrices = offline?.unitPrices ?? parsed.data.quote?.unitPrices;
           if (quotedPrices && (quotedPrices[product.id] === undefined ||
-              quotedPrices[product.id] !== unitPrice)) {
+            quotedPrices[product.id] !== unitPrice)) {
             throw new Error(offline ? 'POS_OFFLINE_PRICE_CONFLICT' : 'POS_QUOTE_CHANGED');
           }
           const lineTotal = roundMoney(
@@ -1146,7 +1314,7 @@ export function createAdminBillingRouter(
           const available = Math.max(
             0,
             (product.inventory?.totalStock ?? 0) -
-              (product.inventory?.reservedStock ?? 0),
+            (product.inventory?.reservedStock ?? 0),
           );
           if (requestedStock > available) {
             throw new Error('POS_INSUFFICIENT_STOCK');
@@ -1184,7 +1352,7 @@ export function createAdminBillingRouter(
             : total,
         );
         if (parsed.data.paymentMethod === 'PENDING' &&
-            (parsed.data.paidAmount ?? 0) > total) {
+          (parsed.data.paidAmount ?? 0) > total) {
           throw new Error('POS_PAID_AMOUNT_EXCEEDS_TOTAL');
         }
         if (manualFonepay && total <= 0) throw new Error('POS_FONEPAY_EMPTY_TOTAL');
@@ -1195,14 +1363,16 @@ export function createAdminBillingRouter(
         // Imported cash belongs to an explicitly closed import shift, never
         // silently to the currently open till. No physical cash count is claimed.
         const shift = offline
-          ? await tx.posShift.create({ data: {
-            cashierId,
-            status: 'CLOSED',
-            openingCash: 0,
-            expectedClosingCash: collectionMethod === 'CASH' ? paidAmount : 0,
-            openedAt: new Date(offline.occurredAt),
-            closedAt: new Date(offline.occurredAt),
-          } })
+          ? await tx.posShift.create({
+            data: {
+              cashierId,
+              status: 'CLOSED',
+              openingCash: 0,
+              expectedClosingCash: collectionMethod === 'CASH' ? paidAmount : 0,
+              openedAt: new Date(offline.occurredAt),
+              closedAt: new Date(offline.occurredAt),
+            }
+          })
           : await findOrCreateOpenShift(tx, cashierId);
         const sale = await tx.posSale.create({
           data: {
@@ -1466,9 +1636,9 @@ export function createAdminBillingRouter(
       saleId: string; recordedById: string; amount: Prisma.Decimal;
       method: string; note: string | null;
     }) => payment.saleId === req.params.id &&
-      payment.recordedById === cashierId &&
-      roundMoney(Number(payment.amount)) === roundMoney(parsed.data.amount) &&
-      payment.method === parsed.data.paymentMethod &&
+    payment.recordedById === cashierId &&
+    roundMoney(Number(payment.amount)) === roundMoney(parsed.data.amount) &&
+    payment.method === parsed.data.paymentMethod &&
       (payment.note ?? '') === (parsed.data.note?.trim() ?? '');
     let replayed = false;
     try {
@@ -1487,9 +1657,9 @@ export function createAdminBillingRouter(
         });
         const isBillingStaff = authenticatedRole(res) === 'BILLING_STAFF';
         if (!sale ||
-            ['CHECKOUT','CANCELLED'].includes(sale.status) ||
-            sale.paymentStatus !== 'PENDING' ||
-            (isBillingStaff && sale.shift.cashierId !== cashierId)) {
+          ['CHECKOUT', 'CANCELLED'].includes(sale.status) ||
+          sale.paymentStatus !== 'PENDING' ||
+          (isBillingStaff && sale.shift.cashierId !== cashierId)) {
           throw new Error('POS_SALE_NOT_AWAITING_PAYMENT');
         }
         const paidAmount = Number(sale.paidAmount);
@@ -1542,10 +1712,12 @@ export function createAdminBillingRouter(
         try {
           const existing = await prisma.posPaymentCollection.findUnique({ where: { id: paymentId } });
           if (existing && matchesAttempt(existing)) {
-            return res.status(200).json({ payment: {
-              id: existing.id, amount: Number(existing.amount), method: existing.method,
-              note: existing.note, createdAt: existing.createdAt.toISOString(),
-            } });
+            return res.status(200).json({
+              payment: {
+                id: existing.id, amount: Number(existing.amount), method: existing.method,
+                note: existing.note, createdAt: existing.createdAt.toISOString(),
+              }
+            });
           }
         } catch (lookupError) {
           return sendAdminError(lookupError, res);
@@ -1585,9 +1757,9 @@ export function createAdminBillingRouter(
         });
         const isBillingStaff = authenticatedRole(res) === 'BILLING_STAFF';
         if (!sale ||
-            ['CHECKOUT','CANCELLED'].includes(sale.status) ||
-            sale.paymentStatus !== 'PENDING' ||
-            (isBillingStaff && sale.shift.cashierId !== cashierId)) {
+          ['CHECKOUT', 'CANCELLED'].includes(sale.status) ||
+          sale.paymentStatus !== 'PENDING' ||
+          (isBillingStaff && sale.shift.cashierId !== cashierId)) {
           return false;
         }
         const remaining = roundMoney(
@@ -1636,10 +1808,10 @@ export function createAdminBillingRouter(
           include: { items: true, refunds: { where: { status: 'APPROVED' } } },
         });
         if (!sale ||
-            ['CHECKOUT','CANCELLED'].includes(sale.status) ||
-            sale.paymentStatus !== 'PENDING' ||
-            Number(sale.paidAmount) > 0 ||
-            sale.refunds.length > 0) {
+          ['CHECKOUT', 'CANCELLED'].includes(sale.status) ||
+          sale.paymentStatus !== 'PENDING' ||
+          Number(sale.paidAmount) > 0 ||
+          sale.refunds.length > 0) {
           return null;
         }
         const returnedQuantities = new Map<string, number>();
@@ -1648,7 +1820,7 @@ export function createAdminBillingRouter(
           returnedQuantities.set(
             item.productId,
             (returnedQuantities.get(item.productId) ?? 0) +
-              (item.weightGrams ?? item.quantity),
+            (item.weightGrams ?? item.quantity),
           );
         }
         await inventoryService.restockPosSale(
@@ -1706,12 +1878,18 @@ export function createAdminBillingRouter(
             ? {
               OR: [
                 { reason: { contains: search } },
-                { sale: { is: { OR: [
-                  { receiptNumber: { contains: search } },
-                  { invoiceNumber: { contains: search } },
-                  { customerName: { contains: search } },
-                  { customerPhone: { contains: search } },
-                ] } } },
+                {
+                  sale: {
+                    is: {
+                      OR: [
+                        { receiptNumber: { contains: search } },
+                        { invoiceNumber: { contains: search } },
+                        { customerName: { contains: search } },
+                        { customerPhone: { contains: search } },
+                      ]
+                    }
+                  }
+                },
                 { requestedBy: { is: { name: { contains: search } } } },
               ],
             }
@@ -1720,13 +1898,15 @@ export function createAdminBillingRouter(
         orderBy: { requestedAt: 'desc' },
         take: 100,
         include: {
-          sale: { select: {
-            receiptNumber: true,
-            total: true,
-            paymentMethod: true,
-            customerName: true,
-            customerPhone: true,
-          } },
+          sale: {
+            select: {
+              receiptNumber: true,
+              total: true,
+              paymentMethod: true,
+              customerName: true,
+              customerPhone: true,
+            }
+          },
           requestedBy: { select: { name: true } },
         },
       });
@@ -1772,7 +1952,7 @@ export function createAdminBillingRouter(
             },
           },
         });
-        if (!sale || ['CHECKOUT','CANCELLED'].includes(sale.status)) throw new Error('POS_SALE_NOT_REFUNDABLE');
+        if (!sale || ['CHECKOUT', 'CANCELLED'].includes(sale.status)) throw new Error('POS_SALE_NOT_REFUNDABLE');
         if (sale.exchanges.length > 0) {
           throw new Error('POS_REFUND_EXCHANGE_EXISTS');
         }
@@ -1786,8 +1966,8 @@ export function createAdminBillingRouter(
         const remaining = roundMoney(Math.min(Number(sale.total), received) - alreadyRefunded);
         if (requestedAmount > remaining) throw new Error('POS_REFUND_TOO_LARGE');
         if (parsed.data.restockStock &&
-            (alreadyRefunded > 0 ||
-              requestedAmount !== Number(sale.total))) {
+          (alreadyRefunded > 0 ||
+            requestedAmount !== Number(sale.total))) {
           throw new Error('POS_RESTOCK_REQUIRES_FULL_REFUND');
         }
         return tx.posRefund.create({
@@ -1861,7 +2041,7 @@ export function createAdminBillingRouter(
             returnedQuantities.set(
               item.productId,
               (returnedQuantities.get(item.productId) ?? 0) +
-                (item.weightGrams ?? item.quantity),
+              (item.weightGrams ?? item.quantity),
             );
           }
           await inventoryService.restockPosSale(
@@ -1915,22 +2095,28 @@ export function createAdminBillingRouter(
       return res.status(401).json({ error: 'Authentication is required.' });
     }
     try {
-      const query = z.object({search: z.string().trim().max(160).optional(),
-        day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()}).safeParse(req.query);
-      if (!query.success) return res.status(400).json({error: 'Choose a valid exchange search or date.'});
+      const query = z.object({
+        search: z.string().trim().max(160).optional(),
+        day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+      }).safeParse(req.query);
+      if (!query.success) return res.status(400).json({ error: 'Choose a valid exchange search or date.' });
       const search = query.data.search;
       const range = query.data.day ? getLocalDayRangeForKey(query.data.day) : undefined;
       const isBillingStaff = authenticatedRole(res) === 'BILLING_STAFF';
       const exchanges = await prisma.posExchange.findMany({
         where: {
-          ...(isBillingStaff ? {cashierId} : {}),
-          ...(range ? {requestedAt: {gte: range.start, lt: range.end}} : {}),
-          ...(search ? {sale: {OR: [
-            {receiptNumber: {contains: search}},
-            {invoiceNumber: {contains: search}},
-            {customerName: {contains: search}},
-            {customerPhone: {contains: search}},
-          ]}} : {}),
+          ...(isBillingStaff ? { cashierId } : {}),
+          ...(range ? { requestedAt: { gte: range.start, lt: range.end } } : {}),
+          ...(search ? {
+            sale: {
+              OR: [
+                { receiptNumber: { contains: search } },
+                { invoiceNumber: { contains: search } },
+                { customerName: { contains: search } },
+                { customerPhone: { contains: search } },
+              ]
+            }
+          } : {}),
         },
         orderBy: { requestedAt: 'desc' },
         take: 100,
@@ -1997,7 +2183,7 @@ export function createAdminBillingRouter(
         });
         if (existing) {
           if (existing.cashierId !== cashierId ||
-              existing.saleId !== req.params.id) {
+            existing.saleId !== req.params.id) {
             throw new Error('POS_EXCHANGE_IDEMPOTENCY_KEY_REUSED');
           }
           replayed = true;
@@ -2020,12 +2206,12 @@ export function createAdminBillingRouter(
             },
           },
         });
-        if (!sale || ['CHECKOUT','CANCELLED'].includes(sale.status) ||
-            sale.paymentStatus !== 'COMPLETED') {
+        if (!sale || ['CHECKOUT', 'CANCELLED'].includes(sale.status) ||
+          sale.paymentStatus !== 'COMPLETED') {
           throw new Error('POS_SALE_NOT_EXCHANGEABLE');
         }
         if (authenticatedRole(res) === 'BILLING_STAFF' &&
-            sale.shift.cashierId !== cashierId) {
+          sale.shift.cashierId !== cashierId) {
           throw new Error('POS_EXCHANGE_WRONG_CASHIER');
         }
 
@@ -2045,7 +2231,7 @@ export function createAdminBillingRouter(
             previousReturns.set(
               item.saleItemId,
               (previousReturns.get(item.saleItemId) ?? 0) +
-                (item.weightGrams ?? item.quantity),
+              (item.weightGrams ?? item.quantity),
             );
           }
         }
@@ -2061,7 +2247,7 @@ export function createAdminBillingRouter(
           if (!item) throw new Error('POS_EXCHANGE_ITEM_NOT_IN_SALE');
           const weighted = item.weightGrams !== null;
           if (weighted !== (request.weightGrams !== undefined) ||
-              weighted === (request.quantity !== undefined)) {
+            weighted === (request.quantity !== undefined)) {
             throw new Error('POS_EXCHANGE_QUANTITY_TYPE_MISMATCH');
           }
           const requestedUnits = request.weightGrams ?? request.quantity!;
@@ -2108,7 +2294,7 @@ export function createAdminBillingRouter(
           if (!product) throw new Error('POS_PRODUCT_UNAVAILABLE');
           const weighted = isWeightUnitLabel(product.unitLabel);
           if (weighted !== (request.weightGrams !== undefined) ||
-              weighted === (request.quantity !== undefined)) {
+            weighted === (request.quantity !== undefined)) {
             throw new Error('POS_WEIGHT_REQUIRED');
           }
           const quantity = request.quantity ?? 1;
@@ -2117,7 +2303,7 @@ export function createAdminBillingRouter(
           const available = Math.max(
             0,
             (product.inventory?.totalStock ?? 0) -
-              (product.inventory?.reservedStock ?? 0),
+            (product.inventory?.reservedStock ?? 0),
           );
           if (requestedUnits > available) {
             throw new Error('POS_INSUFFICIENT_STOCK');
@@ -2188,7 +2374,7 @@ export function createAdminBillingRouter(
               returnedStock.set(
                 item.productId,
                 (returnedStock.get(item.productId) ?? 0) +
-                  (item.weightGrams ?? item.quantity),
+                (item.weightGrams ?? item.quantity),
               );
             }
           }
@@ -2209,7 +2395,7 @@ export function createAdminBillingRouter(
             replacementStock.set(
               item.productId!,
               (replacementStock.get(item.productId!) ?? 0) +
-                (item.weightGrams ?? item.quantity),
+              (item.weightGrams ?? item.quantity),
             );
           }
           if (replacementStock.size > 0) {
@@ -2326,8 +2512,8 @@ export function createAdminBillingRouter(
     }
     const parsed = exchangeResolutionInput.safeParse(req.body);
     if (!parsed.success ||
-        (parsed.success && parsed.data.decision === 'APPROVE' &&
-          !parsed.data.refundPaymentMethod)) {
+      (parsed.success && parsed.data.decision === 'APPROVE' &&
+        !parsed.data.refundPaymentMethod)) {
       return res.status(400).json({
         error: 'Choose a decision and refund method when approving.',
       });
@@ -2356,7 +2542,7 @@ export function createAdminBillingRouter(
             returnedStock.set(
               item.productId,
               (returnedStock.get(item.productId) ?? 0) +
-                (item.weightGrams ?? item.quantity),
+              (item.weightGrams ?? item.quantity),
             );
           }
         }
@@ -2378,7 +2564,7 @@ export function createAdminBillingRouter(
           replacementStock.set(
             item.productId,
             (replacementStock.get(item.productId) ?? 0) +
-              (item.weightGrams ?? item.quantity),
+            (item.weightGrams ?? item.quantity),
           );
         }
         if (replacementStock.size > 0) {

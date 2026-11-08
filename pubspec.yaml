@@ -55,6 +55,8 @@ dependencies:
   crypto: ^3.0.8
   audioplayers: 6.4.0
   qr_flutter: ^4.1.0
+  sqflite_common_ffi: ^2.4.5
+  connectivity_plus: ^7.3.2
 dev_dependencies:
   flutter_test:
     sdk: flutter

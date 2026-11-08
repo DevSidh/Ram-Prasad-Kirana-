@@ -70,6 +70,14 @@ class BillingCustomerService {
   static Future<List<AdminCustomer>> readLocal(OfflinePosStore store,
       {Future<List<AdminCustomer>> Function()? loadSavedCustomers}) async {
     final customers = <AdminCustomer>[];
+    final syncedCustomerIds = <String>{};
+    try {
+      final saved = await store.readCustomers();
+      customers.addAll(saved);
+      syncedCustomerIds.addAll(saved
+          .where((customer) => !customer.id.startsWith('local-customer-'))
+          .map((customer) => customer.id));
+    } catch (_) {/* Legacy local sources remain available. */}
     try {
       customers.addAll(await (loadSavedCustomers ??
           BillingExcelExportService.readSavedCustomers)());
@@ -100,8 +108,9 @@ class BillingCustomerService {
       }
       customers.addAll(grouped.values);
     } catch (_) {/* A damaged bill must not hide the customer index. */}
-    return merge(customers.map((customer) => AdminCustomer(
-          id: customer.id.startsWith('local-customer-')
+    final merged = merge(customers.map((customer) => AdminCustomer(
+          id: syncedCustomerIds.contains(customer.id) ||
+                  customer.id.startsWith('local-customer-')
               ? customer.id
               : 'local-customer-${customer.id}',
           profileId: customer.profileId,
@@ -115,5 +124,7 @@ class BillingCustomerService {
           addresses: customer.addresses,
           recentOrders: customer.recentOrders,
         )));
+    await store.saveCustomers(merged);
+    return merged;
   }
 }

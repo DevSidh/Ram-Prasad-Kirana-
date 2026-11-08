@@ -10,10 +10,29 @@ import 'api_service.dart';
 /// this computer; queued bills stop being projected after server acknowledgement.
 class RoomInventoryService {
   const RoomInventoryService(this.api, this.store);
+  static final _localSnapshots = <String, RoomInventorySnapshot>{};
   final AdminApiService api;
   final OfflinePosStore store;
   bool get _usesLocal => !kIsWeb && (store.useLocalStock ?? Platform.isWindows);
   File get _file => File('${store.billingStore.rootPath}/inventory/rooms.json');
+
+  Future<RoomInventorySnapshot?> loadLocalIfAvailable(
+      {List<String>? productIds}) async {
+    if (kIsWeb || !(store.useLocalStock ?? Platform.isWindows)) return null;
+    final key = _file.absolute.path;
+    final cached = _localSnapshots[key];
+    if (cached != null) return cached;
+    if (!await _file.exists()) return null;
+    try {
+      final json = await store.billingStore.readJson(_file);
+      final snapshot =
+          await project(RoomInventorySnapshot.fromJson(json, cached: true));
+      _localSnapshots[key] = snapshot;
+      return snapshot;
+    } catch (_) {
+      return null;
+    }
+  }
 
   Future<RoomInventorySnapshot> load(
       {List<String>? productIds,
@@ -50,6 +69,7 @@ class RoomInventoryService {
               };
             }
             await store.billingStore.writeJson(_file, json);
+            _localSnapshots.remove(_file.absolute.path);
           });
         }
       } on ApiNetworkException {

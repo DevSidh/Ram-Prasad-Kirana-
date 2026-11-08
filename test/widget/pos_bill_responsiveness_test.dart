@@ -257,12 +257,11 @@ void main() {
         widget.decoration?.hintText == 'Customer name (optional)');
     final phone = find.byWidgetPredicate((widget) =>
         widget is TextField &&
-        widget.decoration?.hintText == 'Customer phone (optional)');
+        widget.decoration?.hintText == 'Phone (optional)');
     await tester.enterText(name, 'SS');
     await tester.pump(const Duration(milliseconds: 450));
     await settleIO(tester);
     expect(tester.widget<TextField>(phone).controller!.text, '9801234567');
-    expect(find.textContaining('Saved on this computer'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
@@ -334,6 +333,60 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
+  testWidgets('authorized Windows cash checkout commits locally before sync',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.runAsync(() async => store.billingStore.writeJson(
+        File('${root.path}/inventory/rooms.json'),
+        await api.getRoomInventory()));
+    await tester.pumpWidget(MaterialApp(
+        theme: billing.AppTheme.data,
+        home: Builder(
+            builder: (context) => Scaffold(
+                body: TextButton(
+                    onPressed: () => showDialog<PosSale>(
+                        context: context,
+                        builder: (_) => PosBillDialog(
+                            api: api,
+                            offlineStore: store,
+                            refreshCatalogOnOpen: false,
+                            loadLocalCustomers: () async => [],
+                            operatorId: 'fixture',
+                            allowOfflineSync: true,
+                            onScan: () async => null,
+                            onNewBill: () {})),
+                    child: const Text('Open local-first checkout'))))));
+    await tester.tap(find.text('Open local-first checkout'));
+    await settleIO(tester);
+    await tester.tap(find.text('Fixture tea').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Add to bill'), findsOneWidget);
+    await tester.tap(find.text('Add to bill'));
+    await settleIO(tester);
+    expect(
+        find.byWidgetPredicate((widget) =>
+            widget is TextField && widget.decoration?.labelText == 'Qty'),
+        findsOneWidget);
+    final createBill = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Create bill (F8)'));
+    await tester.runAsync(() async {
+      createBill.onPressed!();
+      await Future<void>.delayed(const Duration(seconds: 1));
+    });
+    await tester.pump();
+    await tester.pump();
+    final records = await tester.runAsync(() => store.billingStore.records());
+    expect(api.saves, 0);
+    expect(records, hasLength(1));
+    expect(records!.single.record['syncState'], 'pending');
+    expect(records.single.record['uploadPayload'], isA<Map<String, dynamic>>());
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
   testWidgets(
       'offline checkout commits totals and retryable work before any PDF or server call',
       (tester) async {
@@ -378,7 +431,7 @@ void main() {
                     child: const Text('Open fixture'))))));
     await tester.tap(find.text('Open fixture'));
     await settleIO(tester);
-    final toggle = tester.widget<SwitchListTile>(find.byType(SwitchListTile));
+    final toggle = tester.widget<Checkbox>(find.byType(Checkbox));
     toggle.onChanged!(true);
     await tester.pumpAndSettle();
     await tester.enterText(field('Discount amount'), '10');
@@ -410,7 +463,8 @@ void main() {
     expect(pdfs, 0);
     await tester.runAsync(() async {
       await Directory('tmp/pdfs').create(recursive: true);
-      await File('tmp/pdfs/checkout-fixture-timing.json').writeAsString(jsonEncode(PosTiming.samples));
+      await File('tmp/pdfs/checkout-fixture-timing.json')
+          .writeAsString(jsonEncode(PosTiming.samples));
     });
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
@@ -574,35 +628,18 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
-  testWidgets('a stale response cannot win during the next search debounce',
+  testWidgets('product search uses the local catalog without API requests',
       (tester) async {
     await start(tester);
-    final old = api.queries['old'] = Completer<List<PosProduct>>();
-    final next = api.queries['new'] = Completer<List<PosProduct>>();
+    final requestCount = api.searches;
     final search = find.byWidgetPredicate((w) =>
         w is TextField &&
         w.decoration?.labelText?.startsWith('Scan barcode') == true);
-    await tester.enterText(search, 'old');
-    await tester.pump(const Duration(milliseconds: 260));
+    await tester.enterText(search, 'fixture');
+    await tester.pump(const Duration(milliseconds: 160));
     await settleIO(tester);
-    await tester.enterText(search, 'new');
-    old.complete([
-      const PosProduct(
-          id: 'stale',
-          name: 'Stale result',
-          sku: 'OLD',
-          barcode: null,
-          price: 99,
-          unitLabel: 'pcs',
-          available: 1)
-    ]);
-    // Complete the old request before the new request's debounce finishes.
-    await tester.pump(const Duration(milliseconds: 1));
-    expect(find.text('Stale result'), findsNothing);
-    await tester.pump(const Duration(milliseconds: 260));
-    next.complete([_tea]);
-    await settleIO(tester);
-    expect(find.text('Stale result'), findsNothing);
+    expect(api.searches, requestCount);
+    expect(find.text('Fixture tea'), findsWidgets);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));

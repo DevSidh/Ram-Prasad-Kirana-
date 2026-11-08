@@ -95,7 +95,8 @@ class AdminBillingScreen extends StatefulWidget {
   State<AdminBillingScreen> createState() => AdminBillingScreenState();
 }
 
-class AdminBillingScreenState extends State<AdminBillingScreen> {
+class AdminBillingScreenState extends State<AdminBillingScreen>
+    with WidgetsBindingObserver {
   static const _barcodePairingCodePreferenceKey =
       'admin_billing_barcode_pairing_code';
   bool get _isWindowsOperatorMode =>
@@ -162,6 +163,7 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _postCommit?.dispose();
     _localBillingSync?.dispose();
     _scrollController.dispose();
@@ -176,8 +178,28 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_isWindowsOperatorMode ||
+        ![
+          AppLifecycleState.hidden,
+          AppLifecycleState.paused,
+          AppLifecycleState.detached
+        ].contains(state)) {
+      return;
+    }
+    final sync = _localBillingSync;
+    if (sync != null) {
+      unawaited(sync.synchronize().timeout(
+            const Duration(seconds: 4),
+            onTimeout: () {},
+          ));
+    }
+  }
+
+  @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     unawaited(_loadPaperWidth());
     unawaited(_syncPendingLocalStreaks());
     unawaited(_load());
@@ -314,6 +336,67 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
 
   String? get _reportDayKey => _formatDayKey(_reportDay);
 
+  Future<void> _seedWindowsBillingFromLocal({
+    required int requestId,
+    required int salesPage,
+    required int pendingPage,
+  }) async {
+    if (!_isWindowsOperatorMode) return;
+    try {
+      final values = await Future.wait<Object?>([
+        widget.offlineStore.readCachedBillsPage(page: salesPage),
+        widget.offlineStore.readCachedRefunds(),
+        widget.offlineStore.readCachedPendingPayments(page: pendingPage),
+        widget.offlineStore.readOfflineSales(),
+      ]);
+      if (!mounted || requestId != _loadRequestId) return;
+      final cachedPage = values[0] as PosSalesPage?;
+      final cachedRefunds = values[1] as List<PosRefund>?;
+      final cachedPending = values[2] as PosSalesPage?;
+      final fileSales = values[3] as List<PosSale>;
+      final cachedSales = <String, PosSale>{
+        for (final sale in cachedPage?.sales ?? const <PosSale>[])
+          sale.invoiceNumber ?? sale.receiptNumber: sale,
+        for (final sale in fileSales)
+          sale.invoiceNumber ?? sale.receiptNumber: sale,
+      }.values.where((sale) {
+        if (_billHistoryDayKey != null &&
+            _formatDayKey(sale.createdAt.toLocal()) != _billHistoryDayKey) {
+          return false;
+        }
+        final query = _billHistorySearchController.text.trim().toLowerCase();
+        return query.isEmpty ||
+            (sale.invoiceNumber ?? sale.receiptNumber)
+                .toLowerCase()
+                .contains(query) ||
+            (sale.customerName ?? '').toLowerCase().contains(query) ||
+            (sale.customerPhone ?? '').toLowerCase().contains(query);
+      }).toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      setState(() {
+        _sales = cachedSales;
+        _salesPage = cachedPage?.page ?? salesPage;
+        _salesPageSize = cachedPage?.pageSize ?? _salesPageSize;
+        _salesTotal =
+            cachedPage == null ? cachedSales.length : cachedPage.total;
+        if (cachedRefunds != null) _refunds = cachedRefunds;
+        if (cachedPending != null) {
+          _pendingPaymentPage = cachedPending;
+          _pendingPaymentPageNumber = cachedPending.page;
+        }
+        _localPendingSales = fileSales
+            .where((sale) =>
+                sale.id.startsWith('local-') &&
+                sale.paymentStatus == 'PENDING' &&
+                (sale.outstandingAmount ?? 0) > 0)
+            .toList(growable: false);
+        _loading = false;
+      });
+    } catch (_) {
+      // Keep the existing network and file fallbacks if SQLite is unavailable.
+    }
+  }
+
   Future<void> _load({int? salesPage, int? pendingPage}) async {
     unawaited(_loadLocalBillingCustomers());
     final requestId = ++_loadRequestId;
@@ -324,6 +407,11 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       _error = null;
       _sessionExpired = false;
     });
+    await _seedWindowsBillingFromLocal(
+      requestId: requestId,
+      salesPage: requestedSalesPage,
+      pendingPage: requestedPendingPage,
+    );
     try {
       // Start all independent dashboard requests together. Previously the
       // overview request completed before the remaining requests even began,
@@ -487,12 +575,17 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         operatorId: context.read<AuthProvider>().currentUser?.id ?? '',
         allowOfflineSync: _isWindowsOperatorMode,
         allowPriceEditing: !widget.isBillingStaff,
+        localSync: _localBillingSync,
         printSale: _printManuallyVerifiedBill,
         paperWidthMm: _paperWidthMm,
       ),
     );
     if (!mounted) return;
     if (completedSale == null) return;
+    _showCommittedSaleImmediately(completedSale);
+    if (_localBillingSync != null && completedSale.id.startsWith('local-')) {
+      unawaited(_localBillingSync!.synchronize());
+    }
     // The financial commit has finished. Report it before preparing a receipt.
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: BillingText('Bill saved: ${completedSale.receiptNumber}')));
@@ -524,6 +617,37 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: BillingText(printMessage)));
+  }
+
+  void _showCommittedSaleImmediately(PosSale sale) {
+    if (!mounted) return;
+    final key = sale.invoiceNumber ?? sale.receiptNumber;
+    final existing = _sales.indexWhere(
+        (item) => (item.invoiceNumber ?? item.receiptNumber) == key);
+    final updated = [..._sales];
+    if (existing >= 0) {
+      updated[existing] = sale;
+    } else {
+      updated.insert(0, sale);
+    }
+    updated.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final pending =
+        sale.paymentStatus == 'PENDING' && (sale.outstandingAmount ?? 0) > 0;
+    setState(() {
+      _sales = updated;
+      _salesTotal = _salesTotal < updated.length ? updated.length : _salesTotal;
+      if (pending) {
+        final pendingSales = [..._localPendingSales];
+        final index = pendingSales.indexWhere(
+            (item) => (item.invoiceNumber ?? item.receiptNumber) == key);
+        if (index >= 0) {
+          pendingSales[index] = sale;
+        } else {
+          pendingSales.insert(0, sale);
+        }
+        _localPendingSales = pendingSales;
+      }
+    });
   }
 
   void startNewBill() {
@@ -1298,11 +1422,8 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final overview = _overview;
-    if (_loading && overview == null) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (overview == null && _error != null) {
+    final loadedOverview = _overview;
+    if (loadedOverview == null && _error != null && !_loading) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -1327,7 +1448,10 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         ),
       );
     }
-    if (overview == null) return const SizedBox.shrink();
+    final overview = loadedOverview ??
+        PosOverview.fromJson(const <String, dynamic>{
+          'metrics': <String, dynamic>{},
+        });
     final reportOverview = _reportOverview ?? overview;
 
     if (_isWindowsOperatorMode) {
@@ -3694,6 +3818,7 @@ class PosBillDialog extends StatefulWidget {
     required this.operatorId,
     required this.allowOfflineSync,
     this.allowPriceEditing = true,
+    this.localSync,
     this.printSale,
     this.paperWidthMm = 80,
     this.heldSale,
@@ -3709,6 +3834,7 @@ class PosBillDialog extends StatefulWidget {
   final String operatorId;
   final bool allowOfflineSync;
   final bool allowPriceEditing;
+  final LocalBillingSync? localSync;
   final Future<bool> Function(PosSale)? printSale;
   final int paperWidthMm;
   final OfflinePosStore offlineStore;
@@ -3758,7 +3884,6 @@ class _PosBillDialogState extends State<PosBillDialog> {
   bool _checkoutInProgress = false;
   bool _discountIsPercent = false;
   bool _saveOnThisComputer = false;
-  bool _usingOfflineCatalog = false;
   AdminCustomer? _selectedCustomer;
   Timer? _customerSearchTimer;
   int _customerSearchRequest = 0;
@@ -3770,6 +3895,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
   @override
   void initState() {
     super.initState();
+    widget.localSync?.addListener(_onLocalSyncChanged);
+    final openWatch = Stopwatch()..start();
     final held = widget.heldSale;
     if (held != null) {
       _customerName.text = held.customerName ?? '';
@@ -3816,13 +3943,18 @@ class _PosBillDialogState extends State<PosBillDialog> {
     });
     if (defaultTargetPlatform == TargetPlatform.windows) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _searchFocus.requestFocus();
+        if (mounted) {
+          debugPrint(
+              'PosBillDialog open -> ready after ${openWatch.elapsedMilliseconds}ms');
+          _searchFocus.requestFocus();
+        }
       });
     }
   }
 
   @override
   void dispose() {
+    widget.localSync?.removeListener(_onLocalSyncChanged);
     _barcodeQueue.close();
     _additionQueue.close();
     _cartMembership.dispose();
@@ -3841,6 +3973,13 @@ class _PosBillDialogState extends State<PosBillDialog> {
       line.dispose();
     }
     super.dispose();
+  }
+
+  void _onLocalSyncChanged() {
+    final sync = widget.localSync;
+    if (mounted && sync != null && !sync.running && sync.online == true) {
+      unawaited(_searchProducts(_search.text.trim()));
+    }
   }
 
   void _customerDetailsChanged({required bool byName}) {
@@ -3880,22 +4019,6 @@ class _PosBillDialogState extends State<PosBillDialog> {
       });
       return;
     }
-    try {
-      final page =
-          await widget.api.getCustomers(page: 1, pageSize: 10, search: query);
-      if (!mounted || requestId != _customerSearchRequest) return;
-      final match = BillingCustomerService.findExact(page.customers,
-          name: name, phone: normalizedPhone, byName: byName);
-      if (match != null) {
-        setState(() {
-          _selectedCustomer = match;
-          _customerName.text = match.name;
-          _customerPhone.text = match.phone;
-        });
-      }
-    } catch (_) {
-      /* Keep locally saved details when the server is unavailable. */
-    }
   }
 
   Future<void> _selectRegisteredCustomer() async {
@@ -3933,26 +4056,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
                 .toList();
             setDialogState(() {
               customers = localMatches;
-              loading = localMatches.isEmpty;
-            });
-            List<AdminCustomer> online = const [];
-            String? onlineError;
-            try {
-              final page = await widget.api.getCustomers(
-                  page: 1,
-                  pageSize: 30,
-                  search: text.isEmpty ? null : query.trim());
-              online = page.customers;
-            } catch (error) {
-              onlineError = error.toString().replaceFirst('Exception: ', '');
-            }
-            if (!dialogContext.mounted || version != searchVersion) return;
-            final merged =
-                BillingCustomerService.merge([...online, ...localMatches]);
-            setDialogState(() {
-              customers = merged;
               loading = false;
-              loadError = merged.isEmpty ? onlineError : null;
+              loadError = null;
             });
           }
 
@@ -4204,6 +4309,9 @@ class _PosBillDialogState extends State<PosBillDialog> {
                 },
                 'customerName': sale.customerName,
                 'customerPhone': sale.customerPhone,
+                if (_selectedCustomer != null &&
+                    !_selectedCustomer!.id.startsWith('local-customer-'))
+                  'customerId': _selectedCustomer!.id,
                 if (widget.heldSale != null) 'heldSaleId': widget.heldSale!.id,
                 'offlineSale': {
                   'invoiceNumber': invoiceNumber,
@@ -4292,69 +4400,46 @@ class _PosBillDialogState extends State<PosBillDialog> {
 
   Future<void> _searchProducts(String query) async {
     final requestId = ++_productSearchRequest;
+    final totalWatch = Stopwatch()..start();
     setState(() {
       _searching = true;
       _error = null;
     });
     try {
-      // Warm one local snapshot, then keep keystrokes in memory. This avoids
-      // reopening the local store or hitting the network for every character.
-      if (_catalogIndex.isEmpty) {
-        _catalogIndex = await _offlinePosStore.searchCatalog('');
-      }
+      final localWatch = Stopwatch()..start();
+      _catalogIndex = await _offlinePosStore.searchCatalog('');
       final normalized = query.trim().toLowerCase();
       final cached = _catalogIndex
-          .where((product) => normalized.isEmpty ||
+          .where((product) =>
+              normalized.isEmpty ||
               product.name.toLowerCase().contains(normalized) ||
               product.sku.toLowerCase().contains(normalized) ||
               (product.barcode ?? '').toLowerCase().contains(normalized))
           .take(60)
           .toList(growable: false);
+      debugPrint(
+          'Pos billing: local search query="$query" completed in ${localWatch.elapsedMilliseconds}ms, results=${cached.length}');
       if (!mounted || requestId != _productSearchRequest) return;
       setState(() {
         _matches = cached;
-        _usingOfflineCatalog = cached.isNotEmpty;
         _searching = false;
       });
-
-      // Revalidate silently. The cashier already has a usable local result.
-      final serverProducts = await widget.api.searchPosProducts(query);
-      if (!mounted || requestId != _productSearchRequest) return;
-      await _offlinePosStore.mergeCatalog(serverProducts);
-      final products = await _includeCachedWholesale(
-          await _offlinePosStore.projectLocalStock(serverProducts), query);
-      _catalogIndex = await _offlinePosStore.searchCatalog('');
-      if (!mounted || requestId != _productSearchRequest) return;
-      setState(() {
-        _matches = products.take(60).toList(growable: false);
-        _usingOfflineCatalog = false;
-      });
+      debugPrint(
+          'Pos billing: final product render query="$query" total=${totalWatch.elapsedMilliseconds}ms, visible=${_matches.length}');
     } catch (error) {
       final cachedProducts = await _offlinePosStore.searchCatalog(query);
       if (mounted && requestId == _productSearchRequest) {
         setState(() {
           _matches = cachedProducts;
-          _usingOfflineCatalog = cachedProducts.isNotEmpty;
           _error = cachedProducts.isNotEmpty
               ? null
               : 'No offline catalog is saved on this computer yet. Connect to the store once to load products for offline billing.';
           _searching = false;
         });
       }
+      debugPrint(
+          'Pos billing: offline fallback query="$query" total=${totalWatch.elapsedMilliseconds}ms, error=$error');
     }
-  }
-
-  Future<List<PosProduct>> _includeCachedWholesale(
-    List<PosProduct> serverProducts,
-    String query,
-  ) async {
-    final cachedProducts = await _offlinePosStore.searchCatalog(query);
-    final merged = <String, PosProduct>{
-      for (final product in serverProducts) product.id: product,
-      for (final product in cachedProducts)
-        if (product.id.startsWith('wholesale-')) product.id: product,
-    };
-    return merged.values.toList(growable: false);
   }
 
   Future<void> _refreshOfflineCatalog({bool force = false}) async {
@@ -4464,82 +4549,43 @@ class _PosBillDialogState extends State<PosBillDialog> {
       _error = null;
     });
     try {
-      final cached = await _offlinePosStore.searchCatalog(barcode);
       final normalized = barcode.toLowerCase();
-      final cachedExact = cached.where((product) =>
+      final cached = _catalogIndex.isNotEmpty
+          ? _catalogIndex
+          : await _offlinePosStore.searchCatalog('');
+      final exact = cached.where((product) =>
           product.barcode?.toLowerCase() == normalized ||
           product.sku.toLowerCase() == normalized ||
           product.id.toLowerCase() == normalized);
+      final candidate = exact.firstOrNull ??
+          cached
+              .where((product) =>
+                  product.name.toLowerCase().contains(normalized) ||
+                  product.sku.toLowerCase().contains(normalized) ||
+                  (product.barcode?.toLowerCase().contains(normalized) ??
+                      false))
+              .firstOrNull;
       if (!mounted) return;
-      if (cachedExact.isNotEmpty) {
-        await _addProduct(cachedExact.first);
-        if (!mounted) return;
+      if (candidate == null) {
         setState(() {
-          _matches = cached;
-          _usingOfflineCatalog = true;
+          _matches = const [];
           _searching = false;
+          _error = 'No matching offline product for "$barcode".';
         });
-        _search.clear();
-        _searchFocus.requestFocus();
         return;
       }
-      final serverProducts = await widget.api.searchPosProducts(barcode);
-      await _offlinePosStore.mergeCatalog(serverProducts);
-      final products = await _includeCachedWholesale(
-          await _offlinePosStore.projectLocalStock(serverProducts), barcode);
-      final exact = products.where((product) =>
-          product.barcode?.toLowerCase() == normalized ||
-          product.sku.toLowerCase() == normalized ||
-          product.id.toLowerCase() == normalized);
-      if (exact.isEmpty) {
-        if (mounted) {
-          setState(() {
-            _matches = products;
-            _searching = false;
-            _error = 'No product exactly matches barcode "$barcode".';
-          });
-        }
-        return;
-      }
-      final product = exact.first;
-      if (!mounted) return;
-      await _addProduct(product);
+      await _addProduct(candidate);
       if (!mounted) return;
       setState(() {
-        _matches = products;
-        _usingOfflineCatalog = false;
+        _matches = cached.take(60).toList(growable: false);
         _searching = false;
       });
       _search.clear();
       _searchFocus.requestFocus();
     } catch (error) {
-      final cachedProducts = await _offlinePosStore.searchCatalog(barcode);
-      final exact = cachedProducts.where((product) {
-        final normalized = barcode.toLowerCase();
-        return product.barcode?.toLowerCase() == normalized ||
-            product.sku.toLowerCase() == normalized ||
-            product.id.toLowerCase() == normalized;
-      });
-      if (exact.isNotEmpty) {
-        if (!mounted) return;
-        await _addProduct(exact.first);
-        if (!mounted) return;
-        setState(() {
-          _matches = cachedProducts;
-          _usingOfflineCatalog = true;
-          _searching = false;
-        });
-        _search.clear();
-        _searchFocus.requestFocus();
-        return;
-      }
       if (!mounted) return;
       setState(() {
-        _usingOfflineCatalog = cachedProducts.isNotEmpty;
-        _matches = cachedProducts;
-        _error = cachedProducts.isNotEmpty
-            ? 'No offline product matches barcode "$barcode".'
-            : 'No offline catalog is saved on this computer yet. Connect to the store once to load products for offline billing.';
+        _error = error.toString();
         _searching = false;
       });
     }
@@ -4594,13 +4640,23 @@ class _PosBillDialogState extends State<PosBillDialog> {
 
   Future<bool> _chooseProductRooms(PosProduct product, int required) async {
     if (!mounted) return false;
+    if (!kIsWeb && defaultTargetPlatform != TargetPlatform.windows) {
+      _roomPicks = [
+        ...?_roomPicks?.where((pick) => pick.productId != product.id),
+        RoomPick(productId: product.id, roomId: null, quantity: required),
+      ];
+      _roomSelectionNeedsRefresh = false;
+      return true;
+    }
     setState(() {
       _choosingRooms = true;
       _error = null;
     });
     try {
-      final snapshot = await RoomInventoryService(widget.api, _offlinePosStore)
-          .load(productIds: [product.id]);
+      final roomService = RoomInventoryService(widget.api, _offlinePosStore);
+      final snapshot =
+          await roomService.loadLocalIfAvailable(productIds: [product.id]) ??
+              await roomService.load(productIds: [product.id]);
       if (!mounted) return false;
       final assigned =
           snapshot.stocks[product.id]?.values.any((n) => n > 0) ?? false;
@@ -4718,38 +4774,6 @@ class _PosBillDialogState extends State<PosBillDialog> {
     _trimRoomPicks(line.product.id);
     line.dispose();
     _cartChanged(membership: true);
-  }
-
-  Widget _cartRoomLabel(_PosCartLine line) {
-    if (!_assignedRoomProducts.contains(line.product.id)) {
-      return BillingText(line.product.sku,
-          style: Theme.of(context).textTheme.bodySmall);
-    }
-    final picks = _roomPicks?.where((p) => p.productId == line.product.id) ??
-        const <RoomPick>[];
-    final label = picks
-        .map((p) =>
-            '${p.roomId == null ? 'Unassigned' : _roomLabels[p.roomId] ?? p.roomId}: ${p.quantity}')
-        .join(', ');
-    return TextButton.icon(
-      style: TextButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          alignment: Alignment.centerLeft),
-      onPressed: _saving || _choosingRooms
-          ? null
-          : () => unawaited(_additionQueue.run(() async {
-                final required = _cart
-                    .where((other) => other.product.id == line.product.id)
-                    .fold<int>(
-                        0,
-                        (sum, other) =>
-                            sum + (other.weightGrams ?? other.quantity));
-                await _chooseProductRooms(line.product, required);
-              })),
-      icon: const Icon(Icons.warehouse_outlined, size: 18),
-      label: BillingText(label.isEmpty ? 'Choose source room' : label,
-          maxLines: 2, overflow: TextOverflow.ellipsis),
-    );
   }
 
   bool _sameProduct(PosProduct first, PosProduct second) {
@@ -4937,36 +4961,45 @@ class _PosBillDialogState extends State<PosBillDialog> {
         await _payWithFonepay(discount, vatRate);
         return;
       }
-      final sale = _saveOnThisComputer
-          ? await _createLocalSale(discount: discount, vatRate: vatRate)
-          : await widget.api.createPosSale(
-              roomPicks: _roomPicks?.map((pick) => pick.toJson()).toList(),
-              idempotencyKey: _idempotencyKey,
-              items: _requestItems(),
+      final localFirst =
+          widget.allowOfflineSync && !_saveOnThisComputer && !payingFonepay;
+      final sale = localFirst
+          ? await _createLocalSale(
               discount: discount,
               vatRate: vatRate,
-              paymentMethod: _paymentMethod,
-              paidAmount: _paymentMethod == 'PENDING' ? enteredPaidNow : null,
-              paidNowMethod:
-                  _paymentMethod == 'PENDING' ? _paidNowMethod : null,
-              customerName: _customerName.text.trim().isEmpty
-                  ? null
-                  : _customerName.text.trim(),
-              customerPhone: _customerPhone.text.trim().isEmpty
-                  ? null
-                  : _customerPhone.text.trim(),
-              customerId: _selectedCustomer == null ||
-                      _selectedCustomer!.id.startsWith('local-customer-')
-                  ? null
-                  : _selectedCustomer!.id,
-              heldSaleId: widget.heldSale?.id,
-              expectedTotal: _total,
-              cataloguePriceChanges:
-                  _priceChanges.isEmpty ? null : _priceChanges,
-              unitPrices: {
-                for (final line in _cart) line.product.id: line.unitPrice
-              },
-            );
+              queueForSync: true,
+            )
+          : _saveOnThisComputer
+              ? await _createLocalSale(discount: discount, vatRate: vatRate)
+              : await widget.api.createPosSale(
+                  roomPicks: _roomPicks?.map((pick) => pick.toJson()).toList(),
+                  idempotencyKey: _idempotencyKey,
+                  items: _requestItems(),
+                  discount: discount,
+                  vatRate: vatRate,
+                  paymentMethod: _paymentMethod,
+                  paidAmount:
+                      _paymentMethod == 'PENDING' ? enteredPaidNow : null,
+                  paidNowMethod:
+                      _paymentMethod == 'PENDING' ? _paidNowMethod : null,
+                  customerName: _customerName.text.trim().isEmpty
+                      ? null
+                      : _customerName.text.trim(),
+                  customerPhone: _customerPhone.text.trim().isEmpty
+                      ? null
+                      : _customerPhone.text.trim(),
+                  customerId: _selectedCustomer == null ||
+                          _selectedCustomer!.id.startsWith('local-customer-')
+                      ? null
+                      : _selectedCustomer!.id,
+                  heldSaleId: widget.heldSale?.id,
+                  expectedTotal: _total,
+                  cataloguePriceChanges:
+                      _priceChanges.isEmpty ? null : _priceChanges,
+                  unitPrices: {
+                    for (final line in _cart) line.product.id: line.unitPrice
+                  },
+                );
       if (mounted) Navigator.pop(context, sale);
     } on ApiNetworkException {
       if (!mounted) return;
@@ -5125,10 +5158,9 @@ class _PosBillDialogState extends State<PosBillDialog> {
         insetPadding: const EdgeInsets.all(14),
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxWidth: isDesktop ? 1440 : 760,
-            maxHeight: isDesktop
-                ? MediaQuery.sizeOf(context).height * .90
-                : 820,
+            maxWidth: isDesktop ? MediaQuery.sizeOf(context).width * .92 : 760,
+            maxHeight:
+                isDesktop ? MediaQuery.sizeOf(context).height * .90 : 820,
           ),
           child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
         ),
@@ -5193,8 +5225,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
               children: [
                 BillingText('PRODUCTS',
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w800)),
+                        color: AppColors.primary, fontWeight: FontWeight.w800)),
                 const SizedBox(width: 8),
                 BillingText('${_matches.length} found',
                     style: Theme.of(context).textTheme.bodySmall),
@@ -5368,19 +5399,26 @@ class _PosBillDialogState extends State<PosBillDialog> {
 
   Widget _buildWindowsBillDetailsColumn() => Column(
         children: [
-          SizedBox(
-            height: 150,
+          Expanded(
+            flex: 5,
             child: AppSurface(
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
               child: Column(
                 children: [
                   Row(
                     children: [
-                      BillingText('BILL ITEMS',
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w800)),
-                      const SizedBox(width: 8),
+                      Expanded(
+                        child: BillingText(
+                          'Bill items',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              Theme.of(context).textTheme.titleSmall?.copyWith(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                        ),
+                      ),
                       ValueListenableBuilder<int>(
                         valueListenable: _cartTotals,
                         builder: (_, __, ___) => BillingText(
@@ -5388,8 +5426,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),
-                      const Spacer(),
-                      TextButton(
+                      BillingIconButton(
+                        tooltip: 'Clear all',
                         onPressed: _saving || _cart.isEmpty
                             ? null
                             : () {
@@ -5399,7 +5437,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                                 _cart.clear();
                                 _cartChanged(membership: true);
                               },
-                        child: const BillingText('Clear all'),
+                        icon: const Icon(Icons.delete_sweep_outlined),
                       ),
                     ],
                   ),
@@ -5407,7 +5445,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
                   Expanded(
                     child: Scrollbar(
                       child: _cart.isEmpty
-                          ? const Center(child: BillingText('No items added yet'))
+                          ? const Center(
+                              child: BillingText('No items added yet'))
                           : _buildCart(),
                     ),
                   ),
@@ -5419,188 +5458,174 @@ class _PosBillDialogState extends State<PosBillDialog> {
           AppSurface(
             padding: const EdgeInsets.all(14),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                DropdownButtonFormField<String>(
-                  isExpanded: true,
-                  initialValue: _paymentMethod,
-                  decoration: const BillingInputDecoration(
-                    labelText: 'Payment method',
-                    isDense: true,
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 'CASH', child: BillingText('Cash')),
-                    DropdownMenuItem(
-                        value: 'ESEWA', child: BillingText('eSewa / QR')),
-                    DropdownMenuItem(
-                        value: 'PENDING',
-                        child: BillingText('Pending balance')),
-                  ],
-                  onChanged: _saving
-                      ? null
-                      : (value) => setState(() {
-                            _paymentMethod = value ?? 'CASH';
-                            _error = null;
-                          }),
-                ),
-                if (widget.allowOfflineSync)
-                  Material(
-                      type: MaterialType.transparency,
-                      child: SwitchListTile.adaptive(
-                        contentPadding: EdgeInsets.zero,
-                        value: _saveOnThisComputer,
-                        title: const BillingText('Save on this computer only'),
-                        subtitle: const BillingText(
-                          'Bill, invoice and customer details stay in C:/Ramprasad store/bills/.',
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        isExpanded: true,
+                        initialValue: _paymentMethod,
+                        decoration: const BillingInputDecoration(
+                          labelText: 'Payment method',
+                          isDense: true,
                         ),
+                        items: const [
+                          DropdownMenuItem(
+                              value: 'CASH', child: BillingText('Cash')),
+                          DropdownMenuItem(
+                              value: 'ESEWA', child: BillingText('eSewa / QR')),
+                          DropdownMenuItem(
+                              value: 'PENDING',
+                              child: BillingText('Pending balance')),
+                        ],
                         onChanged: _saving
                             ? null
-                            : (value) =>
-                                setState(() => _saveOnThisComputer = value),
-                      )),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: AppSurface(
-              padding: const EdgeInsets.all(14),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: AppColors.navigationSelected,
-                        border: Border.all(color: AppColors.outline),
-                        borderRadius: BorderRadius.circular(AppRadii.input),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.tune_rounded,
-                              size: 17, color: AppColors.action),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: BillingText(
-                              'Discount & adjustments',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelLarge
-                                  ?.copyWith(color: AppColors.actionText),
-                            ),
-                          ),
-                        ],
+                            : (value) => setState(() {
+                                  _paymentMethod = value ?? 'CASH';
+                                  _error = null;
+                                }),
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(width: 6),
                     SegmentedButton<bool>(
                       segments: const [
-                        ButtonSegment(
-                            value: false, label: BillingText('Amount')),
-                        ButtonSegment(
-                            value: true, label: BillingText('Percentage')),
+                        ButtonSegment(value: false, label: BillingText('Rs')),
+                        ButtonSegment(value: true, label: BillingText('%')),
                       ],
                       selected: {_discountIsPercent},
                       onSelectionChanged: (value) => setState(() {
                         _discountIsPercent = value.first;
                       }),
                     ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _discount,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      onChanged: (_) => setState(() {}),
-                      decoration: BillingInputDecoration(
-                        labelText: _discountIsPercent
-                            ? 'Discount percentage (%)'
-                            : 'Discount amount',
-                        isDense: true,
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _discount,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        onChanged: (_) => setState(() {}),
+                        decoration: BillingInputDecoration(
+                          labelText: _discountIsPercent
+                              ? 'Discount percentage (%)'
+                              : 'Discount amount',
+                          isDense: true,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _vatRate,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      onChanged: (_) => setState(() {}),
-                      decoration: const BillingInputDecoration(
-                        labelText: 'VAT (%)',
-                        hintText: '0',
-                        isDense: true,
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: TextField(
+                        controller: _vatRate,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        onChanged: (_) => setState(() {}),
+                        decoration: const BillingInputDecoration(
+                          labelText: 'VAT (%)',
+                          hintText: '0',
+                          isDense: true,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 14),
-                    _billAmountRow('Subtotal', _subtotal),
-                    if (_discountAmount > 0) ...[
-                      const SizedBox(height: 8),
-                      _billAmountRow(
-                        'Discount',
-                        -_discountAmount,
-                      ),
-                    ],
-                    if ((double.tryParse(_vatRate.text.trim()) ?? 0) > 0) ...[
-                      const SizedBox(height: 8),
-                      _billAmountRow(
-                        'VAT (${(double.tryParse(_vatRate.text.trim()) ?? 0).toStringAsFixed(2)}%)',
-                        _vatAmount,
-                      ),
-                    ],
-                    Divider(color: AppColors.outline),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: BillingText(
-                            'TOTAL',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                        ),
-                        BillingText(
-                          _money(_total),
-                          style:
-                              Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    color: AppColors.successText,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: _saving ? null : _hold,
-                          icon: const Icon(Icons.pause_circle_outline),
-                          label: const BillingText('Hold'),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: _saving ? null : _completeSale,
-                            icon: _saving
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.save_outlined),
-                            label: BillingText(
-                                ['FONEPAY', 'ESEWA'].contains(_paymentMethod)
-                                    ? 'Pay'
-                                    : _saveOnThisComputer
-                                        ? 'Save local bill (F8)'
-                                        : 'Create bill (F8)'),
-                          ),
-                        ),
-                      ],
                     ),
                   ],
                 ),
-              ),
+                if (widget.allowOfflineSync)
+                  SizedBox(
+                    height: 34,
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 34,
+                          child: Checkbox(
+                            value: _saveOnThisComputer,
+                            visualDensity: VisualDensity.compact,
+                            onChanged: _saving
+                                ? null
+                                : (value) => setState(
+                                    () => _saveOnThisComputer = value ?? false),
+                          ),
+                        ),
+                        const Expanded(
+                          child: BillingText('Save on this computer only'),
+                        ),
+                        const Tooltip(
+                          message:
+                              'Bills and customer details stay in C:/Ramprasad store/bills/.',
+                          child: Icon(Icons.info_outline, size: 16),
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 4),
+                _billAmountRow('Subtotal', _subtotal),
+                if (_discountAmount > 0) ...[
+                  const SizedBox(height: 8),
+                  _billAmountRow(
+                    'Discount',
+                    -_discountAmount,
+                  ),
+                ],
+                if ((double.tryParse(_vatRate.text.trim()) ?? 0) > 0) ...[
+                  const SizedBox(height: 8),
+                  _billAmountRow(
+                    'VAT (${(double.tryParse(_vatRate.text.trim()) ?? 0).toStringAsFixed(2)}%)',
+                    _vatAmount,
+                  ),
+                ],
+                Divider(color: AppColors.outline),
+                Row(
+                  children: [
+                    Expanded(
+                      child: BillingText(
+                        'TOTAL',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    BillingText(
+                      _money(_total),
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            color: AppColors.successText,
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _saving ? null : _hold,
+                      icon: const Icon(Icons.pause_circle_outline),
+                      label: const BillingText('Hold'),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _saving ? null : _completeSale,
+                        icon: _saving
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.save_outlined),
+                        label: BillingText(
+                            ['FONEPAY', 'ESEWA'].contains(_paymentMethod)
+                                ? 'Pay'
+                                : _saveOnThisComputer
+                                    ? 'Save local bill (F8)'
+                                    : 'Create bill (F8)'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
@@ -5678,6 +5703,18 @@ class _PosBillDialogState extends State<PosBillDialog> {
                     color: Colors.white,
                   ),
             ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: .14),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const BillingText(
+                'Retail sale',
+                style: TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ),
             const Spacer(),
             BillingText(
               'Bill number: assigned on save',
@@ -5685,6 +5722,48 @@ class _PosBillDialogState extends State<PosBillDialog> {
                     color: Colors.white,
                   ),
             ),
+            if (widget.localSync != null) ...[
+              const SizedBox(width: 8),
+              ListenableBuilder(
+                listenable: widget.localSync!,
+                builder: (context, _) {
+                  final sync = widget.localSync!;
+                  final label = sync.online == false
+                      ? 'Offline'
+                      : sync.running
+                          ? 'Syncing'
+                          : 'Synced';
+                  final color = sync.online == false
+                      ? Colors.amber.shade200
+                      : Colors.greenAccent.shade100;
+                  return Tooltip(
+                    message: sync.error ??
+                        (sync.pending > 0
+                            ? '${sync.pending} bill(s) waiting to sync'
+                            : 'Billing data $label'),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          sync.online == false
+                              ? Icons.cloud_off_outlined
+                              : sync.running
+                                  ? Icons.sync_rounded
+                                  : Icons.cloud_done_outlined,
+                          size: 15,
+                          color: color,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '$label${sync.pending > 0 ? ' ${sync.pending}' : ''}',
+                          style: TextStyle(color: color, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ],
             BillingIconButton(
               tooltip: 'Close',
               onPressed: _saving ? null : () => Navigator.pop(context),
@@ -5788,7 +5867,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
       padding: EdgeInsets.zero,
       itemCount: _matches.length > 60 ? 60 : _matches.length,
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 170,
+        maxCrossAxisExtent: 180,
         mainAxisExtent: 170,
         crossAxisSpacing: 8,
         mainAxisSpacing: 8,
@@ -5802,7 +5881,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
               ? null
               : () => _addProduct(product),
           child: Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
               border: Border.all(color: AppColors.outline, width: .5),
               borderRadius: BorderRadius.circular(8),
@@ -5811,40 +5890,56 @@ class _PosBillDialogState extends State<PosBillDialog> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 SizedBox(
-                  height: 56,
+                  height: 64,
                   child: ProductThumbnail(
                     imageUrl: product.imageUrl ?? '',
-                    size: 56,
+                    size: 64,
                     width: double.infinity,
-                    height: 56,
+                    height: 64,
                     backgroundColor: AppColors.thumbnailGreen,
                     borderRadius: BorderRadius.circular(6),
                   ),
                 ),
-                const SizedBox(height: 4),
-                BillingText(
-                  product.name,
-                  textAlign: TextAlign.left,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        height: 1.1,
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
                 const SizedBox(height: 2),
-                BillingText(
+                SizedBox(
+                  height: 26,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      product.name,
+                      textAlign: TextAlign.left,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            fontSize: 13,
+                            height: 1.1,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
                   _money(product.price),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 1),
+                Text(
+                  StockSummary.availableLabel(product),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        fontSize: 11,
+                      ),
+                ),
                 const Spacer(),
                 SizedBox(
-                  height: 30,
+                  height: 26,
                   child: FilledButton(
                     onPressed: _saving || product.available <= 0
                         ? null
@@ -5855,7 +5950,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                    child: const BillingText('Add'),
+                    child: const Text('Add', style: TextStyle(fontSize: 12)),
                   ),
                 ),
               ],
@@ -6032,6 +6127,10 @@ class _PosBillDialogState extends State<PosBillDialog> {
                             BillingIconButton(
                               tooltip: 'Decrease quantity',
                               visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints.tightFor(
+                                  width: 30, height: 30),
+                              iconSize: 16,
                               onPressed: _saving
                                   ? null
                                   : () {
@@ -6046,7 +6145,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                               icon: const Icon(Icons.remove_circle_outline),
                             ),
                             SizedBox(
-                              width: 76,
+                              width: compact ? 48 : 76,
                               child: BillingTextFormField(
                                 key: ObjectKey(line),
                                 controller: line.quantityController,
@@ -6101,6 +6200,10 @@ class _PosBillDialogState extends State<PosBillDialog> {
                             BillingIconButton(
                               tooltip: 'Increase quantity',
                               visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints.tightFor(
+                                  width: 30, height: 30),
+                              iconSize: 16,
                               onPressed: _saving
                                   ? null
                                   : () {
@@ -6120,6 +6223,11 @@ class _PosBillDialogState extends State<PosBillDialog> {
                       if (widget.allowPriceEditing)
                         BillingIconButton(
                             tooltip: 'Edit unit price / line total',
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                                width: 30, height: 30),
+                            iconSize: 16,
                             onPressed: _saving ? null : () => _editPrice(line),
                             icon: const Icon(Icons.edit_outlined)),
                       Flexible(
@@ -6129,6 +6237,11 @@ class _PosBillDialogState extends State<PosBillDialog> {
                       )),
                       BillingIconButton(
                         tooltip: 'Remove item',
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                            width: 30, height: 30),
+                        iconSize: 16,
                         onPressed: _saving
                             ? null
                             : () {
@@ -6140,32 +6253,42 @@ class _PosBillDialogState extends State<PosBillDialog> {
                   );
 
                   if (compact) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: ProductThumbnail(
-                              imageUrl: line.product.imageUrl ?? '', size: 56),
-                          title: BillingText(
-                            line.product.name,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleSmall
-                                ?.copyWith(fontWeight: FontWeight.w700),
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: Row(
+                              children: [
+                                ProductThumbnail(
+                                    imageUrl: line.product.imageUrl ?? '',
+                                    size: 40),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: BillingText(
+                                    line.product.name,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                          subtitle: _cartRoomLabel(line),
-                          trailing: amountAndRemove,
-                        ),
-                        Row(
-                          children: [
-                            const BillingText('Quantity'),
-                            const Spacer(),
-                            quantityControls,
-                          ],
-                        ),
-                        const Divider(height: 1),
-                      ],
+                          Expanded(flex: 5, child: quantityControls),
+                          Expanded(
+                            flex: 4,
+                            child: Align(
+                              alignment: Alignment.centerRight,
+                              child: amountAndRemove,
+                            ),
+                          ),
+                        ],
+                      ),
                     );
                   }
                   return Row(
@@ -6173,7 +6296,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                       Expanded(
                         flex: 5,
                         child: Row(children: [
-                              ProductThumbnail(
+                          ProductThumbnail(
                               imageUrl: line.product.imageUrl ?? '', size: 56),
                           const SizedBox(width: 10),
                           Expanded(
@@ -6189,7 +6312,6 @@ class _PosBillDialogState extends State<PosBillDialog> {
                                     .titleSmall
                                     ?.copyWith(fontWeight: FontWeight.w700),
                               ),
-                              _cartRoomLabel(line),
                             ],
                           )),
                         ]),
@@ -6373,9 +6495,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.check_circle_outline),
-                label: BillingText(_paymentMethod == 'ESEWA'
-                    ? 'Pay'
-                    : 'Create bill'),
+                label: BillingText(
+                    _paymentMethod == 'ESEWA' ? 'Pay' : 'Create bill'),
               ),
             ],
           ),

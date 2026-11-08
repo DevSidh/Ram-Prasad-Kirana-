@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'core/theme.dart';
 import 'core/constants.dart';
 import 'services/api_service.dart';
+import 'services/local_pos_database.dart';
 import 'services/product_share_link.dart';
 import 'services/store_audio_service.dart';
 import 'providers/auth_provider.dart';
@@ -81,6 +82,16 @@ void main() {
       child: const RamPrasadGeneralStoreApp(),
     ),
   );
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+    unawaited(() async {
+      try {
+        final database = await LocalPosDatabase.defaultInstance();
+        await database.initialize();
+      } catch (error) {
+        debugPrint('Unable to warm the local POS database: $error');
+      }
+    }());
+  }
   WidgetsBinding.instance.addPostFrameCallback((_) {
     unawaited(StoreAudioService.playStartup());
   });

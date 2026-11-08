@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import '../models/pos_models.dart';
 
 import 'admin_api_service.dart';
 import 'api_service.dart';
 import 'local_billing_store.dart';
+import 'local_pos_database.dart';
 import 'offline_pos_store.dart';
 import 'room_inventory_service.dart';
 
@@ -35,11 +37,21 @@ class LocalBillingSync extends ChangeNotifier {
   String? backupError;
   List<Map<String, dynamic>> conflicts = const [];
   Timer? _timer;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  bool _deltaSyncUnsupported = false;
   bool _disposed = false;
 
   void start() {
     if (!Platform.isWindows) return;
     unawaited(synchronize());
+    _connectivitySubscription ??=
+        Connectivity().onConnectivityChanged.listen((results) {
+      if (_disposed ||
+          !results.any((result) => result != ConnectivityResult.none)) {
+        return;
+      }
+      unawaited(synchronize());
+    });
     _timer ??= Timer.periodic(const Duration(seconds: 45), (_) {
       unawaited(synchronize());
     });
@@ -53,6 +65,7 @@ class LocalBillingSync extends ChangeNotifier {
     if (running || _disposed || ownerId.isEmpty) return;
     running = true;
     var acknowledged = 0;
+    var referenceDataChanged = false;
     error = null;
     _changed();
     try {
@@ -218,6 +231,44 @@ class LocalBillingSync extends ChangeNotifier {
           }
         }
       }
+      if (Platform.isWindows &&
+          !_deltaSyncUnsupported &&
+          store.rootPath.replaceAll('\\', '/').toLowerCase() ==
+              'c:/ramprasad store/bills') {
+        final localDatabase = await LocalPosDatabase.defaultInstance();
+        const tables = [
+          'products',
+          'wholesale_products',
+          'drinks_menu',
+          'customers',
+          'bills',
+          'refunds',
+          'pending_cash',
+        ];
+        final cursors = <String, DateTime?>{};
+        for (final table in tables) {
+          cursors[table] = await localDatabase.lastSyncedAt(table);
+        }
+        try {
+          final batch = await adminApi.getOfflinePosSync(cursors);
+          referenceDataChanged = const [
+            'products',
+            'wholesaleProducts',
+            'drinks',
+            'customers',
+            'bills',
+            'refunds',
+            'pendingCash',
+          ].any((key) => (batch[key] as List?)?.isNotEmpty == true);
+          await localDatabase.applySyncBatch(batch);
+        } on ApiResponseException catch (failure) {
+          if (failure.statusCode != 404) rethrow;
+          await localDatabase.clearSyncMetadata(tables);
+          OfflinePosStore.invalidateFullRefresh();
+          _deltaSyncUnsupported = true;
+          error = null;
+        }
+      }
       online = true;
       lastSync = DateTime.now();
       await store.writeJson(File('${store.rootPath}/.meta/sync.json'), {
@@ -271,7 +322,11 @@ class LocalBillingSync extends ChangeNotifier {
       running = false;
       _changed();
     }
-    if (acknowledged > 0 && !_disposed && onSynced != null) await onSynced!();
+    if ((acknowledged > 0 || referenceDataChanged) &&
+        !_disposed &&
+        onSynced != null) {
+      await onSynced!();
+    }
     if (!_disposed) await _dailyBackup();
   }
 
@@ -312,6 +367,7 @@ class LocalBillingSync extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _timer?.cancel();
+    unawaited(_connectivitySubscription?.cancel() ?? Future<void>.value());
     super.dispose();
   }
 }
