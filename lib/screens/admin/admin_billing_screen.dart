@@ -5775,24 +5775,32 @@ class _PosBillDialogState extends State<PosBillDialog> {
       itemBuilder: (context, index) {
         final product = _matches[index];
         return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.only(bottom: 12),
           child: AppRowCard(
             key: ValueKey(product.id),
             title: product.name,
+            titleStyle: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 18,
+                ),
+            subtitleStyle: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+            leadingSize: 76,
             subtitle:
                 '${_money(product.price)}\nAvailable: ${StockSummary.availableLabel(product)}',
             leading: product.imageUrl?.isNotEmpty == true
                 ? ProductThumbnail(
                     imageUrl: product.imageUrl!,
-                    size: 54,
-                    width: 54,
-                    height: 54,
+                    size: 76,
+                    width: 76,
+                    height: 76,
                     backgroundColor: AppColors.thumbnailGreen,
                     borderRadius: BorderRadius.circular(AppRadii.thumbnail),
                   )
                 : BillingText(
                     product.name.isEmpty ? '?' : product.name.substring(0, 1),
-                    style: Theme.of(context).textTheme.titleMedium,
+                    style: Theme.of(context).textTheme.titleLarge,
                   ),
             tint: AppColors.thumbnailGreen,
             trailing: FilledButton.icon(
@@ -5800,7 +5808,12 @@ class _PosBillDialogState extends State<PosBillDialog> {
                   ? null
                   : () => _addProduct(product),
               icon: const Icon(Icons.add_circle_outline),
-              label: const BillingText('Add'),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(92, 48),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+              ),
+              label: const BillingText('Add',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
             ),
           ),
         );

@@ -226,6 +226,9 @@ class AppRowCard extends StatelessWidget {
     this.trailing,
     this.onTap,
     this.padding = const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+    this.titleStyle,
+    this.subtitleStyle,
+    this.leadingSize = 42,
   });
 
   final String title;
@@ -235,6 +238,9 @@ class AppRowCard extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
   final EdgeInsetsGeometry padding;
+  final TextStyle? titleStyle;
+  final TextStyle? subtitleStyle;
+  final double leadingSize;
 
   @override
   Widget build(BuildContext context) {
@@ -246,8 +252,8 @@ class AppRowCard extends StatelessWidget {
           children: [
             if (leading != null) ...[
               Container(
-                width: 42,
-                height: 42,
+              width: leadingSize,
+              height: leadingSize,
                 decoration: BoxDecoration(
                   color: tint ?? AppColors.thumbnailGreen,
                   borderRadius: BorderRadius.circular(AppRadii.thumbnail),
@@ -265,7 +271,7 @@ class AppRowCard extends StatelessWidget {
                     title,
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium,
+                    style: titleStyle ?? Theme.of(context).textTheme.titleMedium,
                   ),
                   if (subtitle != null) ...[
                     const SizedBox(height: 2),
@@ -273,7 +279,7 @@ class AppRowCard extends StatelessWidget {
                       subtitle!,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
+                      style: subtitleStyle ?? Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
                 ],
