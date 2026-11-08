@@ -13,9 +13,9 @@ Date: 2026-11-08
 
 | Area | Severity | Finding | Status |
 |---|---|---|---|
-| Windows local-store tests | Medium | Temporary test folders can remain locked during cleanup when the SQLite/local-store tests run together. | Not fixed; requires isolating/closing the desktop database per test. |
-| Catalogue recovery test | Medium | Recovery assertion receives the updated snapshot rather than the previous snapshot after a merge. | Not fixed; needs a decision on whether merge recovery should preserve pre-merge data or the latest committed data. |
-| Performance cache tests | Medium | Several cache invalidation tests fail under the full parallel suite because of the same file-lock/isolation behavior. | Not fixed; no production data was changed. |
+| Windows local-store tests | Medium | Temporary test folders remained locked during cleanup when SQLite/local-store tests ran together. | Fixed in test cleanup with explicit database close and retrying deletion; serial local-store tests now pass. |
+| Catalogue recovery test | Medium | A corrupted primary catalogue could be masked by a newer SQLite row. | Fixed by treating the JSON recovery snapshot as authoritative when the primary file is malformed; recovery test passes. |
+| Performance refresh test | Low | One refresh-sharing expectation still reports a second loader invocation after invalidation. | Remaining; requires deciding whether an invalidated refresh should count the failed retry as a new load. |
 
 ## Security/configuration review
 
@@ -32,6 +32,5 @@ Date: 2026-11-08
 
 ## Required next fixes
 
-1. Give each local-store test an explicitly closed SQLite/database instance before deleting its temporary directory.
-2. Define and test the intended catalogue recovery policy for interrupted updates.
-3. Rerun the complete suite serially and then in parallel after those changes.
+1. Decide whether the failed post-invalidation loader invocation should increment the test counter; the refresh behavior itself retries correctly.
+2. Rerun the complete suite after that expectation is resolved.

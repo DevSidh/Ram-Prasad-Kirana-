@@ -6,6 +6,7 @@ import 'package:freshharvest_grocery/services/admin_api_service.dart';
 import 'package:freshharvest_grocery/services/api_service.dart';
 import 'package:freshharvest_grocery/services/local_billing_store.dart';
 import 'package:freshharvest_grocery/services/offline_pos_store.dart';
+import 'package:freshharvest_grocery/services/local_pos_database.dart';
 
 class _SearchApi extends ApiService {
   int calls = 0;
@@ -20,6 +21,16 @@ class _SearchApi extends ApiService {
 }
 
 void main() {
+  Future<void> removeRoot(Directory directory) async {
+    for (var attempt = 0; attempt < 8; attempt++) {
+      try {
+        await directory.delete(recursive: true);
+        return;
+      } on FileSystemException {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+    }
+  }
   late Directory root;
   late LocalBillingStore bills;
   late OfflinePosStore store;
@@ -38,7 +49,12 @@ void main() {
         storageDirectory: root, billingStore: bills, useLocalStock: true);
     await store.saveCatalog([product]);
   });
-  tearDown(() async => root.delete(recursive: true));
+  tearDown(() async {
+    await LocalPosDatabase.atPath(
+            '${root.path}/offline_pos/faststore_pos.sqlite')
+        .close();
+    await removeRoot(root);
+  });
 
   test('unchanged merges do not rewrite the catalogue or recovery copy',
       () async {

@@ -4,9 +4,20 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:freshharvest_grocery/services/local_billing_store.dart';
 import 'package:freshharvest_grocery/services/offline_pos_store.dart';
+import 'package:freshharvest_grocery/services/local_pos_database.dart';
 import 'package:freshharvest_grocery/models/pos_models.dart';
 
 void main() {
+  Future<void> removeSandbox(Directory directory) async {
+    for (var attempt = 0; attempt < 8; attempt++) {
+      try {
+        await directory.delete(recursive: true);
+        return;
+      } on FileSystemException {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+    }
+  }
   late Directory sandbox;
   late LocalBillingStore store;
   const key = '550e8400-e29b-41d4-a716-446655440000';
@@ -46,9 +57,12 @@ void main() {
     store = LocalBillingStore(rootPath: '${sandbox.path}/bills');
   });
   tearDown(() async {
+    await LocalPosDatabase.atPath(
+            '${sandbox.path}/offline_pos/faststore_pos.sqlite')
+        .close();
     expect(
         sandbox.absolute.path, startsWith(Directory.systemTemp.absolute.path));
-    await sandbox.delete(recursive: true);
+    await removeSandbox(sandbox);
   });
 
   test(

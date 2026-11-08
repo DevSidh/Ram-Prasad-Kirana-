@@ -35,10 +35,6 @@ class OfflinePosStore {
     final inFlight = _refreshes[key];
     if (inFlight != null) return inFlight;
     final localDatabase = Platform.isWindows ? await _localDatabase() : null;
-    if (localDatabase != null) {
-      final persistedCursor = await localDatabase.lastSyncedAt('products');
-      if (!force && persistedCursor != null) return false;
-    }
     final last = _refreshedAt[key];
     if (!force &&
         last != null &&
@@ -327,15 +323,28 @@ class OfflinePosStore {
   Future<List<PosProduct>> _readRawCatalog({bool fresh = false}) async {
     if (kIsWeb) return const [];
     try {
+      // The JSON snapshot is the recovery authority. If its primary file is
+      // interrupted/corrupt, do not let a newer SQLite cache mask the backup
+      // that contains the last complete catalogue.
+      final file = await _catalogFile();
+      var primaryHealthy = true;
+      if (await file.exists()) {
+        try {
+          final raw = await file.readAsString();
+          final decoded = jsonDecode(raw);
+          primaryHealthy = decoded is Map && decoded['products'] is List;
+        } catch (_) {
+          primaryHealthy = false;
+        }
+      }
       final localDatabase = Platform.isWindows ? await _localDatabase() : null;
-      if (localDatabase != null) {
+      if (localDatabase != null && primaryHealthy) {
         final localProducts = await localDatabase.readCatalog();
         if (localProducts.isNotEmpty ||
             await localDatabase.lastSyncedAt('products') != null) {
           return localProducts;
         }
       }
-      final file = await _catalogFile();
       final stat = await file.stat();
       if (stat.type != FileSystemEntityType.file) return const [];
       final cached = _catalogs[file.absolute.path];

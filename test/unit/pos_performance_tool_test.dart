@@ -4,10 +4,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:freshharvest_grocery/models/pos_models.dart';
 import 'package:freshharvest_grocery/services/local_billing_store.dart';
 import 'package:freshharvest_grocery/services/offline_pos_store.dart';
+import 'package:freshharvest_grocery/services/local_pos_database.dart';
 
 import '../../tool/pos_performance_support.dart';
 
 void main() {
+  Future<void> removeRoot(Directory directory) async {
+    for (var attempt = 0; attempt < 8; attempt++) {
+      try {
+        await directory.delete(recursive: true);
+        return;
+      } on FileSystemException {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+    }
+  }
   test('stock expectations match fixtures for empty, small and large workloads',
       () {
     for (final count in [0, 1, 29, 2000, 3000, 100000]) {
@@ -45,7 +56,12 @@ void main() {
   test('fixture sale rejects missing products without committing a bill',
       () async {
     final root = await Directory.systemTemp.createTemp('faststore-tool-test-');
-    addTearDown(() => root.delete(recursive: true));
+    addTearDown(() async {
+      await LocalPosDatabase.atPath(
+              '${root.path}/offline_pos/faststore_pos.sqlite')
+          .close();
+      await removeRoot(root);
+    });
     final billing = LocalBillingStore(rootPath: '${root.path}/bills');
     final store = OfflinePosStore(
         storageDirectory: root, billingStore: billing, useLocalStock: true);
@@ -63,7 +79,12 @@ void main() {
   test('concurrent fixture sales validate fresh stock and cannot oversell',
       () async {
     final root = await Directory.systemTemp.createTemp('faststore-tool-test-');
-    addTearDown(() => root.delete(recursive: true));
+    addTearDown(() async {
+      await LocalPosDatabase.atPath(
+              '${root.path}/offline_pos/faststore_pos.sqlite')
+          .close();
+      await removeRoot(root);
+    });
     final billing = LocalBillingStore(rootPath: '${root.path}/bills');
     final store = OfflinePosStore(
         storageDirectory: root, billingStore: billing, useLocalStock: true);
