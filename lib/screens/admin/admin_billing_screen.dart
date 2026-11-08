@@ -325,8 +325,11 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
       _sessionExpired = false;
     });
     try {
-      final overview = await _adminApi.getPosOverview();
+      // Start all independent dashboard requests together. Previously the
+      // overview request completed before the remaining requests even began,
+      // adding a full network round trip to every refresh.
       final results = await Future.wait([
+        _adminApi.getPosOverview(),
         if (_reportDayKey != null) _adminApi.getPosOverview(day: _reportDayKey),
         _adminApi.getPosSales(
           page: requestedSalesPage,
@@ -355,9 +358,10 @@ class AdminBillingScreenState extends State<AdminBillingScreen> {
         exchangeError = error.toString().replaceFirst('Exception: ', '');
       }
       if (!mounted || requestId != _loadRequestId) return;
+      final overview = results[0] as PosOverview;
       final reportOverview =
-          _reportDayKey == null ? overview : results[0] as PosOverview;
-      final salesIndex = _reportDayKey == null ? 0 : 1;
+          _reportDayKey == null ? overview : results[1] as PosOverview;
+      final salesIndex = _reportDayKey == null ? 1 : 2;
       final loadedSalesPage = results[salesIndex] as PosSalesPage;
       final localSales = _isWindowsOperatorMode
           ? await widget.offlineStore.readOfflineSales()
@@ -5173,7 +5177,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
       );
 
   Widget _buildWindowsCustomerCard() => AppSurface(
-        padding: const EdgeInsets.fromLTRB(14, 11, 14, 14),
+        padding: const EdgeInsets.fromLTRB(10, 7, 10, 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -5191,7 +5195,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 5),
             Row(
               children: [
                 Expanded(
@@ -5211,7 +5215,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 5),
             Row(
               children: [
                 Expanded(
@@ -5289,7 +5293,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                 ),
               ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             Expanded(
               flex: 3,
               child: Scrollbar(
