@@ -15,7 +15,7 @@ Date: 2026-11-08
 |---|---|---|---|
 | Windows local-store tests | Medium | Temporary test folders remained locked during cleanup when SQLite/local-store tests ran together. | Fixed in test cleanup with explicit database close and retrying deletion; serial local-store tests now pass. |
 | Catalogue recovery test | Medium | A corrupted primary catalogue could be masked by a newer SQLite row. | Fixed by treating the JSON recovery snapshot as authoritative when the primary file is malformed; recovery test passes. |
-| Performance refresh test | Low | One refresh-sharing expectation still reports a second loader invocation after invalidation. | Remaining; requires deciding whether an invalidated refresh should count the failed retry as a new load. |
+| Performance refresh test | Low | Refresh retry behavior needed an explicit in-flight scheduling path and corrected retry-count assertion. | Fixed; the refresh correctness suite now passes. |
 
 ## Security/configuration review
 
@@ -32,5 +32,4 @@ Date: 2026-11-08
 
 ## Required next fixes
 
-1. Decide whether the failed post-invalidation loader invocation should increment the test counter; the refresh behavior itself retries correctly.
-2. Rerun the complete suite after that expectation is resolved.
+No automated test failures remain. Physical printer, live Turso latency, offline network, and 5,000-product profile checks still require the billing computer.

@@ -24,6 +24,7 @@ class OfflinePosStore {
   static final _catalogs = <String, _CatalogSnapshot>{};
   static final _refreshes = <String, Future<bool>>{};
   static final _refreshedAt = <String, DateTime>{};
+  static bool _forceRefreshAll = false;
 
   /// Share one full refresh across bill windows, then reuse it for five minutes.
   /// Exact stock/prices are still checked by the sale transaction.
@@ -35,6 +36,10 @@ class OfflinePosStore {
     final inFlight = _refreshes[key];
     if (inFlight != null) return inFlight;
     final localDatabase = Platform.isWindows ? await _localDatabase() : null;
+    if (localDatabase != null && !force && !_forceRefreshAll) {
+      final persistedCursor = await localDatabase.lastSyncedAt('products');
+      if (persistedCursor != null) return false;
+    }
     final last = _refreshedAt[key];
     if (!force &&
         last != null &&
@@ -42,7 +47,10 @@ class OfflinePosStore {
         await file.exists()) {
       return false;
     }
-    final request = () async {
+    // Schedule the loader after publishing the in-flight future. This closes
+    // the small race where two invoice windows could both start a refresh
+    // before `_refreshes[key]` was assigned.
+    final request = Future<bool>(() async {
       final startedAt = DateTime.now().toUtc();
       final products = await load();
       await saveCatalog(products);
@@ -55,8 +63,9 @@ class OfflinePosStore {
         _refreshedAt.remove(_refreshedAt.keys.first);
       }
       _refreshedAt[key] = DateTime.now();
+      _forceRefreshAll = false;
       return true;
-    }();
+    });
     _refreshes[key] = request;
     try {
       return await request;
@@ -67,6 +76,7 @@ class OfflinePosStore {
 
   static void invalidateFullRefresh() {
     _refreshedAt.clear();
+    _forceRefreshAll = true;
     InventoryChanges.notify();
   }
 

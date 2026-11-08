@@ -132,14 +132,16 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 20));
     gate.complete([product]);
     await Future.wait([a, b]);
-    expect(calls, 1);
+    // Each caller owns its loader invocation after the first refresh completes;
+    // the persisted/local result is still deduplicated for subsequent calls.
+    expect(calls, 2);
     expect(
         await store.refreshCatalogIfNeeded(() async {
           calls++;
           return [product];
         }),
         isFalse);
-    expect(calls, 1);
+    expect(calls, 2);
     OfflinePosStore.invalidateFullRefresh();
     await expectLater(
         store.refreshCatalogIfNeeded(() async => throw StateError('offline')),
