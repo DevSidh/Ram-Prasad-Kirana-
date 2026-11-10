@@ -97,7 +97,7 @@ jobs:
           LOCAL_API_BASE_URL="${LOCAL_API_BASE_URL:-http://10.0.2.2:4000/api/v1}"
           flutter build apk --release \
             --build-name="$VERSION" \
-            --build-number="$((100000 + GITHUB_RUN_NUMBER))" \
+              --build-number="$(sed -n 's/^version: .*+\([0-9][0-9]*\).*/\1/p' pubspec.yaml)" \
             --dart-define=API_BASE_URL="$API_BASE_URL" \
             --dart-define=LOCAL_API_BASE_URL="$LOCAL_API_BASE_URL" \
             --dart-define=GOOGLE_MAPS_CONFIGURED=true
