@@ -21,16 +21,28 @@ async function main(){
     return response.status===204?null:response.json();
   };
   const [command,tag,file]=process.argv.slice(2);
+  const matchesRelease = r => r.tag_name===tag || (r.draft && r.name===`FastStore ${tag} — Android and Windows`);
+  if(command==='list'){
+    const releases=await api(`/repos/${repo}/releases?per_page=30`);
+    console.log(JSON.stringify(releases.map(r=>({id:r.id,tag:r.tag_name,name:r.name,draft:r.draft,assets:r.assets.map(a=>a.name)}))));return;
+  }
+  if(command==='notes'){
+    const releases=await api(`/repos/${repo}/releases?per_page=100`);
+    const release=releases.find(matchesRelease);
+    if(!release || !file)throw Error('Provide an existing release tag and notes file.');
+    await api(`/repos/${repo}/releases/${release.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:fs.readFileSync(file,'utf8')})});
+    console.log(JSON.stringify({tag,notesUpdated:true}));return;
+  }
   if(command==='repos'){
     const repositories=await api('/user/repos?per_page=100&sort=updated');
     console.log(JSON.stringify(repositories.map(r=>({name:r.full_name,branch:r.default_branch,homepage:r.homepage})),null,2));return;
   }
   if(command==='publish'){
     const releases=await api(`/repos/${repo}/releases?per_page=100`);
-    const release=releases.find(r=>r.tag_name===tag);
+    const release=releases.find(matchesRelease);
     if(!release)throw Error('Release not found.');
     if(!release.assets.some(a=>a.name.endsWith('.apk')) || !release.assets.some(a=>a.name.endsWith('.zip')))throw Error('Upload both APK and Windows ZIP before publishing.');
-    const published=await api(`/repos/${repo}/releases/${release.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({draft:false,make_latest:'true'})});
+    const published=await api(`/repos/${repo}/releases/${release.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({tag_name:tag,draft:false,make_latest:'true'})});
     console.log(JSON.stringify({tag:published.tag_name,url:published.html_url,draft:published.draft}));return;
   }
   if(command==='account'){
@@ -66,7 +78,7 @@ async function main(){
   }
   if(command==='release'){
     const releases=await api(`/repos/${repo}/releases?per_page=30`);
-    const release=releases.find(value=>value.tag_name===tag);
+    const release=releases.find(matchesRelease);
     if(!release)throw Error('Release not found.');
     console.log(JSON.stringify({tag:release.tag_name,draft:release.draft,url:release.html_url,
       assets:release.assets.map(a=>({name:a.name,size:a.size,url:a.browser_download_url,digest:a.digest}))},null,2));return;
@@ -80,7 +92,7 @@ async function main(){
   if(command==='upload'){
     // GitHub's tag lookup can omit drafts even with authenticated access.
     const releases=await api(`/repos/${repo}/releases?per_page=100`);
-    const release=releases.find(value=>value.tag_name===tag);
+    const release=releases.find(matchesRelease);
     if(!release)throw Error('No release with this tag exists, including drafts.');
     const name=path.basename(file);
     if(release.assets.some(a=>a.name===name))throw Error('An asset with this name already exists; inspect before replacement.');

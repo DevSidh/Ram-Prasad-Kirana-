@@ -18,3 +18,5 @@ Android: install the APK over the existing app. Do not uninstall or clear app da
 Flutter analysis, backend TypeScript build, Windows release build and Android release build completed. Physical printing, live Excel-to-database edits and five-second startup on the billing computer/phone have not been measured in this release.
 
 The backend must run the matching source changes for combined dashboard counts and online manual-item billing. Shared carton/packet stock is not included: its schema approval and remaining product clarifications are still pending. A visible cached screen does not guarantee fresh server data within five seconds.
+
+GitHub CI run 42780010437 reported 465 passing tests and 3 failures: damaged-record dashboard messaging, offline checkout persistence timing, and catalogue refresh invocation expectations. CI did not produce an APK; the attached APK and Windows ZIP were built locally. These failures remain unresolved, and this release is not a fully verified production sign-off.
