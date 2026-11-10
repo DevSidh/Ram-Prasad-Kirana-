@@ -136,7 +136,7 @@ class _AdminShellState extends State<AdminShell> {
     'Delivery',
     'Customers',
     'Announcements',
-    'Products',
+    'Retails',
     'Drinks',
     'Wholesale',
     'Restock',
@@ -646,7 +646,7 @@ class _AdminShellState extends State<AdminShell> {
           'Review customer balances and record partial or full payments',
         'Billing' => 'Manage in-store sales and billing tools',
         'Customers' => 'View customer details and purchase history',
-        'Products' => 'Manage the products available in your store',
+        'Retails' => 'Manage retail products available in your store',
         'Restock' => 'Review stock requests and supplier quantities',
         'Wholesale' => 'Manage wholesale pricing and availability',
         'Drinks' => 'Manage products shown in the drinks menu',
@@ -733,7 +733,7 @@ class _AdminShellState extends State<AdminShell> {
 
   String _invoisoPageTitle(String title) => switch (title) {
         'Dashboard' => 'Dashboard Overview',
-        'Products' => 'Product Management',
+        'Retails' => 'Retail Management',
         'Customers' => 'Customer Management',
         'Sales Reports' => 'Reports',
         'New Bill / POS' => 'Create New Invoice',
@@ -1200,7 +1200,7 @@ class _AdminShellState extends State<AdminShell> {
     NavigationRailDestination(
       icon: Icon(Icons.inventory_2_outlined),
       selectedIcon: Icon(Icons.inventory_2_rounded),
-      label: BillingText('Products'),
+      label: BillingText('Retails'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.local_drink_outlined),

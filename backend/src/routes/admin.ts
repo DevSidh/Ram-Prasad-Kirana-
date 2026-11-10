@@ -1453,9 +1453,12 @@ export function createAdminRouter(
         allSales,
         recentOrders,
       ] = await Promise.all([
-        prisma.$queryRaw<Array<{ total: bigint; active: bigint; outOfStock: bigint; lowStock: bigint }>>`
+        prisma.$queryRaw<Array<{ total: bigint; retail: bigint; wholesale: bigint; drinks: bigint; active: bigint; outOfStock: bigint; lowStock: bigint }>>`
           SELECT
             COUNT(*) AS "total",
+            COUNT(*) FILTER (WHERE "kind" = 'retail') AS "retail",
+            COUNT(*) FILTER (WHERE "kind" = 'wholesale') AS "wholesale",
+            COUNT(*) FILTER (WHERE "kind" = 'drinks') AS "drinks",
             COUNT(*) FILTER (WHERE "isActive" = 1) AS "active",
             COUNT(*) FILTER (
               WHERE "available" <= 0
@@ -1464,11 +1467,12 @@ export function createAdminRouter(
               WHERE "available" > 0 AND "available" <= "threshold"
             ) AS "lowStock"
           FROM (
-            SELECT p."isActive", COALESCE(i."totalStock", 0) - COALESCE(i."reservedStock", 0) AS "available",
+            SELECT CASE WHEN p."isVendingDrink" = 1 THEN 'drinks' ELSE 'retail' END AS "kind",
+              p."isActive", COALESCE(i."totalStock", 0) - COALESCE(i."reservedStock", 0) AS "available",
               CASE WHEN ${weightUnitSql()} THEN p."lowStockThreshold" * 1000 ELSE p."lowStockThreshold" END AS "threshold"
             FROM "Product" AS p LEFT JOIN "Inventory" AS i ON i."productId" = p."id"
             UNION ALL
-            SELECT "isActive", "stock" AS "available", 10 AS "threshold" FROM "WholesaleItem"
+            SELECT 'wholesale' AS "kind", "isActive", "stock" AS "available", 10 AS "threshold" FROM "WholesaleItem"
           ) AS catalogue
         `,
         prisma.user.count({ where: { role: 'CUSTOMER' } }),
@@ -1506,6 +1510,9 @@ export function createAdminRouter(
       return res.json({
         products: {
           total: Number(stockCounts[0]?.total ?? 0),
+          retail: Number(stockCounts[0]?.retail ?? 0),
+          wholesale: Number(stockCounts[0]?.wholesale ?? 0),
+          drinks: Number(stockCounts[0]?.drinks ?? 0),
           active: Number(stockCounts[0]?.active ?? 0),
           outOfStock: Number(stockCounts[0]?.outOfStock ?? 0),
           lowStock: Number(stockCounts[0]?.lowStock ?? 0),

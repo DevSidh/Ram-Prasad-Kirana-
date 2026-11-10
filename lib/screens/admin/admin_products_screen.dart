@@ -112,7 +112,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
         _adminApi.getProducts(
           page: page,
           search: _searchController.text,
-          vendingDrink: widget.vendingOnly ? true : null,
+          vendingDrink: widget.vendingOnly,
         ),
       ]);
       final loadedProducts = (results[1] as AdminProductPage).products;

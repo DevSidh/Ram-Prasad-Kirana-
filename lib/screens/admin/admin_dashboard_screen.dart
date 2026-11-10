@@ -257,11 +257,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           const SizedBox(height: 22),
           const _SectionHeading(title: 'Products', trailing: 'CATALOG'),
+          const BillingText('Retails, wholesale and drinks'),
           const SizedBox(height: 10),
           _MetricGrid(
             items: [
-              _Metric('Total', _number(dashboard.products['total']),
+              _Metric('Total products', _number(dashboard.products['total']),
                   Icons.inventory_2_outlined),
+              if (dashboard.products.containsKey('retail'))
+                _Metric('Retails', _number(dashboard.products['retail']),
+                    Icons.storefront_outlined),
+              if (dashboard.products.containsKey('wholesale'))
+                _Metric('Wholesale', _number(dashboard.products['wholesale']),
+                    Icons.inventory_outlined),
+              if (dashboard.products.containsKey('drinks'))
+                _Metric('Drinks', _number(dashboard.products['drinks']),
+                    Icons.local_drink_outlined),
               _Metric('Active', _number(dashboard.products['active']),
                   Icons.check_circle_outline,
                   green: true),
