@@ -288,15 +288,13 @@ void main() {
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets(
-      'editing rate or line total recalculates the bill and sends an atomic catalogue update',
+      'editing inline rate or line total recalculates the bill and sends an atomic catalogue update',
       (tester) async {
     await start(tester);
     final qty = find.byWidgetPredicate(
         (w) => w is TextField && w.decoration?.labelText == 'Qty');
     await tester.enterText(qty.first, '10');
     await tester.pump();
-    await tester.tap(find.byTooltip('Edit unit price / line total'));
-    await tester.pumpAndSettle();
     await tester.enterText(
         find.byWidgetPredicate((w) =>
             w is TextField && w.decoration?.labelText == 'Unit price (NPR)'),
@@ -319,7 +317,7 @@ void main() {
             w.decoration?.labelText == 'Unit price (NPR)' &&
             w.controller?.text == '120.00'),
         findsOneWidget);
-    await tester.tap(find.text('Save price'));
+    await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pumpAndSettle();
     api.expectedPayable = 1200;
     api.expectedRate = 120;

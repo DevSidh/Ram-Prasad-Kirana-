@@ -6206,6 +6206,48 @@ class _PosBillDialogState extends State<PosBillDialog> {
     }
   }
 
+  Widget _inlinePriceField(_PosCartLine line, bool isTotal) {
+    final controller = isTotal ? line.totalController : line.priceController;
+    return BillingTextFormField(
+      key: ValueKey('${line.product.id}-${isTotal ? 'total' : 'rate'}'),
+      controller: controller,
+      enabled: !_saving,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        TextInputFormatter.withFunction((oldValue, newValue) {
+          if (newValue.text.isEmpty) return newValue;
+          final value = double.tryParse(newValue.text);
+          final price = isTotal ? (value ?? -1) / line.priceQuantity : value;
+          return RegExp(r'^\d+(\.\d{0,2})?$').hasMatch(newValue.text) &&
+                  price != null && price.isFinite && price >= 0 && price <= 999999999
+              ? newValue
+              : oldValue;
+        }),
+      ],
+      decoration: BillingInputDecoration(
+        labelText: isTotal ? 'Line total (NPR)' : 'Unit price (NPR)',
+        isDense: true,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      ),
+      onChanged: (text) {
+        final value = double.tryParse(text);
+        if (value == null || !value.isFinite || value < 0) return;
+        final price = isTotal ? value / line.priceQuantity : value;
+        if (!price.isFinite || price > 999999999) return;
+        for (final item
+            in _cart.where((i) => i.product.id == line.product.id)) {
+          item.setPrice(_roundBillMoney(price), editing: controller);
+        }
+        _cartChanged();
+      },
+      onEditingComplete: () {
+        line.syncPrices();
+        FocusScope.of(context).unfocus();
+      },
+    );
+  }
+
   Widget _buildCartList() {
     if (_cart.isEmpty) {
       return const Center(child: BillingText('Bill is empty.'));
@@ -6226,211 +6268,225 @@ class _PosBillDialogState extends State<PosBillDialog> {
             return Padding(
               key: ObjectKey(line),
               padding: const EdgeInsets.symmetric(vertical: 3),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final compact = constraints.maxWidth < 600;
-                  final quantityControls = line.weightGrams == null
-                      ? Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            BillingIconButton(
-                              tooltip: 'Decrease quantity',
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints.tightFor(
-                                  width: 30, height: 30),
-                              iconSize: 16,
-                              onPressed: _saving
-                                  ? null
-                                  : () {
-                                      if (line.quantity > 1) {
-                                        unawaited(_changeLineQuantity(
-                                            line, line.quantity - 1,
-                                            delta: -1));
-                                      } else {
-                                        _removeCartLine(line);
-                                      }
-                                    },
-                              icon: const Icon(Icons.remove_circle_outline),
-                            ),
-                            SizedBox(
-                              width: compact ? 48 : 76,
-                              child: BillingTextFormField(
-                                key: ObjectKey(line),
-                                controller: line.quantityController,
-                                enabled: !_saving,
-                                readOnly: _assignedRoomProducts
-                                    .contains(line.product.id),
-                                onTap: _assignedRoomProducts
-                                        .contains(line.product.id)
-                                    ? () => _editLineQuantity(line)
-                                    : null,
-                                onChanged: (value) {
-                                  final quantity = int.tryParse(value);
-                                  if (quantity == null ||
-                                      quantity <= 0 ||
-                                      _saving ||
-                                      _choosingRooms) {
-                                    return;
-                                  }
-                                  line.quantity = quantity;
-                                  final required = _cart
-                                      .where((other) =>
-                                          other.product.id == line.product.id)
-                                      .fold<int>(
-                                          0,
-                                          (sum, other) =>
-                                              sum +
-                                              (other.weightGrams ??
-                                                  other.quantity));
-                                  _roomPicks = [
-                                    ...?_roomPicks?.where(
-                                        (p) => p.productId != line.product.id),
-                                    RoomPick(
-                                        productId: line.product.id,
-                                        roomId: null,
-                                        quantity: required)
-                                  ];
-                                  _cartChanged();
-                                },
-                                textAlign: TextAlign.center,
-                                keyboardType: TextInputType.number,
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.digitsOnly,
-                                ],
-                                decoration: const BillingInputDecoration(
-                                  labelText: 'Qty',
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 10),
-                                ),
+              child: Column(children: [
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact = constraints.maxWidth < 600;
+                    final quantityControls = line.weightGrams == null
+                        ? Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              BillingIconButton(
+                                tooltip: 'Decrease quantity',
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints.tightFor(
+                                    width: 30, height: 30),
+                                iconSize: 16,
+                                onPressed: _saving
+                                    ? null
+                                    : () {
+                                        if (line.quantity > 1) {
+                                          unawaited(_changeLineQuantity(
+                                              line, line.quantity - 1,
+                                              delta: -1));
+                                        } else {
+                                          _removeCartLine(line);
+                                        }
+                                      },
+                                icon: const Icon(Icons.remove_circle_outline),
                               ),
-                            ),
-                            BillingIconButton(
-                              tooltip: 'Increase quantity',
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints.tightFor(
-                                  width: 30, height: 30),
-                              iconSize: 16,
-                              onPressed: _saving
-                                  ? null
-                                  : () {
-                                      unawaited(_changeLineQuantity(
-                                          line, line.quantity + 1,
-                                          delta: 1));
-                                    },
-                              icon: const Icon(Icons.add_circle_outline),
-                            ),
-                          ],
-                        )
-                      : BillingText('${line.weightGrams} g');
-
-                  final amountAndRemove = Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (widget.allowPriceEditing)
-                        BillingIconButton(
-                            tooltip: 'Edit unit price / line total',
-                            visualDensity: VisualDensity.compact,
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints.tightFor(
-                                width: 30, height: 30),
-                            iconSize: 16,
-                            onPressed: _saving ? null : () => _editPrice(line),
-                            icon: const Icon(Icons.edit_outlined)),
-                      Flexible(
-                          child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: BillingText(_money(total)),
-                      )),
-                      BillingIconButton(
-                        tooltip: 'Remove item',
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints.tightFor(
-                            width: 30, height: 30),
-                        iconSize: 16,
-                        onPressed: _saving
-                            ? null
-                            : () {
-                                _removeCartLine(line);
-                              },
-                        icon: const Icon(Icons.delete_outline),
-                      ),
-                    ],
-                  );
-
-                  if (compact) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: Row(
-                              children: [
-                                ProductThumbnail(
-                                    imageUrl: line.product.imageUrl ?? '',
-                                    size: 40),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: BillingText(
-                                    line.product.name,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall
-                                        ?.copyWith(fontWeight: FontWeight.w700),
+                              SizedBox(
+                                width: compact ? 48 : 76,
+                                child: BillingTextFormField(
+                                  key: ObjectKey(line),
+                                  controller: line.quantityController,
+                                  enabled: !_saving,
+                                  readOnly: _assignedRoomProducts
+                                      .contains(line.product.id),
+                                  onTap: _assignedRoomProducts
+                                          .contains(line.product.id)
+                                      ? () => _editLineQuantity(line)
+                                      : null,
+                                  onChanged: (value) {
+                                    final quantity = int.tryParse(value);
+                                    if (quantity == null ||
+                                        quantity <= 0 ||
+                                        _saving ||
+                                        _choosingRooms) {
+                                      return;
+                                    }
+                                    line.quantity = quantity;
+                                    final required = _cart
+                                        .where((other) =>
+                                            other.product.id == line.product.id)
+                                        .fold<int>(
+                                            0,
+                                            (sum, other) =>
+                                                sum +
+                                                (other.weightGrams ??
+                                                    other.quantity));
+                                    _roomPicks = [
+                                      ...?_roomPicks?.where((p) =>
+                                          p.productId != line.product.id),
+                                      RoomPick(
+                                          productId: line.product.id,
+                                          roomId: null,
+                                          quantity: required)
+                                    ];
+                                    _cartChanged();
+                                  },
+                                  textAlign: TextAlign.center,
+                                  keyboardType: TextInputType.number,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.digitsOnly,
+                                  ],
+                                  decoration: const BillingInputDecoration(
+                                    labelText: 'Qty',
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 10),
                                   ),
                                 ),
-                              ],
-                            ),
-                          ),
-                          Expanded(flex: 5, child: quantityControls),
-                          Expanded(
-                            flex: 4,
-                            child: Align(
-                              alignment: Alignment.centerRight,
-                              child: amountAndRemove,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-                  return Row(
-                    children: [
-                      Expanded(
-                        flex: 5,
-                        child: Row(children: [
-                          ProductThumbnail(
-                              imageUrl: line.product.imageUrl ?? '', size: 56),
-                          const SizedBox(width: 10),
-                          Expanded(
-                              child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              BillingText(
-                                line.product.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleSmall
-                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                              BillingIconButton(
+                                tooltip: 'Increase quantity',
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints.tightFor(
+                                    width: 30, height: 30),
+                                iconSize: 16,
+                                onPressed: _saving
+                                    ? null
+                                    : () {
+                                        unawaited(_changeLineQuantity(
+                                            line, line.quantity + 1,
+                                            delta: 1));
+                                      },
+                                icon: const Icon(Icons.add_circle_outline),
                               ),
                             ],
-                          )),
-                        ]),
-                      ),
-                      Expanded(flex: 4, child: quantityControls),
-                      Expanded(flex: 2, child: amountAndRemove),
-                    ],
-                  );
-                },
-              ),
+                          )
+                        : BillingText('${line.weightGrams} g');
+
+                    final amountAndRemove = Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (widget.allowPriceEditing)
+                          BillingIconButton(
+                              tooltip: 'Edit unit price / line total',
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints.tightFor(
+                                  width: 30, height: 30),
+                              iconSize: 16,
+                              onPressed:
+                                  _saving ? null : () => _editPrice(line),
+                              icon: const Icon(Icons.edit_outlined)),
+                        Flexible(
+                            child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: BillingText(_money(total)),
+                        )),
+                        BillingIconButton(
+                          tooltip: 'Remove item',
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                              width: 30, height: 30),
+                          iconSize: 16,
+                          onPressed: _saving
+                              ? null
+                              : () {
+                                  _removeCartLine(line);
+                                },
+                          icon: const Icon(Icons.delete_outline),
+                        ),
+                      ],
+                    );
+
+                    if (compact) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: Row(
+                                children: [
+                                  ProductThumbnail(
+                                      imageUrl: line.product.imageUrl ?? '',
+                                      size: 40),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: BillingText(
+                                      line.product.name,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                              fontWeight: FontWeight.w700),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Expanded(flex: 5, child: quantityControls),
+                            Expanded(
+                              flex: 4,
+                              child: Align(
+                                alignment: Alignment.centerRight,
+                                child: amountAndRemove,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                    return Row(
+                      children: [
+                        Expanded(
+                          flex: 5,
+                          child: Row(children: [
+                            ProductThumbnail(
+                                imageUrl: line.product.imageUrl ?? '',
+                                size: 56),
+                            const SizedBox(width: 10),
+                            Expanded(
+                                child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                BillingText(
+                                  line.product.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleSmall
+                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                ),
+                              ],
+                            )),
+                          ]),
+                        ),
+                        Expanded(flex: 4, child: quantityControls),
+                        Expanded(flex: 2, child: amountAndRemove),
+                      ],
+                    );
+                  },
+                ),
+                if (widget.allowPriceEditing)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6, bottom: 6),
+                    child: Row(children: [
+                      Expanded(child: _inlinePriceField(line, false)),
+                      const SizedBox(width: 8),
+                      Expanded(child: _inlinePriceField(line, true)),
+                    ]),
+                  ),
+              ]),
             );
           },
         );
@@ -6624,13 +6680,31 @@ class _PosCartLine extends ChangeNotifier {
     int quantity = 1,
     this.weightGrams,
   })  : _quantity = quantity,
-        quantityController = TextEditingController(text: '$quantity');
+        quantityController = TextEditingController(text: '$quantity') {
+    syncPrices();
+  }
 
   final PosProduct product;
   double? _editedPrice;
   double get unitPrice => _editedPrice ?? product.price;
-  void setPrice(double price) {
+  final priceController = TextEditingController();
+  final totalController = TextEditingController();
+  double get priceQuantity =>
+      weightGrams == null ? quantity.toDouble() : weightGrams! / 1000;
+
+  void syncPrices({TextEditingController? editing}) {
+    if (editing != priceController) {
+      priceController.text = unitPrice.toStringAsFixed(2);
+    }
+    if (editing != totalController) {
+      totalController.text =
+          _roundBillMoney(unitPrice * priceQuantity).toStringAsFixed(2);
+    }
+  }
+
+  void setPrice(double price, {TextEditingController? editing}) {
     _editedPrice = price;
+    syncPrices(editing: editing);
     notifyListeners();
   }
 
@@ -6640,6 +6714,7 @@ class _PosCartLine extends ChangeNotifier {
   set quantity(int value) {
     if (_quantity == value) return;
     _quantity = value;
+    syncPrices();
     notifyListeners();
   }
 
@@ -6656,6 +6731,8 @@ class _PosCartLine extends ChangeNotifier {
   @override
   void dispose() {
     quantityController.dispose();
+    priceController.dispose();
+    totalController.dispose();
     super.dispose();
   }
 }

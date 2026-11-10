@@ -41,7 +41,7 @@ async function main(){
     const releases=await api(`/repos/${repo}/releases?per_page=100`);
     const release=releases.find(matchesRelease);
     if(!release)throw Error('Release not found.');
-    if(!release.assets.some(a=>a.name.endsWith('.apk')) || !release.assets.some(a=>a.name.endsWith('.zip')))throw Error('Upload both APK and Windows ZIP before publishing.');
+    if(!release.assets.some(a=>a.name.endsWith('.zip')) || (file!=='windows-only' && !release.assets.some(a=>a.name.endsWith('.apk'))))throw Error('Upload both APK and Windows ZIP, or explicitly publish windows-only.');
     const published=await api(`/repos/${repo}/releases/${release.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({tag_name:tag,draft:false,make_latest:'true'})});
     console.log(JSON.stringify({tag:published.tag_name,url:published.html_url,draft:published.draft}));return;
   }
