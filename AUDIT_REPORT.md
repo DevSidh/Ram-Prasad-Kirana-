@@ -53,6 +53,8 @@ No automated test failures remain. Physical printer, live Turso latency, offline
 - After the startup/customer/room/update fixes, the full Flutter suite passed **467 tests**; static analysis remained clean.
 - Additional Windows release read-only smoke checks opened Refunds, Reports, Pending Cash and Cash Register successfully. Expiry remained on a full-screen network spinner; its request and category load now time out after eight seconds with retry feedback.
 - Further inspection found Cockroach-specific `~*`, `POSITION` and `CONCAT_WS` in stock/expiry queries. These are now SQLite-compatible, parameterized expressions. An actual in-memory libSQL engine test verifies unit classification agrees with the existing application kg/g rule and nullable search is supported. No schema change is required. Deploy the updated backend to apply this server-side fix.
+- Final Windows **3.3.3+29** was launched successfully. Its Expiry request was observed ending in the retry state instead of spinning indefinitely. The live expiry endpoint still did not return data during this check; the backend fixes have been pushed to the feature branch but not deployed to production. Do not treat live expiry loading as verified working.
+- Final follow-up checks: expiry success/filter and timeout tests both passed; backend suite rerun passed after the SQL changes; the new libSQL engine regression passed separately; analysis remained clean.
 
 ### Scope limits
 
