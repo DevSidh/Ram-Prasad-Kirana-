@@ -1,15 +1,20 @@
 import 'dart:io';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/admin_models.dart';
 import '../models/pos_models.dart';
 import '../core/nepal_phone.dart';
 import 'local_billing_store.dart';
+import 'ordered_work_queue.dart';
+import 'billing_workbook.dart';
 
 /// Writes Excel-compatible CSV ledgers beside locally stored Windows bills.
 class BillingExcelExportService {
   BillingExcelExportService._();
+  static final _workbooks = OrderedWorkQueue();
+  static final _dirtyWrites = OrderedWorkQueue();
 
   static String? baseDirectoryOverride;
   static String get _baseDirectory =>
@@ -28,7 +33,8 @@ class BillingExcelExportService {
     List<Map<String, dynamic>> localPendingRecords = const [],
     bool localOnly = false,
   }) async {
-    final directory = Directory('$_baseDirectory/pending cash');
+    final root = await _customerDirectory();
+    final directory = Directory('$root/pending cash');
     await directory.create(recursive: true);
     final file = File(
         '${directory.path}/${localOnly ? 'pending_cash_local.csv' : 'pending_cash.csv'}');
@@ -76,7 +82,7 @@ class BillingExcelExportService {
           _cell('Offline bill'),
         ],
     ];
-    await LocalBillingStore(rootPath: _baseDirectory).withLock(() async {
+    await LocalBillingStore(rootPath: root).withLock(() async {
       final source = await file.exists() ? await file.readAsString() : '';
       final incoming = _parseCsv(_encode(rows));
       final existing = _parseCsv(source);
@@ -126,11 +132,13 @@ class BillingExcelExportService {
               .map((row) => row.map((value) => _cell(value)).toList())
               .toList()));
     });
+    await _markWorkbookDirty(root);
     return file.path;
   }
 
   static Future<String> recordBillCustomer(PosSale sale) async {
-    final directory = Directory('$_baseDirectory/bill customer');
+    final root = await _customerDirectory();
+    final directory = Directory('$root/bill customer');
     await directory.create(recursive: true);
     final file = File('${directory.path}/bill_customers.csv');
     final exists = await file.exists();
@@ -306,14 +314,15 @@ class BillingExcelExportService {
   }
 
   static Future<void> _upsertSavedCustomer(PosSale sale) =>
-      LocalBillingStore(rootPath: _baseDirectory)
-          .withLock(() => _upsertSavedCustomerUnlocked(sale));
+      _customerDirectory().then((root) => LocalBillingStore(rootPath: root)
+          .withLock(() => _upsertSavedCustomerUnlocked(sale)));
 
   static Future<void> _upsertSavedCustomerUnlocked(PosSale sale) async {
     final name = sale.customerName?.trim() ?? '';
     final phone = sale.customerPhone?.trim() ?? '';
     if (name.isEmpty && phone.isEmpty) return;
-    final directory = Directory('$_baseDirectory/bill customer');
+    final root = await _customerDirectory();
+    final directory = Directory('$root/bill customer');
     await directory.create(recursive: true);
     final file = File('${directory.path}/customers.json');
     final customers = <Map<String, dynamic>>[];
@@ -366,6 +375,7 @@ class BillingExcelExportService {
       customers[index] = next;
     }
     await _replaceText(file, jsonEncode(customers));
+    await _markWorkbookDirty(root);
   }
 
   static Future<void> saveCustomer(
@@ -419,7 +429,301 @@ class BillingExcelExportService {
         records[index] = next;
       }
       await _replaceText(file, jsonEncode(records));
+      await _markWorkbookDirty(root);
     });
+  }
+
+  static Future<void> _markWorkbookDirty(String root) =>
+      _dirtyWrites.run(() async {
+        final file = File('$root/excel/export.pending');
+        await file.parent.create(recursive: true);
+        await file.writeAsString(DateTime.now().toUtc().toIso8601String(),
+            flush: true);
+      });
+
+  /// The POS code is the stable key. Retries replace a snapshot, never append a
+  /// second sale. This export is supplementary to the original financial record.
+  static Future<void> recordSale(PosSale sale) async {
+    final root = await _customerDirectory();
+    final name = sale.receiptNumber;
+    if (!RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,179}$').hasMatch(name)) {
+      throw const FormatException(
+          'A valid POS code is required for Excel export.');
+    }
+    final file = File('$root/excel/records/$name.json');
+    await file.parent.create(recursive: true);
+    await LocalBillingStore(rootPath: root).withLock(() async {
+      await _replaceText(file, jsonEncode(sale.toReceiptJson()));
+      await _markWorkbookDirty(root);
+    });
+  }
+
+  /// Export already-cached online profiles as well as manually saved contacts.
+  /// Credentials/authentication records are never part of this snapshot.
+  static Future<void> recordCachedCustomers(
+      List<AdminCustomer> customers) async {
+    final root = await _customerDirectory();
+    final rows = [
+      for (final c in customers)
+        {
+          'id': c.id,
+          'name': c.name,
+          'phone': c.phone,
+          'email': c.email,
+          'addresses': c.addresses,
+          'createdAt': c.createdAt,
+          'orderCount': c.orderCount,
+          'orderValue': c.orderValue,
+          'isActive': c.isActive,
+        }
+    ]..sort((a, b) => '${a['id']}'.compareTo('${b['id']}'));
+    final contents = jsonEncode(rows);
+    final file = File('$root/excel/customers_cached.json');
+    await file.parent.create(recursive: true);
+    await LocalBillingStore(rootPath: root).withLock(() async {
+      if (await file.exists() && await file.readAsString() == contents) return;
+      await _replaceText(file, contents);
+      await _markWorkbookDirty(root);
+    });
+  }
+
+  /// A dirty marker survives restarts and Excel file locks. One workbook is
+  /// generated per background pass, even when many old bills need backfilling.
+  static Future<String?> refreshWorkbookIfNeeded() => _workbooks.run(() async {
+        final root = await _customerDirectory();
+        final dirty = File('$root/excel/export.pending');
+        if (!await dirty.exists()) return null;
+        final revision = await dirty.readAsString();
+        final sheets = <String, List<List<Object?>>>{
+          'Bills': [
+            [
+              'POS code',
+              'Invoice number',
+              'Date',
+              'Customer name',
+              'Customer phone',
+              'Payment method',
+              'Payment status',
+              'Subtotal NPR',
+              'Discount NPR',
+              'VAT percent',
+              'VAT NPR',
+              'Total NPR',
+              'Paid NPR',
+              'Pending NPR',
+              'Refunded NPR'
+            ]
+          ],
+          'Bill items': [
+            [
+              'POS code',
+              'Invoice number',
+              'Product',
+              'SKU',
+              'Quantity',
+              'Weight grams',
+              'Unit price NPR',
+              'Amount NPR'
+            ]
+          ],
+          'Payments': [
+            [
+              'POS code',
+              'Payment reference',
+              'Date',
+              'Method',
+              'Amount NPR',
+              'Note'
+            ]
+          ],
+          'Customers': [
+            [
+              'Name',
+              'Phone',
+              'Email',
+              'Address',
+              'Created',
+              'Number of bills',
+              'Bill value NPR'
+            ]
+          ],
+        };
+        final balances = <String, List<String>>{};
+        for (final name in ['pending_cash', 'pending_cash_local']) {
+          final csv = File('$root/pending cash/$name.csv');
+          if (!await csv.exists()) continue;
+          final rows = _parseCsv(await csv.readAsString());
+          sheets[name == 'pending_cash'
+              ? 'Pending cash'
+              : 'Pending cash local'] = [
+            for (var i = 0; i < rows.length; i++)
+              [
+                for (var c = 0; c < rows[i].length; c++)
+                  if (i > 0 && c >= 4 && c <= 6)
+                    num.tryParse(rows[i][c]) ?? rows[i][c]
+                  else
+                    rows[i][c]
+              ]
+          ];
+          // Preserve arbitrary manual columns/rows in the original CSV. Only
+          // overlay known balance fields when their headers have not moved.
+          if (rows.isNotEmpty &&
+              rows.first.length >= 7 &&
+              rows.first[0] == 'Invoice number' &&
+              rows.first[5] == 'Paid' &&
+              rows.first[6] == 'Cash pending') {
+            for (final row in rows.skip(1).where((r) => r.length >= 8)) {
+              balances[row[0]] = row;
+            }
+          }
+        }
+        final records = Directory('$root/excel/records');
+        if (await records.exists()) {
+          final files = await records
+              .list()
+              .where((f) => f is File && f.path.endsWith('.json'))
+              .cast<File>()
+              .toList();
+          files.sort((a, b) => a.path.compareTo(b.path));
+          for (final file in files) {
+            final sale = PosSale.fromJson(
+                jsonDecode(await file.readAsString()) as Map<String, dynamic>);
+            final invoice = sale.invoiceNumber ?? sale.receiptNumber;
+            final balance = balances[invoice];
+            sheets['Bills']!.add([
+              sale.receiptNumber,
+              invoice,
+              _exportDate(sale.createdAt),
+              sale.customerName ?? '',
+              sale.customerPhone ?? '',
+              sale.paymentMethod,
+              balance?[7] ?? sale.paymentStatus,
+              sale.subtotal,
+              sale.discount,
+              sale.vatRate,
+              sale.vatAmount,
+              sale.total,
+              balance == null ? _paid(sale) : _number(balance[5]),
+              balance == null ? _due(sale) : _number(balance[6]),
+              sale.refundedAmount
+            ]);
+            for (final item in sale.items) {
+              sheets['Bill items']!.add([
+                sale.receiptNumber,
+                invoice,
+                item.productName,
+                item.sku,
+                item.quantity,
+                item.weightGrams,
+                item.unitPrice,
+                item.lineTotal
+              ]);
+            }
+            for (final payment in sale.paymentCollections) {
+              sheets['Payments']!.add([
+                sale.receiptNumber,
+                payment.id,
+                _exportDate(payment.createdAt),
+                payment.method,
+                payment.amount,
+                payment.note ?? ''
+              ]);
+            }
+          }
+        }
+        final customerIndex = <String, Map<String, dynamic>>{};
+        for (final path in [
+          '$root/excel/customers_cached.json',
+          '$root/bill customer/customers.json'
+        ]) {
+          final customers = File(path);
+          if (!await customers.exists()) continue;
+          for (final customer
+              in (jsonDecode(await customers.readAsString()) as List)
+                  .cast<Map<String, dynamic>>()) {
+            final phone =
+                '${customer['phone'] ?? ''}'.replaceAll(RegExp(r'\D'), '');
+            final key = phone.isNotEmpty
+                ? phone
+                : '${customer['id'] ?? customer['name']}';
+            final previous = customerIndex[key] ?? <String, dynamic>{};
+            customerIndex[key] = {
+              ...previous,
+              ...customer,
+              for (final field in ['name', 'email', 'phone'])
+                if ('${customer[field] ?? ''}'.isEmpty &&
+                    previous[field] != null)
+                  field: previous[field],
+              if ((customer['addresses'] as List? ?? []).isEmpty &&
+                  previous['addresses'] != null)
+                'addresses': previous['addresses'],
+            };
+          }
+        }
+        for (final customer in customerIndex.values) {
+          sheets['Customers']!.add([
+            customer['name'] ?? '',
+            customer['phone'] ?? '',
+            customer['email'] ?? '',
+            (customer['addresses'] as List? ?? [])
+                .map((a) => a is Map
+                    ? a['address'] ??
+                        a.entries
+                            .where((e) => !{
+                                  'id',
+                                  'userId',
+                                  'createdAt',
+                                  'updatedAt',
+                                  'isDefault'
+                                }.contains(e.key))
+                            .map((e) => '${e.key}: ${e.value}')
+                            .join(', ')
+                    : a)
+                .join('; '),
+            customer['createdAt'] ?? '',
+            customer['orderCount'] ?? 0,
+            _number(customer['orderValue'])
+          ]);
+        }
+        sheets.putIfAbsent(
+            'Pending cash',
+            () => [
+                  [
+                    'Invoice number',
+                    'Date',
+                    'Customer name',
+                    'Customer phone',
+                    'Bill total',
+                    'Paid',
+                    'Cash pending',
+                    'Payment status',
+                    'Payment history'
+                  ]
+                ]);
+        final bytes = await compute(buildBillingWorkbook, sheets);
+        final file = File('$root/excel/FastStore_Billing.xlsx');
+        final temporary = File('${file.path}.pending');
+        try {
+          await temporary.writeAsBytes(bytes, flush: true);
+          if (await file.exists()) await file.copy('${file.path}.bak');
+          await temporary.rename(file.path);
+          // A concurrent new sale/customer leaves the marker for the next pass.
+          await _dirtyWrites.run(() async {
+            if (await dirty.exists() &&
+                await dirty.readAsString() == revision) {
+              await dirty.delete();
+            }
+          });
+        } finally {
+          if (await temporary.exists()) await temporary.delete();
+        }
+        return file.path;
+      });
+
+  static String _exportDate(DateTime date) {
+    final n = date.toUtc().add(const Duration(hours: 5, minutes: 45));
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${two(n.day)}/${two(n.month)}/${n.year} ${two(n.hour)}:${two(n.minute)}:${two(n.second)}';
   }
 
   static Future<void> _replaceText(File file, String contents) async {
@@ -447,10 +751,12 @@ class BillingExcelExportService {
   }
 
   static double _paid(PosSale sale) => (sale.paidAmount ??
-          sale.paymentCollections.fold<double>(
-            0,
-            (sum, payment) => sum + payment.amount,
-          ))
+          (sale.paymentStatus == 'COMPLETED'
+              ? sale.total
+              : sale.paymentCollections.fold<double>(
+                  0,
+                  (sum, payment) => sum + payment.amount,
+                )))
       .clamp(0, sale.total)
       .toDouble();
 

@@ -36,6 +36,7 @@ class BillingPostCommit {
           'customer': false,
           'loyalty': customerId == null,
           'pendingCash': false,
+          'excel': false,
           'prices': false
         },
         if (customerId != null) 'loyaltyCustomerId': customerId,
@@ -43,8 +44,7 @@ class BillingPostCommit {
   Future<void> enqueue(PosSale sale, int width) async {
     if (sale.localPath != null) {
       final record = await store.readJson(File(sale.localPath!));
-      if (record['receiptWidth'] == width &&
-          record['receiptNepali'] == false) {
+      if (record['receiptWidth'] == width && record['receiptNepali'] == false) {
         return;
       }
     }
@@ -100,6 +100,7 @@ class BillingPostCommit {
           'archive',
           'customer',
           'pendingCash',
+          'excel',
           'loyalty',
           'prices'
         ]) {
@@ -149,6 +150,8 @@ class BillingPostCommit {
                           'paymentStatus': r.record['paymentStatus'],
                         }
                     ]);
+              case 'excel':
+                await BillingExcelExportService.recordSale(sale);
               case 'prices':
                 final changes = (record['cataloguePriceChanges'] as List?)
                     ?.cast<Map<String, dynamic>>();
@@ -221,6 +224,18 @@ class BillingPostCommit {
               });
             });
           }
+        }
+      }
+      if (!_disposed) {
+        try {
+          if (catalog != null) {
+            await BillingExcelExportService.recordCachedCustomers(
+                await catalog!.readCustomers());
+          }
+          await BillingExcelExportService.refreshWorkbookIfNeeded();
+        } catch (error) {
+          pendingTasks++;
+          lastError = 'Excel export: $error. Close the workbook to retry.';
         }
       }
     } catch (error) {
