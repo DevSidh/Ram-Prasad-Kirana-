@@ -1446,8 +1446,6 @@ export function createAdminRouter(
     try {
       const { start: todayStart, end: tomorrowStart } = dayRange ?? getLocalDayRange();
       const [
-        totalProducts,
-        activeProducts,
         stockCounts,
         totalCustomers,
         groupedOrders,
@@ -1455,24 +1453,23 @@ export function createAdminRouter(
         allSales,
         recentOrders,
       ] = await Promise.all([
-        prisma.product.count(),
-        prisma.product.count({ where: { isActive: true } }),
-        prisma.$queryRaw<Array<{ outOfStock: bigint; lowStock: bigint }>>`
+        prisma.$queryRaw<Array<{ total: bigint; active: bigint; outOfStock: bigint; lowStock: bigint }>>`
           SELECT
+            COUNT(*) AS "total",
+            COUNT(*) FILTER (WHERE "isActive" = 1) AS "active",
             COUNT(*) FILTER (
-              WHERE COALESCE(i."totalStock", 0) - COALESCE(i."reservedStock", 0) <= 0
+              WHERE "available" <= 0
             ) AS "outOfStock",
             COUNT(*) FILTER (
-              WHERE COALESCE(i."totalStock", 0) - COALESCE(i."reservedStock", 0) > 0
-                AND COALESCE(i."totalStock", 0) - COALESCE(i."reservedStock", 0)
-                  <= CASE
-                    WHEN ${weightUnitSql()}
-                      THEN p."lowStockThreshold" * 1000
-                    ELSE p."lowStockThreshold"
-                  END
+              WHERE "available" > 0 AND "available" <= "threshold"
             ) AS "lowStock"
-          FROM "Product" AS p
-          LEFT JOIN "Inventory" AS i ON i."productId" = p."id"
+          FROM (
+            SELECT p."isActive", COALESCE(i."totalStock", 0) - COALESCE(i."reservedStock", 0) AS "available",
+              CASE WHEN ${weightUnitSql()} THEN p."lowStockThreshold" * 1000 ELSE p."lowStockThreshold" END AS "threshold"
+            FROM "Product" AS p LEFT JOIN "Inventory" AS i ON i."productId" = p."id"
+            UNION ALL
+            SELECT "isActive", "stock" AS "available", 10 AS "threshold" FROM "WholesaleItem"
+          ) AS catalogue
         `,
         prisma.user.count({ where: { role: 'CUSTOMER' } }),
         prisma.order.groupBy({ by: ['status'], _count: { _all: true }, where: dateWhere }),
@@ -1508,8 +1505,8 @@ export function createAdminRouter(
       const countStatus = (status: string) => Number(orderCounts[status] ?? 0);
       return res.json({
         products: {
-          total: totalProducts,
-          active: activeProducts,
+          total: Number(stockCounts[0]?.total ?? 0),
+          active: Number(stockCounts[0]?.active ?? 0),
           outOfStock: Number(stockCounts[0]?.outOfStock ?? 0),
           lowStock: Number(stockCounts[0]?.lowStock ?? 0),
         },

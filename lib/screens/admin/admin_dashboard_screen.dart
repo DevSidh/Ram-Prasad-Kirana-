@@ -1,4 +1,5 @@
 import '../../widgets/billing_localized_widgets.dart';
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/constants.dart';
@@ -79,6 +80,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final request = ++_requestId;
     final day = _dayKey;
     final offlineStore = widget.offlineStore;
+    final loadingDeadline = Timer(const Duration(seconds: 4), () {
+      if (mounted && request == _requestId && _loading) {
+        setState(() {
+          _dashboard ??= AdminDashboard.fromJson(const {});
+          _loading = false;
+          _error =
+              'Still refreshing online totals. You can use the menus while the connection recovers.';
+        });
+      }
+    });
     setState(() {
       _loading = _dashboard == null;
       _error = null;
@@ -91,21 +102,34 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     double offlineSales = 0;
     Map<String, dynamic>? snapshot;
     String? localError;
-    try {
-      offlineSales = day == null
-          ? await offlineStore.readOfflineSalesTotal()
-          : await offlineStore.readOfflineSalesTotalForDay(day);
-    } catch (_) {
+    final localTotals = day == null
+        ? offlineStore.readOfflineSalesTotal()
+        : offlineStore.readOfflineSalesTotalForDay(day);
+    unawaited(localTotals.then<void>((value) {
+      offlineSales = value;
+      if (mounted && request == _requestId) {
+        setState(() => _offlineSalesTotal = value);
+      }
+    }, onError: (Object error) {
       localError =
           'Local bill totals could not be loaded. Check local storage and retry.';
-    }
+      if (mounted && request == _requestId) setState(() => _error = localError);
+    }));
     try {
-      snapshot = await offlineStore.readDashboardSnapshot();
-      if (snapshot != null) AdminDashboard.fromJson(snapshot);
+      // The snapshot is small; show it before scanning the local bill ledger.
+      snapshot = await offlineStore
+          .readDashboardSnapshot()
+          .timeout(const Duration(seconds: 1));
+      final cached = snapshot?['filterDay'] == day ? snapshot : null;
+      if (cached != null && mounted && request == _requestId) {
+        setState(() {
+          _dashboard = AdminDashboard.fromJson(cached);
+          _loading = false;
+        });
+      }
     } catch (_) {
-      snapshot = null;
-      localError ??=
-          'The saved dashboard could not be read. Live totals are still available.';
+      localError =
+          'The saved dashboard could not be loaded. Live totals are still refreshing.';
     }
     final cachedSnapshot = snapshot?['filterDay'] == day ? snapshot : null;
     if (!mounted || request != _requestId) return;
@@ -115,7 +139,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         if (_dashboard == null && cachedSnapshot != null) {
           _dashboard = AdminDashboard.fromJson(cachedSnapshot);
         }
-        _loading = _dashboard == null;
+        _loading = _dashboard == null && loadingDeadline.isActive;
       });
     }
     try {
@@ -148,6 +172,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _error = [serverError, if (localError != null) localError].join('\n');
         _loading = false;
       });
+    } finally {
+      loadingDeadline.cancel();
     }
   }
 

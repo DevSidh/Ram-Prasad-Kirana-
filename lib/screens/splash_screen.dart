@@ -35,8 +35,8 @@ class _SplashScreenState extends State<SplashScreen> {
     final availabilityProvider =
         Provider.of<StoreAvailabilityProvider>(context, listen: false);
     final results = await Future.wait<dynamic>([
-      authProvider.sessionReady,
-      SharedPreferences.getInstance(),
+      authProvider.sessionReady.timeout(const Duration(seconds: 4)),
+      SharedPreferences.getInstance().timeout(const Duration(seconds: 4)),
     ]);
     final prefs = results[1] as SharedPreferences;
     _onboardingSeen = prefs.getBool(AppConstants.keyOnboardingSeen) ?? false;
@@ -131,6 +131,13 @@ class _SplashScreenState extends State<SplashScreen> {
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
+                const SizedBox(height: 16),
+                FilledButton(
+                    onPressed: () => Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const SplashScreen())),
+                    child: const Text('Retry startup')),
               ],
             ),
           ),

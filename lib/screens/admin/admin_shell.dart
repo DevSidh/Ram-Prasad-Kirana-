@@ -71,6 +71,12 @@ class _AdminShellState extends State<AdminShell> {
   static const _windowsThemePreferenceKey = 'windows_admin_dark_theme';
 
   int _selectedIndex = 0;
+  final _openedScreens = <int>{};
+  Widget _rememberScreen(int index) {
+    _openedScreens.add(index);
+    return _screens[index];
+  }
+
   late final List<Widget> _screens;
   final _billingKey = GlobalKey<AdminBillingScreenState>();
   final _ordersKey = GlobalKey<AdminOrdersScreenState>();
@@ -604,7 +610,13 @@ class _AdminShellState extends State<AdminShell> {
                                     index++)
                                   TickerMode(
                                     enabled: index == activeScreenIndex,
-                                    child: _screens[index],
+                                    child: index == activeScreenIndex ||
+                                            _openedScreens.contains(index) ||
+                                            _screens[index]
+                                                is AdminBillingScreen ||
+                                            _screens[index] is AdminOrdersScreen
+                                        ? _rememberScreen(index)
+                                        : const SizedBox.shrink(),
                                   ),
                               ],
                             ),

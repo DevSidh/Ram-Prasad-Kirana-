@@ -940,6 +940,14 @@
 			"command": "rtk flutter run -d web-server --web-hostname 127.0.0.1 --web-port 7358 -t tool/admin_audit_preview.dart",
 			"isBackground": true,
 			"problemMatcher": []
+		},
+		{
+			"label": "Build APK with stable temporary directory",
+			"type": "shell",
+            "command": "rtk powershell -NoProfile -File tool/build_apk_release.ps1",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
 		}
 	]
 }
