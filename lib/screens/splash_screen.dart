@@ -46,17 +46,11 @@ class _SplashScreenState extends State<SplashScreen> {
     final userId = authProvider.currentUser?.id;
     productProvider.setAuthenticatedUser(userId);
     cartProvider.setAuthenticatedUser(userId);
-    final startupLoads = <Future<void>>[
-      productProvider.loadCatalog(),
-      availabilityProvider.refresh(),
-      if (userId != null) cartProvider.refreshSavedCart(),
-    ];
-    try {
-      await Future.wait(startupLoads).timeout(const Duration(seconds: 6));
-    } on TimeoutException {
-      // Keep the splash responsive if the backend is cold; provider loads continue
-      // and the first screens render from cache while they finish.
-    }
+    // Never hold the first frame on the network. Providers restore their local
+    // cache immediately and revalidate in the background after navigation.
+    unawaited(productProvider.loadCatalog());
+    unawaited(availabilityProvider.refresh());
+    if (userId != null) unawaited(cartProvider.refreshSavedCart());
   }
 
   void _onLoadingFinished(Object? error) {
@@ -149,7 +143,7 @@ class _SplashScreenState extends State<SplashScreen> {
       onFinished: _onLoadingFinished,
       title: AppConstants.appName,
       subtitle: AppConstants.appTagline,
-      minDuration: const Duration(milliseconds: 1500),
+      minDuration: const Duration(milliseconds: 350),
     );
   }
 }

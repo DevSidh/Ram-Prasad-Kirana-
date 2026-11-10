@@ -207,6 +207,9 @@ class _AppUpdateScreenState extends State<AppUpdateScreen>
       if (!await AndroidApkInstaller.canInstallPackages()) {
         await AndroidApkInstaller.openInstallPermissionSettings();
         if (mounted) {
+          // The settings screen is external. Leave the update actionable when
+          // the cashier returns so the installer can be retried immediately.
+          setState(() => _installing = false);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(

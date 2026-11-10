@@ -7,6 +7,7 @@ import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_colors.dart';
 import 'customer_menu_settings_screen.dart';
+import '../../widgets/offline_customer_dialog.dart';
 
 class AdminCustomersScreen extends StatefulWidget {
   final ApiService api;
@@ -65,6 +66,23 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
         _error = error.toString().replaceFirst('Exception: ', '');
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _createLocalCustomer() async {
+    final saved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const OfflineCustomerDialog(),
+    );
+    if (saved == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: BillingText(
+            'Customer saved on this computer and available in billing.',
+          ),
+        ),
+      );
     }
   }
 
@@ -301,6 +319,14 @@ class _AdminCustomersScreenState extends State<AdminCustomersScreen> {
           BillingText(
             'Customer contact details, saved addresses and recent orders.',
             style: Theme.of(context).textTheme.bodySmall,
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              onPressed: _createLocalCustomer,
+              icon: const Icon(Icons.person_add_alt_1),
+              label: const BillingText('New offline customer'),
+            ),
           ),
           Card(
             key: const ValueKey('customer-removal-history-card'),

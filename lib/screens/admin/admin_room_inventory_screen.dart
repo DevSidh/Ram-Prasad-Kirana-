@@ -59,7 +59,14 @@ class _AdminRoomInventoryScreenState extends State<AdminRoomInventoryScreen> {
       _error = null;
     });
     try {
-      final snapshot = await _service.load();
+      RoomInventorySnapshot? snapshot;
+      try {
+        snapshot = await _service.load();
+      } catch (_) {
+        // Inventory remains usable while the cloud endpoint is cold/offline.
+        snapshot = await _service.loadLocalIfAvailable();
+        if (snapshot == null) rethrow;
+      }
       final catalog = snapshot.products.toList();
       if (!mounted || request != _request) return;
       catalog

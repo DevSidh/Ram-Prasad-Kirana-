@@ -23,6 +23,19 @@ class RoomPickDialog extends StatefulWidget {
 class _RoomPickDialogState extends State<RoomPickDialog> {
   final _controllers = <String, Map<String?, TextEditingController>>{};
   String? _error;
+
+  /// A product with room allocations must be withdrawn from those rooms.
+  /// Do not expose the calculated Unassigned bucket alongside an assigned
+  /// room; doing so lets cashiers accidentally split a pick into a bucket that
+  /// is not actually part of the inventory assignment.
+  List<String?> _visibleLocations(String productId) {
+    final assigned = widget.snapshot.locations
+        .where(
+            (id) => id != null && widget.snapshot.quantity(productId, id) > 0)
+        .toList(growable: false);
+    return assigned.isNotEmpty ? assigned : const <String?>[null];
+  }
+
   @override
   void initState() {
     super.initState();
@@ -39,10 +52,7 @@ class _RoomPickDialogState extends State<RoomPickDialog> {
         selected[pick.roomId] = take;
         left -= take;
       }
-      for (final id in widget.snapshot.locations) {
-        if (id != null && widget.snapshot.quantity(product.id, id) == 0) {
-          continue;
-        }
+      for (final id in _visibleLocations(product.id)) {
         final extra = left.clamp(
             0, widget.snapshot.available(product.id, id) - (selected[id] ?? 0));
         final take = (selected[id] ?? 0) + extra;
@@ -125,29 +135,26 @@ class _RoomPickDialogState extends State<RoomPickDialog> {
                                 ]),
                                 BillingText(
                                     'Needed: ${widget.requiredQuantities[product.id]} ${roomStockUnit(product)}'),
-                                for (final id in widget.snapshot.locations)
-                                  if (widget.snapshot.quantity(product.id, id) >
-                                          0 ||
-                                      id == null)
-                                    Padding(
-                                        padding: const EdgeInsets.only(top: 12),
-                                        child: Row(children: [
-                                          Expanded(
-                                              child: BillingText(
-                                                  '${widget.snapshot.roomLabel(id)}\nAvailable: ${widget.snapshot.available(product.id, id)} ${roomStockUnit(product)}')),
-                                          const SizedBox(width: 12),
-                                          SizedBox(
-                                              width: 120,
-                                              child: BillingTextFormField(
-                                                  controller: _controllers[
-                                                      product.id]![id],
-                                                  keyboardType:
-                                                      TextInputType.number,
-                                                  decoration:
-                                                      const BillingInputDecoration(
-                                                          labelText:
-                                                              'Take quantity'))),
-                                        ])),
+                                for (final id in _visibleLocations(product.id))
+                                  Padding(
+                                      padding: const EdgeInsets.only(top: 12),
+                                      child: Row(children: [
+                                        Expanded(
+                                            child: BillingText(
+                                                '${widget.snapshot.roomLabel(id)}\nAvailable: ${widget.snapshot.available(product.id, id)} ${roomStockUnit(product)}')),
+                                        const SizedBox(width: 12),
+                                        SizedBox(
+                                            width: 120,
+                                            child: BillingTextFormField(
+                                                controller: _controllers[
+                                                    product.id]![id],
+                                                keyboardType:
+                                                    TextInputType.number,
+                                                decoration:
+                                                    const BillingInputDecoration(
+                                                        labelText:
+                                                            'Take quantity'))),
+                                      ])),
                               ])))
               ])),
               if (_error != null)
