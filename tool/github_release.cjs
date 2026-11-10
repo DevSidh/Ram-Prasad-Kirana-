@@ -21,6 +21,18 @@ async function main(){
     return response.status===204?null:response.json();
   };
   const [command,tag,file]=process.argv.slice(2);
+  if(command==='repos'){
+    const repositories=await api('/user/repos?per_page=100&sort=updated');
+    console.log(JSON.stringify(repositories.map(r=>({name:r.full_name,branch:r.default_branch,homepage:r.homepage})),null,2));return;
+  }
+  if(command==='publish'){
+    const releases=await api(`/repos/${repo}/releases?per_page=100`);
+    const release=releases.find(r=>r.tag_name===tag);
+    if(!release)throw Error('Release not found.');
+    if(!release.assets.some(a=>a.name.endsWith('.apk')) || !release.assets.some(a=>a.name.endsWith('.zip')))throw Error('Upload both APK and Windows ZIP before publishing.');
+    const published=await api(`/repos/${repo}/releases/${release.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({draft:false,make_latest:'true'})});
+    console.log(JSON.stringify({tag:published.tag_name,url:published.html_url,draft:published.draft}));return;
+  }
   if(command==='account'){
     const user=await api('/user');const repository=await api('/repos/'+repo);
     console.log(JSON.stringify({login:user.login,canPush:repository.permissions?.push??false}));return;
@@ -76,7 +88,7 @@ async function main(){
     const endpoint=release.upload_url.split('{')[0]+'?name='+encodeURIComponent(name);
     if(new URL(endpoint).hostname!=='uploads.github.com')throw Error('Unexpected upload destination.');
     const response=await fetch(endpoint,{method:'POST',headers:{Authorization:`Bearer ${token}`,
-      'Content-Type':name.endsWith('.zip')?'application/zip':'application/octet-stream','Content-Length':String(bytes.length)},body:bytes});
+      'Content-Type':name.endsWith('.apk')?'application/vnd.android.package-archive':name.endsWith('.zip')?'application/zip':name.endsWith('.json')?'application/json':'application/octet-stream','Content-Length':String(bytes.length)},body:bytes});
     if(!response.ok)throw Error(`GitHub release asset upload failed (HTTP ${response.status}).`);
     const asset=await response.json();console.log(JSON.stringify({name:asset.name,size:asset.size,url:asset.browser_download_url}));return;
   }
