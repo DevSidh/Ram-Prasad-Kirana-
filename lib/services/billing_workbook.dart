@@ -60,13 +60,17 @@ Uint8List buildBillingWorkbook(Map<String, List<List<Object?>>> sheets) {
 <fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF203F60"/><bgColor indexed="64"/></patternFill></fill></fills>
 <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"><alignment vertical="top" wrapText="1"/></xf><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"><alignment vertical="center" wrapText="1"/></xf><xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>
+<cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"><alignment vertical="top" wrapText="1"/></xf><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"><alignment vertical="center" wrapText="1"/></xf><xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyProtection="1"><protection locked="0"/></xf></cellXfs>
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>''');
   var sheetIndex = 0;
   for (final rows in sheets.values) {
     sheetIndex++;
     final count = rows.isEmpty ? 1 : rows.first.length;
+    final priceSheet = rows.isNotEmpty &&
+        rows.first.contains('Product ID') &&
+        rows.first.contains('Price NPR');
+    final priceColumn = rows.isEmpty ? -1 : rows.first.indexOf('Price NPR');
     final body = StringBuffer();
     for (var r = 0; r < rows.length; r++) {
       final lines = rows[r].fold<int>(1, (maxLines, value) {
@@ -80,7 +84,8 @@ Uint8List buildBillingWorkbook(Map<String, List<List<Object?>>> sheets) {
         final value = rows[r][c];
         final ref = '${column(c)}${r + 1}';
         if (r > 0 && value is num && value.isFinite) {
-          body.write('<c r="$ref" s="2"><v>$value</v></c>');
+          body.write(
+              '<c r="$ref" s="${priceSheet && c == priceColumn ? 3 : 2}"><v>$value</v></c>');
         } else {
           body.write(
               '<c r="$ref" s="${r == 0 ? 1 : 0}" t="inlineStr"><is><t xml:space="preserve">${xml(value)}</t></is></c>');
@@ -94,7 +99,7 @@ Uint8List buildBillingWorkbook(Map<String, List<List<Object?>>> sheets) {
         '$declaration<worksheet xmlns="$mainNs">'
             '<dimension ref="A1:$end"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
             '<sheetFormatPr defaultRowHeight="22"/><cols><col min="1" max="$count" width="24" customWidth="1"/></cols>'
-            '<sheetData>$body</sheetData><autoFilter ref="A1:$end"/>'
+            '<sheetData>$body</sheetData>${priceSheet ? '<sheetProtection sheet="1" objects="1" scenarios="1" autoFilter="0"/>' : ''}<autoFilter ref="A1:$end"/>'
             '<pageMargins left="0.25" right="0.25" top="0.5" bottom="0.5" header="0.2" footer="0.2"/>'
             '<pageSetup orientation="landscape" paperSize="9" fitToWidth="1" fitToHeight="0"/></worksheet>');
   }

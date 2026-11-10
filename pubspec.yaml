@@ -54,6 +54,7 @@ dependencies:
   package_info_plus: ^10.2.2
   crypto: ^3.0.8
   archive: ^4.5.2
+  xml: ^7.0.1
   audioplayers: 6.4.0
   qr_flutter: ^4.1.0
   sqflite_common_ffi: ^2.4.5

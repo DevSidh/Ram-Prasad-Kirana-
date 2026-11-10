@@ -1,4 +1,5 @@
 import '../../widgets/billing_localized_widgets.dart';
+import 'dart:io';
 import '../../core/billing_strings.dart';
 import 'package:flutter/foundation.dart';
 import '../../widgets/billing_language_switch.dart';
@@ -9,6 +10,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/product_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/admin_api_service.dart';
+import '../../services/catalogue_excel_sync.dart';
 import '../../services/offline_pos_store.dart';
 import '../../theme/admin_widgets.dart';
 import '../../theme/app_colors.dart';
@@ -64,6 +67,7 @@ class _BillingModule {
 }
 
 class _AdminShellState extends State<AdminShell> {
+  CatalogueExcelSync? _priceExcel;
   static const _windowsThemePreferenceKey = 'windows_admin_dark_theme';
 
   int _selectedIndex = 0;
@@ -148,6 +152,13 @@ class _AdminShellState extends State<AdminShell> {
       _restoreWindowsThemePreference();
     }
     final api = context.read<ApiService>();
+    if (_isWindows && !widget.isBillingStaff) {
+      _priceExcel = CatalogueExcelSync(
+          AdminApiService(api, offlineStore: widget.offlineStore),
+          widget.offlineStore,
+          ownerId: context.read<AuthProvider>().currentUser?.id ?? '')
+        ..start();
+    }
     if (widget.isBillingStaff) {
       _screens = [
         AdminBillingScreen(
@@ -230,8 +241,93 @@ class _AdminShellState extends State<AdminShell> {
 
   @override
   void dispose() {
+    _priceExcel?.dispose();
     if (_isWindows) AppColors.clearWindowsAdminTheme();
     super.dispose();
+  }
+
+  Future<void> _showPriceExcel() async {
+    final sync = _priceExcel;
+    if (sync == null) return;
+    await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => ListenableBuilder(
+            listenable: sync,
+            builder: (_, __) => AlertDialog(
+                  title: const BillingText('Linked product prices'),
+                  content: SizedBox(
+                      width: 480,
+                      child: SingleChildScrollView(
+                          child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                            const BillingText(
+                                'Edit Price NPR in Products, Wholesale or Drinks. Save and close Excel. Prices sync every 30 seconds while this admin panel is open.'),
+                            const SizedBox(height: 12),
+                            SelectableText(sync.path),
+                            const SizedBox(height: 12),
+                            BillingText(sync.status),
+                            const SizedBox(height: 8),
+                            const BillingText(
+                                'Stock, names and categories are reference only. Formulas are not accepted. Deleted Excel rows never delete products.'),
+                          ]))),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        child: const BillingText('Close')),
+                    TextButton(
+                        onPressed: sync.busy
+                            ? null
+                            : () async {
+                                final confirmed = await showDialog<bool>(
+                                    context: dialogContext,
+                                    builder: (context) => AlertDialog(
+                                            title: const BillingText(
+                                                'Use app prices?'),
+                                            content: const BillingText(
+                                                'Keep a backup of the current Excel file, then replace it with current app prices. Unsynced Excel edits will not be imported.'),
+                                            actions: [
+                                              TextButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(
+                                                          context, false),
+                                                  child: const BillingText(
+                                                      'Cancel')),
+                                              FilledButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(
+                                                          context, true),
+                                                  child: const BillingText(
+                                                      'Use app prices'))
+                                            ]));
+                                if (confirmed == true) {
+                                  await sync.synchronize(useAppPrices: true);
+                                }
+                              },
+                        child: const BillingText('Use app prices')),
+                    TextButton(
+                        onPressed: sync.busy ? null : () => sync.synchronize(),
+                        child: const BillingText('Sync now')),
+                    FilledButton.icon(
+                        onPressed: () async {
+                          try {
+                            if (!await File(sync.path).exists()) {
+                              throw StateError(
+                                  'Sync first to create the workbook.');
+                            }
+                            await Process.start('explorer.exe', [sync.path]);
+                          } catch (error) {
+                            if (dialogContext.mounted) {
+                              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                  SnackBar(content: Text('$error')));
+                            }
+                          }
+                        },
+                        icon: const Icon(Icons.open_in_new),
+                        label: const BillingText('Open Excel')),
+                  ],
+                )));
   }
 
   void _selectIndex(int index) {
@@ -461,7 +557,21 @@ class _AdminShellState extends State<AdminShell> {
                 Expanded(
                   child: Column(
                     children: [
-                      const BillingLanguageSwitch(),
+                      Row(children: [
+                        const Expanded(child: BillingLanguageSwitch()),
+                        if (_priceExcel != null)
+                          ListenableBuilder(
+                              listenable: _priceExcel!,
+                              builder: (_, __) => TextButton.icon(
+                                    onPressed: _showPriceExcel,
+                                    icon: Icon(
+                                        _priceExcel!.busy
+                                            ? Icons.sync
+                                            : Icons.table_chart_outlined,
+                                        size: 18),
+                                    label: const BillingText('Product Excel'),
+                                  )),
+                      ]),
                       ValueListenableBuilder<bool>(
                         valueListenable:
                             context.read<ApiService>().requiresSignIn,
