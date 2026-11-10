@@ -358,7 +358,7 @@ class LocalBillingStore {
       for (final item in (entry.record['items'] as List).whereType<Map>()) {
         final id = item['productId']?.toString();
         final quantity = item['weightGrams'] ?? item['quantity'];
-        if (id != null && quantity is num) {
+        if (id != null && !id.startsWith('manual-') && quantity is num) {
           result[id] = (result[id] ?? 0) + quantity.toInt();
         }
       }

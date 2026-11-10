@@ -111,6 +111,9 @@ class LocalBillingSync extends ChangeNotifier {
           } else {
             for (final item
                 in (entry.record['items'] as List).whereType<Map>()) {
+              if (item['productId']?.toString().startsWith('manual-') == true) {
+                continue;
+              }
               final refreshed = await adminApi
                   .searchPosProducts(item['sku']?.toString() ?? '');
               if (!refreshed
@@ -130,6 +133,7 @@ class LocalBillingSync extends ChangeNotifier {
                     productIds: (entry.record['items'] as List)
                         .cast<Map>()
                         .map((item) => item['productId'] as String)
+                        .where((id) => !id.startsWith('manual-'))
                         .toSet()
                         .toList());
           }
@@ -160,9 +164,14 @@ class LocalBillingSync extends ChangeNotifier {
           final skus = <String, String>{};
           for (final item in (entry.record['items'] as List).cast<Map>()) {
             final id = item['productId'] as String;
+            if (id.startsWith('manual-')) continue;
             quantities[id] = (quantities[id] ?? 0) +
                 ((item['weightGrams'] ?? item['quantity']) as num).toInt();
             skus[id] = item['sku'] as String;
+          }
+          if (quantities.isEmpty) {
+            await store.setRoomStockSyncResult(entry.file, synced: true);
+            continue;
           }
           final localIds = quantities.keys
               .where((id) => RegExp(r'^(offline|wholesale)-\d+$').hasMatch(id))
@@ -201,6 +210,9 @@ class LocalBillingSync extends ChangeNotifier {
             await refreshStock!(entry.record);
           } else {
             for (final item in (entry.record['items'] as List).cast<Map>()) {
+              if (item['productId']?.toString().startsWith('manual-') == true) {
+                continue;
+              }
               final products = await adminApi
                   .searchPosProducts(item['sku'] as String? ?? '');
               if (!products

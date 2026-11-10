@@ -22,7 +22,15 @@ const saleItemsInput = z.array(z.object({
   productId: z.string().trim().min(1).max(100),
   quantity: z.number().int().min(1).max(100000),
   weightGrams: z.number().int().min(1).max(1000000).nullable().optional(),
-}).strict()).min(1).max(100);
+  manualName: z.string().trim().max(180).optional(),
+  manualPrice: z.number().finite().positive().max(9999999)
+    .refine(v => Math.abs(v * 100 - Math.round(v * 100)) < 0.000001).optional(),
+}).strict().superRefine((item, context) => {
+  const manual = /^manual-[a-f0-9-]{36}$/i.test(item.productId);
+  if (manual ? item.manualPrice == null || item.weightGrams != null : item.manualPrice != null || item.manualName != null) {
+    context.addIssue({ code: 'custom', message: 'Manual items require a price and cannot use inventory or weight.' });
+  }
+})).min(1).max(100);
 
 const saleInput = z.object({
   cataloguePriceChanges: priceChangesInput.optional(),
@@ -1181,6 +1189,7 @@ export function createAdminBillingRouter(
       details: parsed.error.issues.map(issue => ({ field: issue.path.join('.'), message: issue.message })),
     });
     const manualFonepay = ['FONEPAY', 'ESEWA'].includes(parsed.data.paymentMethod) && !!parsed.data.manualVerification;
+    const manualItem = (item: { productId: string }) => /^manual-[a-f0-9-]{36}$/i.test(item.productId);
     // eSewa is a DIGITAL payment subtype; preserve its provider in audit metadata.
     const storedPaymentMethod = parsed.data.paymentMethod === 'ESEWA' ? 'DIGITAL' : parsed.data.paymentMethod;
     if (manualFonepay && !['ADMIN', 'BILLING_STAFF'].includes(authenticatedRole(res) ?? '')) {
@@ -1208,21 +1217,26 @@ export function createAdminBillingRouter(
     const receiptNumber = parsed.data.idempotencyKey
       ? `POS-${parsed.data.idempotencyKey.toUpperCase()}`
       : `POS-${Date.now()}-${randomUUID().slice(0, 8).toUpperCase()}`;
+    const manualReplayMatches = (existing: { items: Array<{ productId: string | null; sku?: string; productName?: string; quantity: number; unitPrice: Prisma.Decimal }> }) =>
+      JSON.stringify(existing.items.filter(i => i.productId == null && i.sku?.startsWith('manual-'))
+        .map(i => [i.sku, i.productName, i.quantity, Number(i.unitPrice)]).sort()) ===
+      JSON.stringify(parsed.data.items.filter(manualItem)
+        .map(i => [i.productId, i.manualName || 'Miscellaneous item', i.quantity, i.manualPrice]).sort());
     const offlineReplayMatches = (existing: {
       total: Prisma.Decimal; discount: Prisma.Decimal; vatRate: Prisma.Decimal;
       paymentMethod?: string;
       paymentCollections?: Array<{ method: string; note: string | null }>;
-      items: Array<{ productId: string | null; quantity: number; weightGrams: number | null; unitPrice: Prisma.Decimal }>;
-    }) => !(offline || manualFonepay) || (
+      items: Array<{ productId: string | null; sku?: string; productName?: string; quantity: number; weightGrams: number | null; unitPrice: Prisma.Decimal }>;
+    }) => manualReplayMatches(existing) && (!(offline || manualFonepay) || (
       (!manualFonepay || (existing.paymentMethod === storedPaymentMethod && existing.paymentCollections?.some(payment => payment.method === storedPaymentMethod && manualPaymentProvider(payment.note) === parsed.data.paymentMethod && manualFonepayReference(payment.note) === parsed.data.manualVerification!.transactionReference))) &&
       roundMoney(Number(existing.total)) === roundMoney((offline?.expectedTotal ?? parsed.data.quote!.expectedTotal)) &&
       roundMoney(Number(existing.discount)) === roundMoney(parsed.data.discount) &&
       roundMoney(Number(existing.vatRate)) === roundMoney(parsed.data.vatRate) &&
       JSON.stringify(existing.items.map((item) =>
-        `${item.productId}:${item.quantity}:${item.weightGrams ?? ''}:${Number(item.unitPrice)}`).sort()) ===
+        `${item.productId ?? item.sku}:${item.quantity}:${item.weightGrams ?? ''}:${Number(item.unitPrice)}${item.productId == null ? ':' + item.productName : ''}`).sort()) ===
       JSON.stringify(parsed.data.items.map((item) =>
-        `${item.productId}:${item.quantity}:${item.weightGrams ?? ''}:${(offline?.unitPrices ?? parsed.data.quote!.unitPrices)[item.productId]}`).sort())
-    );
+        `${item.productId}:${item.quantity}:${item.weightGrams ?? ''}:${item.manualPrice ?? (offline?.unitPrices ?? parsed.data.quote!.unitPrices)[item.productId]}${manualItem(item) ? ':' + (item.manualName || 'Miscellaneous item') : ''}`).sort())
+    ));
     try {
       let replayed = false;
       const sale = await runTransactionWithRetry(prisma, async (tx) => {
@@ -1270,6 +1284,14 @@ export function createAdminBillingRouter(
         });
         const productById = new Map(products.map((product) => [product.id, product]));
         const lines = parsed.data.items.map((item) => {
+          if (manualItem(item)) {
+            const unitPrice = item.manualPrice!;
+            const quote = offline?.unitPrices ?? parsed.data.quote?.unitPrices;
+            if (quote && quote[item.productId] !== unitPrice) throw new Error('POS_QUOTE_CHANGED');
+            return { product: { id: item.productId, name: item.manualName || 'Miscellaneous item', sku: item.productId },
+              manual: true, quantity: item.quantity, weightGrams: null, stockQuantity: 0,
+              unitPrice, lineTotal: roundMoney(unitPrice * item.quantity) };
+          }
           const product = productById.get(item.productId);
           if (!product) throw new Error('POS_PRODUCT_UNAVAILABLE');
           const byWeight = isWeightUnitLabel(product.unitLabel);
@@ -1295,6 +1317,7 @@ export function createAdminBillingRouter(
           );
           return {
             product,
+            manual: false,
             quantity: item.quantity,
             weightGrams,
             stockQuantity,
@@ -1304,6 +1327,7 @@ export function createAdminBillingRouter(
         });
         const stockTotals = new Map<string, number>();
         for (const line of lines) {
+          if (line.manual) continue;
           stockTotals.set(
             line.product.id,
             (stockTotals.get(line.product.id) ?? 0) + line.stockQuantity,
@@ -1406,7 +1430,7 @@ export function createAdminBillingRouter(
               }),
             items: {
               create: lines.map((line) => ({
-                productId: line.product.id,
+                productId: line.manual ? null : line.product.id,
                 productName: line.product.name,
                 sku: line.product.sku,
                 quantity: line.quantity,

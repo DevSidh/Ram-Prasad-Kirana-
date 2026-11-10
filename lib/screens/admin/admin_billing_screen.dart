@@ -3911,7 +3911,9 @@ class _PosBillDialogState extends State<PosBillDialog> {
             price:
                 ((item['cataloguePrice'] ?? item['price']) as num).toDouble(),
             unitLabel: item['unitLabel'] as String,
-            available: 0,
+            available: (item['productId'] as String).startsWith('manual-')
+                ? 100000
+                : 0,
           ),
           quantity: (item['quantity'] as num).toInt(),
           weightGrams: (item['weightGrams'] as num?)?.toInt(),
@@ -4140,6 +4142,96 @@ class _PosBillDialogState extends State<PosBillDialog> {
   bool _isWeightProduct(PosProduct product) =>
       StockSummary.isLooseWeight(product);
 
+  bool _isManualProduct(PosProduct product) => product.id.startsWith('manual-');
+
+  Future<void> _addManualItem() async {
+    if (_saving || _choosingRooms) return;
+    final name = TextEditingController();
+    final price = TextEditingController();
+    final quantity = TextEditingController(text: '1');
+    String? error;
+    final item = await showDialog<PosProduct>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+          builder: (context, update) => AlertDialog(
+                title: const BillingText('Add manual item'),
+                scrollable: true,
+                content: SizedBox(
+                    width: 360,
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      TextField(
+                          controller: name,
+                          maxLength: 180,
+                          decoration: const InputDecoration(
+                              labelText: 'Name (optional)')),
+                      TextField(
+                          controller: price,
+                          autofocus: true,
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: const InputDecoration(
+                              labelText: 'Unit price (NPR)')),
+                      TextField(
+                          controller: quantity,
+                          keyboardType: TextInputType.number,
+                          decoration:
+                              const InputDecoration(labelText: 'Quantity')),
+                      if (error != null)
+                        BillingText(error!,
+                            style: const TextStyle(color: Colors.red)),
+                      const SizedBox(height: 8),
+                      const BillingText(
+                          'Manual items do not change inventory stock.'),
+                    ])),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child: const BillingText('Cancel')),
+                  FilledButton(
+                      onPressed: () {
+                        final rate = double.tryParse(price.text.trim());
+                        final count = int.tryParse(quantity.text.trim());
+                        if (rate == null ||
+                            !rate.isFinite ||
+                            rate <= 0 ||
+                            rate > 9999999 ||
+                            (rate * 100 - (rate * 100).round()).abs() >
+                                .000001 ||
+                            count == null ||
+                            count < 1 ||
+                            count > 100000) {
+                          update(() => error =
+                              'Enter a positive price (up to 2 decimals) and quantity from 1 to 100000.');
+                          return;
+                        }
+                        final id = 'manual-${const Uuid().v4()}';
+                        Navigator.pop(
+                            dialogContext,
+                            PosProduct(
+                                id: id,
+                                name: name.text.trim().isEmpty
+                                    ? 'Miscellaneous item'
+                                    : name.text.trim(),
+                                sku: id,
+                                barcode: null,
+                                price: rate,
+                                unitLabel: '1 pc',
+                                available: 100000));
+                      },
+                      child: const BillingText('Add')),
+                ],
+              )),
+    );
+    final count = int.tryParse(quantity.text.trim()) ?? 1;
+    name.dispose();
+    price.dispose();
+    quantity.dispose();
+    if (item == null || !mounted || _saving) return;
+    _cart.add(_PosCartLine(item, quantity: count));
+    _cartChanged(membership: true);
+    _searchFocus.requestFocus();
+  }
+
   double get _subtotal => _cart.fold<double>(
         0,
         (sum, item) =>
@@ -4266,7 +4358,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
                     await RoomInventoryService(widget.api, _offlinePosStore)
                         .load(offline: true);
                 snapshot.validatePicks(_roomPicks ?? const [], {
-                  for (final line in _cart)
+                  for (final line
+                      in _cart.where((l) => !_isManualProduct(l.product)))
                     line.product.id: _cart
                         .where((item) => item.product.id == line.product.id)
                         .fold<int>(
@@ -4281,6 +4374,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                 };
                 final quantities = <String, int>{};
                 for (final line in _cart) {
+                  if (_isManualProduct(line.product)) continue;
                   quantities[line.product.id] =
                       (quantities[line.product.id] ?? 0) +
                           (line.weightGrams ?? line.quantity);
@@ -4640,6 +4734,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
 
   Future<bool> _chooseProductRooms(PosProduct product, int required) async {
     if (!mounted) return false;
+    if (_isManualProduct(product)) return true;
     if (!kIsWeb && defaultTargetPlatform != TargetPlatform.windows) {
       _roomPicks = [
         ...?_roomPicks?.where((pick) => pick.productId != product.id),
@@ -4810,6 +4905,10 @@ class _PosBillDialogState extends State<PosBillDialog> {
             'productId': line.product.id,
             'quantity': line.quantity,
             'weightGrams': line.weightGrams,
+            if (_isManualProduct(line.product)) ...{
+              'manualName': line.product.name,
+              'manualPrice': line.unitPrice,
+            },
           })
       .toList(growable: false);
 
@@ -5234,6 +5333,10 @@ class _PosBillDialogState extends State<PosBillDialog> {
                   const SizedBox.square(
                       dimension: 16,
                       child: CircularProgressIndicator(strokeWidth: 2)),
+                TextButton.icon(
+                    onPressed: _saving ? null : _addManualItem,
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const BillingText('Manual item')),
               ],
             ),
             const SizedBox(height: 6),
@@ -5793,6 +5896,11 @@ class _PosBillDialogState extends State<PosBillDialog> {
               style: Theme.of(context).textTheme.bodySmall,
             ),
           BillingIconButton(
+            tooltip: 'Add manual item',
+            onPressed: _saving ? null : _addManualItem,
+            icon: const Icon(Icons.add_box_outlined),
+          ),
+          BillingIconButton(
             tooltip: 'Close',
             onPressed: _saving ? null : () => Navigator.pop(context),
             icon: const Icon(Icons.close),
@@ -6012,7 +6120,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
 
   List<Map<String, dynamic>> get _priceChanges => {
         for (final line in _cart)
-          if (line.unitPrice != line.product.price)
+          if (!_isManualProduct(line.product) &&
+              line.unitPrice != line.product.price)
             line.product.id: {
               'productId': line.product.id,
               'expectedPrice': line.product.price,
