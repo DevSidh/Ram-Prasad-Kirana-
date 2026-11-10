@@ -45,7 +45,7 @@ class _RoomPickDialogState extends State<RoomPickDialog> {
       final selected = <String?, int>{};
       for (final pick
           in widget.initialPicks.where((p) => p.productId == product.id)) {
-        if (!widget.snapshot.locations.contains(pick.roomId)) continue;
+        if (!_visibleLocations(product.id).contains(pick.roomId)) continue;
         final take = pick.quantity
             .clamp(0, widget.snapshot.available(product.id, pick.roomId))
             .clamp(0, left);

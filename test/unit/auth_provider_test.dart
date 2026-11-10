@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -22,6 +23,14 @@ class _ProfileApi extends ApiService {
       },
     };
   }
+}
+
+class _DelayedProfileApi extends ApiService {
+  final response = Completer<dynamic>();
+
+  @override
+  Future<dynamic> get(String endpoint, {Map<String, String>? queryParams}) =>
+      response.future;
 }
 
 class _EmailVerificationApi extends ApiService {
@@ -60,6 +69,26 @@ class _EmailVerificationApi extends ApiService {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('restored session does not await a slow profile request', () async {
+    SharedPreferences.setMockInitialValues({
+      AppConstants.keyToken: 'saved-token',
+      AppConstants.keyUser: jsonEncode({
+        'id': 'saved-user',
+        'email': 'saved@example.com',
+        'fullName': 'Saved customer',
+        'role': 'CUSTOMER',
+      }),
+    });
+    final api = _DelayedProfileApi();
+    final auth = AuthProvider(apiService: api);
+    await auth.sessionReady.timeout(const Duration(seconds: 1));
+    expect(auth.currentUser?.id, 'saved-user');
+    expect(auth.isAuthenticated, isTrue);
+    auth.dispose();
+    api.response.completeError(StateError('server unavailable'));
+    await Future<void>.delayed(Duration.zero);
+  });
 
   test('profile edits preserve and persist the existing avatar URL', () async {
     SharedPreferences.setMockInitialValues({

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -14,6 +15,13 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _errorMessage;
   String? _pendingVerificationEmail;
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
 
   late final Future<void> sessionReady;
 
@@ -95,29 +103,35 @@ class AuthProvider extends ChangeNotifier {
       );
       notifyListeners();
       if (savedUser.profileId == null) {
-        try {
-          final response = await _apiService.get('/account/profile');
-          final profile =
-              response is Map<String, dynamic> ? response['data'] : null;
-          if (profile is! Map<String, dynamic> ||
-              profile['profileId'] is! String) {
-            throw const FormatException(
-              'The server did not return your profile ID.',
-            );
-          }
-          _currentUser = User.fromJson(profile).copyWith(
-            avatarUrl: _resolveAvatarUrl(profile['avatarUrl']),
-          );
-          await prefs.setString(
-            AppConstants.keyUser,
-            jsonEncode(_currentUser!.toJson()),
-          );
-          notifyListeners();
-        } catch (error) {
-          _errorMessage = error.toString().replaceFirst('Exception: ', '');
-          notifyListeners();
-        }
+        unawaited(_refreshRestoredProfile(savedToken, prefs));
       }
+    }
+  }
+
+  Future<void> _refreshRestoredProfile(
+      String savedToken, SharedPreferences prefs) async {
+    try {
+      final response = await _apiService.get('/account/profile');
+      if (_disposed || _token != savedToken) return;
+      final profile =
+          response is Map<String, dynamic> ? response['data'] : null;
+      if (profile is! Map<String, dynamic> || profile['profileId'] is! String) {
+        throw const FormatException(
+          'The server did not return your profile ID.',
+        );
+      }
+      _currentUser = User.fromJson(profile).copyWith(
+        avatarUrl: _resolveAvatarUrl(profile['avatarUrl']),
+      );
+      await prefs.setString(
+        AppConstants.keyUser,
+        jsonEncode(_currentUser!.toJson()),
+      );
+      if (!_disposed && _token == savedToken) notifyListeners();
+    } catch (error) {
+      if (_disposed || _token != savedToken) return;
+      _errorMessage = error.toString().replaceFirst('Exception: ', '');
+      notifyListeners();
     }
   }
 

@@ -62,6 +62,8 @@ void main() {
         await tester.tap(find.text('Open'));
         await tester.pumpAndSettle();
         expect(find.text('Fixture tea'), findsOneWidget);
+        expect(find.byType(EditableText), findsOneWidget,
+            reason: 'Assigned products must not offer an Unassigned bucket.');
         expect(tester.takeException(), isNull);
         await tester.tap(find.text(BillingStrings.tr('Cancel / Back')));
         await tester.pumpAndSettle();
