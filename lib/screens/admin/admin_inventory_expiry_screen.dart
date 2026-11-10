@@ -55,7 +55,11 @@ class _AdminInventoryExpiryScreenState
 
   Future<void> _loadCategories() async {
     try {
-      final categories = await _adminApi.getCategories();
+      final categories = await _adminApi.getCategories().timeout(
+            const Duration(seconds: 8),
+            onTimeout: () => throw TimeoutException(
+                'Categories are taking too long to load. Please retry.'),
+          );
       if (!mounted) return;
       setState(() {
         _categories = categories;
@@ -76,14 +80,20 @@ class _AdminInventoryExpiryScreenState
       _error = null;
     });
     try {
-      final result = await _adminApi.getExpiryBatches(
-        warningDays: _warningDays,
-        status: _status,
-        page: page,
-        categoryId: _categoryId,
-        lowStock: _lowStockOnly,
-        search: _search.text,
-      );
+      final result = await _adminApi
+          .getExpiryBatches(
+            warningDays: _warningDays,
+            status: _status,
+            page: page,
+            categoryId: _categoryId,
+            lowStock: _lowStockOnly,
+            search: _search.text,
+          )
+          .timeout(
+            const Duration(seconds: 8),
+            onTimeout: () => throw TimeoutException(
+                'Expiry inventory is taking too long to load. Check your connection and retry.'),
+          );
       if (!mounted || request != _requestId) return;
       setState(() {
         _result = result;

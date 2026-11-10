@@ -1,5 +1,6 @@
 import { Router, type Request, type RequestHandler, type Response } from 'express';
 import { Prisma, type PrismaClient } from '@prisma/client';
+import { weightUnitSql } from '../services/weight-unit-sql.js';
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
@@ -633,7 +634,7 @@ async function availableProductIds(
       INNER JOIN "Inventory" AS i ON i."productId" = p."id"
       WHERE i."totalStock" - i."reservedStock" > 0
         AND i."totalStock" - i."reservedStock" <= CASE
-          WHEN p."unitLabel" ~* '^[[:space:]]*[0-9]+([.][0-9]+)?[[:space:]]*(kg|g)[[:space:]]*$'
+          WHEN ${weightUnitSql()}
             THEN p."lowStockThreshold" * 1000
           ELSE p."lowStockThreshold"
         END
@@ -648,7 +649,7 @@ async function availableProductIds(
       WHERE p."isActive" = true
         AND COALESCE(i."totalStock", 0) - COALESCE(i."reservedStock", 0)
           <= CASE
-            WHEN p."unitLabel" ~* '^[[:space:]]*[0-9]+([.][0-9]+)?[[:space:]]*(kg|g)[[:space:]]*$'
+            WHEN ${weightUnitSql()}
               THEN p."lowStockThreshold" * 1000
             ELSE p."lowStockThreshold"
           END
@@ -1465,7 +1466,7 @@ export function createAdminRouter(
               WHERE COALESCE(i."totalStock", 0) - COALESCE(i."reservedStock", 0) > 0
                 AND COALESCE(i."totalStock", 0) - COALESCE(i."reservedStock", 0)
                   <= CASE
-                    WHEN p."unitLabel" ~* '^[[:space:]]*[0-9]+([.][0-9]+)?[[:space:]]*(kg|g)[[:space:]]*$'
+                    WHEN ${weightUnitSql()}
                       THEN p."lowStockThreshold" * 1000
                     ELSE p."lowStockThreshold"
                   END
@@ -3273,12 +3274,12 @@ export function createAdminRouter(
     ];
     if (categoryId) conditions.push(Prisma.sql`p."categoryId" = ${categoryId}`);
     if (search) conditions.push(Prisma.sql`
-      POSITION(${search.toLowerCase()} IN LOWER(CONCAT_WS(' ', p."name", p."sku", p."barcode", b."lotNumber"))) > 0
+      INSTR(LOWER(COALESCE(p."name", '') || ' ' || COALESCE(p."sku", '') || ' ' || COALESCE(p."barcode", '') || ' ' || COALESCE(b."lotNumber", '')), ${search.toLowerCase()}) > 0
     `);
     if (lowStock) {
       conditions.push(
         Prisma.sql`b."remainingQuantity" <= CASE
-          WHEN p."unitLabel" ~* '^[[:space:]]*[0-9]+([.][0-9]+)?[[:space:]]*(kg|g)[[:space:]]*$'
+          WHEN ${weightUnitSql()}
             THEN p."lowStockThreshold" * 1000
           ELSE p."lowStockThreshold"
         END`,

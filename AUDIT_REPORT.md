@@ -50,6 +50,9 @@ No automated test failures remain. Physical printer, live Turso latency, offline
 - Windows release built and launched with the existing restored account. Read-only smoke checks confirmed dashboard totals, local invoice history and the new invoice grid with **52 products**. No sale, payment, refund, stock adjustment or customer was created in the live app.
 - No connected Android device was returned by `flutter devices`; phone installation, upgrade permissions, printer output and full manual coverage cannot be claimed.
 - Widget-test timing logs are not physical-device/profile-mode performance measurements. No sub-100ms runtime guarantee is made.
+- After the startup/customer/room/update fixes, the full Flutter suite passed **467 tests**; static analysis remained clean.
+- Additional Windows release read-only smoke checks opened Refunds, Reports, Pending Cash and Cash Register successfully. Expiry remained on a full-screen network spinner; its request and category load now time out after eight seconds with retry feedback.
+- Further inspection found Cockroach-specific `~*`, `POSITION` and `CONCAT_WS` in stock/expiry queries. These are now SQLite-compatible, parameterized expressions. An actual in-memory libSQL engine test verifies unit classification agrees with the existing application kg/g rule and nullable search is supported. No schema change is required. Deploy the updated backend to apply this server-side fix.
 
 ### Scope limits
 

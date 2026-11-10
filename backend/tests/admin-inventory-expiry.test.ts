@@ -69,7 +69,7 @@ async function main(): Promise<void> {
     const search = "LOT-1' OR 1=1 --";
     const filtered = await fetch(`http://127.0.0.1:${address.port}/admin/inventory/expiry?search=${encodeURIComponent(search)}&categoryId=dairy&status=expiring`);
     assert.equal(filtered.status, 200);
-    assert(queries.at(-1)?.includes('POSITION('));
+    assert(queries.at(-1)?.includes('INSTR('));
     assert(!queries.at(-1)?.includes(search));
     assert(queryValues.at(-1)?.includes(search.toLowerCase()));
     console.log('Admin expiry inventory serializes CockroachDB integer values.');

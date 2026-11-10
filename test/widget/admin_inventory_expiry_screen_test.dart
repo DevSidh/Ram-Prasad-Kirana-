@@ -1,7 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:freshharvest_grocery/screens/admin/admin_inventory_expiry_screen.dart';
 import 'package:freshharvest_grocery/services/api_service.dart';
+
+class _PendingExpiryApi extends ApiService {
+  @override
+  Future<dynamic> get(String endpoint, {Map<String, String>? queryParams}) =>
+      Completer<dynamic>().future;
+}
 
 class _ExpiryApi extends ApiService {
   Map<String, String>? expiryQuery;
@@ -62,6 +69,17 @@ class _ExpiryApi extends ApiService {
 }
 
 void main() {
+  testWidgets('unresponsive expiry request ends with a retry action',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: AdminInventoryExpiryScreen(api: _PendingExpiryApi()),
+    ));
+    await tester.pump(const Duration(seconds: 9));
+    await tester.pump();
+    expect(find.text('Expiry inventory unavailable'), findsOneWidget);
+    expect(find.text('Try again'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
   testWidgets('expiry screen filters batches and opens batch details',
       (tester) async {
     final api = _ExpiryApi();
