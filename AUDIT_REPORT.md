@@ -33,3 +33,24 @@ Date: 2026-11-08
 ## Required next fixes
 
 No automated test failures remain. Physical printer, live Turso latency, offline network, and 5,000-product profile checks still require the billing computer.
+
+## Recheck — 2026-11-10
+
+### Newly found and corrected
+
+- **Startup / high:** `AuthProvider.loadSavedSession` awaited a profile API request for legacy sessions missing a profile ID. Session restoration now returns after reading local credentials; the profile refresh runs separately, checks the original token, and ignores results after disposal. A delayed-response regression verifies startup does not await the server.
+- **Room picking / medium:** an old Unassigned pick could consume the initial allocation even though that location was hidden. Initial picks now use the same visible-location filter as the controls.
+- **Android customer creation / high:** the offline customer writer used a Windows drive path and the reader returned an empty list on every non-Windows platform. Android now reads/writes the same customer JSON under its application support directory. Windows retains its existing directory. A temporary-directory roundtrip verifies persistence and updating an existing phone without duplication.
+- **Android updates / medium:** returning from unknown-app installation permission settings required an extra manual retry. The update screen now observes resume, rechecks permission, and resumes installation only when permission was granted. Installer signature validation is retained. This native flow still needs a real-device test.
+
+### Validation evidence
+
+- Complete Flutter test suite before follow-up changes: **465 passed**.
+- Complete backend `npm test` (including pretest) and `npm run build`: passed. Expected negative-case logging includes rejected corrupt images and simulated email failures; these are test fixtures.
+- Windows release built and launched with the existing restored account. Read-only smoke checks confirmed dashboard totals, local invoice history and the new invoice grid with **52 products**. No sale, payment, refund, stock adjustment or customer was created in the live app.
+- No connected Android device was returned by `flutter devices`; phone installation, upgrade permissions, printer output and full manual coverage cannot be claimed.
+- Widget-test timing logs are not physical-device/profile-mode performance measurements. No sub-100ms runtime guarantee is made.
+
+### Scope limits
+
+The automated suite covers admin/customer workflows with fixtures. This does not prove every production screen or network failure mode was manually exercised. Existing UI typography and layout were not broadly redesigned in this recheck. Physical printer centering, fresh-login credentials, Android native installation and live offline/slow-network scenarios remain unverified.

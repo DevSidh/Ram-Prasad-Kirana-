@@ -33,7 +33,7 @@ class AppUpdateScreen extends StatefulWidget {
 }
 
 class _AppUpdateScreenState extends State<AppUpdateScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _entryController = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 700),
@@ -54,6 +54,7 @@ class _AppUpdateScreenState extends State<AppUpdateScreen>
   String? _currentVersion;
   String? _currentBuild;
   bool _installing = false;
+  bool _waitingForInstallPermission = false;
   bool _verifying = false;
   DateTime? _lastProgressAt;
 
@@ -65,6 +66,7 @@ class _AppUpdateScreenState extends State<AppUpdateScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     if (widget.initialCheck != null) {
       _check = widget.initialCheck;
       _state = _UpdateViewState.available;
@@ -75,12 +77,30 @@ class _AppUpdateScreenState extends State<AppUpdateScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     if (_cancelToken?.isCancelled == false) {
       _cancelToken?.cancel('Update screen closed.');
     }
     _entryController.dispose();
     _orbitController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _waitingForInstallPermission) {
+      _waitingForInstallPermission = false;
+      _resumeInstallation();
+    }
+  }
+
+  Future<void> _resumeInstallation() async {
+    try {
+      final allowed = await AndroidApkInstaller.canInstallPackages();
+      if (mounted && allowed) await _installUpdate();
+    } catch (error) {
+      if (mounted) setState(() => _error = _friendlyError(error));
+    }
   }
 
   Future<void> _checkForUpdates() async {
@@ -205,6 +225,7 @@ class _AppUpdateScreenState extends State<AppUpdateScreen>
     setState(() => _installing = true);
     try {
       if (!await AndroidApkInstaller.canInstallPackages()) {
+        _waitingForInstallPermission = true;
         await AndroidApkInstaller.openInstallPermissionSettings();
         if (mounted) {
           // The settings screen is external. Leave the update actionable when

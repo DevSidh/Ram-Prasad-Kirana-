@@ -1,8 +1,10 @@
+import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:freshharvest_grocery/models/admin_models.dart';
 import 'package:freshharvest_grocery/models/pos_models.dart';
 import 'package:freshharvest_grocery/services/billing_customer_service.dart';
 import 'package:freshharvest_grocery/services/offline_pos_store.dart';
+import 'package:freshharvest_grocery/services/billing_excel_export_service.dart';
 
 class _CustomerStore extends OfflinePosStore {
   @override
@@ -25,6 +27,28 @@ AdminCustomer customer(String name, String phone,
         {'id': id, 'name': name, 'phone': phone, 'isActive': true});
 
 void main() {
+  test('new offline customer survives reload and edits without duplicates',
+      () async {
+    final directory = await Directory.systemTemp.createTemp('customer-save-');
+    BillingExcelExportService.baseDirectoryOverride = directory.path;
+    try {
+      await BillingExcelExportService.saveCustomer(
+          name: 'Fixture customer',
+          phone: '9812345678',
+          address: 'Fixture address');
+      var saved = await BillingExcelExportService.readSavedCustomers();
+      expect(saved.single.phone, '9812345678');
+      expect(saved.single.addresses.single['address'], 'Fixture address');
+      await BillingExcelExportService.saveCustomer(
+          name: 'Updated fixture', phone: '9812345678', address: 'New address');
+      saved = await BillingExcelExportService.readSavedCustomers();
+      expect(saved, hasLength(1));
+      expect(saved.single.name, 'Updated fixture');
+    } finally {
+      BillingExcelExportService.baseDirectoryOverride = null;
+      await directory.delete(recursive: true);
+    }
+  });
   test('exact existing name returns its normalized phone number', () {
     final result = BillingCustomerService.findExact(
         [customer('SS', '+977 9800000000')],

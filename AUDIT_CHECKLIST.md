@@ -33,5 +33,15 @@
 - [x] `flutter analyze`
 - [x] Admin page audit tests
 - [x] Invoice responsiveness tests
-- [ ] Full test suite: local catalogue cleanup/recovery failures remain
+- [x] Full test suite: prior local catalogue cleanup/recovery failures resolved
 - [ ] Physical printer, offline network, 5,000-product profile run
+
+## Recheck — 2026-11-10
+- [x] Complete Flutter suite before follow-up fixes: 465 passed
+- [x] Complete backend test command and TypeScript build
+- [x] Windows release launched: restored session, dashboard totals, invoice history, invoice product grid (52 products)
+- [x] Slow legacy profile refresh moved off startup path; isolated regression test
+- [x] Android offline customer storage reviewed and corrected to application support directory
+- [x] Room controllers ignore hidden Unassigned selections
+- [ ] Physical Android install/update and device smoke test (no Android device connected)
+- [ ] Every production menu exercised manually (covered by fixture tests; runtime smoke test limited to the screens above)

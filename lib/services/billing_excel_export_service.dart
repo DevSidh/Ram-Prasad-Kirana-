@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'package:path_provider/path_provider.dart';
 
 import '../models/admin_models.dart';
 import '../models/pos_models.dart';
@@ -13,6 +14,14 @@ class BillingExcelExportService {
   static String? baseDirectoryOverride;
   static String get _baseDirectory =>
       baseDirectoryOverride ?? 'C:/Ramprasad store/bills';
+
+  static Future<String> _customerDirectory() async {
+    if (baseDirectoryOverride != null || Platform.isWindows) {
+      return _baseDirectory;
+    }
+    final support = await getApplicationSupportDirectory();
+    return '${support.path}/billing';
+  }
 
   static Future<String> writePendingCash(
     List<PosSale> sales, {
@@ -168,8 +177,8 @@ class BillingExcelExportService {
 
   /// Returns customer details previously saved with billing records on this PC.
   static Future<List<AdminCustomer>> readSavedCustomers() async {
-    if (!Platform.isWindows) return const [];
-    final file = File('$_baseDirectory/bill customer/customers.json');
+    final root = await _customerDirectory();
+    final file = File('$root/bill customer/customers.json');
     List<Map<String, dynamic>> records = [];
     try {
       try {
@@ -183,7 +192,9 @@ class BillingExcelExportService {
         /* Recover names from the CSV export below. */
       } on FileSystemException {/* The CSV can still be readable. */}
       try {
-        records.addAll(await _customersFromLegacyCsv());
+        if (Platform.isWindows || baseDirectoryOverride != null) {
+          records.addAll(await _customersFromLegacyCsv());
+        }
       } on FormatException {
         /* Keep valid JSON customers. */
       } on FileSystemException {/* Keep valid JSON customers. */}
@@ -358,57 +369,58 @@ class BillingExcelExportService {
   }
 
   static Future<void> saveCustomer(
-          {required String name,
-          required String phone,
-          required String address,
-          String email = ''}) =>
-      LocalBillingStore(rootPath: _baseDirectory).withLock(() async {
-        if (name.trim().isEmpty ||
-            address.trim().isEmpty ||
-            validateNepalPhone(phone) != null) {
+      {required String name,
+      required String phone,
+      required String address,
+      String email = ''}) async {
+    final root = await _customerDirectory();
+    return LocalBillingStore(rootPath: root).withLock(() async {
+      if (name.trim().isEmpty ||
+          address.trim().isEmpty ||
+          validateNepalPhone(phone) != null) {
+        throw const FormatException(
+            'Enter name, address and a valid 10-digit phone number.');
+      }
+      final normalizedEmail = email.trim();
+      if (normalizedEmail.isNotEmpty &&
+          !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(normalizedEmail)) {
+        throw const FormatException(
+            'Enter a valid email address or leave it empty.');
+      }
+      final file = File('$root/bill customer/customers.json');
+      await file.parent.create(recursive: true);
+      final records = <Map<String, dynamic>>[];
+      if (await file.exists()) {
+        final decoded = jsonDecode(await file.readAsString());
+        if (decoded is! List) {
           throw const FormatException(
-              'Enter name, address and a valid 10-digit phone number.');
+              'The customer file is invalid. Restore it before saving.');
         }
-        final normalizedEmail = email.trim();
-        if (normalizedEmail.isNotEmpty &&
-            !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(normalizedEmail)) {
-          throw const FormatException(
-              'Enter a valid email address or leave it empty.');
-        }
-        final file = File('$_baseDirectory/bill customer/customers.json');
-        await file.parent.create(recursive: true);
-        final records = <Map<String, dynamic>>[];
-        if (await file.exists()) {
-          final decoded = jsonDecode(await file.readAsString());
-          if (decoded is! List) {
-            throw const FormatException(
-                'The customer file is invalid. Restore it before saving.');
-          }
-          records.addAll(decoded.cast<Map<String, dynamic>>());
-        }
-        final index =
-            records.indexWhere((record) => record['phone'] == phone.trim());
-        final previous = index < 0 ? <String, dynamic>{} : records[index];
-        final next = <String, dynamic>{
-          ...previous,
-          'id': previous['id'] ?? 'local-customer-${phone.trim()}',
-          'name': name.trim(),
-          'phone': phone.trim(),
-          'email': normalizedEmail,
-          'addresses': [
-            {'address': address.trim()}
-          ],
-          'isActive': true,
-          'createdAt':
-              previous['createdAt'] ?? DateTime.now().toIso8601String(),
-        };
-        if (index < 0) {
-          records.add(next);
-        } else {
-          records[index] = next;
-        }
-        await _replaceText(file, jsonEncode(records));
-      });
+        records.addAll(decoded.cast<Map<String, dynamic>>());
+      }
+      final index =
+          records.indexWhere((record) => record['phone'] == phone.trim());
+      final previous = index < 0 ? <String, dynamic>{} : records[index];
+      final next = <String, dynamic>{
+        ...previous,
+        'id': previous['id'] ?? 'local-customer-${phone.trim()}',
+        'name': name.trim(),
+        'phone': phone.trim(),
+        'email': normalizedEmail,
+        'addresses': [
+          {'address': address.trim()}
+        ],
+        'isActive': true,
+        'createdAt': previous['createdAt'] ?? DateTime.now().toIso8601String(),
+      };
+      if (index < 0) {
+        records.add(next);
+      } else {
+        records[index] = next;
+      }
+      await _replaceText(file, jsonEncode(records));
+    });
+  }
 
   static Future<void> _replaceText(File file, String contents) async {
     final temp = File('${file.path}.pending');
