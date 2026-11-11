@@ -515,7 +515,7 @@ export function createAdminBillingRouter(
             name: true,
             unitLabel: true,
             lowStockThreshold: true,
-            inventory: { select: { totalStock: true, reservedStock: true } },
+            inventory: { select: { totalStock: true, reservedStock: true, isUnlimited: true } },
           },
         }),
         isBillingStaff
@@ -615,7 +615,7 @@ export function createAdminBillingRouter(
         .sort((left, right) => right.sold - left.sold);
       const lowStock = products
         .filter((product) => {
-          const available = Math.max(
+          const available = product.inventory?.isUnlimited ? Number.MAX_SAFE_INTEGER : Math.max(
             0,
             (product.inventory?.totalStock ?? 0) -
             (product.inventory?.reservedStock ?? 0),
@@ -965,7 +965,7 @@ export function createAdminBillingRouter(
             id: true, name: true, sku: true, barcode: true, price: true,
             unitLabel: true, imageUrl: true, imageMimeType: true, isActive: true,
             isVendingDrink: true, updatedAt: true,
-            inventory: { select: { totalStock: true, reservedStock: true } },
+            inventory: { select: { totalStock: true, reservedStock: true, isUnlimited: true } },
           },
         }),
         prisma.wholesaleItem.findMany({
@@ -1038,7 +1038,8 @@ export function createAdminBillingRouter(
         products: changedProducts.map((product) => ({
           id: product.id, name: product.name, sku: product.sku, barcode: product.barcode,
           price: Number(product.price), unitLabel: product.unitLabel,
-          available: Math.max(0, (product.inventory?.totalStock ?? 0) - (product.inventory?.reservedStock ?? 0)),
+          available: product.inventory?.isUnlimited ? null : Math.max(0, (product.inventory?.totalStock ?? 0) - (product.inventory?.reservedStock ?? 0)),
+          isUnlimited: product.inventory?.isUnlimited ?? false,
           imageUrl: imageUrl(product), isActive: product.isActive,
           isVendingDrink: product.isVendingDrink, updatedAt: product.updatedAt.toISOString(),
         })),
@@ -1117,7 +1118,7 @@ export function createAdminBillingRouter(
         imageUrl: true,
         imageMimeType: true,
         updatedAt: true,
-        inventory: { select: { totalStock: true, reservedStock: true } },
+        inventory: { select: { totalStock: true, reservedStock: true, isUnlimited: true } },
       } satisfies Prisma.ProductSelect;
       const exactProduct = query.data
         ? await prisma.product.findFirst({
@@ -1168,11 +1169,14 @@ export function createAdminBillingRouter(
           imageUrl: product.imageMimeType
             ? `/api/v1/products/${encodeURIComponent(product.id)}/image?v=${product.updatedAt.getTime()}`
             : product.imageUrl,
-          available: Math.max(
-            0,
-            (product.inventory?.totalStock ?? 0) -
-            (product.inventory?.reservedStock ?? 0),
-          ),
+          available: product.inventory?.isUnlimited
+            ? null
+            : Math.max(
+              0,
+              (product.inventory?.totalStock ?? 0) -
+              (product.inventory?.reservedStock ?? 0),
+            ),
+          isUnlimited: product.inventory?.isUnlimited ?? false,
         })),
       });
     } catch (error) {
@@ -1279,7 +1283,7 @@ export function createAdminBillingRouter(
             sku: true,
             price: true,
             unitLabel: true,
-            inventory: { select: { totalStock: true, reservedStock: true } },
+            inventory: { select: { totalStock: true, reservedStock: true, isUnlimited: true } },
           },
         });
         const productById = new Map(products.map((product) => [product.id, product]));
@@ -1300,7 +1304,7 @@ export function createAdminBillingRouter(
             throw new Error('POS_WEIGHT_REQUIRED');
           }
           const stockQuantity = weightGrams ?? item.quantity;
-          const available = Math.max(
+          const available = product.inventory?.isUnlimited ? Number.MAX_SAFE_INTEGER : Math.max(
             0,
             (product.inventory?.totalStock ?? 0) -
             (product.inventory?.reservedStock ?? 0),
@@ -1335,7 +1339,7 @@ export function createAdminBillingRouter(
         }
         for (const [productId, requestedStock] of stockTotals) {
           const product = productById.get(productId)!;
-          const available = Math.max(
+          const available = product.inventory?.isUnlimited ? Number.MAX_SAFE_INTEGER : Math.max(
             0,
             (product.inventory?.totalStock ?? 0) -
             (product.inventory?.reservedStock ?? 0),
@@ -2307,7 +2311,7 @@ export function createAdminBillingRouter(
             sku: true,
             price: true,
             unitLabel: true,
-            inventory: { select: { totalStock: true, reservedStock: true } },
+            inventory: { select: { totalStock: true, reservedStock: true, isUnlimited: true } },
           },
         });
         const replacementById = new Map(

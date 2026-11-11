@@ -13,6 +13,7 @@ class PosProduct {
     required this.price,
     required this.unitLabel,
     required this.available,
+    this.isUnlimited = false,
     this.imageUrl,
   });
 
@@ -23,6 +24,7 @@ class PosProduct {
   final double price;
   final String unitLabel;
   final int available;
+  final bool isUnlimited;
   final String? imageUrl;
 
   factory PosProduct.fromJson(Map<String, dynamic> json) => PosProduct(
@@ -33,6 +35,7 @@ class PosProduct {
         price: _posDouble(json['price']),
         unitLabel: json['unitLabel'] as String? ?? 'unit',
         available: _posInt(json['available']),
+        isUnlimited: json['isUnlimited'] == true,
         imageUrl: json['imageUrl'] as String?,
       );
 }

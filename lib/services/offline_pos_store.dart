@@ -322,9 +322,12 @@ class OfflinePosStore {
               barcode: product.barcode,
               price: prices[product.id] ?? product.price,
               unitLabel: product.unitLabel,
-              available: (product.available - (deductions[product.id] ?? 0))
-                  .clamp(0, product.available)
-                  .toInt(),
+              available: product.isUnlimited
+                  ? product.available
+                  : (product.available - (deductions[product.id] ?? 0))
+                      .clamp(0, product.available)
+                      .toInt(),
+              isUnlimited: product.isUnlimited,
               imageUrl: product.imageUrl,
             ))
         .toList(growable: false);
@@ -636,6 +639,7 @@ class OfflinePosStore {
       a.price == b.price &&
       a.unitLabel == b.unitLabel &&
       a.available == b.available &&
+      a.isUnlimited == b.isUnlimited &&
       a.imageUrl == b.imageUrl;
 
   Map<String, dynamic> _toJson(PosProduct product) => {
@@ -646,6 +650,7 @@ class OfflinePosStore {
         'price': product.price,
         'unitLabel': product.unitLabel,
         'available': product.available,
+        'isUnlimited': product.isUnlimited,
         'imageUrl': product.imageUrl,
       };
 }

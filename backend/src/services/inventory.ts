@@ -413,6 +413,22 @@ export class InventoryService {
     orderId: string
   ): Promise<{ success: boolean; failedProductId?: string; reason?: string }> {
     for (const item of items) {
+      const currentBefore = await tx.inventory.findUnique({
+        where: { productId: item.productId },
+        select: { id: true, totalStock: true, reservedStock: true, isUnlimited: true },
+      });
+      if (!currentBefore) {
+        throw new InventoryAdjustmentError('Inventory changed while reserving the order.');
+      }
+      if (currentBefore.isUnlimited) {
+        await tx.inventoryTransaction.create({ data: {
+          inventoryId: currentBefore.id, type: 'RESERVED', quantity: item.quantity,
+          balanceAfter: currentBefore.totalStock - currentBefore.reservedStock,
+          referenceId: orderId,
+          notes: `Unlimited stock reserved for order ${orderId}; quantity is not reserved.`,
+        } });
+        continue;
+      }
       const rowsAffected = await tx.$executeRaw`
         UPDATE "Inventory"
         SET 
@@ -470,6 +486,23 @@ export class InventoryService {
     for (const item of items) {
       if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) {
         throw new InventoryAdjustmentError('Sale quantity must be a positive integer.');
+      }
+      const currentBefore = await tx.inventory.findUnique({
+        where: { productId: item.productId },
+        select: { id: true, totalStock: true, reservedStock: true, isUnlimited: true },
+      });
+      if (!currentBefore) {
+        throw new InventoryAdjustmentError('Inventory changed while completing the POS sale.');
+      }
+      if (currentBefore.isUnlimited) {
+        await tx.inventoryTransaction.create({ data: {
+          inventoryId: currentBefore.id, type: 'PURCHASED', quantity: item.quantity,
+          balanceAfter: currentBefore.totalStock - currentBefore.reservedStock,
+          referenceId: saleId,
+          notes: `Unlimited stock sale ${saleId}; quantity is not deducted.`,
+          performedById,
+        } });
+        continue;
       }
       const rowsAffected = await tx.$executeRaw`
         UPDATE "Inventory"

@@ -479,7 +479,7 @@ const productSelect = {
   createdAt: true,
   updatedAt: true,
   category: { select: { id: true, name: true, slug: true } },
-  inventory: { select: { totalStock: true, reservedStock: true } },
+  inventory: { select: { totalStock: true, reservedStock: true, isUnlimited: true } },
 } satisfies Prisma.ProductSelect;
 type AdminProduct = Prisma.ProductGetPayload<{ select: typeof productSelect }>;
 
@@ -503,6 +503,7 @@ function productResponse(product: AdminProduct) {
       Math.max(0, (inventory?.totalStock ?? 0) - (inventory?.reservedStock ?? 0)),
       product.unitLabel,
     ),
+    isUnlimited: inventory?.isUnlimited ?? false,
     ...(isWeightUnitLabel(product.unitLabel)
       ? {
         weightStockKg: displayInventoryQuantity(

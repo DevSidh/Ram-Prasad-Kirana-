@@ -1163,11 +1163,19 @@ class AdminBillingScreenState extends State<AdminBillingScreen>
                               leading: ProductThumbnail(
                                   imageUrl: product.imageUrl ?? '', size: 48),
                               title: BillingText(product.name),
+                              subtitle: BillingText(product.isUnlimited
+                                  ? '${product.sku} - ${_money(product.price)} - Unlimited stock'
+                                  : '${product.sku} - ${_money(product.price)} - ${product.available} available'),
+                              /*
                               subtitle: BillingText(
                                 '${product.sku} · ${_money(product.price)} · '
-                                '${product.available} available',
+                                product.isUnlimited
+                                    ? 'Unlimited stock'
+                                    : '${product.available} available',
                               ),
-                              onTap: product.available <= 0
+                              */
+                              onTap: !product.isUnlimited &&
+                                      product.available <= 0
                                   ? null
                                   : () => setDialogState(() {
                                         replacementProduct = product;
@@ -4367,10 +4375,14 @@ class _PosBillDialogState extends State<PosBillDialog> {
                             (sum, item) =>
                                 sum + (item.weightGrams ?? item.quantity))
                 });
+                final catalogue =
+                    await _offlinePosStore.readCatalog(freshStock: true);
                 final available = {
-                  for (final product
-                      in await _offlinePosStore.readCatalog(freshStock: true))
-                    product.id: product.available
+                  for (final product in catalogue) product.id: product.available
+                };
+                final unlimited = {
+                  for (final product in catalogue)
+                    product.id: product.isUnlimited
                 };
                 final quantities = <String, int>{};
                 for (final line in _cart) {
@@ -4380,6 +4392,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                           (line.weightGrams ?? line.quantity);
                 }
                 for (final entry in quantities.entries) {
+                  if (unlimited[entry.key] == true) continue;
                   if (entry.value > (available[entry.key] ?? 0)) {
                     throw StateError(
                         'This bill exceeds the locally estimated stock. Review quantities before saving.');
@@ -4569,6 +4582,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
                     price: product.price,
                     unitLabel: product.unitLabel,
                     available: product.posStockUnits,
+                    isUnlimited: product.isUnlimited,
                     imageUrl: product.imageUrl,
                   )),
           if (usedCachedWholesale) ...cachedWholesale,
@@ -4735,6 +4749,13 @@ class _PosBillDialogState extends State<PosBillDialog> {
   Future<bool> _chooseProductRooms(PosProduct product, int required) async {
     if (!mounted) return false;
     if (_isManualProduct(product)) return true;
+    if (product.isUnlimited) {
+      _roomPicks = [
+        ...?_roomPicks?.where((pick) => pick.productId != product.id),
+      ];
+      _assignedRoomProducts.remove(product.id);
+      return true;
+    }
     if (!kIsWeb && defaultTargetPlatform != TargetPlatform.windows) {
       _roomPicks = [
         ...?_roomPicks?.where((pick) => pick.productId != product.id),
@@ -5985,7 +6006,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
         return InkWell(
           key: ValueKey(product.id),
           borderRadius: BorderRadius.circular(8),
-          onTap: _saving || product.available <= 0
+          onTap: _saving || (!product.isUnlimited && product.available <= 0)
               ? null
               : () => _addProduct(product),
           child: Container(
@@ -6038,7 +6059,9 @@ class _PosBillDialogState extends State<PosBillDialog> {
                 ),
                 const SizedBox(height: 1),
                 Text(
-                  StockSummary.availableLabel(product),
+                  product.isUnlimited
+                      ? 'Unlimited stock'
+                      : StockSummary.availableLabel(product),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -6049,7 +6072,8 @@ class _PosBillDialogState extends State<PosBillDialog> {
                 SizedBox(
                   height: 26,
                   child: FilledButton(
-                    onPressed: _saving || product.available <= 0
+                    onPressed: _saving ||
+                            (!product.isUnlimited && product.available <= 0)
                         ? null
                         : () => _addProduct(product),
                     style: FilledButton.styleFrom(
@@ -6219,7 +6243,10 @@ class _PosBillDialogState extends State<PosBillDialog> {
           final value = double.tryParse(newValue.text);
           final price = isTotal ? (value ?? -1) / line.priceQuantity : value;
           return RegExp(r'^\d+(\.\d{0,2})?$').hasMatch(newValue.text) &&
-                  price != null && price.isFinite && price >= 0 && price <= 999999999
+                  price != null &&
+                  price.isFinite &&
+                  price >= 0 &&
+                  price <= 999999999
               ? newValue
               : oldValue;
         }),

@@ -443,18 +443,21 @@ class AdminProduct {
   final bool isVendingDrink;
   final String? vendingSection;
   final bool isBestSeller;
+  final bool isUnlimited;
 
   double get availableStock => weightStockKg ?? stock.toDouble();
 
   /// POS weight quantities use grams; the management screen displays kilograms.
   int get posStockUnits =>
       weightStockKg == null ? stock : (weightStockKg! * 1000).round();
-  String get availableStockLabel => weightStockKg == null
-      ? stock.toString()
-      : weightStockKg!.toStringAsFixed(3).replaceFirst(
-            RegExp(r'\.?0+$'),
-            '',
-          );
+  String get availableStockLabel => isUnlimited
+      ? 'Unlimited'
+      : weightStockKg == null
+          ? stock.toString()
+          : weightStockKg!.toStringAsFixed(3).replaceFirst(
+              RegExp(r'\.?0+$'),
+              '',
+            );
 
   const AdminProduct({
     required this.id,
@@ -483,6 +486,7 @@ class AdminProduct {
     this.isVendingDrink = false,
     this.vendingSection,
     this.isBestSeller = false,
+    this.isUnlimited = false,
   });
 
   factory AdminProduct.fromJson(Map<String, dynamic> json) {
@@ -535,6 +539,7 @@ class AdminProduct {
       isVendingDrink: json['isVendingDrink'] as bool? ?? false,
       vendingSection: json['vendingSection'] as String?,
       isBestSeller: json['isBestSeller'] as bool? ?? false,
+      isUnlimited: json['isUnlimited'] as bool? ?? false,
     );
   }
 
@@ -579,6 +584,7 @@ class AdminProduct {
       isVendingDrink: isVendingDrink ?? this.isVendingDrink,
       vendingSection: vendingSection ?? this.vendingSection,
       isBestSeller: isBestSeller ?? this.isBestSeller,
+      isUnlimited: isUnlimited,
     );
   }
 }

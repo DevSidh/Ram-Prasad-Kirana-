@@ -259,6 +259,7 @@ model WholesaleItem {
   brand               String?
   price               Decimal
   stock               Int         @default(0)
+  isUnlimited         Boolean     @default(false)
   minimumQuantity     Int         @default(1)
   description         String?
   origin              String?
@@ -297,6 +298,7 @@ model Inventory {
   productId             String                 @unique
   totalStock            Int                    @default(0)
   reservedStock         Int                    @default(0)
+  isUnlimited           Boolean                @default(false)
   version               Int                    @default(0)
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
