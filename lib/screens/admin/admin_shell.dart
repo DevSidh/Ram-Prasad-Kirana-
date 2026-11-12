@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../widgets/billing_localized_widgets.dart';
 import 'dart:io';
 import '../../core/billing_strings.dart';
@@ -13,6 +15,9 @@ import '../../services/api_service.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/catalogue_excel_sync.dart';
 import '../../services/offline_pos_store.dart';
+import '../../services/inventory_changes.dart';
+import '../../models/admin_models.dart';
+import '../../models/pos_models.dart';
 import '../../theme/admin_widgets.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
@@ -119,6 +124,8 @@ class _AdminShellState extends State<AdminShell> {
   bool _managementExpanded = false;
   bool _useDarkWindowsTheme = false;
   bool _recoveringSession = false;
+  Timer? _catalogueSyncTimer;
+  bool _catalogueSyncBusy = false;
 
   bool get _isWindows =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
@@ -174,6 +181,7 @@ class _AdminShellState extends State<AdminShell> {
           isBillingStaff: true,
         ),
       ];
+      _startBackgroundCatalogueSync(api);
       return;
     }
 
@@ -198,10 +206,11 @@ class _AdminShellState extends State<AdminShell> {
       AdminDeliveryPeopleScreen(api: api),
       AdminCustomersScreen(api: api),
       AdminAnnouncementsScreen(api: api),
-      AdminProductsScreen(api: api),
-      AdminProductsScreen(api: api, vendingOnly: true),
-      AdminWholesaleScreen(api: api),
-      AdminRestockScreen(api: api),
+      AdminProductsScreen(api: api, offlineStore: widget.offlineStore),
+      AdminProductsScreen(
+          api: api, vendingOnly: true, offlineStore: widget.offlineStore),
+      AdminWholesaleScreen(api: api, offlineStore: widget.offlineStore),
+      AdminRestockScreen(api: api, offlineStore: widget.offlineStore),
       AdminCategoriesScreen(api: api),
       AdminShowcaseScreen(
         api: api,
@@ -218,6 +227,63 @@ class _AdminShellState extends State<AdminShell> {
     _screens = [
       for (final index in _adminScreenOrder) adminScreens[index],
     ];
+    _startBackgroundCatalogueSync(api);
+  }
+
+  void _startBackgroundCatalogueSync(ApiService api) {
+    unawaited(_syncCatalogue(api));
+    _catalogueSyncTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      unawaited(_syncCatalogue(api));
+    });
+  }
+
+  Future<void> _syncCatalogue(ApiService api) async {
+    if (_catalogueSyncBusy || !mounted) return;
+    _catalogueSyncBusy = true;
+    try {
+      final adminApi = AdminApiService(api, offlineStore: widget.offlineStore);
+      final results = await Future.wait([
+        adminApi.getAllProducts(),
+        adminApi.getAllWholesaleItems(),
+        adminApi.getCustomers(pageSize: 100),
+      ]);
+      final products = results[0] as List<AdminProduct>;
+      final wholesale = results[1] as List<AdminWholesaleItem>;
+      final customers = results[2] as AdminCustomerPage;
+      final catalogue = <PosProduct>[
+        for (final product in products.where((item) => item.isActive))
+          PosProduct(
+            id: product.id,
+            name: product.name,
+            sku: product.sku,
+            barcode: product.barcode,
+            price: product.price,
+            unitLabel: product.unitLabel,
+            available: product.posStockUnits,
+            imageUrl: product.imageUrl,
+          ),
+        for (final item in wholesale.where((entry) => entry.isActive))
+          PosProduct(
+            id: 'wholesale-${item.id}',
+            name: item.name,
+            sku: item.sku,
+            barcode: null,
+            price: item.price,
+            unitLabel: item.unitLabel,
+            available: item.stock,
+            imageUrl: item.imageUrl,
+          ),
+      ];
+      await widget.offlineStore.mergeCatalog(catalogue);
+      await widget.offlineStore.saveCustomers(customers.customers);
+      InventoryChanges.notify();
+    } catch (error) {
+      // Offline mode remains usable from the local snapshots. The next tick
+      // retries without interrupting whichever admin screen is open.
+      debugPrint('Background catalogue sync deferred: $error');
+    } finally {
+      _catalogueSyncBusy = false;
+    }
   }
 
   Future<void> _restoreWindowsThemePreference() async {
@@ -248,6 +314,7 @@ class _AdminShellState extends State<AdminShell> {
   @override
   void dispose() {
     _priceExcel?.dispose();
+    _catalogueSyncTimer?.cancel();
     if (_isWindows) AppColors.clearWindowsAdminTheme();
     super.dispose();
   }

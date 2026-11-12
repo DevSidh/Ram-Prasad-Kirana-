@@ -2,6 +2,7 @@ import '../../widgets/billing_localized_widgets.dart';
 import '../../widgets/initial_room_allocation_field.dart';
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -63,10 +64,58 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    unawaited(_loadCached());
+    unawaited(_load());
     InventoryChanges.revision.addListener(_inventoryChanged);
     _offlineSyncTimer = Timer.periodic(const Duration(seconds: 45), (_) {
       if (_wasTabVisible && !_loading) unawaited(_load(page: _page));
+    });
+  }
+
+  AdminProduct _cachedProduct(PosProduct product) => AdminProduct(
+        id: product.id,
+        name: product.name,
+        sku: product.sku,
+        barcode: product.barcode,
+        slug: product.sku,
+        categoryId: '',
+        categoryName: 'Cached catalogue',
+        imageUrl: product.imageUrl,
+        unitLabel: product.unitLabel,
+        price: product.price,
+        stock: product.available,
+        isActive: true,
+        isFeatured: false,
+        isUnlimited: product.isUnlimited,
+      );
+
+  Future<void> _loadCached() async {
+    // Opening a catalogue is local-first.  The cloud request below only
+    // refreshes this view; it must never decide whether the screen can open.
+    if (widget.vendingOnly) return;
+    final cached = await widget.offlineStore.readCatalogBaseline();
+    final cachedCategories = await widget.offlineStore.readCategories();
+    if (!mounted || cached.isEmpty) return;
+    final products = cached
+        .where((product) => !product.id.startsWith('wholesale-'))
+        .map(_cachedProduct)
+        .toList(growable: false);
+    if (products.isEmpty) return;
+    setState(() {
+      _productPage = AdminProductPage(
+        products: products,
+        pagination: AdminPagination(
+          page: 1,
+          pageSize: products.length,
+          total: products.length,
+        ),
+      );
+      if (cachedCategories.isNotEmpty) {
+        _categories = cachedCategories
+            .map(AdminCategory.fromJson)
+            .toList(growable: false);
+      }
+      _loading = false;
     });
   }
 
@@ -99,24 +148,38 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
     _wasTabVisible = isVisible;
   }
 
-  Future<void> _load({int page = 1}) async {
+  Future<void> _load({int page = 1, bool showLoading = true}) async {
     final request = ++_loadRequest;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    if (showLoading) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
-      await _adminApi.syncPendingOfflineProducts();
+      unawaited(_adminApi.syncPendingOfflineProducts());
       final results = await Future.wait([
         _adminApi.getCategories(),
         _adminApi.getProducts(
           page: page,
+          pageSize: 100,
           search: _searchController.text,
           vendingDrink: widget.vendingOnly,
         ),
       ]);
       final loadedProducts = (results[1] as AdminProductPage).products;
-      await widget.offlineStore.mergeCatalog(
+      final loadedCategories = results[0] as List<AdminCategory>;
+      unawaited(widget.offlineStore.saveCategories(
+        loadedCategories
+            .map((category) => <String, dynamic>{
+                  'id': category.id,
+                  'name': category.name,
+                  'slug': category.slug,
+                  'isActive': category.isActive,
+                })
+            .toList(growable: false),
+      ));
+      unawaited(widget.offlineStore.mergeCatalog(
         loadedProducts
             .where((product) => product.isActive)
             .map((product) => PosProduct(
@@ -130,7 +193,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                   imageUrl: product.imageUrl,
                 ))
             .toList(growable: false),
-      );
+      ));
       final pendingProducts = await widget.offlineStore.readPendingProducts();
       final projected = await widget.offlineStore.projectLocalStock([
         for (final product in loadedProducts)
@@ -150,7 +213,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
           pendingProducts.where((entry) => entry['syncError'] is String).length;
       if (!mounted || request != _loadRequest) return;
       setState(() {
-        _categories = results[0] as List<AdminCategory>;
+        _categories = loadedCategories;
         _productPage = AdminProductPage(
             pagination: (results[1] as AdminProductPage).pagination,
             products: [
@@ -172,6 +235,13 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
       });
     } catch (error) {
       if (!mounted || request != _loadRequest) return;
+      if (_productPage != null) {
+        setState(() {
+          _error = 'Showing saved catalogue while the store server reconnects.';
+          _loading = false;
+        });
+        return;
+      }
       final cachedCategories = await widget.offlineStore.readCategories();
       if (!mounted || request != _loadRequest) return;
       if (cachedCategories.isNotEmpty) {
@@ -197,13 +267,82 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
 
   void _onSearchChanged(String value) {
     _searchTimer?.cancel();
-    _searchTimer = Timer(const Duration(milliseconds: 300), () {
-      if (mounted) _load(page: 1);
+    _searchTimer = Timer(const Duration(milliseconds: 120), () async {
+      // Filter the local catalogue first so typing never waits on the server.
+      if (!widget.vendingOnly) {
+        final query = value.trim().toLowerCase();
+        final cached = await widget.offlineStore.readCatalogBaseline();
+        final matches = cached
+            .where((product) => !product.id.startsWith('wholesale-'))
+            .where((product) =>
+                query.isEmpty ||
+                product.name.toLowerCase().contains(query) ||
+                product.sku.toLowerCase().contains(query) ||
+                (product.barcode?.toLowerCase().contains(query) ?? false))
+            .map(_cachedProduct)
+            .toList(growable: false);
+        if (mounted && value == _searchController.text) {
+          setState(() {
+            _productPage = AdminProductPage(
+              products: matches,
+              pagination: AdminPagination(
+                  page: 1, pageSize: matches.length, total: matches.length),
+            );
+            _loading = false;
+          });
+        }
+      }
+      if (mounted) {
+        // Revalidate silently in the background; the local results stay
+        // visible while the request is in flight.
+        unawaited(_load(page: 1, showLoading: false));
+      }
     });
   }
 
   Future<void> _editProduct([AdminProduct? product]) async {
-    if (_categories.where((category) => category.isActive).isEmpty) return;
+    if (_categories.where((category) => category.isActive).isEmpty) {
+      try {
+        final cached = await widget.offlineStore.readCategories();
+        if (cached.isNotEmpty && mounted) {
+          setState(() => _categories =
+              cached.map(AdminCategory.fromJson).toList(growable: false));
+        }
+      } catch (_) {
+        // The editor can still open from the categories already in memory.
+      }
+    }
+    if (mounted && _categories.where((category) => category.isActive).isEmpty) {
+      try {
+        final categories =
+            await _adminApi.getCategories().timeout(const Duration(seconds: 5));
+        if (!mounted) return;
+        if (categories.isNotEmpty) {
+          setState(() => _categories = categories);
+          unawaited(widget.offlineStore.saveCategories(
+            categories
+                .map((category) => <String, dynamic>{
+                      'id': category.id,
+                      'name': category.name,
+                      'slug': category.slug,
+                      'isActive': category.isActive,
+                    })
+                .toList(growable: false),
+          ));
+        }
+      } catch (_) {
+        // The form below gives the cashier an actionable message if neither
+        // cache nor server can provide categories.
+      }
+    }
+    if (!mounted) return;
+    if (_categories.where((category) => category.isActive).isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: BillingText(
+            'Categories are still loading. The editor will open after the next server reconnect.'),
+      ));
+      return;
+    }
     final productProvider =
         Provider.of<ProductProvider?>(context, listen: false);
     final saved = await showDialog<bool>(
@@ -223,8 +362,10 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
     );
     if (!mounted) return;
     if (saved == true) {
-      _load(page: _page);
-      await productProvider?.loadCatalog();
+      // Close the editor as soon as the durable request succeeds. Refreshes
+      // and customer-facing catalogue updates run in the background.
+      unawaited(_load(page: _page));
+      unawaited(productProvider?.loadCatalog() ?? Future<void>.value());
     }
   }
 
@@ -443,6 +584,8 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
   late final TextEditingController _barcodeController;
   late final TextEditingController _lotNumberController;
   late final TextEditingController _priceController;
+  late final TextEditingController _wholesalePriceController;
+  late final TextEditingController _wholesaleMinimumController;
   late final TextEditingController _originalPriceController;
   late final TextEditingController _stockController;
   late final TextEditingController _lowStockThresholdController;
@@ -466,6 +609,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
   DateTime? _manufacturedAt;
   DateTime? _expiresAt;
   bool _noExpiry = false;
+  late bool _isUnlimited;
   bool _lookingUpBarcode = false;
   String? _lookupImageUrl;
 
@@ -516,6 +660,7 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
     _isVendingDrink = product?.isVendingDrink ?? widget.vendingOnly;
     _vendingSection = product?.vendingSection;
     _isBestSeller = product?.isBestSeller ?? false;
+    _isUnlimited = product?.isUnlimited ?? false;
     _nameController = TextEditingController(text: product?.name ?? '');
     _brandController = TextEditingController(text: product?.brand ?? '');
     _skuController = TextEditingController(text: product?.sku ?? '');
@@ -523,6 +668,10 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
     _lotNumberController = TextEditingController();
     _priceController = TextEditingController(
         text: product?.price == null ? '' : product!.price.toStringAsFixed(2));
+    _wholesalePriceController = TextEditingController(
+        text: product?.wholesalePrice?.toStringAsFixed(2) ?? '');
+    _wholesaleMinimumController = TextEditingController(
+        text: product?.wholesaleMinimumQuantity.toString() ?? '12');
     _originalPriceController = TextEditingController(
       text: product?.originalPrice?.toStringAsFixed(2) ?? '',
     );
@@ -565,6 +714,8 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
     _barcodeController.dispose();
     _lotNumberController.dispose();
     _priceController.dispose();
+    _wholesalePriceController.dispose();
+    _wholesaleMinimumController.dispose();
     _originalPriceController.dispose();
     _stockController.dispose();
     _lowStockThresholdController.dispose();
@@ -627,6 +778,10 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
           ? null
           : _brandController.text.trim(),
       'price': double.parse(_priceController.text.trim()),
+      'wholesalePrice': double.tryParse(_wholesalePriceController.text.trim()),
+      'wholesaleMinimumQuantity':
+          int.tryParse(_wholesaleMinimumController.text.trim()) ?? 12,
+      'isUnlimited': _isUnlimited,
       'originalPrice': double.tryParse(_originalPriceController.text.trim()),
       'lowStockThreshold': int.parse(_lowStockThresholdController.text.trim()),
       'description': _descriptionController.text.trim().isEmpty
@@ -660,25 +815,19 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
         _pickedGalleryImages.map(
           (image) => widget.api.uploadProductImage(image.bytes, image.name),
         ),
-      );
+      ).timeout(const Duration(seconds: 15));
       data['imageUrls'] = [..._galleryImageUrls, ...uploadedGalleryUrls];
-      if (widget.product == null) {
-        await widget.api.createProduct(
-          data,
-          stock,
-          imageBytes: _pickedImageBytes,
-          imageName: _pickedImageName,
-        );
-      } else {
-        await widget.api.updateProduct(
-          widget.product!.id,
-          data,
-          stock,
-          imageBytes: _pickedImageBytes,
-          imageName: _pickedImageName,
-        );
-      }
+      await _saveToServer(data, stock);
       if (mounted) Navigator.pop(context, true);
+    } on TimeoutException {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error =
+              'The store server did not respond within 15 seconds. Check the connection and tap Save again.';
+        });
+      }
+      return;
     } on ApiNetworkException {
       if (widget.product != null) {
         if (mounted) {
@@ -714,6 +863,71 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
     }
   }
 
+  Future<void> _saveToServer(
+    Map<String, dynamic> data,
+    double stock,
+  ) async {
+    final selectedImage = widget.product != null &&
+        _pickedImageBytes != null &&
+        _pickedImageName != null;
+
+    Future<void> send(
+      Map<String, dynamic> fields, {
+      required bool includeSelectedImage,
+    }) {
+      if (widget.product == null) {
+        return widget.api.createProduct(
+          fields,
+          stock,
+          imageBytes: includeSelectedImage ? _pickedImageBytes : null,
+          imageName: includeSelectedImage ? _pickedImageName : null,
+        );
+      }
+      return widget.api.updateProduct(
+        widget.product!.id,
+        fields,
+        stock,
+        imageBytes: includeSelectedImage ? _pickedImageBytes : null,
+        imageName: includeSelectedImage ? _pickedImageName : null,
+      );
+    }
+
+    Future<void> saveFields(Map<String, dynamic> fields) async {
+      try {
+        await send(
+          fields,
+          includeSelectedImage: !selectedImage,
+        ).timeout(const Duration(seconds: 15));
+      } on ApiResponseException catch (error) {
+        // Older deployed backends validate their request body strictly. Retry
+        // the durable product fields without optional newer inventory features.
+        if (error.statusCode != 400 && error.statusCode != 422) rethrow;
+        final compatibleFields = Map<String, dynamic>.from(fields)
+          ..remove('isUnlimited')
+          ..remove('wholesalePrice')
+          ..remove('wholesaleMinimumQuantity');
+        await send(
+          compatibleFields,
+          includeSelectedImage: !selectedImage,
+        ).timeout(const Duration(seconds: 15));
+      }
+    }
+
+    await saveFields(data);
+    if (selectedImage) {
+      // Updating an existing product photo with its own small multipart request
+      // avoids an image being rejected because an older server does not yet
+      // know an optional pricing or unlimited-stock field.
+      await widget.api
+          .updateProductImage(
+            widget.product!.id,
+            _pickedImageBytes!,
+            _pickedImageName!,
+          )
+          .timeout(const Duration(seconds: 15));
+    }
+  }
+
   Future<void> _pickImage() async {
     final files = await FilePicker.pickFiles(
       type: FileType.image,
@@ -727,8 +941,8 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
       return;
     }
 
-    if (size > 5 * 1024 * 1024) {
-      setState(() => _error = 'Choose an image smaller than 5 MB.');
+    if (size > 20 * 1024 * 1024) {
+      setState(() => _error = 'Choose an image smaller than 20 MB.');
       return;
     }
     final extension = file.extension?.toLowerCase();
@@ -736,10 +950,16 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
       setState(() => _error = 'Choose a JPEG, PNG, or WebP image.');
       return;
     }
-    final bytes = await file.readAsBytes();
+    final bytes = await _prepareProductImage(await file.readAsBytes());
+    if (bytes.length > 5 * 1024 * 1024) {
+      if (!mounted) return;
+      setState(() => _error =
+          'This photo is still too large after preparation. Choose another image.');
+      return;
+    }
     setState(() {
       _pickedImageBytes = bytes;
-      _pickedImageName = file.name;
+      _pickedImageName = '${file.name.split('.').first}.png';
       _removeCurrentImage = false;
       _error = null;
     });
@@ -764,8 +984,8 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
 
       pending.add(
         _PendingProductImage(
-          bytes: await file.readAsBytes(),
-          name: file.name,
+          bytes: await _prepareProductImage(await file.readAsBytes()),
+          name: '${file.name.split('.').first}.png',
         ),
       );
     }
@@ -782,6 +1002,25 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
       _pickedGalleryImages.addAll(pending);
       _error = null;
     });
+  }
+
+  /// Resize large camera/downloaded images before uploading. Product cards do
+  /// not need source-camera resolution, and smaller payloads avoid long or
+  /// stalled Windows uploads while preserving a sharp catalogue thumbnail.
+  Future<Uint8List> _prepareProductImage(Uint8List bytes) async {
+    try {
+      final codec = await ui.instantiateImageCodec(
+        bytes,
+        targetWidth: 640,
+        targetHeight: 640,
+      );
+      final frame = await codec.getNextFrame();
+      final data = await frame.image.toByteData(format: ui.ImageByteFormat.png);
+      codec.dispose();
+      return data?.buffer.asUint8List() ?? bytes;
+    } catch (_) {
+      return bytes;
+    }
   }
 
   DateTime _dateAsUtc(DateTime date) =>
@@ -1217,6 +1456,45 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 11),
+                Row(
+                  children: [
+                    Expanded(
+                      child: BillingTextFormField(
+                        controller: _wholesalePriceController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration: const BillingInputDecoration(
+                            labelText: 'Pack / dealer price (optional)'),
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return null;
+                          }
+                          final price = double.tryParse(value.trim());
+                          return price == null || price < 0
+                              ? 'Enter 0 or more'
+                              : null;
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    SizedBox(
+                      width: 150,
+                      child: BillingTextFormField(
+                        controller: _wholesaleMinimumController,
+                        keyboardType: TextInputType.number,
+                        decoration: const BillingInputDecoration(
+                            labelText: 'Pack quantity'),
+                        validator: (value) {
+                          final quantity = int.tryParse(value?.trim() ?? '');
+                          return quantity == null || quantity < 1
+                              ? 'Enter 1 or more'
+                              : null;
+                        },
+                      ),
+                    ),
+                  ],
+                ),
                 if (widget.product == null) ...[
                   const SizedBox(height: 8),
                   Align(
@@ -1494,6 +1772,18 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
                       ),
                     ),
                   ],
+                ),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  value: _isUnlimited,
+                  onChanged: _saving
+                      ? null
+                      : (value) =>
+                          setState(() => _isUnlimited = value ?? false),
+                  title: const BillingText('Unlimited stock'),
+                  subtitle: const BillingText(
+                      'Choose this when the quantity is not tracked.'),
                 ),
                 const SizedBox(height: 11),
                 if (widget.product == null)

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -6,10 +7,23 @@ import '../models/pos_models.dart';
 
 /// Fixed-pitch, black-only receipt. 48mm printable area on 58mm rolls.
 class CompactReceiptPdf {
-  static Future<ByteData>? _font;
+  static Future<pw.Font>? _font;
+
+  static Future<pw.Font> _loadFont() async {
+    try {
+      return pw.Font.ttf(
+          await rootBundle.load('assets/fonts/NotoSansMono-Regular.ttf'));
+    } catch (error) {
+      // A stale/partial release bundle must not prevent an invoice from being
+      // prepared.  The bundled PDF font is preferred, but Helvetica keeps the
+      // English receipt printable while the next sync/rebuild restores it.
+      debugPrint('Receipt font unavailable; using PDF fallback: $error');
+      return pw.Font.helvetica();
+    }
+  }
+
   static Future<Uint8List> create(PosSale sale, int width) async {
-    final font = pw.Font.ttf(await (_font ??=
-        rootBundle.load('assets/fonts/NotoSansMono-Regular.ttf')));
+    final font = await (_font ??= _loadFont());
     final columns = width == 58 ? 32 : 44;
     final size = width == 58 ? 7.0 : 7.5;
     final lines = <String>[];
@@ -36,36 +50,71 @@ class CompactReceiptPdf {
       }
     }
 
+    void itemHeader() {
+      final nameWidth = width == 58 ? 18 : 27;
+      final quantityWidth = width == 58 ? 5 : 6;
+      final amountWidth = columns - nameWidth - quantityWidth;
+      text(
+        'Product'.padRight(nameWidth) +
+            'Qty'.padLeft(quantityWidth) +
+            'Amount'.padLeft(amountWidth),
+      );
+    }
+
+    void itemRow(PosSaleItem item) {
+      final nameWidth = width == 58 ? 18 : 27;
+      final quantityWidth = width == 58 ? 5 : 6;
+      final amountWidth = columns - nameWidth - quantityWidth;
+      final quantity = item.weightGrams == null
+          ? '${item.quantity}'
+          : '${item.weightGrams}g';
+      var remaining = item.productName.trim();
+      var first = true;
+      while (remaining.isNotEmpty) {
+        var end = remaining.length <= nameWidth
+            ? remaining.length
+            : remaining.lastIndexOf(' ', nameWidth);
+        if (end <= 0) end = remaining.length.clamp(1, nameWidth);
+        final part = remaining.substring(0, end).trimRight();
+        remaining = remaining.substring(end).trimLeft();
+        if (first) {
+          text(
+            part.padRight(nameWidth) +
+                quantity.padLeft(quantityWidth) +
+                item.lineTotal.toStringAsFixed(2).padLeft(amountWidth),
+          );
+          first = false;
+        } else {
+          text(part);
+        }
+      }
+    }
+
+    String receiptDate(DateTime date) {
+      final local = date.toLocal();
+      String two(int value) => value.toString().padLeft(2, '0');
+      return '${local.year}-${two(local.month)}-${two(local.day)} '
+          '${two(local.hour)}:${two(local.minute)}';
+    }
+
     final rule = '-' * columns;
     text('RAM PRASAD KIRANA STORE', center: true);
     text('PAN No: ${AppConstants.storePanNumber}', center: true);
     text('INVOICE', center: true);
     text(rule);
     text('Inv No: ${sale.invoiceNumber ?? sale.receiptNumber}');
-    text('POS: ${sale.receiptNumber}');
-    text('Date: ${sale.createdAt.toLocal().toString().substring(0, 16)}');
-    if (sale.customerName?.isNotEmpty == true) text(sale.customerName!);
-    if (sale.customerPhone?.isNotEmpty == true) text(sale.customerPhone!);
+    text('Date: ${receiptDate(sale.createdAt)}');
     text(rule);
-    pair('Product', 'Price');
+    itemHeader();
     text(rule);
     for (final item in sale.items) {
-      pair(item.productName, item.lineTotal.toStringAsFixed(2));
-      text(
-          '  ${item.weightGrams == null ? item.quantity : '${item.weightGrams}g'} x ${item.unitPrice.toStringAsFixed(2)}${item.weightGrams == null ? '' : '/kg'}');
+      itemRow(item);
     }
     text(rule);
-    pair('Total', sale.subtotal.toStringAsFixed(2));
+    pair('Total', sale.total.toStringAsFixed(2));
     pair('Discount', '-${sale.discount.toStringAsFixed(2)}');
-    if (sale.vatRate != 0 || sale.vatAmount != 0) {
-      pair('VAT ${sale.vatRate.toStringAsFixed(2)}%',
-          sale.vatAmount.toStringAsFixed(2));
-    }
-    text(rule);
-    pair('Net Payable NPR', sale.total.toStringAsFixed(2));
     final paid =
         sale.paidAmount ?? (sale.paymentStatus == 'COMPLETED' ? sale.total : 0);
-    pair('Paid', paid.toStringAsFixed(2));
     pair('Balance',
         (sale.outstandingAmount ?? sale.total - paid).toStringAsFixed(2));
     text('${sale.paymentMethod} / ${sale.paymentStatus}');

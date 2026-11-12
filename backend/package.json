@@ -13,6 +13,8 @@
     "prisma:migrate": "node scripts/turso-startup-check.mjs",
     "admin:create": "tsx src/create-admin.ts",
     "categories:seed": "tsx src/seed-categories.ts",
+    "inventory:upsert-final": "tsx scripts/upsert-final-inventory.ts",
+    "inventory:correct-fevi-kwik": "tsx scripts/correct-fevi-kwik-category.ts",
     "prisma:seed": "tsx prisma/seed.ts",
     "test:inventory-batches": "tsx tests/inventory-batches.test.ts && tsx tests/room-inventory.test.ts && node tests/room-migration-recovery.test.mjs",
     "test:transaction-retry": "tsx tests/transaction-retry.test.ts",

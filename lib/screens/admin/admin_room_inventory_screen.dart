@@ -59,18 +59,23 @@ class _AdminRoomInventoryScreenState extends State<AdminRoomInventoryScreen> {
       _error = null;
     });
     try {
-      RoomInventorySnapshot? snapshot;
-      try {
-        snapshot = await _service.load();
-      } catch (_) {
-        // Inventory remains usable while the cloud endpoint is cold/offline.
-        snapshot = await _service.loadLocalIfAvailable();
-        if (snapshot == null) rethrow;
+      // Show the last verified room snapshot first. The network request below
+      // only refreshes it, so a cold server cannot block Inventory.
+      final local = await _service.loadLocalIfAvailable();
+      if (local != null && mounted && request == _request) {
+        final catalog = local.products.toList()
+          ..sort(
+              (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        setState(() {
+          _snapshot = local;
+          _products = catalog;
+          _loading = false;
+        });
       }
-      final catalog = snapshot.products.toList();
+      final snapshot = await _service.load();
       if (!mounted || request != _request) return;
-      catalog
-          .sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      final catalog = snapshot.products.toList()
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
       setState(() {
         _snapshot = snapshot;
         _products = catalog;
@@ -80,7 +85,7 @@ class _AdminRoomInventoryScreenState extends State<AdminRoomInventoryScreen> {
       if (mounted && request == _request) {
         setState(() {
           _loading = false;
-          _error = error.toString();
+          _error = _snapshot == null ? error.toString() : null;
         });
       }
     }

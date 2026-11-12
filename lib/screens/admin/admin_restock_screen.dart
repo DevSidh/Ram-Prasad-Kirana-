@@ -9,8 +9,10 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/admin_models.dart';
+import '../../models/pos_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../services/offline_pos_store.dart';
 import '../../theme/admin_widgets.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/store_animation.dart';
@@ -27,15 +29,21 @@ Future<AdminProduct?> showAddStockDialog(
 
 class AdminRestockScreen extends StatefulWidget {
   final ApiService api;
+  final OfflinePosStore offlineStore;
 
-  const AdminRestockScreen({super.key, required this.api});
+  const AdminRestockScreen({
+    super.key,
+    required this.api,
+    this.offlineStore = const OfflinePosStore(),
+  });
 
   @override
   State<AdminRestockScreen> createState() => _AdminRestockScreenState();
 }
 
 class _AdminRestockScreenState extends State<AdminRestockScreen> {
-  late final AdminApiService _adminApi = AdminApiService(widget.api);
+  late final AdminApiService _adminApi =
+      AdminApiService(widget.api, offlineStore: widget.offlineStore);
   List<AdminProduct> _products = [];
   bool _loading = true;
   int _loadRequest = 0;
@@ -44,7 +52,38 @@ class _AdminRestockScreenState extends State<AdminRestockScreen> {
   @override
   void initState() {
     super.initState();
+    unawaited(_loadCached());
     unawaited(_load());
+  }
+
+  AdminProduct _cachedProduct(PosProduct product) => AdminProduct(
+        id: product.id,
+        name: product.name,
+        sku: product.sku,
+        barcode: product.barcode,
+        slug: product.sku,
+        categoryId: '',
+        categoryName:
+            product.id.startsWith('wholesale-') ? 'Wholesale' : 'Products',
+        imageUrl: product.imageUrl,
+        unitLabel: product.unitLabel,
+        price: product.price,
+        isWholesale: product.id.startsWith('wholesale-'),
+        stock: product.available,
+        isActive: true,
+        isFeatured: false,
+        isUnlimited: product.isUnlimited,
+      );
+
+  Future<void> _loadCached() async {
+    final cached = await widget.offlineStore.readCatalogBaseline();
+    if (!mounted || cached.isEmpty || !_loading) return;
+    final products = cached.map(_cachedProduct).toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    setState(() {
+      _products = products;
+      _loading = false;
+    });
   }
 
   Future<void> _load() async {
@@ -55,12 +94,44 @@ class _AdminRestockScreenState extends State<AdminRestockScreen> {
       _error = null;
     });
     try {
-      final products = await _adminApi.getAllProducts(
-        sort: 'stock_asc',
-      );
+      // Retail and wholesale are independent sources. A temporarily missing
+      // wholesale route must not hide every retail item from the restock queue.
+      final retail = await _adminApi.getAllProducts(sort: 'stock_asc');
+      List<AdminWholesaleItem> wholesale = const [];
+      String? wholesaleWarning;
+      try {
+        wholesale = await _adminApi.getAllWholesaleItems();
+      } catch (_) {
+        wholesaleWarning =
+            'Wholesale stock will appear after the server reconnects.';
+      }
+      final products = <AdminProduct>[
+        ...retail,
+        for (final item in wholesale)
+          AdminProduct(
+            id: 'wholesale-${item.id}',
+            name: item.name,
+            sku: item.sku,
+            slug: item.slug,
+            categoryId: item.categoryId,
+            categoryName: item.categoryName,
+            imageUrl: item.imageUrl,
+            brand: item.brand,
+            description: item.description,
+            origin: item.origin,
+            unitLabel: item.unitLabel,
+            price: item.price,
+            isWholesale: true,
+            lowStockThreshold: item.minimumQuantity,
+            stock: item.stock,
+            isActive: item.isActive,
+            isFeatured: false,
+          ),
+      ]..sort((a, b) => a.availableStock.compareTo(b.availableStock));
       if (!mounted || request != _loadRequest) return;
       setState(() {
         _products = products;
+        _error = wholesaleWarning;
         _loading = false;
       });
     } catch (error) {
@@ -102,7 +173,10 @@ class _AdminRestockScreenState extends State<AdminRestockScreen> {
   Future<void> _openExpiry() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => AdminInventoryExpiryScreen(api: widget.api),
+        builder: (_) => AdminInventoryExpiryScreen(
+          api: widget.api,
+          offlineStore: widget.offlineStore,
+        ),
       ),
     );
   }

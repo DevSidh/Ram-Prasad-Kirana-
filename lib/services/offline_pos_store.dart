@@ -38,7 +38,14 @@ class OfflinePosStore {
     final localDatabase = Platform.isWindows ? await _localDatabase() : null;
     if (localDatabase != null && !force && !_forceRefreshAll) {
       final persistedCursor = await localDatabase.lastSyncedAt('products');
-      if (persistedCursor != null) return false;
+      // A cursor means that a prior catalogue sync succeeded; it must not
+      // suppress every later refresh.  Otherwise items imported after the
+      // first install can never reach the billing search list.
+      if (persistedCursor != null &&
+          DateTime.now().toUtc().difference(persistedCursor) <
+              const Duration(minutes: 5)) {
+        return false;
+      }
     }
     final last = _refreshedAt[key];
     if (!force &&

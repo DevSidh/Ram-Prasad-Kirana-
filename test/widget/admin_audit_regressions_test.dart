@@ -233,8 +233,10 @@ void main() {
                 api: api, offlineStore: const _BrokenStorage()))));
     api.requests.single.complete({});
     await tester.pumpAndSettle();
+    // Malformed local bill records are ignored individually. The live
+    // dashboard remains available without presenting a false storage failure.
     expect(find.textContaining('Local bill totals could not be loaded'),
-        findsOneWidget);
+        findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(tester.takeException(), isNull);
   });

@@ -1280,6 +1280,38 @@ class AdminApiService {
     String id,
     Map<String, dynamic> batch,
   ) async {
+    if (id.startsWith('wholesale-')) {
+      final response = _asMap(
+        await _api.post(
+            '/admin/wholesale-items/${id.substring(10)}/restock', batch),
+      );
+      final item = response['wholesaleItem'];
+      if (item is! Map<String, dynamic>) {
+        throw Exception(
+            'The server returned an invalid restocked wholesale item.');
+      }
+      final wholesale = AdminWholesaleItem.fromJson(item);
+      OfflinePosStore.invalidateFullRefresh();
+      return AdminProduct(
+        id: 'wholesale-${wholesale.id}',
+        name: wholesale.name,
+        sku: wholesale.sku,
+        slug: wholesale.slug,
+        categoryId: wholesale.categoryId,
+        categoryName: wholesale.categoryName,
+        imageUrl: wholesale.imageUrl,
+        brand: wholesale.brand,
+        description: wholesale.description,
+        origin: wholesale.origin,
+        unitLabel: wholesale.unitLabel,
+        price: wholesale.price,
+        isWholesale: true,
+        lowStockThreshold: wholesale.minimumQuantity,
+        stock: wholesale.stock,
+        isActive: wholesale.isActive,
+        isFeatured: false,
+      );
+    }
     final response = _asMap(
       await _api.post('/admin/products/$id/restock', batch),
     );
@@ -1287,6 +1319,7 @@ class AdminApiService {
     if (product is! Map<String, dynamic>) {
       throw Exception('The server returned an invalid restocked product.');
     }
+    OfflinePosStore.invalidateFullRefresh();
     return AdminProduct.fromJson(product);
   }
 

@@ -36,7 +36,9 @@ class _StockSummaryPanelState extends State<StockSummaryPanel> {
   void initState() {
     super.initState();
     InventoryChanges.revision.addListener(_changed);
-    _timer = Timer.periodic(const Duration(seconds: 30), (_) => _changed());
+    // Keep the summary fresh without polling aggressively.  The shell also
+    // refreshes the shared catalogue on the same cadence.
+    _timer = Timer.periodic(const Duration(minutes: 1), (_) => _changed());
   }
 
   @override
@@ -107,6 +109,37 @@ class _StockSummaryPanelState extends State<StockSummaryPanel> {
     } catch (error) {
       debugPrint('Could not refresh stock totals: $error');
       if (mounted) {
+        // A previously displayed summary remains valid for the screen. Show
+        // the retry state immediately instead of delaying it on disk I/O.
+        if (_summary != null) {
+          setState(
+              () => _error = 'Stock totals could not be refreshed. Try again.');
+          return;
+        }
+        // Fall back to the local catalogue during a transient outage. This
+        // keeps the summary useful immediately; the minute timer retries the
+        // authoritative server totals in the background.
+        try {
+          final cached = await widget.offlineStore.readCatalogBaseline();
+          final filtered = cached.where((product) {
+            final isWholesale = product.id.startsWith('wholesale-');
+            if (widget.wholesale) return isWholesale;
+            if (isWholesale) return false;
+            return !widget.drinksOnly || product.id.startsWith('drink-');
+          }).toList(growable: false);
+          if (filtered.isNotEmpty) {
+            final projected = await widget.offlineStore
+                .projectLocalStock(filtered, freshStock: false);
+            setState(() {
+              _summary = StockSummary.fromProducts(projected);
+              _totalProducts = filtered.length;
+              _error = 'Stock totals could not be refreshed. Try again.';
+            });
+            return;
+          }
+        } catch (cacheError) {
+          debugPrint('Could not read cached stock totals: $cacheError');
+        }
         setState(
             () => _error = 'Stock totals could not be refreshed. Try again.');
       }

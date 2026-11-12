@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../models/admin_models.dart';
 import '../../services/admin_api_service.dart';
 import '../../services/api_service.dart';
+import '../../services/offline_pos_store.dart';
 import '../../widgets/store_animation.dart';
 import '../../theme/admin_widgets.dart';
 import '../../theme/app_colors.dart';
@@ -14,8 +15,13 @@ import '../../widgets/product_thumbnail.dart';
 
 class AdminInventoryExpiryScreen extends StatefulWidget {
   final ApiService api;
+  final OfflinePosStore offlineStore;
 
-  const AdminInventoryExpiryScreen({super.key, required this.api});
+  const AdminInventoryExpiryScreen({
+    super.key,
+    required this.api,
+    this.offlineStore = const OfflinePosStore(),
+  });
 
   @override
   State<AdminInventoryExpiryScreen> createState() =>
@@ -103,11 +109,20 @@ class _AdminInventoryExpiryScreenState
     } catch (error) {
       if (!mounted || request != _requestId) return;
       setState(() {
-        _error = error.toString().replaceFirst('Exception: ', '');
+        // Expiry batches cannot be reconstructed from the catalogue cache.
+        // Keep the result empty so the error view provides an explicit retry
+        // rather than displaying a misleading all-zero expiry summary.
+        _result = null;
+        _error = _cleanError(error);
         _loading = false;
       });
     }
   }
+
+  String _cleanError(Object error) => error
+      .toString()
+      .replaceFirst('Exception: ', '')
+      .replaceFirst('TimeoutException: ', '');
 
   void _changeFilter({String? status, int? warningDays, bool? lowStockOnly}) {
     setState(() {

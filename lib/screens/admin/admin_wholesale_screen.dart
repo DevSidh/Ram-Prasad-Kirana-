@@ -48,10 +48,50 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    unawaited(_loadCached());
+    unawaited(_load());
     InventoryChanges.revision.addListener(_inventoryChanged);
     _offlineSyncTimer = Timer.periodic(const Duration(seconds: 45), (_) {
       if (_visible && !_loading) unawaited(_load(page: _pageNumber));
+    });
+  }
+
+  AdminWholesaleItem _cachedItem(PosProduct product) => AdminWholesaleItem(
+        id: product.id.substring('wholesale-'.length),
+        name: product.name,
+        sku: product.sku,
+        slug: product.sku,
+        categoryId: '',
+        categoryName: 'Cached wholesale',
+        brand: null,
+        price: product.price,
+        stock: product.available,
+        minimumQuantity: 1,
+        description: null,
+        origin: null,
+        imageUrl: product.imageUrl,
+        unitLabel: product.unitLabel,
+        isActive: true,
+      );
+
+  Future<void> _loadCached() async {
+    final cached = await widget.offlineStore.readCatalogBaseline();
+    if (!mounted || cached.isEmpty) return;
+    final items = cached
+        .where((product) => product.id.startsWith('wholesale-'))
+        .map(_cachedItem)
+        .toList(growable: false);
+    if (items.isEmpty) return;
+    setState(() {
+      _page = AdminWholesaleItemPage(
+        items: items,
+        pagination: AdminPagination(
+          page: 1,
+          pageSize: items.length,
+          total: items.length,
+        ),
+      );
+      _loading = false;
     });
   }
 
@@ -88,12 +128,13 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
       _error = null;
     });
     try {
-      await _adminApi.syncPendingOfflineProducts();
+      unawaited(_adminApi.syncPendingOfflineProducts());
       final result = await _adminApi.getWholesaleItems(
         page: page,
+        pageSize: 100,
         search: _searchController.text,
       );
-      await widget.offlineStore.mergeCatalog(
+      unawaited(widget.offlineStore.mergeCatalog(
         result.items
             .where((item) => item.isActive)
             .map((item) => PosProduct(
@@ -107,7 +148,7 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
                   imageUrl: item.imageUrl,
                 ))
             .toList(growable: false),
-      );
+      ));
       final pending = await widget.offlineStore.readPendingProducts();
       final projected = await widget.offlineStore.projectLocalStock([
         for (final item in result.items)
@@ -140,6 +181,14 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
       });
     } catch (error) {
       if (!mounted || request != _loadRequest) return;
+      if (_page != null) {
+        setState(() {
+          _error =
+              'Showing saved wholesale catalogue while the store server reconnects.';
+          _loading = false;
+        });
+        return;
+      }
       final cachedCategories = await widget.offlineStore.readCategories();
       if (!mounted || request != _loadRequest) return;
       if (cachedCategories.isNotEmpty) {

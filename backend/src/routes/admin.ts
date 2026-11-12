@@ -68,6 +68,8 @@ const productFields = {
   categoryId: z.string().trim().min(1).max(100),
   brand: z.string().trim().max(120).nullable(),
   price: z.number().finite().nonnegative(),
+  wholesalePrice: z.number().finite().nonnegative().nullable(),
+  wholesaleMinimumQuantity: z.number().int().positive().max(100000),
   originalPrice: z.number().finite().nonnegative().nullable(),
   lowStockThreshold: z.number().int().min(1).max(100000),
   rating: z.number().finite().min(0).max(5),
@@ -84,6 +86,7 @@ const productFields = {
   vendingSection: z.enum(['SODA', 'TEA_COFFEE', 'ENERGY']).nullable(),
   isActive: z.boolean(),
   stock: z.number().finite().min(0).max(1000000),
+  isUnlimited: z.boolean(),
 };
 
 const updateProductInput = z.object({
@@ -94,6 +97,8 @@ const updateProductInput = z.object({
   categoryId: productFields.categoryId.optional(),
   brand: productFields.brand.optional(),
   price: productFields.price.optional(),
+  wholesalePrice: productFields.wholesalePrice.optional(),
+  wholesaleMinimumQuantity: productFields.wholesaleMinimumQuantity.optional(),
   originalPrice: productFields.originalPrice.optional(),
   lowStockThreshold: productFields.lowStockThreshold.optional(),
   rating: productFields.rating.optional(),
@@ -110,6 +115,7 @@ const updateProductInput = z.object({
   vendingSection: productFields.vendingSection.optional(),
   isActive: productFields.isActive.optional(),
   stock: productFields.stock.optional(),
+  isUnlimited: productFields.isUnlimited.optional(),
 }).strict().refine((value) => Object.keys(value).length > 0, 'At least one field is required');
 const batchDetailsFields = z.object({
   lotNumber: z.string().trim().max(120).nullable().optional(),
@@ -205,7 +211,9 @@ export const productsQuery = z.object({
     'stock_asc', 'stock_desc',
   ]).default('newest'),
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  // The Windows catalogue uses one lazy scroll.  Keep the payload bounded but
+  // large enough to include the complete store catalogue in one request.
+  pageSize: z.coerce.number().int().min(1).max(500).default(20),
 });
 const ordersQuery = z.object({
   search: z.string().trim().max(200).optional(),
@@ -377,7 +385,7 @@ const wholesaleItemsQuery = z.object({
   search: z.string().trim().max(200).optional(),
   categoryId: z.string().trim().min(1).max(100).optional(),
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  pageSize: z.coerce.number().int().min(1).max(500).default(20),
 }).strict();
 const wholesaleItemSelect = {
   id: true,
@@ -2809,6 +2817,37 @@ export function createAdminRouter(
     }
   });
 
+  router.post('/wholesale-items/:id/restock', async (req, res) => {
+    const id = parseRecordId(req.params.id, res);
+    if (!id) return;
+    const parsed = restockInput.safeParse(req.body);
+    if (!parsed.success) return invalidInput(res, parsed.error);
+    if (!Number.isSafeInteger(parsed.data.quantity)) {
+      return res.status(400).json({ error: 'Wholesale restock quantity must be a whole number.' });
+    }
+    try {
+      const item = await runTransactionWithRetry(prisma, async (tx) => {
+        const existing = await tx.wholesaleItem.findUnique({
+          where: { id },
+          select: { id: true, isActive: true },
+        });
+        if (!existing || !existing.isActive) return null;
+        // Room allocations remain valid: newly received stock starts Unassigned.
+        return tx.wholesaleItem.update({
+          where: { id },
+          data: { stock: { increment: parsed.data.quantity } },
+          select: wholesaleItemSelect,
+        });
+      });
+      if (!item) return res.status(404).json({ error: 'Wholesale item not found' });
+      return res.json({ wholesaleItem: wholesaleItemResponse(item) });
+    } catch (error) {
+      if (error instanceof RoomInventoryError) return res.status(409).json({ error: error.message });
+      if (handleKnownError(error, res)) return;
+      sendAdminError(error, res);
+    }
+  });
+
   router.delete('/wholesale-items/:id', async (req, res) => {
     const id = parseRecordId(req.params.id, res);
     if (!id) return;
@@ -2993,7 +3032,13 @@ export function createAdminRouter(
     }
     const parsed = createProductInput.safeParse(body);
     if (!parsed.success) return invalidInput(res, parsed.error);
-    const { stock = 0, initialBatch, initialRoomAllocations, ...data } = parsed.data;
+    const {
+      stock = 0,
+      isUnlimited = false,
+      initialBatch,
+      initialRoomAllocations,
+      ...data
+    } = parsed.data;
     if (data.price <= 0) return res.status(400).json({ error: 'Price must be greater than zero' });
     const salePriceError = validateProductSalePrice(data.price, data.originalPrice);
     if (salePriceError) return res.status(400).json({ error: salePriceError });
@@ -3045,6 +3090,10 @@ export function createAdminRouter(
           `admin:${adminId}`,
           `Initial stock set to ${stock} by admin ${adminId}.`,
         );
+        await tx.inventory.update({
+          where: { productId: created.id },
+          data: { isUnlimited },
+        });
         if (initialBatch && initialQuantity > 0) {
           await inventoryService.receiveBatch(
             tx,
@@ -3089,7 +3138,7 @@ export function createAdminRouter(
     }
     const parsed = updateProductInput.safeParse(body);
     if (!parsed.success) return invalidInput(res, parsed.error);
-    const { stock, ...data } = parsed.data;
+      const { stock, isUnlimited, ...data } = parsed.data;
     if (data.price !== undefined && data.price <= 0) {
       return res.status(400).json({ error: 'Price must be greater than zero' });
     }
@@ -3189,6 +3238,12 @@ export function createAdminRouter(
             `admin:${adminId}`,
             `Stock adjusted to ${stock} by admin ${adminId}.`,
           );
+        }
+        if (isUnlimited !== undefined) {
+          await tx.inventory.update({
+            where: { productId: id },
+            data: { isUnlimited },
+          });
         }
         return tx.product.findUnique({ where: { id }, select: productSelect });
       });

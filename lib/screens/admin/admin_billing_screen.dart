@@ -4522,7 +4522,9 @@ class _PosBillDialogState extends State<PosBillDialog> {
               product.name.toLowerCase().contains(normalized) ||
               product.sku.toLowerCase().contains(normalized) ||
               (product.barcode ?? '').toLowerCase().contains(normalized))
-          .take(60)
+          // Keep the complete imported catalogue visible when the query is
+          // empty.  The previous cap hid products from the billing grid.
+          .take(500)
           .toList(growable: false);
       debugPrint(
           'Pos billing: local search query="$query" completed in ${localWatch.elapsedMilliseconds}ms, results=${cached.length}');
@@ -4685,7 +4687,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
       await _addProduct(candidate);
       if (!mounted) return;
       setState(() {
-        _matches = cached.take(60).toList(growable: false);
+        _matches = cached.take(500).toList(growable: false);
         _searching = false;
       });
       _search.clear();
@@ -5064,6 +5066,9 @@ class _PosBillDialogState extends State<PosBillDialog> {
       // No duplicate network fetch on the checkout-to-print path.
       final quantities = <String, int>{};
       for (final line in _cart) {
+        // Manual items are deliberately outside inventory and therefore do
+        // not require a source-room selection.
+        if (_isManualProduct(line.product)) continue;
         quantities[line.product.id] = (quantities[line.product.id] ?? 0) +
             (line.weightGrams ?? line.quantity);
       }
@@ -5994,7 +5999,9 @@ class _PosBillDialogState extends State<PosBillDialog> {
     }
     return GridView.builder(
       padding: EdgeInsets.zero,
-      itemCount: _matches.length > 60 ? 60 : _matches.length,
+      // The catalogue is already cached and indexed locally; do not hide
+      // imported items behind the old 60-card cap.
+      itemCount: _matches.length,
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 180,
         mainAxisExtent: 170,

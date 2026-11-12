@@ -1,4 +1,5 @@
 import '../../widgets/billing_localized_widgets.dart';
+import 'dart:math' as math;
 import 'dart:async';
 import 'package:flutter/material.dart';
 
@@ -33,10 +34,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   String? _error;
   bool _loading = true;
   double _offlineSalesTotal = 0;
+  int _localCatalogueCount = 0;
   bool _observedTabVisibility = false;
   bool _wasTabVisible = true;
   int _requestId = 0;
   DateTime? _filterDay;
+  Timer? _refreshTimer;
 
   String? get _dayKey => _filterDay == null
       ? null
@@ -63,6 +66,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   void initState() {
     super.initState();
     _load();
+    // Retry live totals automatically after transient offline or timeout
+    // failures while keeping the last saved dashboard visible.
+    _refreshTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted && !_loading) unawaited(_load());
+    });
   }
 
   @override
@@ -80,6 +88,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final request = ++_requestId;
     final day = _dayKey;
     final offlineStore = widget.offlineStore;
+    // Read the local catalogue independently of the dashboard request so an
+    // older/partial server count cannot hide imported retail, wholesale, or
+    // drinks entries from the total shown to the operator.
+    unawaited(offlineStore.readCatalogBaseline().then((products) {
+      if (!mounted || request != _requestId) return;
+      final count = products.length;
+      if (count > _localCatalogueCount) {
+        setState(() => _localCatalogueCount = count);
+      }
+    }));
     final loadingDeadline = Timer(const Duration(seconds: 4), () {
       if (mounted && request == _requestId && _loading) {
         setState(() {
@@ -178,6 +196,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     if (_loading && _dashboard == null) {
       return const Center(child: CircularProgressIndicator());
@@ -261,7 +285,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           const SizedBox(height: 10),
           _MetricGrid(
             items: [
-              _Metric('Total products', _number(dashboard.products['total']),
+              _Metric(
+                  'Total products',
+                  _number(math.max(dashboard.products['total'] as num? ?? 0,
+                      _localCatalogueCount)),
                   Icons.inventory_2_outlined),
               if (dashboard.products.containsKey('retail'))
                 _Metric('Retails', _number(dashboard.products['retail']),

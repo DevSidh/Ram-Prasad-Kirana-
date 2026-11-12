@@ -76,7 +76,11 @@ class LocalBillingSync extends ChangeNotifier {
               (retryConflicts && entry.record['syncState'] == 'conflict')));
       final offlineStore = catalogStore ?? OfflinePosStore(billingStore: store);
       final adminApi = AdminApiService(api, offlineStore: offlineStore);
-      if (candidates.isEmpty) await api.get('/health');
+      if (candidates.isEmpty) {
+        // Release a dead connection quickly so the periodic retry can
+        // reconnect instead of leaving the panel unverified indefinitely.
+        await api.get('/health').timeout(const Duration(seconds: 8));
+      }
       for (final entry in candidates) {
         if (_disposed) break;
         try {

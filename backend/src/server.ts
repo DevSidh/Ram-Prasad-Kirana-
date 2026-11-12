@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createAccountRouter } from './routes/account.js';
 import { createAdminRouter } from './routes/admin.js';
+import { createRoomInventoryRouter } from './routes/admin-rooms.js';
 import { createDeliveryRouter } from './routes/delivery.js';
 import {
   beginPendingRegistration,
@@ -183,6 +184,13 @@ const {
 app.use(
   '/api/v1/admin',
   createAdminRouter(prisma, authenticateToken, requireAdmin, requireBillingStaff),
+);
+// Keep room stock under its own router.  The client already calls this path;
+// mounting it here prevents every room action from falling through to a 404.
+app.use(
+  '/api/v1/admin/billing/rooms',
+  authenticateToken,
+  createRoomInventoryRouter(prisma, requireAdmin),
 );
 app.use(
   '/api/v1/delivery',
