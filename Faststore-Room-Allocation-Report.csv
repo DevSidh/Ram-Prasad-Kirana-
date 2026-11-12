@@ -1,0 +1,85 @@
+Excel row,Product,Product ID,Room,Quantity assigned,Stock mode,Status
+2,Laung - packet,clf108c7b00bb04488971d42b0,6,333,manual 333 (unlimited source),Allocated
+3,Elaichi - packet,clb7d8df6b8c804af8bca7b099,6,333,manual 333 (unlimited source),Allocated
+4,Packet Sopari - packet,cl5d0a0013c07447a292694842,6,333,manual 333 (unlimited source),Allocated
+5,Jeera Marich - packet,cl046829403d664c9bbf9ac560,6,333,manual 333 (unlimited source),Allocated
+6,Swastik Vanaspati - carton,clf087f0f136a14ae7a2502d38,6,333,manual 333 (unlimited source),Allocated
+7,Swastik Ghee – 1 litre - packet,cl54e7e00895a841bd80d27b7e,6,333,manual 333 (unlimited source),Allocated
+8,Swastik Ghee – ½ litre - packet,cldbb6019b823c4c008fa0efe3,6,333,manual 333 (unlimited source),Allocated
+9,Packet Garam Masala - packet,cl0dbcf7013be642cf8583a56a,6,333,manual 333 (unlimited source),Allocated
+10,Panchmeva [check spelling] - packet,cl5c5a850b107b46038f05a530,6,333,manual 333 (unlimited source),Allocated
+11,Do Phool Cooking Oil - piece,cla7b0e852ec294bdaad1c5fa5,6,333,manual 333 (unlimited source),Allocated
+12,Rumpum Non-Veg Noodles - packet,clfe1c7c2999bd4263aa90161c,4,214,source stock,Allocated
+13,Rumpum Veg Noodles - packet,cle2a4cd4672ec47f390fa418e,4,16,source stock,Allocated
+14,Current Non-Veg Noodles - packet,cl1b91290ac5d0431f8d4a9f97,4,9,source stock,Allocated
+15,Hot n Spicy Rumpum Noodles - packet,cl2cacb7bc6fde4eed8bcc9311,4,16,source stock,Allocated
+16,Jackpot Noodles - packet,cl1139700c4f8341a68a212ec2,4,23,source stock,Allocated
+17,Wai Wai Non-Veg Noodles - packet,clbd33ce9f433c4a158229c161,4,12,source stock,Allocated
+18,Wai Wai Veg Noodles - packet,cl0266084c026041f79ad672de,4,5,source stock,Allocated
+19,Lali Piro 2x Spicy - packet,cl0a5cbbc4bf854f808f96fbf9,4,4,source stock,Allocated
+20,Eya Eya Yo Noodles [check name] - packet,cl45f66892438447fc84b621b0,4,32,source stock,Allocated
+21,Good Day Biscuits - packet,clfd4e9b3bfab54877970902bf,4,2,source stock,Allocated
+22,Bounce Biscuits - packet,cmwc0va2l002rvmcw06s3op5r,4,3,source stock,Allocated
+23,Gillette Blade Reel - packet,cl717a0eaa82524d5f957e30b2,4,333,source stock,Allocated
+24,Khukuri - packet,cl572e1a899a904650a5c06f8c,4,1,source stock,Allocated
+25,Rio (Mango & Glucose) Frooti Drink - carton,cl0a09c47e6d4847bebf07ada8,3,151,source stock,Allocated
+26,Wai Wai Mama Bhujya - carton,cl636b01629138466aa5d68051,3,2,source stock,Allocated
+27,Agni Tata Tea – 33 g - bag,cla5c64e19e90947ad9472d4f5,3,14,source stock,Allocated
+28,Agni Tata Tea – 14 g - bag,clb2f7f636f3ce441ba9bc63d2,3,333,manual 333 (unlimited source),Allocated
+29,Agni Tata Tea – 10 g - bag,cl375ff3df68474e3fbd22da96,3,333,manual 333 (unlimited source),Allocated
+30,Frooti Mango Drink - packet,cl72440776a7544087861e38dd,3,43,source stock,Allocated
+31,Krish Noodles - packet,clb4f8a213c43a4ba0b8932bc8,3,40,source stock,Allocated
+32,Flair Mist / Black Gel Pen [check product wording] - packet,cl96a9a89d8bb048d39c19bb5a,3,333,manual 333 (unlimited source),Allocated
+33,Nataraj Pencil - bag,cl59a753e0174b494d88f18b31,3,333,manual 333 (unlimited source),Allocated
+34,Lighter - packet,clb8b06f2dcdd64d60b81fcbaa,3,4,source stock,Allocated
+35,Advanced Tea – 30 g - packet,cl7c38f4af78cf464bbc659bb8,3,20,source stock,Allocated
+36,Advanced Tea – 15 g - packet,cl5aa0d7ef31ce4c87880a11c0,3,20,source stock,Allocated
+37,Riddhi Siddhi Tea - piece,cl24016dbad5554a668f251160,3,10,source stock,Allocated
+38,Nischal Masala Mix CTC Tea – 800 g - packet,clb304b88cd1614eeca87c44f3,3,30,source stock,Allocated
+39,Gundam Premium CTC Tea - packet,cl4e3ddc052026459cb520b810,3,30,source stock,Allocated
+40,Shubharam Premium CTC Masala Tea – approx. 500 g - packet,cl37e46d3d0b2145ecb14089b9,3,20,source stock,Allocated
+41,Khetan's Mausam Gold Masala / Premium CTC Tea – 500 g - packet,clca823548b7474b08833894c8,3,50,source stock,Allocated
+42,Khetan's Mausam Gold Masala / Premium CTC Tea – 1 kg - packet,cl8fad75d3369f453daa190766,3,20,source stock,Allocated
+43,Tokla Tea – 500 g - packet,cl240a3eb76474460c810a6843,3,3,source stock,Allocated
+44,Sep Special Sadhya Tea - bag,cl233932eb02e6430b920116d9,3,6,source stock,Allocated
+45,Frooti Mango Drink – 800 ml bottle - piece,cl8d13fa2d26ee4d9893266824,3,333,source stock,Allocated
+46,Nagu Ji Oil? – 1 litre - carton,cl53d960c6c77b4a8b9fe0da54,6,333,manual 333 (unlimited source),Allocated
+47,Nagu Ji Oil? – ½ litre - carton,cl2c87d740e95b431a8ee50ac2,6,333,manual 333 (unlimited source),Allocated
+48,Manoj Sesame Oil – 1 litre - packet,cl6a6dfe350c874ad58f21e314,6,333,manual 333 (unlimited source),Allocated
+49,Manoj Sesame Oil – ½ litre - packet,cl9e00f3c65baa4edaa10e8c2e,6,333,manual 333 (unlimited source),Allocated
+50,Mango Bite Chocolate - packet,cl38484b2f0f8946b0a63e82d0,6,333,manual 333 (unlimited source),Allocated
+51,Orange Bite Chocolate - packet,cld473dd79d0164988b93951d5,6,333,manual 333 (unlimited source),Allocated
+52,Surf Excel Detergent – 500 g - packet,claf9dffdcde7a4ccab18636da,6,333,manual 333 (unlimited source),Allocated
+53,Surf Excel Detergent – 1 kg - packet,cl4064ccc129a448689eea1247,6,333,manual 333 (unlimited source),Allocated
+54,Patanjali Popular Detergent – 2 kg - packet,clb5412e7297c44325a7bbd7d7,6,333,manual 333 (unlimited source),Allocated
+55,Patanjali Popular Detergent – 750 g - packet,cl2233a0dfc8b741bfa23d2b0f,6,333,manual 333 (unlimited source),Allocated
+56,Herbal Patanjali Detergent – 850 g - packet,clf13d589a62bb485980a5f4fc,6,333,manual 333 (unlimited source),Allocated
+57,Herbal Patanjali Detergent – 450 g - packet,cl9955bef77f28475599b77e8c,6,333,manual 333 (unlimited source),Allocated
+58,Agni Detergent – 3 kg - packet,cl99a54d154d1147f8a65b75d2,6,333,manual 333 (unlimited source),Allocated
+59,Agni Ghadi Detergent – 200 g - packet,cl641b210efa66494fa9324437,6,333,manual 333 (unlimited source),Allocated
+60,Agni Ghadi Detergent – 500 g - packet,cl74bb81b9d41a40dcbc7840bd,6,333,manual 333 (unlimited source),Allocated
+61,Agni Ghadi Detergent – 1 kg - packet,cl470e1f2299284194a0f53875,6,333,manual 333 (unlimited source),Allocated
+62,Agni Ghadi Detergent – 3 kg - packet,clecce95f691a1406bbdc227ca,6,333,manual 333 (unlimited source),Allocated
+63,Sargam – 900 g - packet,cl499013e17607474eabc4b711,6,333,manual 333 (unlimited source),Allocated
+64,Xtraa Detergent Powder – 500 g - packet,clbeb9f02952a4477d98443002,6,333,manual 333 (unlimited source),Allocated
+65,Dhoni Detergent – 1 kg - packet,cl0dc232b2f00c428b89c3076c,6,333,manual 333 (unlimited source),Allocated
+66,Dhoni Detergent – 500 g - packet,cl4f655a8a273c4e158993a89e,6,333,manual 333 (unlimited source),Allocated
+67,Wheel Detergent – 500 g - packet,cl97e34c7578864532aa439a4c,6,333,manual 333 (unlimited source),Allocated
+68,Pena Agni Detergent (Nepali) – 3 kg - packet,cl0aca53884bbb49e19df11845,6,333,manual 333 (unlimited source),Allocated
+69,Pena Agni Detergent (Nepali) – 1 kg - packet,cl0b014a20c26c4360b2609078,6,333,manual 333 (unlimited source),Allocated
+70,Pena Detergent (Indian) – 1 kg - packet,cle386fd9f92444c6d89f21f91,6,333,manual 333 (unlimited source),Allocated
+71,Nepali Copy – Rs. 50 variety - piece,cl876cdd170cf3447fb6b309a4,3,333,manual 333 (unlimited source),Allocated
+72,Nepali Copy – Rs. 40 variety - piece,cl896b0b906bcd4de6b3925a47,3,333,manual 333 (unlimited source),Allocated
+73,Nepali Copy – Rs. 30 variety - piece,cl13109ad0f11348239f94aa8c,3,333,manual 333 (unlimited source),Allocated
+74,Nepali Copy – Rs. 20 variety - piece,cl0a375baf6163489899c9d246,3,333,manual 333 (unlimited source),Allocated
+75,Nepali Copy – Rs. 10 variety - piece,clbd2313b1384b4fdf96be997d,3,333,manual 333 (unlimited source),Allocated
+76,Math Copy – Rs. 50 variety - piece,cle493adc5c0e649efb4d9fd63,3,333,manual 333 (unlimited source),Allocated
+77,Math Copy – Rs. 40 variety - piece,cl5078f1f194bb4000ac7e4979,3,333,manual 333 (unlimited source),Allocated
+78,Math Copy – Rs. 30 variety - piece,cl73978e4c047e4268ad477497,3,333,manual 333 (unlimited source),Allocated
+79,Math Copy – Rs. 20 variety - piece,clb076076210864f49b9ccb34a,3,333,manual 333 (unlimited source),Allocated
+80,Math Copy – Rs. 10 variety - piece,cla289107d584c4a23af74ad07,3,333,manual 333 (unlimited source),Allocated
+81,English Copy – Rs. 50 variety - piece,cl348395fd9e2f4211a5e1b99a,3,333,manual 333 (unlimited source),Allocated
+82,English Copy – Rs. 40 variety - piece,clbf994cc5f5f44038a0348769,3,333,manual 333 (unlimited source),Allocated
+83,English Copy – Rs. 30 variety - piece,clfdecbbbecfd348aeb3084e41,3,333,manual 333 (unlimited source),Allocated
+84,English Copy – Rs. 20 variety - piece,clba929bd6dfc147dca5120efa,3,333,manual 333 (unlimited source),Allocated
+85,English Copy – Rs. 10 variety - piece,cl5d81162709da434782ce5232,3,333,manual 333 (unlimited source),Allocated
