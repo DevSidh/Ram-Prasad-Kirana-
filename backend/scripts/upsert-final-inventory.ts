@@ -381,11 +381,11 @@ async function reconcileRoomAllocation(
 
 async function applyPreview(db: ReturnType<typeof createTursoPrismaClient>, report: Preview[], rooms: Map<string, string>, categories: Map<string, string>, hash: string) {
   const inventory = new InventoryService(db);
-  for (const row of report.filter((entry) => entry.action === 'insert' || entry.action === 'update')) {
+  await db.$transaction(async (tx) => {
+    for (const row of report.filter((entry) => entry.action === 'insert' || entry.action === 'update')) {
     const targetRooms = row.newLocations ?? [];
     const total = row.newStock ?? 0;
     const roomAllocations = (row.roomQuantities ?? []).map((allocation) => ({ roomId: rooms.get(allocation.room)!, quantity: allocation.quantity }));
-    await db.$transaction(async (tx) => {
       const categoryKey = normalized(row.source.category);
       const currentCategory = categories.get(categoryKey)
         ? null
@@ -442,8 +442,8 @@ async function applyPreview(db: ReturnType<typeof createTursoPrismaClient>, repo
           }
         }
       }
-    }, { timeout: 30000 });
-  }
+    }
+  }, { timeout: 300000 });
 }
 
 /**
