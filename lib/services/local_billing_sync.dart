@@ -294,7 +294,10 @@ class LocalBillingSync extends ChangeNotifier {
       online = failure is ApiNetworkException || failure is ApiTimeoutException
           ? false
           : null;
-      error = failure.toString();
+      // A background health/sync timeout is an offline state, not a failed
+      // invoice operation. Keep the reconnect indicator visible without
+      // leaving a persistent red error after the invoice dialog closes.
+      error = failure is ApiTimeoutException ? null : failure.toString();
     } finally {
       try {
         final entries = await store.records();
