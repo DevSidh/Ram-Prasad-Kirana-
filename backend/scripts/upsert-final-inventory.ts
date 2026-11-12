@@ -141,8 +141,34 @@ function readWorkbook(file: string): WorkbookSheet[] {
 
 function parseFinalInventory(workbook: WorkbookSheet[]): SourceItem[] {
   const finalInventory = workbook[0];
-  if (!finalInventory?.rows.length || finalInventory.rows[0].cells.A1 !== 'S.N.') {
-    throw new Error('The first sheet must be Final Inventory with the expected headers.');
+  if (!finalInventory?.rows.length) throw new Error('The workbook has no inventory rows.');
+  // Accept the corrected catalogue workbook as well as the original
+  // Final Inventory layout. Its first sheet uses one column per package
+  // price and deliberately marks untracked stock as Unlimited.
+  if (finalInventory.rows[0].cells.A1 === 'Product Name') {
+    return finalInventory.rows.slice(1).flatMap((row) => {
+      const cell = (column: string) => text(row.cells[`${column}${row.row}`]);
+      const name = cell('A');
+      if (!name) return [];
+      const prices: Array<[string, string]> = [
+        ['piece', cell('E')], ['packet', cell('F')], ['dozen', cell('G')],
+        ['bag', cell('H')], ['carton', cell('I')],
+      ];
+      const selected = prices.find(([, value]) => price(value) !== null) ?? prices[0];
+      const stockCell = cell('D');
+      return [{
+        row: row.row, number: String(row.row - 1), name,
+        brand: cell('B') === 'Not specified' ? '' : cell('B'),
+        category: correctedCategory(name, 'Other General'), subcategory: '',
+        size: cell('C'), packaging: selected[0], packCount: '',
+        notes: cell('K'), unit: selected[0], price: price(selected[1]) ?? 100,
+        stock: stock(stockCell), unlimited: !stockCell || /^unlimited$/i.test(stockCell),
+        location: cell('J'), source: 'product_catalogue_unlimited_and_error_audit.xlsx',
+      }];
+    });
+  }
+  if (finalInventory.rows[0].cells.A1 !== 'S.N.') {
+    throw new Error('The first sheet must be Final Inventory or Product Catalogue with the expected headers.');
   }
   return finalInventory.rows.slice(1).flatMap((row) => {
     const cell = (column: string) => text(row.cells[`${column}${row.row}`]);
@@ -249,20 +275,21 @@ function makePreview(items: SourceItem[], existing: ExistingItem[], rooms: Map<s
       const messages = [candidates.length > 1 ? `Use existing ${item.sku} as the canonical match; no duplicate will be created.` : 'Update valid product fields.'];
       if (source.price === null) messages.push('Price remains unchanged because the Excel cell is blank.');
       if (sourceStock === null && !sourceUnlimited) messages.push('Stock remains unchanged because the Excel stock value is blank or not an absolute quantity.');
-      if (invalidLocation || !locations.length) messages.push('Location remains unchanged because the Excel room is missing or not configured.');
+      if ((invalidLocation || !locations.length) && !completeApprovedImport) messages.push('Location remains unchanged because the Excel room is missing or not configured.');
       else if (!safeRoomStock && !sourceUnlimited) messages.push('Stock and room allocation require review because each requested room needs an absolute quantity.');
       preview.push({ ...base, action: 'update', matchId: item.id, matchReason: 'Normalized name, brand, and packaging match.',
         oldPrice: item.price, newPrice: source.price ?? item.price, oldStock: item.stock,
-        newStock: stockCanChange ? sourceStock : item.stock, oldLocations: item.locations,
+        newStock: (stockCanChange || (completeApprovedImport && sourceStock !== null)) ? sourceStock : item.stock, oldLocations: item.locations,
         newLocations: safeRoomStock ? locations : item.locations, setPrice: source.price !== null,
-        setStock: stockCanChange, setLocation: safeRoomStock, setUnlimited: sourceUnlimited,
+        setStock: stockCanChange || (completeApprovedImport && sourceStock !== null),
+        setLocation: safeRoomStock, setUnlimited: sourceUnlimited,
         roomQuantities, message: messages.join(' ') });
       continue;
     }
-    if (invalidLocation) {
+    if (invalidLocation && !completeApprovedImport) {
       preview.push({ ...base, action: 'review', message: `Location ${invalidLocation} is not an active configured room.` }); continue;
     }
-    if (!locations.length) {
+    if (!locations.length && !completeApprovedImport) {
       preview.push({ ...base, action: 'review', message: 'No inventory location supplied.' }); continue;
     }
     if (!quantityKnown && !completeApprovedImport) {
@@ -274,7 +301,7 @@ function makePreview(items: SourceItem[], existing: ExistingItem[], rooms: Map<s
     if (/\b(carton|bundle|box|dozen)\b/i.test(source.packaging) && !completeApprovedImport) {
       preview.push({ ...base, action: 'review', message: 'New packaging could be retail or wholesale; the workbook does not explicitly identify its inventory type.' }); continue;
     }
-    if (!safeRoomStock && !sourceUnlimited) {
+    if (!safeRoomStock && !sourceUnlimited && !completeApprovedImport) {
       preview.push({ ...base, action: 'review', message: 'Each new product room must have a valid absolute quantity.' }); continue;
     }
     preview.push({ ...base, action: 'insert', setPrice: true, setStock: true, setLocation: safeRoomStock, setUnlimited: sourceUnlimited,

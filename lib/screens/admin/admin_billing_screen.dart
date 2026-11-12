@@ -3832,6 +3832,7 @@ class PosBillDialog extends StatefulWidget {
     this.heldSale,
     this.scannedProduct,
     this.loadLocalCustomers,
+    this.requireRoomSelection = false,
   });
 
   final AdminApiService api;
@@ -3848,6 +3849,11 @@ class PosBillDialog extends StatefulWidget {
   final OfflinePosStore offlineStore;
   final bool refreshCatalogOnOpen;
   final Future<List<AdminCustomer>> Function()? loadLocalCustomers;
+
+  /// When false, billing consumes aggregate stock and does not ask the
+  /// cashier to choose a source room. Inventory room tracking remains
+  /// available to stores that explicitly enable it.
+  final bool requireRoomSelection;
 
   @override
   State<PosBillDialog> createState() => _PosBillDialogState();
@@ -4365,16 +4371,18 @@ class _PosBillDialogState extends State<PosBillDialog> {
                 final snapshot =
                     await RoomInventoryService(widget.api, _offlinePosStore)
                         .load(offline: true);
-                snapshot.validatePicks(_roomPicks ?? const [], {
-                  for (final line
-                      in _cart.where((l) => !_isManualProduct(l.product)))
-                    line.product.id: _cart
-                        .where((item) => item.product.id == line.product.id)
-                        .fold<int>(
-                            0,
-                            (sum, item) =>
-                                sum + (item.weightGrams ?? item.quantity))
-                });
+                if (widget.requireRoomSelection) {
+                  snapshot.validatePicks(_roomPicks ?? const [], {
+                    for (final line
+                        in _cart.where((l) => !_isManualProduct(l.product)))
+                      line.product.id: _cart
+                          .where((item) => item.product.id == line.product.id)
+                          .fold<int>(
+                              0,
+                              (sum, item) =>
+                                  sum + (item.weightGrams ?? item.quantity))
+                  });
+                }
                 final catalogue =
                     await _offlinePosStore.readCatalog(freshStock: true);
                 final available = {
@@ -4751,6 +4759,14 @@ class _PosBillDialogState extends State<PosBillDialog> {
   Future<bool> _chooseProductRooms(PosProduct product, int required) async {
     if (!mounted) return false;
     if (_isManualProduct(product)) return true;
+    if (!widget.requireRoomSelection) {
+      _roomPicks = [
+        ...?_roomPicks?.where((pick) => pick.productId != product.id),
+      ];
+      _assignedRoomProducts.remove(product.id);
+      _roomSelectionNeedsRefresh = false;
+      return true;
+    }
     if (product.isUnlimited) {
       _roomPicks = [
         ...?_roomPicks?.where((pick) => pick.productId != product.id),
