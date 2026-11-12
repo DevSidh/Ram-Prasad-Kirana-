@@ -732,7 +732,18 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
         !(_roomAllocationKey.currentState?.validate() ?? false)) {
       return;
     }
-    final stock = double.parse(_stockController.text.trim());
+    final stock = double.tryParse(_stockController.text.trim());
+    if (stock == null || !stock.isFinite || stock < 0) {
+      setState(() => _error = 'Enter a valid stock quantity (0 or more).');
+      return;
+    }
+    final categoryMatches =
+        _availableCategories.where((item) => item.id == _categoryId);
+    if (categoryMatches.isEmpty) {
+      setState(() => _error = 'Choose a category before saving the product.');
+      return;
+    }
+    final category = categoryMatches.first;
     if (widget.product == null &&
         stock > 0 &&
         (_manufacturedAt == null ||
@@ -749,8 +760,6 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
     });
 
     final name = _nameController.text.trim();
-    final category =
-        _availableCategories.firstWhere((item) => item.id == _categoryId);
     final enteredSku = _skuController.text.trim().toUpperCase();
     final sku = enteredSku.isEmpty
         ? generateStoreSku(

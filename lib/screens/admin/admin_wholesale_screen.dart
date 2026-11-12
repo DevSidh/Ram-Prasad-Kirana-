@@ -628,13 +628,27 @@ class _WholesaleItemFormState extends State<_WholesaleItemForm> {
         !(_roomAllocationKey.currentState?.validate() ?? false)) {
       return;
     }
+    final categoryMatches =
+        _activeCategories.where((item) => item.id == _categoryId);
+    if (categoryMatches.isEmpty) {
+      setState(() => _error = 'Choose a category before saving the wholesale item.');
+      return;
+    }
+    final parsedPrice = double.tryParse(_price.text.trim());
+    final parsedStock = int.tryParse(_stock.text.trim());
+    final parsedMinimum = int.tryParse(_minimum.text.trim());
+    if (parsedPrice == null || !parsedPrice.isFinite || parsedPrice <= 0 ||
+        parsedStock == null || parsedStock < 0 ||
+        parsedMinimum == null || parsedMinimum <= 0) {
+      setState(() => _error =
+          'Enter a valid price, stock quantity, and minimum quantity before saving.');
+      return;
+    }
     setState(() {
       _saving = true;
       _error = null;
     });
-    final category = _activeCategories.firstWhere(
-      (item) => item.id == _categoryId,
-    );
+    final category = categoryMatches.first;
     final name = _name.text.trim();
     final sku = _sku.text.trim().toUpperCase().isEmpty
         ? generateStoreSku(
@@ -653,9 +667,9 @@ class _WholesaleItemFormState extends State<_WholesaleItemForm> {
       'slug': slug,
       'categoryId': category.id,
       'brand': _brand.text.trim().isEmpty ? null : _brand.text.trim(),
-      'price': double.parse(_price.text.trim()),
-      'stock': int.parse(_stock.text.trim()),
-      'minimumQuantity': int.parse(_minimum.text.trim()),
+      'price': parsedPrice,
+      'stock': parsedStock,
+      'minimumQuantity': parsedMinimum,
       'unitLabel': _unit.text.trim(),
       'description':
           _description.text.trim().isEmpty ? null : _description.text.trim(),
