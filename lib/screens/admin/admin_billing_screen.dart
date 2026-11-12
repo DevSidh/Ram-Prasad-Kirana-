@@ -3756,11 +3756,15 @@ class _PosProductQuantityDialog extends StatefulWidget {
     required this.product,
     required this.isWeightProduct,
     this.initialQuantity = 1,
+    this.initialPrice,
+    this.allowPriceEditing = true,
   });
 
   final PosProduct product;
   final bool isWeightProduct;
   final int initialQuantity;
+  final double? initialPrice;
+  final bool allowPriceEditing;
 
   @override
   State<_PosProductQuantityDialog> createState() =>
@@ -3770,16 +3774,22 @@ class _PosProductQuantityDialog extends StatefulWidget {
 class _PosProductQuantityDialogState extends State<_PosProductQuantityDialog> {
   late final TextEditingController _quantityController =
       TextEditingController(text: '${widget.initialQuantity}');
+  late final TextEditingController _priceController = TextEditingController(
+      text: (widget.initialPrice ?? widget.product.price).toStringAsFixed(2));
 
   @override
   void dispose() {
     _quantityController.dispose();
+    _priceController.dispose();
     super.dispose();
   }
 
   void _submit(BuildContext context) {
     final quantity = int.tryParse(_quantityController.text.trim());
-    if (quantity != null && quantity > 0) Navigator.pop(context, quantity);
+    final price = double.tryParse(_priceController.text.trim());
+    if (quantity != null && quantity > 0 && price != null && price >= 0) {
+      Navigator.pop(context, (quantity: quantity, price: price));
+    }
   }
 
   @override
@@ -3789,19 +3799,40 @@ class _PosProductQuantityDialogState extends State<_PosProductQuantityDialog> {
           const SizedBox(width: 12),
           Expanded(child: BillingText('Add ${widget.product.name}')),
         ]),
-        content: TextField(
-          controller: _quantityController,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
-          ],
-          decoration: BillingInputDecoration(
-            labelText: widget.isWeightProduct ? 'Weight in grams' : 'Quantity',
-            suffixText: widget.isWeightProduct ? 'g' : null,
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+            controller: _quantityController,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))
+            ],
+            decoration: BillingInputDecoration(
+              labelText:
+                  widget.isWeightProduct ? 'Weight in grams' : 'Quantity',
+              suffixText: widget.isWeightProduct ? 'g' : null,
+            ),
+            onSubmitted: (_) => _submit(context),
           ),
-          onSubmitted: (_) => _submit(context),
-        ),
+          if (widget.allowPriceEditing) ...[
+            const SizedBox(height: 10),
+            TextField(
+              controller: _priceController,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))
+              ],
+              decoration: const BillingInputDecoration(
+                  labelText: 'Price for this unit (NPR)'),
+            ),
+            const SizedBox(height: 4),
+            const Align(
+                alignment: Alignment.centerLeft,
+                child: BillingText(
+                    'Choose a different piece, packet, dozen, bag, or bundle price here.')),
+          ],
+        ]),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -4724,33 +4755,39 @@ class _PosBillDialogState extends State<PosBillDialog> {
     final existingProduct =
         _cart.where((line) => _sameProduct(line.product, product)).firstOrNull;
     if (existingProduct != null) product = existingProduct.product;
-    final quantity = await showDialog<int>(
+    final quantity = await showDialog<({int quantity, double price})>(
       context: context,
       builder: (dialogContext) => _PosProductQuantityDialog(
         product: product,
         isWeightProduct: _isWeightProduct(product),
+        initialPrice: existingProduct?.unitPrice,
+        allowPriceEditing: widget.allowPriceEditing,
       ),
     );
     if (quantity == null || !mounted) return false;
+    final selectedQuantity = quantity.quantity;
+    final selectedPrice = quantity.price;
     final required = _cart
         .where((line) => line.product.id == product.id)
-        .fold<int>(
-            quantity, (sum, line) => sum + (line.weightGrams ?? line.quantity));
+        .fold<int>(selectedQuantity,
+            (sum, line) => sum + (line.weightGrams ?? line.quantity));
     if (!await _chooseProductRooms(product, required)) return false;
     if (!mounted) return false;
     if (_isWeightProduct(product)) {
-      _cart.add(_PosCartLine(product, weightGrams: quantity)
-        ..setPrice(existingProduct?.unitPrice ?? product.price));
+      _cart.add(_PosCartLine(product, weightGrams: selectedQuantity)
+        ..setPrice(selectedPrice));
       _cartChanged(membership: true);
       return true;
     }
     final existing = _cart.where((item) =>
         item.weightGrams == null && _sameProduct(item.product, product));
     if (existing.isNotEmpty) {
-      existing.first.setQuantity(existing.first.quantity + quantity);
+      existing.first.setQuantity(existing.first.quantity + selectedQuantity);
+      existing.first.setPrice(selectedPrice);
       _cartChanged();
     } else {
-      _cart.add(_PosCartLine(product, quantity: quantity));
+      _cart.add(_PosCartLine(product, quantity: selectedQuantity)
+        ..setPrice(selectedPrice));
       _cartChanged(membership: true);
     }
     return true;
