@@ -5,7 +5,8 @@ import 'package:pdf/widgets.dart' as pw;
 import '../core/constants.dart';
 import '../models/pos_models.dart';
 
-/// Fixed-pitch, black-only receipt. 48mm printable area on 58mm rolls.
+/// Fixed-pitch, black-only receipt. The layout keeps a safety gutter for
+/// Windows thermal drivers, which often clip the last few millimetres.
 class CompactReceiptPdf {
   static Future<pw.Font>? _font;
 
@@ -24,8 +25,10 @@ class CompactReceiptPdf {
 
   static Future<Uint8List> create(PosSale sale, int width) async {
     final font = await (_font ??= _loadFont());
-    final columns = width == 58 ? 32 : 44;
-    final size = width == 58 ? 7.0 : 7.5;
+    // 28 columns fit inside the real printable area of both common 58 mm
+    // printers and leave enough room for the right-aligned Amount column.
+    final columns = width == 58 ? 28 : 42;
+    final size = width == 58 ? 6.5 : 7.5;
     final lines = <String>[];
     void text(String value, {bool center = false}) {
       // Split long POS codes, names and monetary amounts without clipping.
@@ -51,7 +54,7 @@ class CompactReceiptPdf {
     }
 
     void itemHeader() {
-      final nameWidth = width == 58 ? 18 : 27;
+      final nameWidth = width == 58 ? 15 : 26;
       final quantityWidth = width == 58 ? 5 : 6;
       final amountWidth = columns - nameWidth - quantityWidth;
       text(
@@ -62,7 +65,7 @@ class CompactReceiptPdf {
     }
 
     void itemRow(PosSaleItem item) {
-      final nameWidth = width == 58 ? 18 : 27;
+      final nameWidth = width == 58 ? 15 : 26;
       final quantityWidth = width == 58 ? 5 : 6;
       final amountWidth = columns - nameWidth - quantityWidth;
       final quantity = item.weightGrams == null
@@ -125,8 +128,8 @@ class CompactReceiptPdf {
     document.addPage(pw.Page(
       pageFormat: PdfPageFormat(width * PdfPageFormat.mm,
           (lines.length + 2) * lineHeight + 12 * PdfPageFormat.mm,
-          marginLeft: 5 * PdfPageFormat.mm,
-          marginRight: 5 * PdfPageFormat.mm,
+          marginLeft: 3 * PdfPageFormat.mm,
+          marginRight: 3 * PdfPageFormat.mm,
           marginTop: 4 * PdfPageFormat.mm,
           marginBottom: 8 * PdfPageFormat.mm),
       build: (_) => pw.Center(
