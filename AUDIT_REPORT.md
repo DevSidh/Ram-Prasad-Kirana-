@@ -60,3 +60,16 @@ No automated test failures remain. Physical printer, live Turso latency, offline
 ### Scope limits
 
 The automated suite covers admin/customer workflows with fixtures. This does not prove every production screen or network failure mode was manually exercised. Existing UI typography and layout were not broadly redesigned in this recheck. Physical printer centering, fresh-login credentials, Android native installation and live offline/slow-network scenarios remain unverified.
+
+## Recheck — 2026-11-13
+
+### Receipt and release follow-up
+
+- **Receipt clipping / high:** the compact 58mm renderer used a layout wider than the tested printer area, causing the right side of labels such as `Amount` to be clipped. The 58mm layout now uses a conservative 28-column printable width and narrower item column; 80mm remains at 42 columns. Line totals, total, discount and balance use normalized money formatting so values smaller than half a paisa render as `0.00` rather than `-0.00`.
+- **Validation:** `flutter analyze` passed with no issues. The focused receipt suite passed all 6 tests, including cold preparation and cache reuse measurements. The complete Flutter suite passed in this workspace. A Windows release build was invoked after the receipt change; the physical printer and a fresh executable timestamp still require verification on the billing computer.
+- **Saved product validation:** the existing product and wholesale save paths now reject invalid numeric/category input before issuing a request and preserve the existing API contract. These changes were previously committed and covered by the admin API tests.
+
+### Environment limits
+
+- Physical 58mm/80mm printer output, DPI scaling, multi-monitor resize, profile-mode DevTools frame timings, live Turso latency, and Lighthouse scores were not measurable from this session.
+- The public Vercel site is still serving its prior deployment because the Vercel CLI session is logged out. No claim is made that the live website is updated; deployment requires the project owner’s Vercel credentials.

@@ -8,6 +8,14 @@ import '../models/pos_models.dart';
 /// Fixed-pitch, black-only receipt. The layout keeps a safety gutter for
 /// Windows thermal drivers, which often clip the last few millimetres.
 class CompactReceiptPdf {
+  static String _money(double value) {
+    final normalized = value.abs() < 0.005 ? 0.0 : value;
+    return normalized.toStringAsFixed(2);
+  }
+
+  static String _discount(double value) {
+    return value.abs() < 0.005 ? '0.00' : '-${_money(value.abs())}';
+  }
   static Future<pw.Font>? _font;
 
   static Future<pw.Font> _loadFont() async {
@@ -84,7 +92,7 @@ class CompactReceiptPdf {
           text(
             part.padRight(nameWidth) +
                 quantity.padLeft(quantityWidth) +
-                item.lineTotal.toStringAsFixed(2).padLeft(amountWidth),
+                _money(item.lineTotal).padLeft(amountWidth),
           );
           first = false;
         } else {
@@ -114,12 +122,12 @@ class CompactReceiptPdf {
       itemRow(item);
     }
     text(rule);
-    pair('Total', sale.total.toStringAsFixed(2));
-    pair('Discount', '-${sale.discount.toStringAsFixed(2)}');
+    pair('Total', _money(sale.total));
+    pair('Discount', _discount(sale.discount));
     final paid =
         sale.paidAmount ?? (sale.paymentStatus == 'COMPLETED' ? sale.total : 0);
     pair('Balance',
-        (sale.outstandingAmount ?? sale.total - paid).toStringAsFixed(2));
+        _money(sale.outstandingAmount ?? sale.total - paid));
     text('${sale.paymentMethod} / ${sale.paymentStatus}');
     text(rule);
     text('Thank you for shopping with us', center: true);
