@@ -56,6 +56,9 @@ const completeApprovedImport = process.argv.includes('--complete-approved-import
 const approval = process.argv.includes('--approval') ? process.argv[process.argv.indexOf('--approval') + 1] : '';
 const prepareRooms = process.argv.includes('--prepare-rooms');
 const approvedRoomSetup = process.argv.includes('--approved-room-setup');
+// The owner may explicitly keep all existing room assignments while applying
+// the workbook's other fields (price, stock, name, category and packaging).
+const leaveLocation = process.argv.includes('--leave-location');
 
 const aliases = new Map<string, string>([
   ['fevi quik', 'fevi kwik'],
@@ -306,7 +309,7 @@ function makePreview(items: SourceItem[], existing: ExistingItem[], rooms: Map<s
     }
     if (candidates.length >= 1) {
       const item = [...candidates].sort((left, right) => left.sku.localeCompare(right.sku))[0];
-      const stockCanChange = sourceUnlimited || safeRoomStock;
+      const stockCanChange = sourceUnlimited || safeRoomStock || (leaveLocation && sourceStock !== null);
       const messages = [candidates.length > 1 ? `Use existing ${item.sku} as the canonical match; no duplicate will be created.` : 'Update valid product fields.'];
       if (source.price === null) messages.push('Price remains unchanged because the Excel cell is blank.');
       if (sourceStock === null && !sourceUnlimited) messages.push('Stock remains unchanged because the Excel stock value is blank or not an absolute quantity.');
@@ -315,16 +318,16 @@ function makePreview(items: SourceItem[], existing: ExistingItem[], rooms: Map<s
       preview.push({ ...base, action: 'update', matchId: item.id, matchReason: 'Normalized name, brand, and packaging match.',
         oldPrice: item.price, newPrice: source.price ?? item.price, oldStock: item.stock,
         newStock: (stockCanChange || (completeApprovedImport && sourceStock !== null)) ? sourceStock : item.stock, oldLocations: item.locations,
-        newLocations: safeRoomStock ? locations : item.locations, setPrice: source.price !== null,
+        newLocations: safeRoomStock && !leaveLocation ? locations : item.locations, setPrice: source.price !== null,
         setStock: stockCanChange || (completeApprovedImport && sourceStock !== null),
-        setLocation: safeRoomStock, setUnlimited: sourceUnlimited,
+        setLocation: safeRoomStock && !leaveLocation, setUnlimited: sourceUnlimited,
         roomQuantities, message: messages.join(' ') });
       continue;
     }
-    if (invalidLocation && !completeApprovedImport) {
+    if (invalidLocation && !completeApprovedImport && !leaveLocation) {
       preview.push({ ...base, action: 'review', message: `Location ${invalidLocation} is not an active configured room.` }); continue;
     }
-    if (!locations.length && !completeApprovedImport) {
+    if (!locations.length && !completeApprovedImport && !leaveLocation) {
       preview.push({ ...base, action: 'review', message: 'No inventory location supplied.' }); continue;
     }
     if (!quantityKnown && !completeApprovedImport) {
@@ -336,10 +339,10 @@ function makePreview(items: SourceItem[], existing: ExistingItem[], rooms: Map<s
     if (/\b(carton|bundle|box|dozen)\b/i.test(source.packaging) && !completeApprovedImport) {
       preview.push({ ...base, action: 'review', message: 'New packaging could be retail or wholesale; the workbook does not explicitly identify its inventory type.' }); continue;
     }
-    if (!safeRoomStock && !sourceUnlimited && !completeApprovedImport) {
+    if (!safeRoomStock && !sourceUnlimited && !completeApprovedImport && !leaveLocation) {
       preview.push({ ...base, action: 'review', message: 'Each new product room must have a valid absolute quantity.' }); continue;
     }
-    preview.push({ ...base, action: 'insert', setPrice: true, setStock: true, setLocation: safeRoomStock, setUnlimited: sourceUnlimited,
+    preview.push({ ...base, action: 'insert', setPrice: true, setStock: true, setLocation: safeRoomStock && !leaveLocation, setUnlimited: sourceUnlimited,
       roomQuantities, message: sourceUnlimited ? `Insert as ${targetKind} with unlimited stock.` : `Insert as ${targetKind}.` });
   }
   return preview;
@@ -447,7 +450,9 @@ async function applyPreview(db: ReturnType<typeof createTursoPrismaClient>, repo
           }
         } else {
           await inventory.setStock(tx, product.id, total, `excel:${hash}:${row.source.row}`, `Opening stock from ${basename(workbookPath)} row ${row.source.row}.`);
-          if (total > 0) await allocateOpeningRoomStock(tx, product.id, total, roomAllocations, undefined, unitLabel(row.source));
+          if (total > 0 && row.setLocation) {
+            await allocateOpeningRoomStock(tx, product.id, total, roomAllocations, undefined, unitLabel(row.source));
+          }
         }
       } else if (row.kind === 'wholesale') {
         const existing = await tx.wholesaleItem.findUnique({ where: { id: row.matchId! }, select: { id: true } });
