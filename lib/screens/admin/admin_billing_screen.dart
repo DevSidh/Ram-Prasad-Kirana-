@@ -5117,21 +5117,23 @@ class _PosBillDialogState extends State<PosBillDialog> {
       // The server transaction checks stock and rooms atomically online.
       // Local checkout validates both inside saveBill under its writer lock.
       // No duplicate network fetch on the checkout-to-print path.
-      final quantities = <String, int>{};
-      for (final line in _cart) {
-        // Manual items are deliberately outside inventory and therefore do
-        // not require a source-room selection.
-        if (_isManualProduct(line.product)) continue;
-        quantities[line.product.id] = (quantities[line.product.id] ?? 0) +
-            (line.weightGrams ?? line.quantity);
-      }
-      for (final entry in quantities.entries) {
-        final chosen = (_roomPicks ?? const <RoomPick>[])
-            .where((p) => p.productId == entry.key)
-            .fold<int>(0, (sum, p) => sum + p.quantity);
-        if (chosen != entry.value) {
-          throw StateError(
-              'Choose the source room beside each bill item before paying.');
+      if (widget.requireRoomSelection) {
+        final quantities = <String, int>{};
+        for (final line in _cart) {
+          // Manual items are deliberately outside inventory and therefore do
+          // not require a source-room selection.
+          if (_isManualProduct(line.product)) continue;
+          quantities[line.product.id] = (quantities[line.product.id] ?? 0) +
+              (line.weightGrams ?? line.quantity);
+        }
+        for (final entry in quantities.entries) {
+          final chosen = (_roomPicks ?? const <RoomPick>[])
+              .where((p) => p.productId == entry.key)
+              .fold<int>(0, (sum, p) => sum + p.quantity);
+          if (chosen != entry.value) {
+            throw StateError(
+                'Choose the source room beside each bill item before paying.');
+          }
         }
       }
       _roomSelectionNeedsRefresh = false;
@@ -5254,7 +5256,7 @@ class _PosBillDialogState extends State<PosBillDialog> {
               paymentMethod: _paymentMethod,
               providerName: 'eSewa',
               onVerified: (verification) async {
-                if (_roomSelectionNeedsRefresh) {
+                if (widget.requireRoomSelection && _roomSelectionNeedsRefresh) {
                   throw StateError(
                       'Close payment and edit the source room beside the bill item before retrying.');
                 }
