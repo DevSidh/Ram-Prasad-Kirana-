@@ -87,7 +87,8 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
         items: items,
         pagination: AdminPagination(
           page: 1,
-          pageSize: items.length,
+          // Keep cached pagination compatible with the backend's max page size.
+          pageSize: items.length.clamp(1, 100).toInt(),
           total: items.length,
         ),
       );
@@ -631,15 +632,20 @@ class _WholesaleItemFormState extends State<_WholesaleItemForm> {
     final categoryMatches =
         _activeCategories.where((item) => item.id == _categoryId);
     if (categoryMatches.isEmpty) {
-      setState(() => _error = 'Choose a category before saving the wholesale item.');
+      setState(
+          () => _error = 'Choose a category before saving the wholesale item.');
       return;
     }
     final parsedPrice = double.tryParse(_price.text.trim());
     final parsedStock = int.tryParse(_stock.text.trim());
     final parsedMinimum = int.tryParse(_minimum.text.trim());
-    if (parsedPrice == null || !parsedPrice.isFinite || parsedPrice <= 0 ||
-        parsedStock == null || parsedStock < 0 ||
-        parsedMinimum == null || parsedMinimum <= 0) {
+    if (parsedPrice == null ||
+        !parsedPrice.isFinite ||
+        parsedPrice <= 0 ||
+        parsedStock == null ||
+        parsedStock < 0 ||
+        parsedMinimum == null ||
+        parsedMinimum <= 0) {
       setState(() => _error =
           'Enter a valid price, stock quantity, and minimum quantity before saving.');
       return;

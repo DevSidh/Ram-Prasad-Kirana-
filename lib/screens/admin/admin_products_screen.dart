@@ -106,7 +106,9 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
         products: products,
         pagination: AdminPagination(
           page: 1,
-          pageSize: products.length,
+          // The API caps pageSize at 100. Cached catalogues can be larger,
+          // but their local pagination metadata must remain request-safe.
+          pageSize: products.length.clamp(1, 100).toInt(),
           total: products.length,
         ),
       );
