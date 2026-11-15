@@ -362,7 +362,22 @@ class OfflinePosStore {
         final localProducts = await localDatabase.readCatalog();
         if (localProducts.isNotEmpty ||
             await localDatabase.lastSyncedAt('products') != null) {
-          return localProducts;
+          // The SQLite fast path must include locally queued products too.
+          // Without this merge, a newly-created wholesale item remained in
+          // the JSON pending queue but was invisible to the invoice dialog.
+          final pending = await readPendingProducts();
+          final pendingById = <String, PosProduct>{
+            for (final entry in pending)
+              if (entry['posProduct'] is Map<String, dynamic> &&
+                  entry['localId'] is String)
+                entry['localId'] as String: pendingProductSnapshot(entry),
+          };
+          if (pendingById.isEmpty) return localProducts;
+          final merged = <String, PosProduct>{
+            for (final product in localProducts) product.id: product,
+            ...pendingById,
+          };
+          return merged.values.toList(growable: false);
         }
       }
       final stat = await file.stat();

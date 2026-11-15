@@ -271,28 +271,29 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
     _searchTimer?.cancel();
     _searchTimer = Timer(const Duration(milliseconds: 120), () async {
       // Filter the local catalogue first so typing never waits on the server.
-      if (!widget.vendingOnly) {
-        final query = value.trim().toLowerCase();
-        final cached = await widget.offlineStore.readCatalogBaseline();
-        final matches = cached
-            .where((product) => !product.id.startsWith('wholesale-'))
-            .where((product) =>
-                query.isEmpty ||
-                product.name.toLowerCase().contains(query) ||
-                product.sku.toLowerCase().contains(query) ||
-                (product.barcode?.toLowerCase().contains(query) ?? false))
-            .map(_cachedProduct)
-            .toList(growable: false);
-        if (mounted && value == _searchController.text) {
-          setState(() {
-            _productPage = AdminProductPage(
-              products: matches,
-              pagination: AdminPagination(
-                  page: 1, pageSize: matches.length, total: matches.length),
-            );
-            _loading = false;
-          });
-        }
+      final query = value.trim().toLowerCase();
+      final cached = await widget.offlineStore.readCatalogBaseline();
+      final matches = cached
+          .where((product) => !product.id.startsWith('wholesale-'))
+          .where((product) =>
+              query.isEmpty ||
+              product.name.toLowerCase().contains(query) ||
+              product.sku.toLowerCase().contains(query) ||
+              (product.barcode?.toLowerCase().contains(query) ?? false))
+          .map(_cachedProduct)
+          .toList(growable: false);
+      if (mounted && value == _searchController.text) {
+        setState(() {
+          _productPage = AdminProductPage(
+            products: matches,
+            pagination: AdminPagination(
+              page: 1,
+              pageSize: matches.length.clamp(1, 100).toInt(),
+              total: matches.length,
+            ),
+          );
+          _loading = false;
+        });
       }
       if (mounted) {
         // Revalidate silently in the background; the local results stay

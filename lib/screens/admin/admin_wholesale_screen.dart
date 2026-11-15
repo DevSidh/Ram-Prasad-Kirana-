@@ -214,8 +214,31 @@ class _AdminWholesaleScreenState extends State<AdminWholesaleScreen> {
 
   void _onSearchChanged(String value) {
     _searchTimer?.cancel();
-    _searchTimer = Timer(const Duration(milliseconds: 300), () {
-      if (mounted) _load(page: 1);
+    _searchTimer = Timer(const Duration(milliseconds: 120), () async {
+      final query = value.trim().toLowerCase();
+      final cached = await widget.offlineStore.readCatalogBaseline();
+      final matches = cached
+          .where((product) => product.id.startsWith('wholesale-'))
+          .where((product) =>
+              query.isEmpty ||
+              product.name.toLowerCase().contains(query) ||
+              product.sku.toLowerCase().contains(query))
+          .map(_cachedItem)
+          .toList(growable: false);
+      if (mounted && value == _searchController.text) {
+        setState(() {
+          _page = AdminWholesaleItemPage(
+            items: matches,
+            pagination: AdminPagination(
+              page: 1,
+              pageSize: matches.length.clamp(1, 100).toInt(),
+              total: matches.length,
+            ),
+          );
+          _loading = false;
+        });
+      }
+      if (mounted) unawaited(_load(page: 1));
     });
   }
 
