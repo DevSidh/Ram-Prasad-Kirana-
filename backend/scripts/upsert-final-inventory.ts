@@ -24,7 +24,7 @@ type Action = 'insert' | 'update' | 'review';
 type SourceItem = {
   row: number; number: string; name: string; brand: string; category: string; subcategory: string;
   size: string; packaging: string; packCount: string; notes: string; unit: string; price: number | null;
-  stock: number | null; unlimited: boolean; location: string; source: string;
+  stock: number | null; unlimited: boolean; location: string; source: string; inventoryType?: string;
 };
 type ExistingItem = {
   id: string; kind: InventoryKind; sku: string; barcode: string | null; name: string; brand: string | null;
@@ -127,7 +127,12 @@ function correctedCategory(name: string, category: string): string {
   // future Excel UPSERT cannot put it back into a snack/chocolate category.
   return /\bfevi\s*(?:kwik|quik)\b/i.test(name) ? 'Glue' : category;
 }
-function itemName(item: SourceItem): string { return `${item.name} - ${item.packaging}`.replace(/\s+-\s+$/, '').trim(); }
+function itemName(item: SourceItem): string {
+  const name = item.name.trim();
+  const packaging = item.packaging.trim();
+  if (!packaging || normalized(name).endsWith(normalized(packaging))) return name;
+  return `${name} - ${packaging}`.replace(/\s+-\s+$/, '').trim();
+}
 
 function readWorkbook(file: string): WorkbookSheet[] {
   if (!existsSync(file)) throw new Error(`Workbook not found: ${file}`);
@@ -164,6 +169,32 @@ function parseFinalInventory(workbook: WorkbookSheet[]): SourceItem[] {
         notes: cell('K'), unit: selected[0], price: price(selected[1]) ?? 100,
         stock: stock(stockCell), unlimited: !stockCell || /^unlimited$/i.test(stockCell),
         location: cell('J'), source: 'product_catalogue_unlimited_and_error_audit.xlsx',
+      }];
+    });
+  }
+  // Exported Faststore inventory workbooks keep the existing database
+  // identity in columns H/I and put corrected values in P/Q/R. Preserve the
+  // explicit inventory type so retail, drinks and wholesale variants update
+  // their own records instead of being inferred from the name.
+  if (finalInventory.rows[0].cells.B1 === 'Product name') {
+    return finalInventory.rows.slice(1).flatMap((row) => {
+      const cell = (column: string) => text(row.cells[`${column}${row.row}`]);
+      const name = cell('B');
+      if (!name) return [];
+      const unit = cell('L');
+      const packaging = pack(unit);
+      const priceValue = price(cell('P')) ?? price(cell('D'));
+      const stockCell = cell('Q') || cell('E');
+      const location = cell('R') || cell('F');
+      return [{
+        row: row.row, number: cell('A'), name, brand: cell('J'),
+        category: correctedCategory(name, cell('K')), subcategory: '',
+        size: unit, packaging, packCount: '', notes: cell('S'), unit,
+        price: priceValue, stock: stock(stockCell),
+        unlimited: /^unlimited$/i.test(stockCell) || /^true$/i.test(cell('M')),
+        location: location.replace(/^room\s+/i, '').split(/\s*[-,]\s*/)[0].trim(),
+        source: 'Faststore-Complete-Inventory-For-Update.xlsx',
+        inventoryType: cell('G'),
       }];
     });
   }
@@ -261,7 +292,11 @@ function makePreview(items: SourceItem[], existing: ExistingItem[], rooms: Map<s
     const safeRoomStock = !sourceUnlimited && quantityKnown && !invalidLocation && locations.length > 0
       && roomQuantities.reduce((sum, item) => sum + item.quantity, 0) === sourceStock;
     const candidates = narrowCandidates(source, existing);
-    const targetKind: InventoryKind = candidates.length === 1 ? candidates[0].kind : isDrink(source) ? 'drinks' : 'retail';
+    const explicitType = normalized(source.inventoryType ?? '');
+    const targetKind: InventoryKind = candidates.length === 1 ? candidates[0].kind
+      : explicitType.includes('wholesale') ? 'wholesale'
+      : explicitType.includes('drink') ? 'drinks'
+      : isDrink(source) ? 'drinks' : 'retail';
     const base: Omit<Preview, 'action' | 'message'> = { source, kind: targetKind, sourceKey: key, newPrice: source.price, newStock: sourceStock, newLocations: locations };
     if (!source.category || !source.packaging) {
       preview.push({ ...base, action: 'review', message: 'Missing category or packaging.' }); continue;
