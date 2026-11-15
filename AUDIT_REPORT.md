@@ -73,3 +73,10 @@ The automated suite covers admin/customer workflows with fixtures. This does not
 
 - Physical 58mm/80mm printer output, DPI scaling, multi-monitor resize, profile-mode DevTools frame timings, live Turso latency, and Lighthouse scores were not measurable from this session.
 - The public Vercel site is still serving its prior deployment because the Vercel CLI session is logged out. No claim is made that the live website is updated; deployment requires the project owner’s Vercel credentials.
+
+## Admin/POS recheck — 2026-11-15
+
+- Reviewed the admin billing route, catalogue, room allocation, checkout, receipt, product, wholesale, drinks, restock and update-related paths with static searches and analyzer checks.
+- **Checkout blocker / high:** the invoice dialog exposed `requireRoomSelection = false`, but checkout still performed unconditional room coverage validation. This made ordinary bills fail with “Choose the source room beside each bill item before paying.” Validation is now gated by the existing flag; room-aware stores retain the old validation.
+- The same guard was applied to the static QR payment confirmation path so it cannot reintroduce the error.
+- `flutter analyze` passed with no issues and the Windows release build completed successfully after the change. Physical printer, live network and hardware profile checks remain environment-dependent.
